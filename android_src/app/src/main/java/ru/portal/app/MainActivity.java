@@ -62,7 +62,7 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public String getBuild() {
-            return "PORTAL Android · Build 2026.09.23-b001";
+            return "PORTAL Android · Build " + BuildConfig.VERSION_NAME;
         }
 
         @JavascriptInterface

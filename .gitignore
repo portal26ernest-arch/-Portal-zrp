@@ -18,3 +18,4 @@ venv/
 *.db-wal
 backups/
 reports/
+.tools/

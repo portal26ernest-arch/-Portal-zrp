@@ -3,6 +3,7 @@ import base64
 import hashlib
 import hmac
 import json
+import math
 import os
 import secrets
 import sqlite3
@@ -11,11 +12,12 @@ import traceback
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
+from pathlib import Path
 
-BUILD_ID = "PORTAL Android Server · 2026.09.23-a001"
+BUILD_ID = "PORTAL Android Server · 2026.09.24-a002"
 DEFAULT_DB = "/storage/emulated/0/PORTAL-BOT/portal.db"
 DB_PATH = os.environ.get("PORTAL_DB", DEFAULT_DB)
-HOST = os.environ.get("PORTAL_APP_HOST", "127.0.0.1")
+HOST = os.environ.get("PORTAL_APP_HOST", "0.0.0.0")
 PORT = int(os.environ.get("PORTAL_APP_PORT", "8765"))
 OWNER_TELEGRAM_ID = 7835466558
 SESSION_HOURS = 24 * 30
@@ -33,8 +35,18 @@ def now_text():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
+class DatabaseConnection(sqlite3.Connection):
+    def __exit__(self, *args):
+        try:
+            return super().__exit__(*args)
+        finally:
+            self.close()
+
+
 def db():
-    conn = sqlite3.connect(DB_PATH, timeout=15)
+    # mode=rw refuses to create a new, empty database if the storage is unavailable.
+    conn = sqlite3.connect(Path(DB_PATH).resolve().as_uri() + "?mode=rw", uri=True,
+                           timeout=15, factory=DatabaseConnection)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
@@ -324,9 +336,9 @@ def dashboard(user, period="current"):
     with db() as conn:
         params=[start,end]
         worker_filter=""
-        if user["role"]=="packer" and user.get("telegram_id"):
+        if user["role"]=="packer":
             worker_filter=" AND telegram_id=?"
-            params.append(user["telegram_id"])
+            params.append(user.get("telegram_id"))
         w=conn.execute(f"""
             SELECT COALESCE(SUM(quantity),0) qty,COALESCE(SUM(salary),0) salary,
                    COALESCE(SUM(revenue),0) revenue,COALESCE(SUM(direct_cost),0) direct_cost
@@ -343,15 +355,170 @@ def dashboard(user, period="current"):
                 invoiced+=float(r["amount_due"] or 0)
                 p=conn.execute("SELECT COALESCE(SUM(amount),0) FROM client_payments WHERE invoice_id=?",(r["id"],)).fetchone()[0]
                 paid+=float(p or 0); debt+=max(float(r["amount_due"] or 0)-float(p or 0),0)
+        if user["role"] == "packer":
+            return {"period":period,"quantity":float(w["qty"] or 0),"salary":float(w["salary"] or 0)}
         profit=float(w["revenue"] or 0)-float(w["salary"] or 0)-float(w["direct_cost"] or 0)
         return {"period":period,"quantity":float(w["qty"] or 0),"salary":float(w["salary"] or 0),"revenue":float(w["revenue"] or 0),"direct_cost":float(w["direct_cost"] or 0),"profit":profit,"invoiced":invoiced,"paid":paid,"debt":debt}
+
+
+def clean_name(value, label="Название"):
+    if not isinstance(value, str) or not value.strip() or len(value.strip()) > 200:
+        raise ValueError(f"{label}: от 1 до 200 символов")
+    return value.strip()
+
+
+def active_value(value):
+    if type(value) not in (bool, int) or value not in (0, 1):
+        raise ValueError("Активность должна быть 0 или 1")
+    return int(value)
+
+
+def rate_value(value):
+    try:
+        rate = float(value)
+    except (ValueError, TypeError):
+        raise ValueError("Ставка должна быть числом")
+    if isinstance(value, bool) or not math.isfinite(rate) or rate < 0 or rate > 1000000000:
+        raise ValueError("Ставка должна быть от 0 до 1 000 000 000")
+    return rate
+
+
+def validate_employee(conn, value, role):
+    try:
+        employee_id = int(value) if value not in (None, "") else None
+    except (ValueError, TypeError):
+        raise ValueError("Выберите сотрудника PORTAL")
+    if employee_id is not None and not conn.execute("SELECT 1 FROM employees WHERE telegram_id=?", (employee_id,)).fetchone():
+        raise ValueError("Сотрудник PORTAL не найден")
+    if role == "packer" and employee_id is None:
+        raise ValueError("Упаковщика необходимо привязать к сотруднику PORTAL")
+    return employee_id
+
+
+def save_user(body, user_id=None):
+    if user_id is not None and user_id <= 0:
+        raise ValueError("Некорректный ID доступа")
+    with db() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        old = conn.execute("SELECT * FROM app_users WHERE id=?", (user_id,)).fetchone() if user_id else None
+        if user_id and not old:
+            raise ValueError("Доступ не найден")
+        values = dict(old) if old else {"role": "packer", "telegram_id": None, "active": 1}
+        values.update({k: body[k] for k in ("username", "display_name", "role", "telegram_id", "active") if k in body})
+        username = clean_name(values.get("username"), "Логин")
+        display = clean_name(values.get("display_name") or username, "Имя")
+        role = values["role"]
+        if not isinstance(role, str) or role not in ROLE_LABELS:
+            raise ValueError("Неизвестная роль")
+        active = active_value(values["active"])
+        tg = validate_employee(conn, values["telegram_id"], role)
+        if conn.execute("SELECT 1 FROM app_users WHERE username=? AND id!=?", (username, user_id or 0)).fetchone():
+            raise ValueError("Этот логин уже занят")
+        if old and old["role"] == "admin" and old["active"] and (role != "admin" or not active):
+            if not conn.execute("SELECT 1 FROM app_users WHERE role='admin' AND active=1 AND id!=?", (user_id,)).fetchone():
+                raise ValueError("Нельзя отключить последнего администратора или изменить его роль")
+        pin = body.get("pin")
+        if pin is not None or not old:
+            if not isinstance(pin, str) or not 4 <= len(pin) <= 128:
+                raise ValueError("PIN должен содержать от 4 до 128 символов")
+            salt, digest = hash_pin(pin)
+        else:
+            salt, digest = old["pin_salt"], old["pin_hash"]
+        if old:
+            conn.execute("UPDATE app_users SET username=?,display_name=?,role=?,telegram_id=?,active=?,pin_salt=?,pin_hash=?,updated_at=? WHERE id=?",
+                         (username, display, role, tg, active, salt, digest, now_text(), user_id))
+            # Old credentials must stop working even after access is re-enabled.
+            conn.execute("DELETE FROM app_sessions WHERE user_id=?", (user_id,))
+        else:
+            user_id = conn.execute("INSERT INTO app_users(username,display_name,role,telegram_id,active,pin_salt,pin_hash,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                                   (username, display, role, tg, active, salt, digest, now_text(), now_text())).lastrowid
+        return user_id
+
+
+def quote_identifier(name):
+    return '"' + name.replace('"', '""') + '"'
+
+
+def rename_references(conn, old_name, new_name, client=None, client_id=None):
+    # The BOT uses text names in its ledger as well as numeric catalogue IDs.
+    # Rename those links atomically; quantities, money and IDs remain untouched.
+    tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").fetchall()
+    for row in tables:
+        table = row[0]
+        cols = columns(conn, quote_identifier(table))
+        quoted = quote_identifier(table)
+        if client is None and "client" in cols:
+            conn.execute(f"UPDATE {quoted} SET client=? WHERE client=?", (new_name, old_name))
+        elif client is not None and "operation" in cols:
+            if "client" in cols:
+                conn.execute(f"UPDATE {quoted} SET operation=? WHERE operation=? AND client=?", (new_name, old_name, client))
+            elif "client_id" in cols:
+                conn.execute(f"UPDATE {quoted} SET operation=? WHERE operation=? AND client_id=?", (new_name, old_name, client_id))
+
+
+def write_catalogue(conn, table, values, item_id=None):
+    available = columns(conn, table)
+    values = {k: v for k, v in values.items() if k in available}
+    if "updated_at" in available:
+        values["updated_at"] = now_text()
+    if item_id is not None:
+        conn.execute(f"UPDATE {table} SET " + ",".join(f"{k}=?" for k in values) + " WHERE id=?", (*values.values(), item_id))
+        return item_id
+    if "created_at" in available:
+        values["created_at"] = now_text()
+    return conn.execute(f"INSERT INTO {table}({','.join(values)}) VALUES({','.join('?' for _ in values)})", tuple(values.values())).lastrowid
+
+
+def save_client(body, client_id=None):
+    if client_id is not None and client_id <= 0:
+        raise ValueError("Некорректный ID клиента")
+    with db() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        old = get_client(conn, client_id) if client_id else None
+        if client_id and not old:
+            raise ValueError("Клиент не найден")
+        name = clean_name(body.get("name", old["name"] if old else None))
+        active = active_value(body.get("active", old["active"] if old else 1))
+        if conn.execute("SELECT 1 FROM portal_clients WHERE name=? COLLATE NOCASE AND id!=?", (name, client_id or 0)).fetchone():
+            raise ValueError("Клиент с таким названием уже существует (включая архив)")
+        if old and name != old["name"]:
+            rename_references(conn, old["name"], name)
+        return write_catalogue(conn, "portal_clients", {"name": name, "active": active}, client_id)
+
+
+def save_operation(body, client_id, operation_id=None):
+    if operation_id is not None and operation_id <= 0:
+        raise ValueError("Некорректный ID работы")
+    with db() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        client = get_client(conn, client_id)
+        if not client:
+            raise ValueError("Клиент не найден")
+        old = conn.execute("SELECT * FROM portal_client_operations WHERE id=? AND client_id=?", (operation_id, client_id)).fetchone() if operation_id else None
+        if operation_id and not old:
+            raise ValueError("Работа не найдена у этого клиента")
+        name = clean_name(body.get("name", old["name"] if old else None))
+        values = {"name": name, "active": active_value(body.get("active", old["active"] if old else 1))}
+        for field in ("employee_rate", "client_rate"):
+            if field in body or not old:
+                values[field] = rate_value(body.get(field))
+        if conn.execute("SELECT 1 FROM portal_client_operations WHERE client_id=? AND name=? COLLATE NOCASE AND id!=?", (client_id, name, operation_id or 0)).fetchone():
+            raise ValueError("Работа с таким названием у клиента уже существует")
+        if old and name != old["name"]:
+            rename_references(conn, old["name"], name, client["name"], client_id)
+        if not old:
+            values.update(client_id=client_id, sort_order=0)
+        return write_catalogue(conn, "portal_client_operations", values, operation_id)
 
 
 def parse_body(handler):
     length=int(handler.headers.get("Content-Length","0") or 0)
     if not length: return {}
     raw=handler.rfile.read(length)
-    return json.loads(raw.decode("utf-8")) if raw else {}
+    body = json.loads(raw.decode("utf-8")) if raw else {}
+    if not isinstance(body, dict):
+        raise ValueError("Ожидается JSON-объект")
+    return body
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -382,6 +549,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         try: self.route("GET")
         except PermissionError as e: self.error_json(e,403)
+        except ValueError as e: self.error_json(e,400)
         except Exception as e:
             traceback.print_exc(); self.error_json(e,500)
 
@@ -389,19 +557,23 @@ class Handler(BaseHTTPRequestHandler):
         try: self.route("POST")
         except PermissionError as e: self.error_json(e,403)
         except ValueError as e: self.error_json(e,400)
+        except sqlite3.IntegrityError: self.error_json("Запись конфликтует с существующими данными",400)
         except Exception as e:
             traceback.print_exc(); self.error_json(e,500)
 
     def route(self, method):
         parsed=urlparse(self.path); path=parsed.path; qs=parse_qs(parsed.query)
-        if path=="/api/ping":
+        if path=="/api/ping" and method=="GET":
             with db() as conn:
-                count=conn.execute("SELECT COUNT(*) FROM app_users WHERE active=1").fetchone()[0]
-            return self.send_json({"ok":True,"build":BUILD_ID,"setup_required":count==0,"db":DB_PATH})
+                count=conn.execute("SELECT COUNT(*) FROM app_users").fetchone()[0]
+            return self.send_json({"ok":True,"build":BUILD_ID,"setup_required":count==0})
         if path=="/api/setup" and method=="POST":
+            if self.client_address[0] not in {"127.0.0.1", "::1"}:
+                raise PermissionError("Первого администратора создайте на телефоне сервера через 127.0.0.1")
             body=parse_body(self); username=(body.get("username") or "admin").strip(); name=(body.get("display_name") or "Администратор").strip(); pin=str(body.get("pin") or "")
             if len(pin)<4: raise ValueError("PIN должен содержать минимум 4 символа")
             with db() as conn:
+                conn.execute("BEGIN IMMEDIATE")
                 if conn.execute("SELECT COUNT(*) FROM app_users").fetchone()[0]>0: raise PermissionError("Первичная настройка уже выполнена")
                 salt,ph=hash_pin(pin)
                 tg=OWNER_TELEGRAM_ID if conn.execute("SELECT 1 FROM employees WHERE telegram_id=?",(OWNER_TELEGRAM_ID,)).fetchone() else None
@@ -418,6 +590,32 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"ok":True,"token":token,"user":data})
         user=self.current_user()
         if not user: return self.error_json("Требуется вход",401)
+        if path.startswith("/api/admin/"):
+            if user["role"] != "admin": raise PermissionError("Только администратор")
+            parts = path.strip("/").split("/")
+            if parts == ["api", "admin", "clients"]:
+                if method == "GET":
+                    return self.send_json({"ok":True,"clients":get_clients(user,False)})
+                return self.send_json({"ok":True,"id":save_client(parse_body(self))})
+            if len(parts) == 4 and parts[:3] == ["api", "admin", "clients"] and method == "POST":
+                return self.send_json({"ok":True,"id":save_client(parse_body(self),int(parts[3]))})
+            if len(parts) in (5, 6) and parts[:3] == ["api", "admin", "clients"] and parts[4] == "operations":
+                client_id = int(parts[3])
+                if method == "GET" and len(parts) == 5:
+                    with db() as conn:
+                        client = get_client(conn,client_id)
+                        if not client: raise ValueError("Клиент не найден")
+                        rows = [dict(r) for r in conn.execute("SELECT id,name,active,employee_rate,client_rate FROM portal_client_operations WHERE client_id=? ORDER BY sort_order,name",(client_id,))]
+                    return self.send_json({"ok":True,"client":dict(client),"operations":rows})
+                if method == "POST":
+                    operation_id = int(parts[5]) if len(parts) == 6 else None
+                    return self.send_json({"ok":True,"id":save_operation(parse_body(self),client_id,operation_id)})
+            return self.error_json("Маршрут не найден",404)
+        if path.startswith("/api/users/") and method == "POST" and path.count("/") == 3:
+            if user["role"] != "admin": raise PermissionError("Только администратор")
+            return self.send_json({"ok":True,"id":save_user(parse_body(self),int(path.split("/")[3]))})
+        if method == "POST" and path not in {"/api/users", "/api/work"}:
+            return self.error_json("Метод не поддерживается",405)
         if path=="/api/me":
             safe={k:v for k,v in user.items() if k not in {"pin_hash","pin_salt"}}; safe["role_label"]=ROLE_LABELS.get(user["role"],user["role"])
             return self.send_json({"ok":True,"user":safe})
@@ -429,10 +627,13 @@ class Handler(BaseHTTPRequestHandler):
             client_id=int(path.split("/")[3])
             with db() as conn:
                 c=allowed_client(conn,user,client_id)
-                if not c: raise PermissionError("Клиент недоступен")
+                if not c or not c["active"]: raise PermissionError("Клиент недоступен")
                 rows=[dict(r) for r in conn.execute("SELECT id,name,employee_rate,client_rate FROM portal_client_operations WHERE client_id=? AND active=1 ORDER BY sort_order,name",(client_id,)).fetchall()]
+                if user["role"] == "packer":
+                    rows = [{k:v for k,v in r.items() if k != "client_rate"} for r in rows]
             return self.send_json({"ok":True,"client":dict(c),"operations":rows})
         if path.startswith("/api/clients/") and path.count("/")==3:
+            if user["role"] == "packer": raise PermissionError("Нет доступа к финансовой карточке клиента")
             client_id=int(path.split("/")[3])
             with db() as conn:
                 c=allowed_client(conn,user,client_id)
@@ -469,6 +670,9 @@ class Handler(BaseHTTPRequestHandler):
                 """).fetchall()] if table_exists(conn,"production_jobs") else []
                 if user["role"]=="manager":
                     allowed=manager_allowed_client_ids(conn,user) or set(); names={r["name"] for r in conn.execute("SELECT id,name FROM portal_clients WHERE id IN (%s)"%(','.join('?'*len(allowed))),tuple(allowed)).fetchall()} if allowed else set(); rows=[r for r in rows if r["client"] in names]
+                if user["role"] == "packer":
+                    fields = {"id","client","operation","product_name","due_at","priority","target_quantity","done","status"}
+                    rows = [{k:v for k,v in r.items() if k in fields} for r in rows]
             return self.send_json({"ok":True,"jobs":rows})
         if path=="/api/invoices":
             if user["role"] not in {"admin","manager","accountant"}: raise PermissionError("Нет доступа к счетам")
@@ -489,12 +693,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"ok":True,"users":rows,"employees":employees,"roles":ROLE_LABELS})
         if path=="/api/users" and method=="POST":
             if user["role"]!="admin": raise PermissionError("Только администратор")
-            body=parse_body(self); username=(body.get("username") or "").strip(); display=(body.get("display_name") or username).strip(); pin=str(body.get("pin") or ""); role=(body.get("role") or "packer").strip(); tg=body.get("telegram_id")
-            if not username or len(pin)<4 or role not in ROLE_LABELS: raise ValueError("Проверьте логин, PIN и роль")
-            salt,ph=hash_pin(pin)
-            with db() as conn:
-                cur=conn.execute("INSERT INTO app_users(username,display_name,pin_salt,pin_hash,role,telegram_id,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",(username,display,salt,ph,role,int(tg) if tg else None,1,now_text(),now_text())); conn.commit()
-            return self.send_json({"ok":True,"id":cur.lastrowid})
+            return self.send_json({"ok":True,"id":save_user(parse_body(self))})
         return self.error_json("Маршрут не найден",404)
 
 
