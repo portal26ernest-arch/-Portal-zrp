@@ -47,20 +47,25 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
     localStorage.clear();
     const user={id:1,username:role,display_name:'Тестовый пользователь',role,company_id:1,telegram_id:role==='platform_owner'?null:101};
     const client={id:1,name:'Клиент',active:1};
-    window.mock={calls:[],offline:false,rejectWrite:false,hold:false,held:[],update:{ok:true,configured:false},timer:null};
+    window.mock={calls:[],offline:false,rejectWrite:false,hold:false,held:[],update:{ok:true,configured:false},timer:null,stage3Today:null,stage3Permissions:null,presenceOnline:true};
     const respond=(id,data)=>setTimeout(()=>window.PortalBridgeResult(id,JSON.stringify(data)),0);
     window.PortalNative={getServerUrl:()=> 'http://127.0.0.1:8765',getAppMetadata:()=>JSON.stringify(metadata),checkUpdates:id=>respond(id,mock.update),requestAsync(id,method,url,payload,token,company){
       mock.calls.push({method,url,body:payload?JSON.parse(payload):null,token,company});
       if(mock.offline)return respond(id,{ok:false,network:true,error:'Нет соединения'});
       if(mock.rejectWrite&&method==='POST')return respond(id,{ok:false,httpStatus:401});
       let data={ok:true};
-      if(stage3&&url==='/api/v3/meta')Object.assign(data,{ready:true,heartbeat_seconds:60,permissions:['work.write','tasks.read','users.manage','access.history.read','payroll.own'],catalog:[]});
-      else if(stage3&&url==='/api/v3/today')data.data={date:'2026-09-25',mode:'worker',own_quantity:0,own_salary:0,attention:[],tasks:[{id:'task-1',client_name:'Клиент',product:'Коробка',batch_number:'PRT-2026-000001',operation_name:'Упаковка',quantity:10,done:0,remaining:10,assignees:[1]}]};
-      else if(stage3&&url==='/api/v3/tasks')data.data=[{id:'task-1',client_name:'Клиент',product:'Коробка',batch_number:'PRT-2026-000001',operation_name:'Упаковка',quantity:10,done:0,remaining:10,assignees:[1]}];
-      else if(stage3&&url==='/api/v3/timers'&&method==='GET')data.data=mock.timer?[mock.timer]:[];
-      else if(stage3&&url==='/api/v3/timers'&&method==='POST'){const b=JSON.parse(payload);mock.timer={id:'timer-1',task_id:'task-1',user_id:1,started_at:'2026-09-25T09:12:00',status:({start:'running',pause:'paused',resume:'running',finish:'completed'})[b.event]};data.data=mock.timer;}
-      else if(stage3&&url==='/api/v3/presence')data.data=[{user_id:1,online:true,last_activity_at:'2026-09-25T09:12:00'}];
+      if(stage3&&url==='/api/v3/meta')Object.assign(data,{ready:true,heartbeat_seconds:60,permissions:mock.stage3Permissions||['work.write','tasks.read','tasks.manage','batches.receive','finance.read','invoices.read','invoices.create','users.manage','access.history.read','payroll.own'],catalog:[{code:'work.write',group:'Работа',label:'Вносить свою выработку',recommended:['Сборщик']},{code:'access.history.read',group:'Сотрудники',label:'Просматривать историю входов сотрудников',recommended:['Управляющий','Администратор']}]});
+      else if(stage3&&url==='/api/v3/today'){const task={id:'task-1',batch_id:'batch-1',client_name:'Клиент',product:'Коробка',batch_number:'PRT-2026-000001',operation_name:'Упаковка',quantity:10,done:2,remaining:8,status:'in_progress',assignees:[1]};data.data=mock.stage3Today||{date:'2026-09-25',mode:role==='admin'?'management':'worker',own_quantity:4,own_salary:500,attention:[],tasks:[task],...(role==='admin'?{today_quantity:17,in_progress:1,ready:1,active_batches:2,finance:{salary:1200,revenue:2500,profit:900},expected_profit:1500,debt:400}:{})};}
+      else if(stage3&&url==='/api/v3/tasks')data.data=[{id:'task-1',batch_id:'batch-1',client_name:'Клиент',product:'Коробка',batch_number:'PRT-2026-000001',operation_name:'Упаковка',quantity:10,done:2,remaining:8,status:'in_progress',assignees:[1]}];
+      else if(stage3&&url==='/api/v3/timers'&&method==='GET')data.data=mock.timer&&['running','paused'].includes(mock.timer.status)?[mock.timer]:[];
+      else if(stage3&&url==='/api/v3/timers'&&method==='POST'){const b=JSON.parse(payload);mock.timer={id:'timer-1',task_id:'task-1',user_id:1,started_at:'2026-09-25T09:12:00',pauses:[],status:({start:'running',pause:'paused',resume:'running',finish:'completed'})[b.event]};data.data=mock.timer;}
+      else if(stage3&&url==='/api/v3/batches')data.data=[{id:'batch-1',number:'PRT-2026-000001',client_id:1,client_name:'Клиент',product:'Коробка',received_at:'2026-09-24',quantity:10,done:2,remaining:8,stage:'in_progress',operations:[{operation:'Упаковка',done:2,planned:10}],ready:false}];
+      else if(stage3&&url==='/api/v3/catalog')data.data={clients:[{id:1,name:'Клиент'}],operations:[{id:1,client_id:1,name:'Упаковка'}],users:[]};
+      else if(stage3&&url==='/api/v3/works')data.data=[{id:'work-free',client_id:1,client_name:'Клиент',operation_name:'Упаковка',quantity:3,salary:300,completed_at:'2026-09-25T09:20:00',without_task:true,batch_id:null}];
+      else if(stage3&&url==='/api/v3/work'&&method==='POST')data.data={id:'work-free',salary:300,without_task:true};
+      else if(stage3&&url==='/api/v3/presence')data.data=[{user_id:1,online:mock.presenceOnline,last_activity_at:new Date().toISOString(),active_sessions:mock.presenceOnline?1:0}];
       else if(stage3&&url==='/api/v3/activity')data.data=[{event:'login',result:'success',user_id:1,client_type:'Android',at:'2026-09-25T09:12:00'}];
+      else if(stage3&&url==='/api/v3/permissions')data.data=[{id:1,display_name:'Тестовый пользователь',role:'admin',permissions:['work.write']}];
       if(url==='/api/ping')data.setup_required=false;
       else if(url.endsWith('/login'))Object.assign(data,{token:'fixture-token',user});
       else if(url==='/api/me')data.user=user;
@@ -166,8 +171,21 @@ test('browser UI regression',async t=>{
     await t.test('Stage 3 timer, presence, activity and system information',async()=>{
       const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);
       await login(page);
+      assert.match(await page.locator('#content').innerText(),/PORTAL Сегодня/);
+      assert.match(await page.locator('#content').innerText(),/Ожидаемая прибыль/);
+      assert.match(await page.locator('#content').innerText(),/Дебиторская задолженность/);
+      await page.evaluate(()=>{mock.stage3Today={date:'2026-09-25',mode:'management',today_quantity:17,ready:1,active_batches:2,in_progress:0,tasks:[],attention:[]};void go('dashboard');});
+      await page.waitForFunction(()=>document.querySelector('#content').textContent.includes('PORTAL Сегодня')&&!document.querySelector('.loading'));
+      assert.doesNotMatch(await page.locator('#content').innerText(),/Ожидаемая прибыль|Выручка|Начислено сотрудникам/);
+      await page.evaluate(()=>{mock.stage3Today=null;void go('batches');});
+      await page.waitForFunction(()=>S.page==='batches'&&document.querySelector('#content').textContent.includes('Связанные задания'));
+      assert.match(await page.locator('#content').innerText(),/PRT-2026-000001/);
+      assert.match(await page.locator('#content').innerText(),/Упаковка/);
+      await page.evaluate(()=>void go('dashboard'));
+      await page.waitForFunction(()=>document.querySelector('[data-action=taskWork]'));
       await page.locator('[data-action=taskWork]').click();
       await page.waitForSelector('#taskWorkForm');
+      assert.match(await page.locator('#sheetContent').innerText(),/Накопленное рабочее время/);
       await page.locator('[data-action=timerToggle]').click();
       await page.waitForFunction(()=>mock.calls.some(c=>c.url==='/api/v3/timers'&&c.body?.event==='pause'));
       await page.waitForFunction(()=>S.currentTimer?.status==='paused');
@@ -178,14 +196,47 @@ test('browser UI regression',async t=>{
       await page.waitForFunction(()=>mock.calls.some(c=>c.url==='/api/v3/timers'&&c.body?.event==='finish'));
       await page.waitForTimeout(300);
       assert.equal(await page.evaluate(()=>S.page),'work',await page.locator('#toast').innerText()+' / '+await page.locator('#content').innerText());
+      await page.locator('[data-action=otherWork]').click();
+      await page.locator('#freeClient').selectOption('1');
+      await page.locator('#freeOperation').selectOption('1');
+      await page.locator('#freeQuantity').fill('3');
+      await page.locator('#otherWorkForm [type=submit]').click();
+      await page.waitForFunction(()=>mock.calls.some(c=>c.url==='/api/v3/work'&&c.body?.quantity===3));
+      const free=await page.evaluate(()=>mock.calls.find(c=>c.url==='/api/v3/work'));
+      assert.equal(free.body.client_id,1);assert.equal(free.body.operation_id,1);assert.equal(free.body.batch_id,null);
+      assert.equal(Object.hasOwn(free.body,'employee_rate'),false);
+      await page.locator('[data-action=productionHistory]').click();
+      await page.waitForFunction(()=>document.querySelector('#content').textContent.includes('Без задания'));
+      assert.match(await page.locator('#content').innerText(),/Без задания/);
       await page.evaluate(()=>go('users'));
       await page.waitForFunction(()=>S.page==='users'&&!document.querySelector('.loading'));
       assert.match(await page.locator('#content').innerText(),/Online/);
       await page.locator('[data-action=loginHistory]').click();await page.waitForSelector('#sheetContent');
       assert.match(await page.locator('#sheetContent').innerText(),/Вход · Успешно/);
+      await page.evaluate(()=>closeSheet());
+      await page.locator('[data-action=employeeActivity]').click();await page.waitForSelector('#sheetContent');
+      assert.match(await page.locator('#sheetContent').innerText(),/Активность в системе/);
+      assert.match(await page.locator('#sheetContent').innerText(),/История входов/);
       await page.evaluate(()=>{closeSheet();go('about');});
       await page.waitForFunction(()=>document.querySelector('#content').textContent.includes('О системе PORTAL'));
       assert.match(await page.locator('#content').innerText(),/Разработчик и правообладатель — Вартанян Эрнест/);
+      assert.deepEqual(errors,[]);await page.close();
+    });
+    await t.test('individual permissions use Russian labels and hide unauthorized login history',async()=>{
+      const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);
+      await page.evaluate(()=>mock.stage3Permissions=['work.write','tasks.read','tasks.manage','batches.receive','users.manage']);
+      await login(page);await page.evaluate(()=>go('permissions'));
+      await page.waitForFunction(()=>document.querySelector('#content').textContent.includes('Права доступа'));
+      await page.locator('[data-action=editPermissions]').click();
+      assert.match(await page.locator('#sheetContent').innerText(),/Вносить свою выработку/);
+      assert.match(await page.locator('#sheetContent').innerText(),/Сотрудники/);
+      assert.match(await page.locator('#sheetContent').innerText(),/рекомендуется: Сборщик/);
+      assert.doesNotMatch(await page.locator('#sheetContent').innerText(),/access\.history\.read|Platform Owner/);
+      await page.evaluate(()=>{closeSheet();go('users');});
+      await page.waitForFunction(()=>S.page==='users'&&document.querySelector('[data-action=employeeActivity]'));
+      await page.locator('[data-action=employeeActivity]').click();await page.waitForSelector('#sheetContent');
+      assert.match(await page.locator('#sheetContent').innerText(),/Просмотр истории входов недоступен/);
+      assert.equal(await page.evaluate(()=>mock.calls.some(c=>c.url==='/api/v3/activity')),false);
       assert.deepEqual(errors,[]);await page.close();
     });
   }finally{await browser.close();}
