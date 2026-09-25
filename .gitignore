@@ -16,6 +16,8 @@ venv/
 *.db
 *.db-shm
 *.db-wal
+*.db-journal
+.portal-tenants/
 backups/
 reports/
 .tools/

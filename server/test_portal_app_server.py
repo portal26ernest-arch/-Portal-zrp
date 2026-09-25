@@ -15,6 +15,7 @@ import sqlite3
 import tempfile
 import threading
 import unittest
+from contextlib import closing
 
 spec = importlib.util.spec_from_file_location("portal", Path(__file__).with_name("portal_app_server.py"))
 portal = importlib.util.module_from_spec(spec)
@@ -99,15 +100,16 @@ class PortalAPITest(unittest.TestCase):
         gc.collect()
         self.tmp.cleanup()
 
-    def request(self,path,token=None,body=None,method=None,status=200):
+    def request(self,path,token=None,body=None,method=None,status=200,extra_headers=None):
         headers = {"Authorization":"Bearer "+token} if token else {}
+        headers.update(extra_headers or {})
         payload = json.dumps(body).encode() if body is not None else b""
         method = method or ("POST" if body is not None else "GET")
         if body is not None:
             headers["Content-Type"] = "application/json"
         if self.http:
-            with http.client.HTTPConnection("127.0.0.1",self.http.server_port,timeout=5) as conn:
-                conn.request(method,path,payload,headers)
+            with closing(http.client.HTTPConnection("127.0.0.1",self.http.server_port,timeout=5)) as conn:
+                conn.request(method,path,payload if body is not None else None,headers)
                 response = conn.getresponse()
                 data = json.loads(response.read())
                 actual_status = response.status

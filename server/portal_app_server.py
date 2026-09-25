@@ -8,13 +8,17 @@ import os
 import secrets
 import sqlite3
 import sys
-import traceback
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
-from pathlib import Path
+import portal_tenancy as tenants
+from production_repository import Repository
+from production_service import Production
+import production_permissions as business_rights
+from production_migrations import migrate as migrate_production
+import production_activity as activity
 
-BUILD_ID = "PORTAL Android Server · 2026.09.24-a002"
+BUILD_ID = "PORTAL Android Server · 2026.09.25-a003-stage3-dev"
 DEFAULT_DB = "/storage/emulated/0/PORTAL-BOT/portal.db"
 DB_PATH = os.environ.get("PORTAL_DB", DEFAULT_DB)
 HOST = os.environ.get("PORTAL_APP_HOST", "0.0.0.0")
@@ -24,6 +28,7 @@ SESSION_HOURS = 24 * 30
 
 ROLE_LABELS = {
     "admin": "Администратор",
+    "director": "Директор / управляющий",
     "manager": "Менеджер",
     "accountant": "Бухгалтер",
     "shift": "Старший смены",
@@ -35,21 +40,8 @@ def now_text():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
-class DatabaseConnection(sqlite3.Connection):
-    def __exit__(self, *args):
-        try:
-            return super().__exit__(*args)
-        finally:
-            self.close()
-
-
 def db():
-    # mode=rw refuses to create a new, empty database if the storage is unavailable.
-    conn = sqlite3.connect(Path(DB_PATH).resolve().as_uri() + "?mode=rw", uri=True,
-                           timeout=15, factory=DatabaseConnection)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+    return tenants.tenant_connection(DB_PATH)
 
 
 def table_exists(conn, name):
@@ -63,12 +55,13 @@ def columns(conn, table):
 def ensure_schema():
     if not os.path.exists(DB_PATH):
         raise FileNotFoundError(f"База PORTAL не найдена: {DB_PATH}")
-    with db() as conn:
+    with tenants.connect_file(DB_PATH) as conn:
+        conn.execute("BEGIN IMMEDIATE")
         required = {"portal_clients", "portal_client_operations", "work_log", "employees"}
         missing = [t for t in required if not table_exists(conn, t)]
         if missing:
-            raise RuntimeError("База PORTAL слишком старая. Сначала запустите PORTAL BOT b005. Нет таблиц: " + ", ".join(missing))
-        conn.executescript("""
+            raise RuntimeError("Требуется проверенный импорт исходных данных PORTAL. Нет таблиц: " + ", ".join(missing))
+        statements = """
         CREATE TABLE IF NOT EXISTS app_users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT NOT NULL UNIQUE,
@@ -89,8 +82,12 @@ def ensure_schema():
             FOREIGN KEY(user_id) REFERENCES app_users(id)
         );
         CREATE INDEX IF NOT EXISTS idx_app_sessions_user ON app_sessions(user_id, expires_at);
-        """)
-        conn.commit()
+        """
+        for statement in statements.split(";"):
+            if statement.strip():
+                conn.execute(statement)
+        tenants.stamp_schema(conn, 1)
+    tenants.initialize_control(DB_PATH)
 
 
 def hash_pin(pin, salt=None):
@@ -105,7 +102,7 @@ def verify_pin(pin, salt, expected):
 
 
 def create_session(conn, user_id):
-    token = secrets.token_urlsafe(40)
+    token = str(tenants.COMPANY_ID.get()) + "." + secrets.token_urlsafe(40)
     created = datetime.now()
     expires = created + timedelta(hours=SESSION_HOURS)
     conn.execute("DELETE FROM app_sessions WHERE expires_at < ?", (now_text(),))
@@ -119,16 +116,35 @@ def create_session(conn, user_id):
 def user_from_token(token):
     if not token:
         return None
-    with db() as conn:
+    if token.startswith("p."):
+        with tenants.control(DB_PATH) as conn:
+            row = conn.execute("SELECT u.id,u.username,u.display_name,u.company_id FROM platform_sessions s JOIN platform_owners u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>=? AND u.active=1",
+                               (hashlib.sha256(token.encode()).hexdigest(), now_text())).fetchone()
+        return dict(row, role="platform_owner") if row else None
+    try:
+        company_id = int(token.split(".", 1)[0]) if "." in token else 1
+        company = tenants.get_company(DB_PATH, company_id)
+    except (ValueError, PermissionError):
+        return None
+    if not tenants.available(company):
+        return None
+    with tenants.company_scope(company_id), db() as conn:
         row = conn.execute("""
             SELECT u.* FROM app_sessions s JOIN app_users u ON u.id=s.user_id
             WHERE s.token=? AND s.expires_at>=? AND u.active=1
         """, (token, now_text())).fetchone()
-        return dict(row) if row else None
+        return dict(row) if row and row["role"] in ROLE_LABELS else None
 
 
 def require_role(user, allowed):
     return user and user.get("role") in allowed
+
+
+def business_can(user, permission, legacy_roles):
+    with db() as conn:
+        repo = Repository(conn, tenants.COMPANY_ID.get())
+        if repo.ready(): return permission in business_rights.effective(repo,user)
+    return user['role'] in legacy_roles
 
 
 def period_bounds(kind="current"):
@@ -273,7 +289,7 @@ def sync_production(conn, work_id, worker_id, client_name, operation_name, produ
 
 
 def save_work(user, client_id, operation_id, quantity):
-    if user["role"] not in {"admin","shift","packer"}:
+    if user["role"] not in {"admin","director","manager","shift","packer"}:
         raise PermissionError("Эта роль не может вносить выработку")
     worker_id = user.get("telegram_id")
     if not worker_id:
@@ -339,13 +355,16 @@ def dashboard(user, period="current"):
         if user["role"]=="packer":
             worker_filter=" AND telegram_id=?"
             params.append(user.get("telegram_id"))
+        elif user["role"] == "manager":
+            worker_filter = " AND client IN (SELECT c.name FROM portal_clients c JOIN manager_client_assignments a ON a.client_id=c.id WHERE a.telegram_id=? AND a.active=1)"
+            params.append(user.get("telegram_id"))
         w=conn.execute(f"""
             SELECT COALESCE(SUM(quantity),0) qty,COALESCE(SUM(salary),0) salary,
                    COALESCE(SUM(revenue),0) revenue,COALESCE(SUM(direct_cost),0) direct_cost
             FROM work_log WHERE created_at BETWEEN ? AND ? {worker_filter}
         """,params).fetchone()
         invoiced=paid=debt=0.0
-        if user["role"] in {"admin","manager","accountant"} and table_exists(conn,"client_invoices"):
+        if user["role"] in {"admin","director","manager","accountant"} and table_exists(conn,"client_invoices"):
             allowed=manager_allowed_client_ids(conn,user)
             inv=conn.execute("SELECT id,client,amount_due FROM client_invoices WHERE created_at BETWEEN ? AND ?",(start,end)).fetchall()
             if allowed is not None:
@@ -396,9 +415,13 @@ def validate_employee(conn, value, role):
 
 
 def save_user(body, user_id=None):
+    if "company_id" in body and body["company_id"] != tenants.COMPANY_ID.get():
+        raise PermissionError("Нельзя менять компанию доступа")
     if user_id is not None and user_id <= 0:
         raise ValueError("Некорректный ID доступа")
-    with db() as conn:
+    # Serialize limits with platform company changes as well as user activation.
+    with tenants.control(DB_PATH) as registry, db() as conn:
+        registry.execute("BEGIN IMMEDIATE")
         conn.execute("BEGIN IMMEDIATE")
         old = conn.execute("SELECT * FROM app_users WHERE id=?", (user_id,)).fetchone() if user_id else None
         if user_id and not old:
@@ -411,6 +434,11 @@ def save_user(body, user_id=None):
         if not isinstance(role, str) or role not in ROLE_LABELS:
             raise ValueError("Неизвестная роль")
         active = active_value(values["active"])
+        limit = registry.execute("SELECT user_limit FROM companies WHERE id=?", (tenants.COMPANY_ID.get(),)).fetchone()[0]
+        if active and (not old or not old["active"]) and limit is not None:
+            count = conn.execute("SELECT COUNT(*) FROM app_users WHERE active=1").fetchone()[0]
+            if count >= limit:
+                raise ValueError("Достигнут лимит активных пользователей компании")
         tg = validate_employee(conn, values["telegram_id"], role)
         if conn.execute("SELECT 1 FROM app_users WHERE username=? AND id!=?", (username, user_id or 0)).fetchone():
             raise ValueError("Этот логин уже занят")
@@ -508,26 +536,70 @@ def save_operation(body, client_id, operation_id=None):
             rename_references(conn, old["name"], name, client["name"], client_id)
         if not old:
             values.update(client_id=client_id, sort_order=0)
-        return write_catalogue(conn, "portal_client_operations", values, operation_id)
+        identity = write_catalogue(conn, "portal_client_operations", values, operation_id)
+        repo = Repository(conn, tenants.COMPANY_ID.get())
+        if repo.ready() and any(k in values for k in ('employee_rate','client_rate')):
+            from production_service import cents
+            repo.insert('tariffs', dict(operation_id=identity, client_id=client_id, effective_from=__import__('production_repository').utcnow(),
+                changed_fields=[k for k in ('employee_rate','client_rate') if k in values],
+                employee_rate=cents(values.get('employee_rate',old['employee_rate'] if old else 0)),
+                client_rate=cents(values.get('client_rate',old['client_rate'] if old else 0))))
+        return identity
+
+
+def read_body(handler):
+    if handler.headers.get("Transfer-Encoding"):
+        raise ValueError("Требуется Content-Length")
+    length = int(handler.headers.get("Content-Length", "0") or 0)
+    if not 0 <= length <= 65536:
+        raise ValueError("Размер запроса должен быть не более 64 КБ")
+    return handler.rfile.read(length) if length else b""
 
 
 def parse_body(handler):
-    length=int(handler.headers.get("Content-Length","0") or 0)
-    if not length: return {}
-    raw=handler.rfile.read(length)
+    raw = handler.raw_body if hasattr(handler, "raw_body") else read_body(handler)
     body = json.loads(raw.decode("utf-8")) if raw else {}
     if not isinstance(body, dict):
         raise ValueError("Ожидается JSON-объект")
+    if getattr(handler, "tenant_request", False) and "company_id" in body:
+        if type(body["company_id"]) is not int or body["company_id"] != tenants.COMPANY_ID.get():
+            raise PermissionError("Компания определяется авторизованной сессией")
     return body
+
+
+def create_platform_owner(username, pin, display_name=None):
+    """Local operator provisioning only. No HTTP route promotes company users."""
+    username = clean_name(username, "Логин")
+    if not isinstance(pin, str) or not 12 <= len(pin) <= 128:
+        raise ValueError("Пароль Platform Owner: от 12 до 128 символов")
+    salt, digest = hash_pin(pin)
+    with tenants.control(DB_PATH) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        owner_id = conn.execute("INSERT INTO platform_owners(username,display_name,pin_salt,pin_hash) VALUES(?,?,?,?)",
+                                (username, clean_name(display_name or username), salt, digest)).lastrowid
+        tenants.audit(conn, owner_id, 1, "owner_provisioned_locally", "success", entity_id=owner_id)
+    return owner_id
+
+
+def audit_route(path):
+    """A fixed route label, not a raw URL that could carry secrets."""
+    parts = path.strip("/").split("/")
+    known = {"api", "platform", "companies", "audit", "me", "company", "dashboard", "clients", "admin",
+             "operations", "work", "mine", "payroll", "materials", "jobs", "invoices", "users", "login"}
+    if any(p not in known and not p.isdecimal() for p in parts):
+        return "unknown"
+    return "/" + "/".join("{id}" if p.isdecimal() else p for p in parts)
 
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "PORTALAppServer/1.0"
 
     def log_message(self, fmt, *args):
-        sys.stdout.write("[%s] %s\n" % (datetime.now().strftime("%H:%M:%S"), fmt % args))
+        # BaseHTTPRequestHandler normally logs the raw URL, including its query.
+        sys.stdout.write("[%s] %s %s\n" % (datetime.now().strftime("%H:%M:%S"), self.command, audit_route(urlparse(self.path).path)))
 
     def send_json(self, data, status=200):
+        self.response_status = status
         raw=json.dumps(data,ensure_ascii=False,default=str).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type","application/json; charset=utf-8")
@@ -544,24 +616,190 @@ class Handler(BaseHTTPRequestHandler):
         return self.headers.get("X-Portal-Token","").strip()
 
     def current_user(self):
-        return user_from_token(self.token())
+        return getattr(self, "request_user", None) or user_from_token(self.token())
 
     def do_GET(self):
         try: self.route("GET")
         except PermissionError as e: self.error_json(e,403)
         except ValueError as e: self.error_json(e,400)
         except Exception as e:
-            traceback.print_exc(); self.error_json(e,500)
+            self.error_json("Внутренняя ошибка сервера",500)
 
     def do_POST(self):
-        try: self.route("POST")
+        try:
+            # Consume bounded request bytes even on authorization failures, so
+            # closing an HTTP/1.0 connection does not discard its error response.
+            self.raw_body = read_body(self)
+            self.route("POST")
         except PermissionError as e: self.error_json(e,403)
         except ValueError as e: self.error_json(e,400)
         except sqlite3.IntegrityError: self.error_json("Запись конфликтует с существующими данными",400)
         except Exception as e:
-            traceback.print_exc(); self.error_json(e,500)
+            self.error_json("Внутренняя ошибка сервера",500)
 
     def route(self, method):
+        self.tenant_request = False
+        path = urlparse(self.path).path
+        if path == "/api/platform/login" and method == "POST":
+            body = parse_body(self)
+            with tenants.control(DB_PATH) as conn:
+                u = conn.execute("SELECT * FROM platform_owners WHERE username=? AND active=1", (str(body.get("username", "")),)).fetchone()
+                valid = bool(u and verify_pin(str(body.get("pin", "")), u["pin_salt"], u["pin_hash"]))
+                tenants.audit(conn, u["id"] if u else None, 1, "owner_login", "success" if valid else "denied")
+                if valid:
+                    token = "p." + secrets.token_urlsafe(40)
+                    conn.execute("INSERT INTO platform_sessions(token_hash,user_id,expires_at) VALUES(?,?,?)",
+                                 (hashlib.sha256(token.encode()).hexdigest(), u["id"], (datetime.now()+timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S")))
+                    result = {"ok":True,"token":token,"user":{"id":u["id"],"username":u["username"],"role":"platform_owner","company_id":1}}
+            return self.send_json(result) if valid else self.error_json("Неверный логин или пароль", 401)
+        if path == "/api/login" and method == "POST":
+            body = parse_body(self)
+            company_id = body.get("company_id", 1)
+            if type(company_id) is not int or company_id < 1:
+                return self.error_json("Неверный логин, PIN или компания", 401)
+            try:
+                company = tenants.get_company(DB_PATH, company_id)
+            except PermissionError:
+                return self.error_json("Неверный логин, PIN или компания", 401)
+            if not tenants.available(company):
+                return self.error_json("Компания недоступна", 403)
+            with tenants.company_scope(company_id), db() as conn:
+                u = conn.execute("SELECT * FROM app_users WHERE username=? AND active=1", (str(body.get("username", "")).strip(),)).fetchone()
+                if not u or not verify_pin(str(body.get("pin", "")), u["pin_salt"], u["pin_hash"]):
+                    repo=Repository(conn,company_id)
+                    if repo.ready():activity.login(repo,body.get('username'),u['id'] if u else None,False,activity.client_type(self.headers))
+                    return self.error_json("Неверный логин, PIN или компания", 401)
+                token = create_session(conn, u["id"])
+                repo=Repository(conn,company_id)
+                if repo.ready():activity.login(repo,u['username'],u['id'],True,activity.client_type(self.headers),token)
+                data = {k:v for k,v in dict(u).items() if k not in {"pin_hash","pin_salt"}}
+            return self.send_json({"ok":True,"token":token,"user":data})
+        if path in {"/api/ping", "/api/setup"}:
+            with tenants.company_scope(1):
+                self.tenant_request = True
+                return self.tenant_route(method)
+        identity = user_from_token(self.token())
+        if not identity:
+            return self.error_json("Требуется вход", 401)
+        is_owner = identity["role"] == "platform_owner"
+        company_id = identity["company_id"]
+        if path=='/api/logout' and method=='POST':
+            if is_owner:
+                with tenants.control(DB_PATH) as conn:
+                    conn.execute('DELETE FROM platform_sessions WHERE token_hash=?',(hashlib.sha256(self.token().encode()).hexdigest(),))
+                    tenants.audit(conn,identity['id'],1,'owner_logout','success')
+            else:
+                with tenants.company_scope(company_id),db() as conn:
+                    activity.logout(Repository(conn,company_id),self.token(),identity)
+            return self.send_json({'ok':True})
+        if is_owner:
+            with tenants.control(DB_PATH) as conn:
+                tenants.audit(conn, identity["id"], company_id, "technical_access", "started", method=method, route=audit_route(path))
+        try:
+            selected = self.headers.get("X-Portal-Company")
+            if selected is not None:
+                try:
+                    selected = int(selected)
+                except ValueError:
+                    raise PermissionError("Некорректная компания")
+                if not is_owner and selected != company_id:
+                    raise PermissionError("Доступ к другой компании запрещён")
+                if is_owner:
+                    tenants.get_company(DB_PATH, selected)
+                    company_id = selected
+            if not is_owner:
+                if path.startswith("/api/platform/"):
+                    raise PermissionError("Только Platform Owner")
+                query = parse_qs(urlparse(self.path).query)
+                if "company_id" in query and query["company_id"] != [str(company_id)]:
+                    raise PermissionError("Доступ к другой компании запрещён")
+            if path.startswith("/api/platform/"):
+                return self.platform_route(method, path, identity)
+            if path == "/api/me" and method == "GET":
+                safe = {k:v for k,v in identity.items() if k not in {"pin_salt","pin_hash"}}
+                safe["role_label"] = ROLE_LABELS.get(identity["role"], "Platform Owner")
+                if not is_owner:
+                    with tenants.company_scope(company_id), db() as conn:
+                        repo=Repository(conn,company_id)
+                        if repo.ready(): safe['permissions']=sorted(business_rights.effective(repo,identity))
+                return self.send_json({"ok":True,"user":safe})
+            if is_owner and selected is None:
+                raise PermissionError("Для технического доступа укажите X-Portal-Company")
+            with tenants.company_scope(company_id):
+                self.tenant_request = True
+                self.request_user = dict(identity, role="admin", company_id=company_id, telegram_id=None, technical_owner=True) if is_owner else identity
+                if not is_owner:
+                    with db() as conn:activity.touch(Repository(conn,company_id),self.token(),identity)
+                if path.startswith('/api/v3/'):
+                    return self.production_route(method,path)
+                if path == "/api/company" and method == "GET":
+                    company = tenants.get_company(DB_PATH, company_id)
+                    if not is_owner and identity["role"] not in {"admin", "director"}:
+                        company = {k: company[k] for k in ("id", "name", "status", "service_status")}
+                    return self.send_json({"ok":True,"company":company})
+                return self.tenant_route(method)
+        except PermissionError:
+            self.response_status = 403
+            raise
+        except (ValueError, sqlite3.IntegrityError):
+            self.response_status = 400
+            raise
+        finally:
+            if is_owner:
+                status = getattr(self, "response_status", 500)
+                with tenants.control(DB_PATH) as conn:
+                    numeric_ids = [int(p) for p in path.split("/") if p.isdecimal() and len(p) < 19]
+                    tenants.audit(conn, identity["id"], company_id, "technical_access", "success" if status < 400 else "failed",
+                                  method=method, route=audit_route(path), status=status, entity_id=numeric_ids)
+
+    def production_route(self,method,path):
+        action=path.removeprefix('/api/v3/')
+        with db() as conn:
+            repo=Repository(conn,tenants.COMPANY_ID.get())
+            if action=='meta' and method=='GET':
+                return self.send_json(dict(ok=True,ready=bool(repo.ready()),permissions=sorted(business_rights.effective(repo,self.request_user)) if repo.ready() else [],catalog=business_rights.public_catalog(),heartbeat_seconds=activity.configuration(repo)[0] if repo.ready() else None))
+            if not repo.ready(): raise ValueError('Этап 3 ещё не подключён оператором к этой компании')
+            if action=='presence' and method=='GET':return self.send_json(dict(ok=True,data=activity.presence(repo,self.request_user)))
+            if action=='activity' and method=='GET':
+                limit=int(parse_qs(urlparse(self.path).query).get('limit',['100'])[0])
+                return self.send_json(dict(ok=True,data=activity.history(repo,self.request_user,limit)))
+            if action=='heartbeat' and method=='POST':
+                if self.request_user.get('technical_owner'):
+                    return self.send_json(dict(ok=True))
+                session=activity.touch(repo,self.token(),self.request_user,True)
+                conn.commit()
+                return self.send_json(dict(ok=True,last_activity_at=session['last_activity_at'] if session else None))
+            if method=='POST':repo.lock()
+            service=Production(repo,self.request_user)
+            result=service.command(action,parse_body(self)) if method=='POST' else service.query(action,parse_qs(urlparse(self.path).query))
+            # Commit before acknowledging any write.
+            if method=='POST':conn.commit()
+            return self.send_json(dict(ok=True,data=result))
+
+    def platform_route(self, method, path, identity):
+        if identity["role"] != "platform_owner":
+            raise PermissionError("Только Platform Owner")
+        if path == "/api/platform/companies":
+            if method == "GET":
+                with tenants.control(DB_PATH) as conn:
+                    companies = [dict(r) for r in conn.execute("SELECT * FROM companies ORDER BY id")]
+                return self.send_json({"ok":True,"companies":companies})
+            return self.send_json({"ok":True,"id":tenants.save_company(DB_PATH, identity["id"], parse_body(self))})
+        parts = path.strip("/").split("/")
+        if len(parts) == 4 and parts[:3] == ["api", "platform", "companies"]:
+            cid = int(parts[3])
+            if method == "GET":
+                return self.send_json({"ok":True,"company":tenants.get_company(DB_PATH, cid)})
+            return self.send_json({"ok":True,"id":tenants.save_company(DB_PATH, identity["id"], parse_body(self), cid)})
+        if path == "/api/platform/audit" and method == "GET":
+            query = parse_qs(urlparse(self.path).query)
+            after = int(query.get("after_id", ["0"])[0])
+            with tenants.control(DB_PATH) as conn:
+                rows = [dict(r) for r in conn.execute("SELECT * FROM platform_audit WHERE id>? ORDER BY id LIMIT 200", (after,))]
+            return self.send_json({"ok":True,"rows":rows})
+        return self.error_json("Маршрут не найден", 404)
+
+    def tenant_route(self, method):
         parsed=urlparse(self.path); path=parsed.path; qs=parse_qs(parsed.query)
         if path=="/api/ping" and method=="GET":
             with db() as conn:
@@ -581,17 +819,43 @@ class Handler(BaseHTTPRequestHandler):
                                  (username,name,salt,ph,"admin",tg,1,now_text(),now_text()))
                 token=create_session(conn,cur.lastrowid); conn.commit()
             return self.send_json({"ok":True,"token":token,"user":{"username":username,"display_name":name,"role":"admin","telegram_id":tg}})
-        if path=="/api/login" and method=="POST":
-            body=parse_body(self); username=(body.get("username") or "").strip(); pin=str(body.get("pin") or "")
-            with db() as conn:
-                u=conn.execute("SELECT * FROM app_users WHERE username=? AND active=1",(username,)).fetchone()
-                if not u or not verify_pin(pin,u["pin_salt"],u["pin_hash"]): return self.error_json("Неверный логин или PIN",401)
-                token=create_session(conn,u["id"]); conn.commit(); data=dict(u); data.pop("pin_hash",None); data.pop("pin_salt",None)
-            return self.send_json({"ok":True,"token":token,"user":data})
         user=self.current_user()
         if not user: return self.error_json("Требуется вход",401)
+        with db() as connection:
+            repo=Repository(connection,tenants.COMPANY_ID.get())
+            production_ready=repo.ready()
+            permissions=business_rights.effective(repo,user) if production_ready else None
+        if production_ready:
+            needed={'/api/work':'work.write','/api/payroll/mine':'payroll.own','/api/work/mine':'work.write','/api/materials':'materials.read','/api/invoices':'invoices.read','/api/jobs':'tasks.read','/api/users':'users.manage'}
+            required=needed.get(path)
+            if path.startswith('/api/users/'):required='users.manage'
+            if path.startswith('/api/admin/'):required='clients.manage'
+            if required and required not in permissions:raise PermissionError('Недостаточно прав')
+            if path=='/api/work' and method=='POST':
+                body=parse_body(self)
+                with db() as connection:
+                    repo=Repository(connection,tenants.COMPANY_ID.get());repo.lock()
+                    body.setdefault('request_id',secrets.token_hex(24))
+                    work=Production(repo,user).command('work',body);connection.commit()
+                return self.send_json(dict(ok=True,work=dict(id=work['legacy_id'],salary=work.get('salary',0)/100,rate=work.get('employee_rate',0)/100,warnings=[])))
+            if path.startswith('/api/users') and method=='POST':
+                body=parse_body(self)
+                if 'role' in body and (body['role'] not in ROLE_LABELS or business_rights.defaults(body['role'])-permissions):raise PermissionError('Нельзя назначить роль с правами выше собственных')
+                if path.count('/')==3:
+                    with db() as connection:
+                        repo=Repository(connection,tenants.COMPANY_ID.get())
+                        target=next((u for u in repo.catalog('users') if str(u['id'])==path.split('/')[-1]),None)
+                        if target and business_rights.effective(repo,target)-permissions:raise PermissionError('Нельзя менять доступ сотрудника с более широкими правами')
+            if path.startswith('/api/admin/') and method=='POST':
+                body=parse_body(self)
+                parts=path.strip('/').split('/')
+                if len(parts)>=4:
+                    with db() as connection:
+                        if not allowed_client(connection,user,int(parts[3])):raise PermissionError('Клиент недоступен')
+                for field,key in [('employee_rate','rates.employee'),('client_rate','rates.client')]:
+                    if field in body and key not in permissions:raise PermissionError('Недостаточно прав для изменения цены')
         if path.startswith("/api/admin/"):
-            if user["role"] != "admin": raise PermissionError("Только администратор")
+            if not business_can(user,'clients.manage',{'admin'}): raise PermissionError("Нет права управления справочником")
             parts = path.strip("/").split("/")
             if parts == ["api", "admin", "clients"]:
                 if method == "GET":
@@ -605,6 +869,7 @@ class Handler(BaseHTTPRequestHandler):
                     with db() as conn:
                         client = get_client(conn,client_id)
                         if not client: raise ValueError("Клиент не найден")
+                        if not allowed_client(conn,user,client_id):raise PermissionError('Клиент недоступен')
                         rows = [dict(r) for r in conn.execute("SELECT id,name,active,employee_rate,client_rate FROM portal_client_operations WHERE client_id=? ORDER BY sort_order,name",(client_id,))]
                     return self.send_json({"ok":True,"client":dict(client),"operations":rows})
                 if method == "POST":
@@ -612,7 +877,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json({"ok":True,"id":save_operation(parse_body(self),client_id,operation_id)})
             return self.error_json("Маршрут не найден",404)
         if path.startswith("/api/users/") and method == "POST" and path.count("/") == 3:
-            if user["role"] != "admin": raise PermissionError("Только администратор")
+            if not business_can(user,'users.manage',{'admin'}): raise PermissionError("Нет права управления сотрудниками")
             return self.send_json({"ok":True,"id":save_user(parse_body(self),int(path.split("/")[3]))})
         if method == "POST" and path not in {"/api/users", "/api/work"}:
             return self.error_json("Метод не поддерживается",405)
@@ -620,8 +885,12 @@ class Handler(BaseHTTPRequestHandler):
             safe={k:v for k,v in user.items() if k not in {"pin_hash","pin_salt"}}; safe["role_label"]=ROLE_LABELS.get(user["role"],user["role"])
             return self.send_json({"ok":True,"user":safe})
         if path=="/api/dashboard":
+            if production_ready and 'finance.read' not in permissions:
+                if 'payroll.own' not in permissions:return self.send_json(dict(ok=True,data={}))
+                return self.send_json(dict(ok=True,data=dashboard(dict(user,role='packer'),qs.get('period',['current'])[0])))
             return self.send_json({"ok":True,"data":dashboard(user,qs.get("period",["current"])[0])})
         if path=="/api/clients":
+            if production_ready and not {'clients.read','work.write','tasks.read'} & permissions:raise PermissionError('Нет доступа к клиентам')
             return self.send_json({"ok":True,"clients":get_clients(user,True)})
         if path.startswith("/api/clients/") and path.endswith("/operations"):
             client_id=int(path.split("/")[3])
@@ -631,9 +900,12 @@ class Handler(BaseHTTPRequestHandler):
                 rows=[dict(r) for r in conn.execute("SELECT id,name,employee_rate,client_rate FROM portal_client_operations WHERE client_id=? AND active=1 ORDER BY sort_order,name",(client_id,)).fetchall()]
                 if user["role"] == "packer":
                     rows = [{k:v for k,v in r.items() if k != "client_rate"} for r in rows]
+                if production_ready:
+                    if not {'work.write','clients.read','tasks.read'} & permissions:raise PermissionError('Нет доступа к операциям')
+                    rows=[{k:v for k,v in r.items() if (k!='employee_rate' or 'payroll.own' in permissions or 'rates.employee' in permissions) and (k!='client_rate' or 'finance.read' in permissions or 'rates.client' in permissions)} for r in rows]
             return self.send_json({"ok":True,"client":dict(c),"operations":rows})
         if path.startswith("/api/clients/") and path.count("/")==3:
-            if user["role"] == "packer": raise PermissionError("Нет доступа к финансовой карточке клиента")
+            if not business_can(user,'finance.read',set(ROLE_LABELS)-{'packer'}): raise PermissionError("Нет доступа к финансовой карточке клиента")
             client_id=int(path.split("/")[3])
             with db() as conn:
                 c=allowed_client(conn,user,client_id)
@@ -649,6 +921,7 @@ class Handler(BaseHTTPRequestHandler):
             if not user.get("telegram_id"): return self.send_json({"ok":True,"rows":[]})
             with db() as conn:
                 rows=[dict(r) for r in conn.execute("SELECT id,client,operation,quantity,rate,salary,created_at FROM work_log WHERE telegram_id=? ORDER BY id DESC LIMIT 50",(user["telegram_id"],)).fetchall()]
+                if production_ready and 'payroll.own' not in permissions:rows=[{k:v for k,v in r.items() if k not in ('rate','salary')} for r in rows]
             return self.send_json({"ok":True,"rows":rows})
         if path=="/api/payroll/mine":
             if not user.get("telegram_id"): return self.send_json({"ok":True,"data":{"quantity":0,"accrued":0,"paid":0,"remaining":0}})
@@ -658,7 +931,7 @@ class Handler(BaseHTTPRequestHandler):
                 paid=conn.execute("SELECT COALESCE(SUM(amount),0) FROM payroll_transactions WHERE telegram_id=? AND period_start=? AND period_end=?",(user["telegram_id"],s,e)).fetchone()[0] if table_exists(conn,"payroll_transactions") else 0
             return self.send_json({"ok":True,"data":{"quantity":q[0],"accrued":q[1],"paid":paid,"remaining":max(float(q[1] or 0)-float(paid or 0),0),"start":s,"end":e}})
         if path=="/api/materials":
-            if user["role"] not in {"admin","shift","accountant"}: raise PermissionError("Нет доступа к складу материалов")
+            if not business_can(user,'materials.read',{"admin","director","shift","accountant"}): raise PermissionError("Нет доступа к складу материалов")
             with db() as conn:
                 rows=[dict(r) for r in conn.execute("SELECT id,name,unit,stock_qty,min_stock,unit_cost,active FROM materials WHERE active=1 ORDER BY name").fetchall()] if table_exists(conn,"materials") else []
             return self.send_json({"ok":True,"materials":rows})
@@ -675,30 +948,51 @@ class Handler(BaseHTTPRequestHandler):
                     rows = [{k:v for k,v in r.items() if k in fields} for r in rows]
             return self.send_json({"ok":True,"jobs":rows})
         if path=="/api/invoices":
-            if user["role"] not in {"admin","manager","accountant"}: raise PermissionError("Нет доступа к счетам")
+            if not business_can(user,'invoices.read',{"admin","director","manager","accountant"}): raise PermissionError("Нет доступа к счетам")
             with db() as conn:
-                rows=[dict(r) for r in conn.execute("""
+                client_filter = ""
+                params = ()
+                if user["role"] == "manager":
+                    client_filter = "WHERE i.client IN (SELECT c.name FROM portal_clients c JOIN manager_client_assignments a ON a.client_id=c.id WHERE a.telegram_id=? AND a.active=1)"
+                    params = (user.get("telegram_id"),)
+                rows=[dict(r) for r in conn.execute(f"""
                     SELECT i.id,i.client,i.description,i.amount_due,i.due_date,i.created_at,i.closed_at,
                            COALESCE((SELECT SUM(p.amount) FROM client_payments p WHERE p.invoice_id=i.id),0) paid
-                    FROM client_invoices i ORDER BY i.id DESC LIMIT 100
-                """).fetchall()]
-                if user["role"]=="manager":
-                    allowed=manager_allowed_client_ids(conn,user) or set(); cmap={r["name"]:r["id"] for r in conn.execute("SELECT id,name FROM portal_clients").fetchall()}; rows=[r for r in rows if cmap.get(r["client"]) in allowed]
+                    FROM client_invoices i {client_filter} ORDER BY i.id DESC LIMIT 100
+                """,params).fetchall()]
             return self.send_json({"ok":True,"invoices":rows})
         if path=="/api/users" and method=="GET":
-            if user["role"]!="admin": raise PermissionError("Только администратор")
+            if not business_can(user,'users.manage',{'admin'}): raise PermissionError("Нет права управления сотрудниками")
             with db() as conn:
                 rows=[dict(r) for r in conn.execute("SELECT id,username,display_name,role,telegram_id,active,created_at FROM app_users ORDER BY display_name").fetchall()]
                 employees=[dict(r) for r in conn.execute("SELECT telegram_id,full_name,username FROM employees ORDER BY full_name").fetchall()]
             return self.send_json({"ok":True,"users":rows,"employees":employees,"roles":ROLE_LABELS})
         if path=="/api/users" and method=="POST":
-            if user["role"]!="admin": raise PermissionError("Только администратор")
+            if not business_can(user,'users.manage',{'admin'}): raise PermissionError("Нет права управления сотрудниками")
             return self.send_json({"ok":True,"id":save_user(parse_body(self))})
         return self.error_json("Маршрут не найден",404)
 
 
 def main():
+    import argparse
+    import getpass
+    parser = argparse.ArgumentParser(description="PORTAL company API server")
+    parser.add_argument("--create-platform-owner", metavar="USERNAME", help="Создать технический доступ локально, с интерактивным вводом пароля")
+    parser.add_argument('--migrate-stage3',type=int,metavar='COMPANY_ID',help='Явно подключить производственный учёт к проверенной копии БД компании')
+    args = parser.parse_args()
     ensure_schema()
+    if args.migrate_stage3:
+        with tenants.company_scope(args.migrate_stage3), db() as conn:
+            migrate_production(conn,args.migrate_stage3)
+        print('Миграция Этапа 3 завершена')
+        return
+    if args.create_platform_owner:
+        pin = getpass.getpass("Пароль Platform Owner (минимум 12 символов): ")
+        if pin != getpass.getpass("Повторите пароль: "):
+            raise ValueError("Пароли не совпадают")
+        create_platform_owner(args.create_platform_owner, pin)
+        print("Platform Owner создан. Существующие администраторы не повышались.")
+        return
     print(BUILD_ID)
     print("База:", DB_PATH)
     print(f"Сервер: http://{HOST}:{PORT}")

@@ -1,6 +1,10 @@
-PORTAL Android 2026.09.24-b002 — сервер 2026.09.24-a002
+PORTAL NEXT этап 1: Android 2026.09.24-b002 — сервер 2026.09.24-a003-stage1
 
-1. Обновите portal_app_server.py и start_portal_app.sh в папке server
+Перед обновлением: остановите BOT/API, сделайте резервную копию базы и
+проверьте миграцию на её копии. Описание multi-company, ролей, API владельца
+и ограничений совместимости: ARCHITECTURE_STAGE1.md рядом с этим файлом.
+
+1. Обновите portal_app_server.py, portal_tenancy.py и start_portal_app.sh в папке server
    репозитория PORTAL-Android. Файлы должны находиться рядом.
    База остаётся по прежнему пути: /storage/emulated/0/PORTAL-BOT/portal.db.
 
@@ -12,7 +16,7 @@ PORTAL Android 2026.09.24-b002 — сервер 2026.09.24-a002
    Скрипт можно вызвать из любой текущей папки.
 
 4. Должно появиться:
-   PORTAL Android Server · 2026.09.24-a002
+   PORTAL Android Server · 2026.09.24-a003-stage1
    Сервер: http://0.0.0.0:8765
 
 5. Установите PORTAL_Android_2026.09.24-b002.apk после успешной сборки.

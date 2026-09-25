@@ -2,6 +2,10 @@ plugins {
     id 'com.android.application'
 }
 
+def releaseInfo = new Properties()
+rootProject.file('release.properties').withInputStream { releaseInfo.load(it) }
+def quoted = { String value -> '"' + value.replace('\\', '\\\\').replace('"', '\\"') + '"' }
+
 android {
     namespace 'ru.portal.app'
     compileSdk 35
@@ -14,8 +18,12 @@ android {
         applicationId 'ru.portal.app'
         minSdk 26
         targetSdk 35
-        versionCode 2
-        versionName '2026.09.24-b002'
+        versionCode releaseInfo.getProperty('versionCode').toInteger()
+        versionName releaseInfo.getProperty('versionName')
+        buildConfigField 'String', 'BUILD_NUMBER', quoted(releaseInfo.getProperty('buildNumber'))
+        buildConfigField 'String', 'BUILD_DATE', quoted(releaseInfo.getProperty('buildDate'))
+        buildConfigField 'String', 'RELEASE_CHANNEL', quoted(releaseInfo.getProperty('channel'))
+        buildConfigField 'String', 'UPDATE_MANIFEST_URL', quoted(releaseInfo.getProperty('updateManifestUrl', ''))
     }
 
     buildTypes {
