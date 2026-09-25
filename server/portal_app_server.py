@@ -17,12 +17,13 @@ from production_service import Production
 import production_permissions as business_rights
 from production_migrations import migrate as migrate_production
 import production_activity as activity
+from portal_config import load_config
 
 BUILD_ID = "PORTAL Android Server · 2026.09.25-a003-stage3-dev"
-DEFAULT_DB = "/storage/emulated/0/PORTAL-BOT/portal.db"
-DB_PATH = os.environ.get("PORTAL_DB", DEFAULT_DB)
-HOST = os.environ.get("PORTAL_APP_HOST", "0.0.0.0")
-PORT = int(os.environ.get("PORTAL_APP_PORT", "8765"))
+CONFIG = load_config(os.environ)
+DB_PATH = CONFIG.sqlite_path
+HOST = CONFIG.host
+PORT = CONFIG.port
 OWNER_TELEGRAM_ID = 7835466558
 SESSION_HOURS = 24 * 30
 
@@ -980,6 +981,8 @@ def main():
     parser.add_argument("--create-platform-owner", metavar="USERNAME", help="Создать технический доступ локально, с интерактивным вводом пароля")
     parser.add_argument('--migrate-stage3',type=int,metavar='COMPANY_ID',help='Явно подключить производственный учёт к проверенной копии БД компании')
     args = parser.parse_args()
+    if CONFIG.backend != 'sqlite':
+        raise RuntimeError('PostgreSQL runtime requires the remaining control-plane/API port and integration tests; cutover is blocked')
     ensure_schema()
     if args.migrate_stage3:
         with tenants.company_scope(args.migrate_stage3), db() as conn:

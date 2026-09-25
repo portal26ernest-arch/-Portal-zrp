@@ -5,6 +5,7 @@ plugins {
 def releaseInfo = new Properties()
 rootProject.file('release.properties').withInputStream { releaseInfo.load(it) }
 def quoted = { String value -> '"' + value.replace('\\', '\\\\').replace('"', '\\"') + '"' }
+def portalApiUrl = providers.gradleProperty('portalApiUrl').orElse(providers.environmentVariable('PORTAL_API_URL')).orElse('http://127.0.0.1:8765').get()
 
 android {
     namespace 'ru.portal.app'
@@ -24,6 +25,7 @@ android {
         buildConfigField 'String', 'BUILD_DATE', quoted(releaseInfo.getProperty('buildDate'))
         buildConfigField 'String', 'RELEASE_CHANNEL', quoted(releaseInfo.getProperty('channel'))
         buildConfigField 'String', 'UPDATE_MANIFEST_URL', quoted(releaseInfo.getProperty('updateManifestUrl', ''))
+        buildConfigField 'String', 'DEFAULT_API_URL', quoted(portalApiUrl)
     }
 
     buildTypes {

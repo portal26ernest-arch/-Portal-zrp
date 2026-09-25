@@ -80,7 +80,7 @@ public class MainActivity extends Activity {
         private final WebView webView;
         private final ExecutorService executor = Executors.newFixedThreadPool(3);
         private volatile boolean closed;
-        private static final String DEFAULT_URL = "http://127.0.0.1:8765";
+        private static final String DEFAULT_URL = BuildConfig.DEFAULT_API_URL;
 
         PortalBridge(Context context, WebView webView) {
             this.context = context;
