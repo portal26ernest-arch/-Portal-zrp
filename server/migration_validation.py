@@ -11,13 +11,13 @@ from decimal import Decimal
 
 TABLES = (
     'portal_production', 'portal_production_migrations',
-    'app_users', 'app_sessions', 'portal_clients', 'portal_client_operations',
+    'employees', 'app_users', 'app_sessions', 'portal_clients', 'portal_client_operations',
     'work_log', 'payroll_payments', 'payroll_transactions',
     'client_invoices', 'client_payments', 'materials', 'material_movements',
     'operation_material_norms', 'manager_client_assignments', 'audit_log',
+    'production_jobs', 'production_job_progress', 'work_material_consumption',
 )
-REQUIRED = {'portal_production', 'portal_production_migrations', 'app_users',
-            'portal_clients', 'portal_client_operations', 'work_log'}
+REQUIRED = {'employees', 'portal_clients', 'portal_client_operations', 'work_log'}
 
 
 class ValidationError(ValueError):
@@ -40,27 +40,35 @@ def _columns(conn, dialect, table):
 def _normalize(value):
     if isinstance(value, bytes):
         return {'bytes_sha256': hashlib.sha256(value).hexdigest()}
-    if isinstance(value, (Decimal, float)):
+    if type(value) in (int, float, Decimal):
         return str(Decimal(str(value)).normalize())
     return value
 
 
-def snapshot(conn, dialect, company_id):
+def snapshot(conn, dialect, company_id, projection=None):
     """Hash company-scoped rows without printing credentials or personal data."""
     if type(company_id) is not int or company_id < 1:
         raise ValidationError('Invalid company_id')
     result = {}
     for table in TABLES:
         columns = _columns(conn, dialect, table)
+        if projection is not None and table not in projection:
+            if columns and conn.execute('SELECT 1 FROM ' + table +
+                                        ' WHERE company_id=%s LIMIT 1',
+                                        (company_id,)).fetchone():
+                raise ValidationError('Unexpected target rows: ' + table)
+            continue
         if not columns:
             if table in REQUIRED:
                 raise ValidationError('Missing required table: ' + table)
             continue
         if 'company_id' not in columns:
             raise ValidationError('Missing company_id: ' + table)
-        # The source and destination must contain the same columns, including
-        # monetary snapshots and tariff versions inside portal_production.
-        fields = sorted(columns)
+        # Older SQLite copies may lack columns newly added to PostgreSQL. Hash
+        # every source column in the destination and reject missing columns.
+        fields = sorted(projection[table]['columns'] if projection is not None else columns)
+        if not set(fields).issubset(columns):
+            raise ValidationError('Missing target columns: ' + table)
         placeholder = '%s' if dialect == 'postgresql' else '?'
         cursor = conn.execute('SELECT ' + ','.join(fields) + ' FROM ' + table +
                               ' WHERE company_id=' + placeholder, (company_id,))
@@ -70,9 +78,9 @@ def snapshot(conn, dialect, company_id):
             if not rows:
                 break
             for row in rows:
-                record = dict(zip(fields, (_normalize(value) for value in row)))
-                if record['company_id'] != company_id:
+                if row[fields.index('company_id')] != company_id:
                     raise ValidationError('Company scope mismatch: ' + table)
+                record = dict(zip(fields, (_normalize(value) for value in row)))
                 if table == 'portal_production':
                     try:
                         payload = (record['payload'] if isinstance(record['payload'], dict)

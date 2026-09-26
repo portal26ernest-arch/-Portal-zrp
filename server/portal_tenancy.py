@@ -14,6 +14,17 @@ from pathlib import Path
 COMPANY_ID = ContextVar("portal_company_id", default=1)
 COMPANY_FIELDS = {"name", "status", "monthly_price", "demo_enabled", "demo_start",
                   "demo_end", "user_limit", "service_status"}
+_CONFIG = None
+
+
+def configure(config):
+    """Choose storage once, before accepting requests; never fall back on errors."""
+    global _CONFIG
+    _CONFIG = config
+
+
+def is_postgresql():
+    return _CONFIG is not None and _CONFIG.backend == 'postgresql'
 
 
 class Connection(sqlite3.Connection):
@@ -37,6 +48,9 @@ def platform_path(root):
 
 
 def control(root):
+    if is_postgresql():
+        from portal_postgres import connect
+        return connect(_CONFIG.control_dsn)
     return connect_file(platform_path(root))
 
 
@@ -145,6 +159,13 @@ def available(company):
 def tenant_connection(root):
     cid = COMPANY_ID.get()
     get_company(root, cid)
+    if is_postgresql():
+        from portal_postgres import connect
+        with control(root) as registry:
+            row = registry.execute('SELECT secret FROM portal_company_keys WHERE company_id=?', (cid,)).fetchone()
+        if row is None:
+            raise PermissionError('Контекст компании не подготовлен')
+        return connect(_CONFIG.postgres_dsn, cid, row[0])
     conn = connect_file(tenant_path(root, cid))
     try:
         row = conn.execute("SELECT company_id FROM portal_tenant_identity").fetchone()
@@ -205,8 +226,14 @@ def company_values(body, old=None):
     return values
 
 
-def provision(root, company_id):
+def provision(root, company_id, registry=None):
     """Copy schema only, never customer rows, credentials or session data."""
+    if is_postgresql():
+        if registry is None:
+            raise RuntimeError('PostgreSQL company provisioning requires its registry transaction')
+        # The company and its initial readiness markers commit atomically.
+        registry.execute('SELECT portal_provision_company(?)', (company_id,))
+        return
     target = tenant_path(root, company_id)
     target.parent.mkdir(exist_ok=True)
     # Exclusive creation: never overwrite a database left by an interrupted run.
@@ -249,6 +276,6 @@ def save_company(root, actor_id, body, company_id=None):
         else:
             company_id = conn.execute("INSERT INTO companies(" + ",".join(values) + ",created_at,updated_at) VALUES(" + ",".join("?" for _ in values) + ",?,?)",
                                       (*values.values(), now, now)).lastrowid
-            provision(root, company_id)
+            provision(root, company_id, conn) if is_postgresql() else provision(root, company_id)
         audit(conn, actor_id, company_id, "company_updated" if old else "company_created", "success", fields=sorted(body))
         return company_id

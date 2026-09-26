@@ -12,6 +12,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from migration_validation import ValidationError
+from migration_context import bind_company
 
 REQUIRED = {
     'portal_clients': {'id', 'name'},
@@ -139,7 +140,7 @@ def prepared_source(conn, company_id):
 
 def _canon(value):
     if isinstance(value, bytes): return {'sha256': hashlib.sha256(value).hexdigest()}
-    if isinstance(value, (float, Decimal)): return str(Decimal(str(value)).normalize())
+    if type(value) in (int, float, Decimal): return str(Decimal(str(value)).normalize())
     return value
 
 
@@ -176,7 +177,7 @@ def money_from_rows(rows, fields, table):
                 if payload.get(field) is not None:
                     key = 'ledger/' + item['kind'] + '.' + field
                     totals[key] = totals.get(key, Decimal(0)) + Decimal(str(payload[field]))
-    return {key: str(value) for key, value in totals.items()}
+    return {key: format(value.normalize(), 'f') for key, value in totals.items()}
 
 
 def summary(conn, columns, company_id):
@@ -193,6 +194,42 @@ def summary(conn, columns, company_id):
     return {'counts': counts, 'money': totals, 'digests': digests}
 
 
+def identity_maxima(tenants, control=None):
+    """Find the highest imported integer ID across all source companies."""
+    maxima = {}
+    sources = [source for _, source in tenants]
+    if control is not None:
+        sources.append(control)
+    else:
+        maxima['companies'] = 1
+    for source in sources:
+        for table in source_tables(source):
+            if 'id' not in source_columns(source, table):
+                continue
+            value = source.execute('SELECT MAX(id) FROM ' + ident(table)).fetchone()[0]
+            if type(value) is int and value > 0:
+                maxima[table] = max(maxima.get(table, 0), value)
+    return maxima
+
+
+def sync_identity_sequences(target, maxima):
+    """Advance generated IDs after successful row reconciliation.
+
+    PostgreSQL sequences are not rolled back with a transaction. Call this only
+    after all imported rows have passed verification, on a dedicated empty DB.
+    """
+    checked = 0
+    for table, maximum in sorted(maxima.items()):
+        sequence = target.execute("SELECT pg_get_serial_sequence(%s,'id')",
+                                  ('public.' + ident(table),)).fetchone()[0]
+        if sequence is None:
+            continue
+        target.execute('SELECT setval(%s::regclass,GREATEST(%s,nextval(%s::regclass)),true)',
+                       (sequence, maximum, sequence))
+        checked += 1
+    return checked
+
+
 def target_columns(target, table, dialect):
     if dialect == 'sqlite':
         return [r[1] for r in target.execute('PRAGMA table_info(' + ident(table) + ')')]
@@ -207,7 +244,7 @@ def transfer(source, target, company_id, dialect='postgresql'):
     expected = summary(source, columns, company_id)
     mark = '%s' if dialect == 'postgresql' else '?'
     if dialect == 'postgresql':
-        target.execute("SELECT set_config('portal.company_id', %s, true)", (str(company_id),))
+        bind_company(target, company_id, provision=True)
     for table, fields in columns.items():
         if not set(fields).issubset(target_columns(target, table, dialect)):
             raise ValidationError('Target schema missing columns: ' + table)
@@ -238,14 +275,22 @@ def transfer_control(source, target, dialect='postgresql'):
     """Import the separate platform copy, or seed the pre-platform primary company."""
     mark = '%s' if dialect == 'postgresql' else '?'
     if source is None:
-        if not {'id', 'name', 'created_at', 'updated_at'}.issubset(
+        required = {'id', 'name', 'created_at', 'updated_at'}
+        if dialect == 'postgresql':
+            required.add('user_limit')
+        if not required.issubset(
                 target_columns(target, 'companies', dialect)):
             raise ValidationError('Target companies schema is incomplete')
         if target.execute('SELECT 1 FROM companies LIMIT 1').fetchone():
             raise ValidationError('Target companies is not empty')
         now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec='seconds')
-        target.execute('INSERT INTO companies(id,name,created_at,updated_at) VALUES('
-                       + ','.join(mark for _ in range(4)) + ')', (1, 'PORTAL', now, now))
+        if dialect == 'postgresql':
+            target.execute('INSERT INTO companies(id,name,user_limit,created_at,updated_at) VALUES('
+                           + ','.join(mark for _ in range(5)) + ')',
+                           (1, 'PORTAL', None, now, now))
+        else:
+            target.execute('INSERT INTO companies(id,name,created_at,updated_at) VALUES('
+                           + ','.join(mark for _ in range(4)) + ')', (1, 'PORTAL', now, now))
         return {'companies': 1, 'legacy_primary_company': True}
     tables = source_tables(source)
     if 'companies' not in tables or not {'id', 'name'}.issubset(source_columns(source, 'companies')):
@@ -266,9 +311,6 @@ def transfer_control(source, target, dialect='postgresql'):
         query = ('INSERT INTO ' + ident(table) + '(' + ','.join(ident(f) for f in fields) +
                  ') VALUES (' + ','.join(mark for _ in fields) + ')')
         for row in source.execute(selection):
-            if dialect == 'postgresql' and 'company_id' in fields:
-                target.execute("SELECT set_config('portal.company_id', %s, true)",
-                               (str(row[fields.index('company_id')]),))
             target.execute(query, row)
         if _digest(target.execute(selection), fields) != expected:
             raise ValidationError('Migration FAILED: platform mismatch in ' + table)

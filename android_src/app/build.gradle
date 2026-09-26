@@ -29,8 +29,19 @@ android {
     }
 
     buildTypes {
+        debug {
+            manifestPlaceholders = [usesCleartextTraffic: "true", appLabel: "PORTAL DEV"]
+        }
         release {
             minifyEnabled false
+            manifestPlaceholders = [usesCleartextTraffic: "false", appLabel: "PORTAL"]
+        }
+        staging {
+            initWith debug
+            applicationIdSuffix ".staging"
+            versionNameSuffix "-staging"
+            manifestPlaceholders = [usesCleartextTraffic: "true", appLabel: "PORTAL STAGING"]
+            matchingFallbacks = ["debug"]
         }
     }
 

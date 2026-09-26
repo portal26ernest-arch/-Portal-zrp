@@ -12,6 +12,7 @@ class Config:
     host: str
     port: int
     public_api_url: str
+    control_dsn: str = field(default='', repr=False)
 
 
 def load_config(env):
@@ -37,7 +38,13 @@ def load_config(env):
     dsn = env.get('PORTAL_DATABASE_URL', '')
     if backend == 'postgresql' and not dsn:
         raise ValueError('PORTAL_DATABASE_URL is required for PostgreSQL')
+    control_dsn = env.get('PORTAL_CONTROL_DATABASE_URL', '')
+    if backend == 'postgresql' and not control_dsn:
+        raise ValueError('PORTAL_CONTROL_DATABASE_URL is required for PostgreSQL')
+    # This rollout only authorizes isolated PostgreSQL test instances.
+    if backend == 'postgresql' and environment != 'test':
+        raise ValueError('PostgreSQL runtime is currently enabled only for PORTAL_ENV=test')
     return Config(environment, backend,
                   env.get('PORTAL_DB', '/storage/emulated/0/PORTAL-BOT/portal.db'),
-                  dsn, env.get('PORTAL_APP_HOST', '127.0.0.1' if environment == 'production' else '0.0.0.0'),
-                  port, url)
+                  dsn, env.get('PORTAL_APP_HOST', '127.0.0.1' if environment == 'production' or backend == 'postgresql' else '0.0.0.0'),
+                  port, url, control_dsn)

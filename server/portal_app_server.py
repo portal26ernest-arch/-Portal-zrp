@@ -8,6 +8,7 @@ import os
 import secrets
 import sqlite3
 import sys
+from decimal import Decimal
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
@@ -22,6 +23,7 @@ from portal_config import load_config
 BUILD_ID = "PORTAL Android Server · 2026.09.25-a003-stage3-dev"
 CONFIG = load_config(os.environ)
 DB_PATH = CONFIG.sqlite_path
+tenants.configure(CONFIG)
 HOST = CONFIG.host
 PORT = CONFIG.port
 OWNER_TELEGRAM_ID = 7835466558
@@ -46,14 +48,57 @@ def db():
 
 
 def table_exists(conn, name):
+    if CONFIG.backend == 'postgresql':
+        from portal_postgres import table_exists as pg_table_exists
+        return pg_table_exists(conn, name)
     return conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone() is not None
 
 
 def columns(conn, table):
+    if CONFIG.backend == 'postgresql':
+        from portal_postgres import columns as pg_columns
+        return set(pg_columns(conn, table.strip('"')))
     return {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
 
 
 def ensure_schema():
+    if CONFIG.backend == 'postgresql':
+        from portal_postgres import validate_runtime_role
+        if CONFIG.host not in ('127.0.0.1', '::1'):
+            raise RuntimeError('PostgreSQL API must bind to loopback')
+        with tenants.control(DB_PATH) as registry, tenants.company_scope(1), db() as conn:
+            validate_runtime_role(registry)
+            validate_runtime_role(conn)
+            if registry.execute('SELECT current_database()').fetchone()[0] != conn.execute('SELECT current_database()').fetchone()[0]:
+                raise RuntimeError('Control and tenant roles must use one isolated test database')
+            database_name = conn.execute('SELECT current_database()').fetchone()[0]
+            if CONFIG.environment == 'test' and not database_name.startswith('portal_test_'):
+                raise RuntimeError('Test runtime accepts only portal_test_ PostgreSQL databases')
+            required = {'companies','app_users','app_sessions','portal_clients','portal_client_operations',
+                        'work_log','employees','portal_production','portal_production_migrations',
+                        'work_material_consumption','portal_runtime_schema','portal_rls_context_schema',
+                        'backup_log','client_access','client_invites','client_invoice_items',
+                        'client_name_overrides','client_permissions','employee_access_requests',
+                        'employee_chat_messages','employee_chat_settings','employee_invites',
+                        'expense_requests','managers','marketplace_news','payroll_closure_batches',
+                        'portal_client_requisites','portal_company_requisites',
+                        'portal_manager_service_rates','production_job_assignments','products',
+                        'scheduled_runs','system_settings','tariff_versions','user_roles'}
+            missing = sorted(name for name in required if not table_exists(conn if name not in {'companies'} else registry, name))
+            if missing or not conn.execute('SELECT 1 FROM portal_runtime_schema WHERE version=1').fetchone() or not conn.execute('SELECT 1 FROM portal_rls_context_schema WHERE version=1').fetchone():
+                raise RuntimeError('PostgreSQL runtime schema is incomplete: ' + ', '.join(missing))
+            rls_required = required - {'companies','portal_runtime_schema','portal_rls_context_schema'}
+            placeholders = ','.join('?' for _ in rls_required)
+            checks = conn.execute(
+                f"SELECT count(*),count(*) FILTER (WHERE relrowsecurity AND relforcerowsecurity) "
+                f"FROM pg_class WHERE relname IN ({placeholders})", tuple(sorted(rls_required))
+            ).fetchone()
+            if checks != (len(rls_required), len(rls_required)):
+                raise RuntimeError('Required PostgreSQL company RLS is not forced')
+            triggers = conn.execute("SELECT count(*) FROM pg_trigger WHERE NOT tgisinternal AND tgname IN ('production_immutable','production_batch_number_immutable','portal_no_delete')").fetchone()[0]
+            if triggers < 10:
+                raise RuntimeError('PostgreSQL history triggers are incomplete')
+        return
     if not os.path.exists(DB_PATH):
         raise FileNotFoundError(f"База PORTAL не найдена: {DB_PATH}")
     with tenants.connect_file(DB_PATH) as conn:
@@ -252,10 +297,17 @@ def sync_materials(conn, work_id, operation_id, quantity, actor_id):
             INSERT INTO material_movements(material_id,qty_change,unit_cost,movement_type,reference_type,reference_id,note,created_at,created_by)
             VALUES(?,?,?,?,?,?,?,?,?)
         """, (n[0], -consume, float(n[6] or 0), "work", "work_log", str(work_id), "PORTAL Android: автосписание", now_text(), actor_id))
-        conn.execute("""
-            INSERT OR REPLACE INTO work_material_consumption(work_id,material_id,quantity,unit_cost,updated_at)
-            VALUES(?,?,?,?,?)
-        """, (work_id, n[0], consume, float(n[6] or 0), now_text()))
+        if CONFIG.backend == 'postgresql':
+            conn.execute("""
+                INSERT INTO work_material_consumption(work_id,material_id,quantity,unit_cost,updated_at)
+                VALUES(?,?,?,?,?) ON CONFLICT(company_id,work_id,material_id)
+                DO UPDATE SET quantity=EXCLUDED.quantity,unit_cost=EXCLUDED.unit_cost,updated_at=EXCLUDED.updated_at
+            """, (work_id, n[0], consume, float(n[6] or 0), now_text()))
+        else:
+            conn.execute("""
+                INSERT OR REPLACE INTO work_material_consumption(work_id,material_id,quantity,unit_cost,updated_at)
+                VALUES(?,?,?,?,?)
+            """, (work_id, n[0], consume, float(n[6] or 0), now_text()))
         stock = float(n[4] or 0) - consume
         if stock <= float(n[5] or 0):
             warnings.append(f"{n[2]}: осталось {stock:g} {n[3]}")
@@ -268,20 +320,26 @@ def sync_production(conn, work_id, worker_id, client_name, operation_name, produ
     remaining = float(quantity)
     jobs = conn.execute("""
         SELECT j.id,j.target_quantity,COALESCE(SUM(p.quantity),0) done
-        FROM production_jobs j LEFT JOIN production_job_progress p ON p.job_id=j.id
+        FROM production_jobs j LEFT JOIN production_job_progress p ON p.job_id=j.id AND p.company_id=j.company_id
         WHERE j.client=? AND j.operation=? AND j.status IN ('open','in_progress')
           AND (? IS NULL OR j.product_name IS NULL OR j.product_name='' OR j.product_name=?)
-        GROUP BY j.id ORDER BY j.priority DESC, COALESCE(j.due_at,'9999-12-31'),j.id
+        GROUP BY j.company_id,j.id ORDER BY j.priority DESC, COALESCE(j.due_at,'9999-12-31'),j.id
     """, (client_name, operation_name, product_name, product_name)).fetchall()
     for j in jobs:
         if remaining <= 1e-9: break
         capacity=max(float(j[1])-float(j[2]),0)
         if capacity<=0: continue
         add=min(capacity,remaining)
-        conn.execute("""
-            INSERT OR IGNORE INTO production_job_progress(job_id,work_id,telegram_id,quantity,created_at)
-            VALUES(?,?,?,?,?)
-        """, (j[0],work_id,worker_id,add,now_text()))
+        if CONFIG.backend == 'postgresql':
+            conn.execute("""
+                INSERT INTO production_job_progress(job_id,work_id,telegram_id,quantity,created_at)
+                VALUES(?,?,?,?,?) ON CONFLICT(company_id,job_id,work_id) DO NOTHING
+            """, (j[0],work_id,worker_id,add,now_text()))
+        else:
+            conn.execute("""
+                INSERT OR IGNORE INTO production_job_progress(job_id,work_id,telegram_id,quantity,created_at)
+                VALUES(?,?,?,?,?)
+            """, (j[0],work_id,worker_id,add,now_text()))
         conn.execute("UPDATE production_jobs SET status='in_progress',updated_at=? WHERE id=? AND status='open'", (now_text(),j[0]))
         remaining-=add
         new_done=float(j[2])+add
@@ -471,9 +529,12 @@ def quote_identifier(name):
 def rename_references(conn, old_name, new_name, client=None, client_id=None):
     # The BOT uses text names in its ledger as well as numeric catalogue IDs.
     # Rename those links atomically; quantities, money and IDs remain untouched.
-    tables = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").fetchall()
-    for row in tables:
-        table = row[0]
+    if CONFIG.backend == 'postgresql':
+        from portal_postgres import table_names
+        tables = table_names(conn)
+    else:
+        tables = [row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").fetchall()]
+    for table in tables:
         cols = columns(conn, quote_identifier(table))
         quoted = quote_identifier(table)
         if client is None and "client" in cols:
@@ -601,7 +662,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def send_json(self, data, status=200):
         self.response_status = status
-        raw=json.dumps(data,ensure_ascii=False,default=str).encode("utf-8")
+        raw=json.dumps(data,ensure_ascii=False,default=lambda value: float(value) if isinstance(value,Decimal) else str(value)).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type","application/json; charset=utf-8")
         self.send_header("Cache-Control","no-store")
@@ -939,8 +1000,8 @@ class Handler(BaseHTTPRequestHandler):
         if path=="/api/jobs":
             with db() as conn:
                 rows=[dict(r) for r in conn.execute("""
-                    SELECT j.*,COALESCE(SUM(p.quantity),0) done FROM production_jobs j LEFT JOIN production_job_progress p ON p.job_id=j.id
-                    WHERE j.status IN ('open','in_progress') GROUP BY j.id ORDER BY j.priority DESC,COALESCE(j.due_at,'9999-12-31'),j.id
+                    SELECT j.*,COALESCE(SUM(p.quantity),0) done FROM production_jobs j LEFT JOIN production_job_progress p ON p.job_id=j.id AND p.company_id=j.company_id
+                    WHERE j.status IN ('open','in_progress') GROUP BY j.company_id,j.id ORDER BY j.priority DESC,COALESCE(j.due_at,'9999-12-31'),j.id
                 """).fetchall()] if table_exists(conn,"production_jobs") else []
                 if user["role"]=="manager":
                     allowed=manager_allowed_client_ids(conn,user) or set(); names={r["name"] for r in conn.execute("SELECT id,name FROM portal_clients WHERE id IN (%s)"%(','.join('?'*len(allowed))),tuple(allowed)).fetchall()} if allowed else set(); rows=[r for r in rows if r["client"] in names]
@@ -981,8 +1042,6 @@ def main():
     parser.add_argument("--create-platform-owner", metavar="USERNAME", help="Создать технический доступ локально, с интерактивным вводом пароля")
     parser.add_argument('--migrate-stage3',type=int,metavar='COMPANY_ID',help='Явно подключить производственный учёт к проверенной копии БД компании')
     args = parser.parse_args()
-    if CONFIG.backend != 'sqlite':
-        raise RuntimeError('PostgreSQL runtime requires the remaining control-plane/API port and integration tests; cutover is blocked')
     ensure_schema()
     if args.migrate_stage3:
         with tenants.company_scope(args.migrate_stage3), db() as conn:
@@ -997,7 +1056,7 @@ def main():
         print("Platform Owner создан. Существующие администраторы не повышались.")
         return
     print(BUILD_ID)
-    print("База:", DB_PATH)
+    print("База:", DB_PATH if CONFIG.backend == 'sqlite' else 'PostgreSQL isolated test')
     print(f"Сервер: http://{HOST}:{PORT}")
     ThreadingHTTPServer((HOST,PORT),Handler).serve_forever()
 

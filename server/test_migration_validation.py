@@ -12,6 +12,7 @@ from production_repository import Repository
 def fixture():
     conn = sqlite3.connect(':memory:')
     conn.executescript('''
+        CREATE TABLE employees (telegram_id INTEGER, company_id INTEGER, full_name TEXT);
         CREATE TABLE portal_production (company_id INTEGER, kind TEXT, id TEXT,
             payload TEXT, created_at TEXT, PRIMARY KEY(company_id,kind,id));
         CREATE TABLE portal_production_migrations (company_id INTEGER, version INTEGER,
@@ -27,6 +28,8 @@ def fixture():
         CREATE TABLE client_payments (id INTEGER, company_id INTEGER, amount REAL);
     ''')
     for company_id in (1, 2):
+        conn.execute('INSERT INTO employees VALUES (?,?,?)',
+                     (100 + company_id, company_id, 'Worker'))
         conn.execute('INSERT INTO portal_production_migrations VALUES (?,?,?)',
                      (company_id, 3, '2026-09-25'))
         conn.execute('INSERT INTO app_users VALUES (?,?,?,?,?)',

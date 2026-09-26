@@ -17,13 +17,19 @@ def utcnow():
     return datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec='microseconds')
 
 class Repository:
-    def __init__(self, connection, company_id, dialect='sqlite'):
-        self.conn, self.company_id, self.dialect = connection, company_id, dialect
+    def __init__(self, connection, company_id, dialect=None):
+        self.conn, self.company_id = connection, company_id
+        self.dialect = dialect or getattr(connection, 'dialect', 'sqlite')
         if type(company_id) is not int or company_id < 1: raise PermissionError('Некорректная компания')
-        if dialect=='postgresql':self.sql("SELECT set_config('portal.company_id',?,true)",(str(company_id),))
+        if self.dialect=='postgresql' and getattr(connection,'dialect',None)!='postgresql':
+            # Offline DB-API fakes predate the verified connection adapter.
+            self.sql("SELECT set_config('portal.company_id',?,true)",(str(company_id),))
 
     def sql(self, query, args=()):
-        return self.conn.execute(query.replace('?', '%s') if self.dialect=='postgresql' else query, args)
+        if self.dialect == 'postgresql' and getattr(self.conn, 'dialect', None) != 'postgresql':
+            # Legacy schema tests supply a lightweight DB-API fake.
+            return self.conn.execute(query.replace('?', '%s'), args)
+        return self.conn.execute(query, args)
 
     def lock(self):
         if self.dialect=='postgresql':

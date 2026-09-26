@@ -8,9 +8,13 @@ DDL = [
  'CREATE INDEX IF NOT EXISTS portal_production_lookup ON portal_production(company_id,kind,created_at)',
 ]
 
-def migrate(conn, company_id, dialect='sqlite'):
+def migrate(conn, company_id, dialect=None):
+    dialect = dialect or getattr(conn, 'dialect', 'sqlite')
     r=Repository(conn,company_id,dialect); r.lock()
-    for statement in DDL: r.sql(statement)
+    if dialect == 'sqlite':
+        for statement in DDL: r.sql(statement)
+    elif not r.has_table('portal_production_migrations') or not r.has_table('portal_production'):
+        raise RuntimeError('Apply PostgreSQL schema migrations with the migration operator first')
     if r.ready():
         migrate_activity(r)
         return

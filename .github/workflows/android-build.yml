@@ -3,7 +3,7 @@ name: Build PORTAL Android APK
 on:
   workflow_dispatch:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "portal-next-b003" ]
     paths:
       - "android_src/**"
       - ".github/workflows/android-build.yml"
@@ -15,21 +15,23 @@ jobs:
   build-apk:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
+      - name: Set up Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Verify Android build security policy
+        run: node android_src/tests/build-security.test.cjs
       - name: Set up Java 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
-
       - name: Install Android SDK packages
         shell: bash
         run: |
@@ -37,30 +39,27 @@ jobs:
           if [ ! -x "$SDKMANAGER" ]; then
             SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort | tail -n 1)"
           fi
-          echo "Using sdkmanager: $SDKMANAGER"
           test -x "$SDKMANAGER"
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
-
       - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
-
-      - name: Build debug APK
-        run: gradle -p android_src --stacktrace assembleDebug
-
+      - name: Build isolated staging APK
+        run: gradle -p android_src --stacktrace -PportalApiUrl=http://127.0.0.1:18767 assembleStaging
       - name: Prepare named APK
         id: artifact
         shell: bash
         run: |
           VERSION=$(sed -n 's/^versionName=//p' android_src/release.properties | tr -d '\r')
           [[ "$VERSION" =~ ^[A-Za-z0-9._-]+$ ]]
-          NAME="PORTAL_Android_${VERSION}"
+          NAME="PORTAL_Android_${VERSION}_staging"
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
-          cp android_src/app/build/outputs/apk/debug/app-debug.apk "$NAME.apk"
+          APK=$(find android_src/app/build/outputs/apk/staging -name '*.apk' -type f | head -n 1)
+          test -n "$APK"
+          cp "$APK" "$NAME.apk"
           sha256sum "$NAME.apk" > "$NAME.apk.sha256"
-
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:

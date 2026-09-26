@@ -59,7 +59,7 @@ class MigrationImportTest(unittest.TestCase):
         transfer_control(None, target, 'sqlite')
         result = transfer(source, target, 1, 'sqlite')
         self.assertEqual(result['counts']['work_log'], 1)
-        self.assertEqual(result['money']['work_log.salary'], '4.0')
+        self.assertEqual(result['money']['work_log.salary'], '4')
         self.assertEqual(target.execute('SELECT company_id,client,salary,revenue FROM work_log').fetchone(),
                          (1, 'Историческое имя', 4.0, 10.0))
         self.assertEqual(target.execute('SELECT COUNT(*) FROM companies').fetchone()[0], 1)
@@ -70,7 +70,7 @@ class MigrationImportTest(unittest.TestCase):
         result = run([(1, str(self.copy))])
         self.assertEqual(result['status'], 'DRY_RUN')
         self.assertEqual(result['company_count'], 1)
-        self.assertEqual(result['companies'][0]['money']['client_payments.amount'], '3.0')
+        self.assertEqual(result['companies'][0]['money']['client_payments.amount'], '3')
         with closing(sqlite3.connect(self.copy)) as conn:
             conn.execute('UPDATE portal_client_operations SET client_id=999')
             conn.commit()
@@ -154,8 +154,9 @@ class MigrationImportTest(unittest.TestCase):
         self.assertIn('portal_history_no_delete', sql)
 
     def test_server_config_and_no_silent_postgresql_cutover(self):
-        config = load_config({'PORTAL_ENV': 'production', 'PORTAL_DB_BACKEND': 'postgresql',
+        config = load_config({'PORTAL_ENV': 'test', 'PORTAL_DB_BACKEND': 'postgresql',
                               'PORTAL_DATABASE_URL': 'postgresql://portal@localhost/portal',
+                              'PORTAL_CONTROL_DATABASE_URL': 'postgresql://control@localhost/portal',
                               'PORTAL_PUBLIC_API_URL': 'https://portal.example.invalid'})
         self.assertEqual(config.backend, 'postgresql')
         self.assertEqual(config.host, '127.0.0.1')
@@ -164,6 +165,11 @@ class MigrationImportTest(unittest.TestCase):
             load_config({'PORTAL_ENV': 'production', 'PORTAL_PUBLIC_API_URL': 'http://example.com'})
         with self.assertRaises(ValueError):
             load_config({'PORTAL_DB_BACKEND': 'postgresql'})
+        with self.assertRaises(ValueError):
+            load_config({'PORTAL_ENV': 'production', 'PORTAL_DB_BACKEND': 'postgresql',
+                         'PORTAL_DATABASE_URL': 'postgresql://tenant@localhost/portal',
+                         'PORTAL_CONTROL_DATABASE_URL': 'postgresql://control@localhost/portal',
+                         'PORTAL_PUBLIC_API_URL': 'https://portal.example.invalid'})
 
 
 if __name__ == '__main__': unittest.main()

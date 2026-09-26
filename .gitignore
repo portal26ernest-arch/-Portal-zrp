@@ -21,3 +21,7 @@ venv/
 backups/
 reports/
 .tools/
+
+# Local VPS credentials and host trust (never commit)
+/infra_vps_01
+/infra_vps_01_known_hosts

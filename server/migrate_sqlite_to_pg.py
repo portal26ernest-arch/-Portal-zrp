@@ -11,7 +11,8 @@ from contextlib import ExitStack, closing
 from pathlib import Path
 
 from migration_import import (ValidationError, open_copy, prepared_source,
-                              summary, transfer, transfer_control)
+                              summary, transfer, transfer_control,
+                              identity_maxima, sync_identity_sequences)
 
 
 def parse_tenant(spec):
@@ -58,6 +59,8 @@ def run(tenant_specs, platform_path=None, apply=False, dsn=None):
                     before = next(x for x in report['companies'] if x['company_id'] == cid)
                     if transferred['counts'] != before['counts'] or transferred['money'] != before['money']:
                         raise ValidationError('Migration FAILED: company reconciliation')
+                report['identity_sequences_checked'] = sync_identity_sequences(
+                    target, identity_maxima(tenants, control))
         report['status'] = 'IMPORTED_AND_VERIFIED'
         return report
 

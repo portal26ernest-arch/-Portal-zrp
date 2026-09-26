@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 from migration_validation import ValidationError, compare, snapshot
+from migration_context import bind_company
 
 
 def validate(sqlite_copy, company_ids, pg_dsn):
@@ -27,10 +28,10 @@ def validate(sqlite_copy, company_ids, pg_dsn):
             with target.transaction():
                 target.execute('SET TRANSACTION READ ONLY')
                 for company_id in company_ids:
-                    target.execute("SELECT set_config('portal.company_id', %s, true)",
-                                   (str(company_id),))
-                    compare(snapshot(source, 'sqlite', company_id),
-                            snapshot(target, 'postgresql', company_id))
+                    bind_company(target, company_id)
+                    source_facts = snapshot(source, 'sqlite', company_id)
+                    compare(source_facts, snapshot(target, 'postgresql', company_id,
+                                                   projection=source_facts))
                     print('Validated company_id=' + str(company_id))
 
 
