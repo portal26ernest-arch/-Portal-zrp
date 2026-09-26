@@ -18,6 +18,10 @@ jobs:
       PORTAL_ANDROID_KEY_ALIAS: ${{ secrets.PORTAL_ANDROID_KEY_ALIAS }}
       PORTAL_ANDROID_KEY_PASSWORD: ${{ secrets.PORTAL_ANDROID_KEY_PASSWORD }}
     steps:
+      - name: Require main branch
+        shell: bash
+        run: |
+          test "$GITHUB_REF" = "refs/heads/main"
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
