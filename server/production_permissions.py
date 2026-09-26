@@ -1,5 +1,5 @@
 """Business capabilities. No platform authority can be delegated here."""
-ROLE_NAMES = {'packer':'Сборщик','manager':'Менеджер','director':'Управляющий',
+ROLE_NAMES = {'packer':'Сборщик','manager':'Менеджер','director':'Директор',
               'admin':'Администратор','shift':'Старший смены','accountant':'Бухгалтер'}
 # code, group, label, recommended roles
 CATALOG = [
@@ -13,7 +13,7 @@ CATALOG = [
  ('payroll.own','Зарплата','Просматривать свою зарплату','packer manager director admin shift accountant'),
  ('payroll.all','Зарплата','Видеть зарплату других сотрудников','director admin accountant'),
  ('clients.read','Клиенты','Просматривать карточки клиентов','manager director admin accountant shift'),
- ('clients.manage','Клиенты','Изменять справочник клиентов и операций','admin'),
+ ('clients.manage','Клиенты','Изменять справочник клиентов и операций','director admin'),
  ('rates.employee','Тарифы','Изменять тарифы сотрудников','director admin'),
  ('rates.client','Тарифы','Изменять цены для клиентов','manager director admin'),
  ('materials.read','Склад','Просматривать остатки материалов','director admin shift accountant'),
