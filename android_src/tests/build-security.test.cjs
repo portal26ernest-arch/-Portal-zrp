@@ -17,3 +17,6 @@ must(/staging\s*\{[\s\S]*?applicationIdSuffix\s+"\.staging"/m.test(gradle),
 must(/staging\s*\{[\s\S]*?usesCleartextTraffic:\s*"true"/m.test(gradle),
   'Staging build must allow the local HTTP tunnel');
 console.log('Android build security checks: OK');
+
+must(gradle.includes("PORTAL_ANDROID_KEYSTORE") && gradle.includes("portalRelease"),
+  'Release signing must be sourced from environment secrets');

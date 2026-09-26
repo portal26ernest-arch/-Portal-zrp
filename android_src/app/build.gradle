@@ -11,6 +11,23 @@ android {
     namespace 'ru.portal.app'
     compileSdk 35
 
+    def releaseKeystore = System.getenv('PORTAL_ANDROID_KEYSTORE')
+    def releaseStorePassword = System.getenv('PORTAL_ANDROID_STORE_PASSWORD')
+    def releaseKeyAlias = System.getenv('PORTAL_ANDROID_KEY_ALIAS')
+    def releaseKeyPassword = System.getenv('PORTAL_ANDROID_KEY_PASSWORD')
+    def releaseSigningReady = [releaseKeystore, releaseStorePassword, releaseKeyAlias, releaseKeyPassword].every { it }
+
+    signingConfigs {
+        if (releaseSigningReady) {
+            portalRelease {
+                storeFile file(releaseKeystore)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
+
     buildFeatures {
         buildConfig true
     }
@@ -35,6 +52,7 @@ android {
         release {
             minifyEnabled false
             manifestPlaceholders = [usesCleartextTraffic: "false", appLabel: "PORTAL"]
+            if (releaseSigningReady) signingConfig signingConfigs.portalRelease
         }
         staging {
             initWith debug

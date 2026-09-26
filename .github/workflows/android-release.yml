@@ -1,0 +1,82 @@
+name: Build signed PORTAL Android release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  signed-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+      PORTAL_PUBLIC_API_URL: ${{ secrets.PORTAL_PUBLIC_API_URL }}
+      PORTAL_ANDROID_STORE_PASSWORD: ${{ secrets.PORTAL_ANDROID_STORE_PASSWORD }}
+      PORTAL_ANDROID_KEY_ALIAS: ${{ secrets.PORTAL_ANDROID_KEY_ALIAS }}
+      PORTAL_ANDROID_KEY_PASSWORD: ${{ secrets.PORTAL_ANDROID_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Enforce release security policy
+        run: node android_src/tests/build-security.test.cjs
+      - name: Validate release inputs
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.PORTAL_ANDROID_KEYSTORE_B64 }}
+        run: |
+          set -euo pipefail
+          [[ "$PORTAL_PUBLIC_API_URL" == https://* ]]
+          test -n "$KEYSTORE_B64"
+          test -n "$PORTAL_ANDROID_STORE_PASSWORD"
+          test -n "$PORTAL_ANDROID_KEY_ALIAS"
+          test -n "$PORTAL_ANDROID_KEY_PASSWORD"
+          VERSION=$(sed -n 's/^versionName=//p' android_src/release.properties | tr -d '\r')
+          [[ "$VERSION" != *-dev* ]]
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/portal-release.jks"
+          chmod 600 "$RUNNER_TEMP/portal-release.jks"
+          echo "PORTAL_ANDROID_KEYSTORE=$RUNNER_TEMP/portal-release.jks" >> "$GITHUB_ENV"
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Install Android SDK
+        shell: bash
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort | tail -n 1)"
+          fi
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+      - name: Build signed HTTPS release
+        run: gradle -p android_src --stacktrace -PportalApiUrl="$PORTAL_PUBLIC_API_URL" assembleRelease
+      - name: Verify and name release
+        id: artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=$(find android_src/app/build/outputs/apk/release -name '*.apk' -type f | head -n 1)
+          test -n "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
+          VERSION=$(sed -n 's/^versionName=//p' android_src/release.properties | tr -d '\r')
+          NAME="PORTAL_Android_${VERSION}_release"
+          cp "$APK" "$NAME.apk"
+          sha256sum "$NAME.apk" > "$NAME.apk.sha256"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.artifact.outputs.name }}
+          path: |
+            ${{ steps.artifact.outputs.name }}.apk
+            ${{ steps.artifact.outputs.name }}.apk.sha256
+          if-no-files-found: error
+          retention-days: 30
