@@ -529,10 +529,12 @@ def save_user(body, user_id=None):
             salt, digest = hash_pin(pin)
         else:
             salt, digest = old["pin_salt"], old["pin_hash"]
-        create_employee = body.get("create_employee", False)
+        create_employee = body.get("create_employee", True if not old and tg is None else False)
         if type(create_employee) is not bool:
             raise ValueError("Некорректный режим создания сотрудника")
-        if not old and tg is None and create_employee:
+        if not old and tg is None:
+            if not create_employee:
+                raise ValueError("Для доступа существующего сотрудника выберите его карточку")
             tg = create_internal_employee(conn, display, username)
         if role == "packer" and tg is None:
             raise ValueError("Упаковщик должен иметь собственную карточку сотрудника")

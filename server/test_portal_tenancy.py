@@ -74,7 +74,12 @@ class CompanyIsolationTest(unittest.TestCase):
         self.assertEqual(self.request("/api/invoices",self.admin)["invoices"][0]["paid"],10)
         self.assertEqual(self.request("/api/invoices",self.other_admin)["invoices"][0]["paid"],20)
         self.assertEqual(self.request("/api/jobs",self.other_worker)["jobs"],[])
-        self.assertEqual(len(self.request("/api/users",self.other_admin)["employees"]),1)
+        other_employees=self.request("/api/users",self.other_admin)["employees"]
+        portal_employees=self.request("/api/users",self.admin)["employees"]
+        self.assertTrue(other_employees)
+        self.assertTrue(portal_employees)
+        self.assertIn("Other Worker",{e["full_name"] for e in other_employees})
+        self.assertNotIn("Other Worker",{e["full_name"] for e in portal_employees})
         self.request("/api/clients/900",self.admin,status=403)
         with portal.db() as conn:
             # Unmodified BOT queries still see only PORTAL business rows.
