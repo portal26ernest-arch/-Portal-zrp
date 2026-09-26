@@ -1,6 +1,7 @@
 """Central server settings. Secrets are read from the environment, never logged."""
 from dataclasses import dataclass, field
 from urllib.parse import urlsplit
+from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -41,10 +42,12 @@ def load_config(env):
     control_dsn = env.get('PORTAL_CONTROL_DATABASE_URL', '')
     if backend == 'postgresql' and not control_dsn:
         raise ValueError('PORTAL_CONTROL_DATABASE_URL is required for PostgreSQL')
-    # This rollout only authorizes isolated PostgreSQL test instances.
-    if backend == 'postgresql' and environment != 'test':
-        raise ValueError('PostgreSQL runtime is currently enabled only for PORTAL_ENV=test')
+    if backend == 'postgresql' and environment == 'development':
+        raise ValueError('PostgreSQL runtime requires PORTAL_ENV=test or production')
+    if backend == 'postgresql' and environment == 'production':
+        if env.get('PORTAL_ENABLE_POSTGRES_PRODUCTION', '').lower() != 'true':
+            raise ValueError('Production PostgreSQL requires explicit PORTAL_ENABLE_POSTGRES_PRODUCTION=true')
     return Config(environment, backend,
-                  env.get('PORTAL_DB', '/storage/emulated/0/PORTAL-BOT/portal.db'),
+                  env.get('PORTAL_DB', str(Path.cwd() / 'portal.db')),
                   dsn, env.get('PORTAL_APP_HOST', '127.0.0.1' if environment == 'production' or backend == 'postgresql' else '0.0.0.0'),
                   port, url, control_dsn)

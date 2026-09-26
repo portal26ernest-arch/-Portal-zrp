@@ -29,6 +29,10 @@ jobs:
         run: node android_src/tests/build-security.test.cjs
       - name: Verify employee creation modes
         run: node android_src/tests/employee-create-mode.test.cjs
+      - name: Verify native fullscreen shell
+        run: node android_src/tests/native-shell.test.cjs
+      - name: Verify retired runtime boundary
+        run: node android_src/tests/legacy-boundary.test.cjs
       - name: Set up Java 17
         uses: actions/setup-java@v5
         with:

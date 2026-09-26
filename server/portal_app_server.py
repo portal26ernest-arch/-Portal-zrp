@@ -20,13 +20,12 @@ from production_migrations import migrate as migrate_production
 import production_activity as activity
 from portal_config import load_config
 
-BUILD_ID = "PORTAL Android Server · 2026.09.25-a003-stage3-dev"
+BUILD_ID = "PORTAL Server · 3.0-dev"
 CONFIG = load_config(os.environ)
 DB_PATH = CONFIG.sqlite_path
 tenants.configure(CONFIG)
 HOST = CONFIG.host
 PORT = CONFIG.port
-OWNER_TELEGRAM_ID = 7835466558
 SESSION_HOURS = 24 * 30
 
 ROLE_LABELS = {
@@ -903,11 +902,12 @@ class Handler(BaseHTTPRequestHandler):
                 conn.execute("BEGIN IMMEDIATE")
                 if conn.execute("SELECT COUNT(*) FROM app_users").fetchone()[0]>0: raise PermissionError("Первичная настройка уже выполнена")
                 salt,ph=hash_pin(pin)
-                tg=OWNER_TELEGRAM_ID if conn.execute("SELECT 1 FROM employees WHERE telegram_id=?",(OWNER_TELEGRAM_ID,)).fetchone() else None
+                # APK/desktop accounts are independent from the retired Telegram identity.
+                # An employee card can be linked explicitly later by a company administrator.
                 cur=conn.execute("INSERT INTO app_users(username,display_name,pin_salt,pin_hash,role,telegram_id,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
-                                 (username,name,salt,ph,"admin",tg,1,now_text(),now_text()))
+                                 (username,name,salt,ph,"admin",None,1,now_text(),now_text()))
                 token=create_session(conn,cur.lastrowid); conn.commit()
-            return self.send_json({"ok":True,"token":token,"user":{"username":username,"display_name":name,"role":"admin","telegram_id":tg}})
+            return self.send_json({"ok":True,"token":token,"user":{"username":username,"display_name":name,"role":"admin","employee_id":None,"telegram_id":None}})
         user=self.current_user()
         if not user: return self.error_json("Требуется вход",401)
         with db() as connection:

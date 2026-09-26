@@ -4,7 +4,7 @@
 -- This migration must be reviewed and tested only on an isolated database first.
 --
 -- Goals:
--- 1. Preserve legacy business tables still used by the live Telegram bot.
+-- 1. Preserve legacy SQLite business tables during the APK/desktop migration.
 -- 2. Preserve legacy columns missing from the Stage 4B PostgreSQL core.
 -- 3. Add company_id isolation and FORCE RLS before any production use.
 -- 4. Preserve financial and production history without rewriting source data.

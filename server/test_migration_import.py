@@ -165,11 +165,16 @@ class MigrationImportTest(unittest.TestCase):
             load_config({'PORTAL_ENV': 'production', 'PORTAL_PUBLIC_API_URL': 'http://example.com'})
         with self.assertRaises(ValueError):
             load_config({'PORTAL_DB_BACKEND': 'postgresql'})
+        production={'PORTAL_ENV': 'production', 'PORTAL_DB_BACKEND': 'postgresql',
+                    'PORTAL_DATABASE_URL': 'postgresql://tenant@localhost/portal',
+                    'PORTAL_CONTROL_DATABASE_URL': 'postgresql://control@localhost/portal',
+                    'PORTAL_PUBLIC_API_URL': 'https://portal.example.invalid'}
         with self.assertRaises(ValueError):
-            load_config({'PORTAL_ENV': 'production', 'PORTAL_DB_BACKEND': 'postgresql',
-                         'PORTAL_DATABASE_URL': 'postgresql://tenant@localhost/portal',
-                         'PORTAL_CONTROL_DATABASE_URL': 'postgresql://control@localhost/portal',
-                         'PORTAL_PUBLIC_API_URL': 'https://portal.example.invalid'})
+            load_config(production)
+        production['PORTAL_ENABLE_POSTGRES_PRODUCTION']='true'
+        prod_config=load_config(production)
+        self.assertEqual(prod_config.environment,'production')
+        self.assertEqual(prod_config.host,'127.0.0.1')
 
 
 if __name__ == '__main__': unittest.main()

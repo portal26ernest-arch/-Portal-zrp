@@ -78,3 +78,22 @@ GO только если: GitHub CI зелёный; HTTPS зелёный; signed
 NO-GO при любом mismatch данных, ошибке RLS, unsigned/debug release, HTTP production URL, отсутствующем backup или невозможности restore.
 Телефон можно отключить от компьютера только после финального snapshot, успешного production import, Android cutover и контрольной проверки persistence.
 Финальная фраза разрешения: **✅ ТЕЛЕФОН МОЖНО ОТКЛЮЧАТЬ ОТ КОМПЬЮТЕРА**.
+
+
+## Build numbering and VPS-first rule — 2026-09-27
+
+- User-facing PORTAL builds use decimal sequence: 3.0, 3.1, 3.2 ... 3.9, 4.0.
+- Android versionCode remains a monotonically increasing integer; buildNumber/versionName expose the decimal PORTAL build.
+- Every new build increments exactly one step; a reused build number is forbidden.
+- The purchased VPS is the primary integration environment after local unit/security checks. Do not repeat the same full integration suite on the phone server.
+- The Android phone is a client after production cutover, not an application/database server.
+- Until final cutover, the phone SQLite is the authoritative live source and is used for the final write-freeze snapshot.
+- Production cutover requires HTTPS, a verified final import, backup/restore proof and explicit approval before accepting real writes.
+- Never accept simultaneous production writes on the old phone SQLite and the new PostgreSQL service.
+
+## Android fullscreen requirement
+
+- PORTAL Android uses immersive sticky fullscreen mode.
+- The system navigation/status UI may be temporarily revealed by Android gestures but must not permanently cover PORTAL controls.
+- Returning focus to PORTAL must restore immersive mode.
+- CI must reject removal of the fullscreen native-shell flags.
