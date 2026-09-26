@@ -169,6 +169,22 @@ class PortalAPITest(unittest.TestCase):
         self.assertEqual(self.request("/api/work/mine",self.worker)["rows"],[])
         self.assertEqual(self.request("/api/payroll/mine",self.worker)["data"]["accrued"],0)
 
+    def test_new_user_gets_own_employee_without_existing_link(self):
+        first=self.request("/api/users",self.admin,{"username":"fresh1","display_name":"Fresh One","pin":"4321","role":"packer","create_employee":True})["id"]
+        second=self.request("/api/users",self.admin,{"username":"fresh2","display_name":"Fresh Two","pin":"4321","role":"director","create_employee":True})["id"]
+        with portal.db() as conn:
+            a=conn.execute("SELECT telegram_id FROM app_users WHERE id=?",(first,)).fetchone()[0]
+            b=conn.execute("SELECT telegram_id FROM app_users WHERE id=?",(second,)).fetchone()[0]
+            self.assertLess(a,0)
+            self.assertLess(b,0)
+            self.assertNotEqual(a,b)
+            self.assertEqual(conn.execute("SELECT full_name FROM employees WHERE telegram_id=?",(a,)).fetchone()[0],"Fresh One")
+            self.assertEqual(conn.execute("SELECT full_name FROM employees WHERE telegram_id=?",(b,)).fetchone()[0],"Fresh Two")
+        linked=self.request("/api/users",self.admin,{"username":"linked","display_name":"Existing","pin":"4321","role":"packer","telegram_id":202})["id"]
+        with portal.db() as conn:
+            self.assertEqual(conn.execute("SELECT telegram_id FROM app_users WHERE id=?",(linked,)).fetchone()[0],202)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM employees").fetchone()[0],4)
+
     def test_user_lifecycle_revokes_old_sessions(self):
         uid=self.request("/api/users",self.admin,{"username":"new","pin":"4321","role":"packer","telegram_id":202})["id"]
         token=self.login("new","4321")["token"]

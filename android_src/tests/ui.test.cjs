@@ -241,3 +241,10 @@ test('browser UI regression',async t=>{
     });
   }finally{await browser.close();}
 });
+
+test('new employee creation is independent from existing employees',()=>{
+  const source=fs.readFileSync(path.join(assets,'screens.js'),'utf8');
+  assert.match(source,/Создать нового сотрудника/);
+  assert.match(source,/body\.create_employee=true/);
+  assert.match(source,/Выберите человека из списка только для выдачи доступа уже существующему сотруднику/);
+});

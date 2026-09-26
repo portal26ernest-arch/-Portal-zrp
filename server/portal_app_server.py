@@ -461,15 +461,33 @@ def rate_value(value):
     return rate
 
 
-def validate_employee(conn, value, role):
+def validate_employee(conn, value):
     try:
         employee_id = int(value) if value not in (None, "") else None
     except (ValueError, TypeError):
         raise ValueError("Выберите сотрудника PORTAL")
-    if employee_id is not None and not conn.execute("SELECT 1 FROM employees WHERE telegram_id=?", (employee_id,)).fetchone():
-        raise ValueError("Сотрудник PORTAL не найден")
-    if role == "packer" and employee_id is None:
-        raise ValueError("Упаковщика необходимо привязать к сотруднику PORTAL")
+    if employee_id is not None:
+        cols = columns(conn, "employees")
+        if "company_id" in cols:
+            found = conn.execute("SELECT 1 FROM employees WHERE company_id=? AND telegram_id=?", (tenants.COMPANY_ID.get(), employee_id)).fetchone()
+        else:
+            found = conn.execute("SELECT 1 FROM employees WHERE telegram_id=?", (employee_id,)).fetchone()
+        if not found:
+            raise ValueError("Сотрудник PORTAL не найден")
+    return employee_id
+
+
+def create_internal_employee(conn, display_name, username):
+    cols = columns(conn, "employees")
+    company_id = tenants.COMPANY_ID.get()
+    if "company_id" in cols:
+        row = conn.execute("SELECT MIN(telegram_id) FROM employees WHERE company_id=? AND telegram_id<0", (company_id,)).fetchone()
+    else:
+        row = conn.execute("SELECT MIN(telegram_id) FROM employees WHERE telegram_id<0").fetchone()
+    employee_id = min((row[0] or 0) - 1, -1)
+    values = {"telegram_id": employee_id, "full_name": display_name, "username": username, "company_id": company_id}
+    values = {k: v for k, v in values.items() if k in cols}
+    conn.execute("INSERT INTO employees(" + ",".join(values) + ") VALUES(" + ",".join("?" for _ in values) + ")", tuple(values.values()))
     return employee_id
 
 
@@ -498,7 +516,7 @@ def save_user(body, user_id=None):
             count = conn.execute("SELECT COUNT(*) FROM app_users WHERE active=1").fetchone()[0]
             if count >= limit:
                 raise ValueError("Достигнут лимит активных пользователей компании")
-        tg = validate_employee(conn, values["telegram_id"], role)
+        tg = validate_employee(conn, values["telegram_id"])
         if conn.execute("SELECT 1 FROM app_users WHERE username=? AND id!=?", (username, user_id or 0)).fetchone():
             raise ValueError("Этот логин уже занят")
         if old and old["role"] == "admin" and old["active"] and (role != "admin" or not active):
@@ -511,6 +529,13 @@ def save_user(body, user_id=None):
             salt, digest = hash_pin(pin)
         else:
             salt, digest = old["pin_salt"], old["pin_hash"]
+        create_employee = body.get("create_employee", False)
+        if type(create_employee) is not bool:
+            raise ValueError("Некорректный режим создания сотрудника")
+        if not old and tg is None and create_employee:
+            tg = create_internal_employee(conn, display, username)
+        if role == "packer" and tg is None:
+            raise ValueError("Упаковщик должен иметь собственную карточку сотрудника")
         if old:
             conn.execute("UPDATE app_users SET username=?,display_name=?,role=?,telegram_id=?,active=?,pin_salt=?,pin_hash=?,updated_at=? WHERE id=?",
                          (username, display, role, tg, active, salt, digest, now_text(), user_id))
