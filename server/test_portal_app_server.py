@@ -127,6 +127,11 @@ class PortalAPITest(unittest.TestCase):
     def login(self,username="worker",pin="1234",status=200):
         return self.request("/api/login",body={"username":username,"pin":pin},status=status)
 
+    def test_login_is_case_insensitive_and_usernames_are_case_unique(self):
+        logged=self.login("WORKER","1234")
+        self.assertEqual(logged["user"]["username"],"worker")
+        self.request("/api/users",self.admin,{"username":"WoRkEr","display_name":"Duplicate","pin":"4321","role":"packer"},status=400)
+
     def test_anonymous_denied_all_data_and_writes(self):
         for path in ("/api/me","/api/dashboard","/api/clients",f"/api/clients/{self.cid}",
                      f"/api/clients/{self.cid}/operations","/api/work/mine","/api/payroll/mine",

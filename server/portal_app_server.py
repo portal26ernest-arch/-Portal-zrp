@@ -20,7 +20,7 @@ from production_migrations import migrate as migrate_production
 import production_activity as activity
 from portal_config import load_config
 
-BUILD_ID = "PORTAL Server · 3.0-dev"
+BUILD_ID = "PORTAL Server · 3.1-dev"
 CONFIG = load_config(os.environ)
 DB_PATH = CONFIG.sqlite_path
 tenants.configure(CONFIG)
@@ -516,7 +516,7 @@ def save_user(body, user_id=None):
             if count >= limit:
                 raise ValueError("Достигнут лимит активных пользователей компании")
         tg = validate_employee(conn, values["telegram_id"])
-        if conn.execute("SELECT 1 FROM app_users WHERE username=? AND id!=?", (username, user_id or 0)).fetchone():
+        if conn.execute("SELECT 1 FROM app_users WHERE lower(username)=lower(?) AND id!=?", (username, user_id or 0)).fetchone():
             raise ValueError("Этот логин уже занят")
         if old and old["role"] == "admin" and old["active"] and (role != "admin" or not active):
             if not conn.execute("SELECT 1 FROM app_users WHERE role='admin' AND active=1 AND id!=?", (user_id,)).fetchone():
@@ -752,7 +752,7 @@ class Handler(BaseHTTPRequestHandler):
             if not tenants.available(company):
                 return self.error_json("Компания недоступна", 403)
             with tenants.company_scope(company_id), db() as conn:
-                u = conn.execute("SELECT * FROM app_users WHERE username=? AND active=1", (str(body.get("username", "")).strip(),)).fetchone()
+                u = conn.execute("SELECT * FROM app_users WHERE lower(username)=lower(?) AND active=1", (str(body.get("username", "")).strip(),)).fetchone()
                 if not u or not verify_pin(str(body.get("pin", "")), u["pin_salt"], u["pin_hash"]):
                     repo=Repository(conn,company_id)
                     if repo.ready():activity.login(repo,body.get('username'),u['id'] if u else None,False,activity.client_type(self.headers))

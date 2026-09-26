@@ -97,3 +97,4 @@ NO-GO при любом mismatch данных, ошибке RLS, unsigned/debug 
 - The system navigation/status UI may be temporarily revealed by Android gestures but must not permanently cover PORTAL controls.
 - Returning focus to PORTAL must restore immersive mode.
 - CI must reject removal of the fullscreen native-shell flags.
+- GitHub staging runners use disposable debug signatures; production updates MUST use one permanent protected signing key. A production APK must not be published until that key is configured and an update-over-existing-app test succeeds.
