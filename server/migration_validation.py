@@ -106,6 +106,22 @@ def compare(source, destination):
     return True
 
 
+def compare_migration_history(source_rows, destination_rows, required_version=6):
+    """Preserve source history exactly and allow only the required cutover marker."""
+    source = {int(version): applied_at for version, applied_at in source_rows}
+    destination = {int(version): applied_at for version, applied_at in destination_rows}
+    if len(source) != len(source_rows) or len(destination) != len(destination_rows):
+        raise ValidationError('Migration validation failed: portal_production_migrations')
+    for version, applied_at in source.items():
+        if destination.get(version) != applied_at:
+            raise ValidationError('Migration validation failed: portal_production_migrations')
+    allowed = set(source)
+    allowed.add(required_version)
+    if set(destination) != allowed or required_version not in destination or not destination[required_version]:
+        raise ValidationError('Migration validation failed: portal_production_migrations')
+    return True
+
+
 def validate_postgresql_schema(sql):
     """Static contract check; this is not a PostgreSQL integration test."""
     for table in ('portal_production', 'portal_production_migrations'):

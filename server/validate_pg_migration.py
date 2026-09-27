@@ -9,7 +9,8 @@ import sqlite3
 import sys
 from pathlib import Path
 
-from migration_validation import ValidationError, compare, snapshot
+from migration_validation import (ValidationError, compare, compare_migration_history,
+                                  snapshot)
 from migration_context import bind_company
 
 
@@ -30,8 +31,20 @@ def validate(sqlite_copy, company_ids, pg_dsn):
                 for company_id in company_ids:
                     bind_company(target, company_id)
                     source_facts = snapshot(source, 'sqlite', company_id)
-                    compare(source_facts, snapshot(target, 'postgresql', company_id,
-                                                   projection=source_facts))
+                    target_facts = snapshot(target, 'postgresql', company_id,
+                                            projection=source_facts)
+                    source_history = source.execute(
+                        'SELECT version,applied_at FROM portal_production_migrations '
+                        'WHERE company_id=? ORDER BY version', (company_id,)).fetchall()
+                    target_history = target.execute(
+                        'SELECT version,applied_at FROM portal_production_migrations '
+                        'WHERE company_id=%s ORDER BY version', (company_id,)).fetchall()
+                    compare_migration_history(source_history, target_history, required_version=6)
+                    source_facts = dict(source_facts)
+                    target_facts = dict(target_facts)
+                    source_facts.pop('portal_production_migrations', None)
+                    target_facts.pop('portal_production_migrations', None)
+                    compare(source_facts, target_facts)
                     print('Validated company_id=' + str(company_id))
 
 

@@ -4,8 +4,8 @@ import sqlite3
 import unittest
 from pathlib import Path
 
-from migration_validation import (ValidationError, compare, snapshot,
-                                  validate_postgresql_schema)
+from migration_validation import (ValidationError, compare, compare_migration_history,
+                                  snapshot, validate_postgresql_schema)
 from production_repository import Repository
 from production_migrations import migrate_retention
 
@@ -145,6 +145,25 @@ class MigrationValidationTest(unittest.TestCase):
                         compare(before, snapshot(conn, 'sqlite', 1))
                 finally:
                     conn.close()
+
+    def test_cutover_migration_history_allows_only_stage6_marker(self):
+        source = [(3, '2026-09-25'), (4, '2026-09-25'), (5, '2026-09-25')]
+        self.assertTrue(compare_migration_history(
+            source, source + [(6, '2026-09-27')], required_version=6))
+        self.assertTrue(compare_migration_history(
+            source + [(6, '2026-09-25')], source + [(6, '2026-09-25')],
+            required_version=6))
+        bad_histories = (
+            source,
+            [(3, 'changed'), (4, '2026-09-25'), (5, '2026-09-25'), (6, '2026-09-27')],
+            source + [(6, '2026-09-27'), (7, 'unexpected')],
+            source + [(6, '')],
+            source + [(6, '2026-09-27'), (6, 'duplicate')],
+        )
+        for destination in bad_histories:
+            with self.subTest(destination=destination):
+                with self.assertRaisesRegex(ValidationError, 'portal_production_migrations'):
+                    compare_migration_history(source, destination, required_version=6)
 
     def test_missing_company_id_and_ledger_identity_are_rejected(self):
         conn = fixture()
