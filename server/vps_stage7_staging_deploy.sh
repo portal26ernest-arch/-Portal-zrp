@@ -20,6 +20,7 @@ CONTROL_ROLE="portal_stage7_control"
 API_PORT="8770"
 BRANCH="${PORTAL_STAGE7_BRANCH:-portal-next-b003}"
 EXPECTED_COMMIT="${PORTAL_STAGE7_EXPECTED_COMMIT:-}"
+PILOT_SSLIP="${PORTAL_STAGE7_PILOT_SSLIP:-0}"
 GATE_BASE="f9dd1b38231e53fba0cb9e96c85cfcc032b7864a"
 
 fail() { echo "ОШИБКА Stage 7: $*" >&2; exit 1; }
@@ -226,9 +227,18 @@ PING="$(curl -fsS --max-time 3 "http://127.0.0.1:$API_PORT/api/ping")"
 echo "[8/9] HTTPS readiness"
 HTTPS_STATUS="pending"
 DOMAIN="${PORTAL_STAGE7_DOMAIN:-}"
+DOMAIN_SOURCE="explicit"
 PUBLIC_URL=""
 
+if [[ -z "$DOMAIN" && "$PILOT_SSLIP" == "1" ]]; then
+  SERVER_IPV4="$(ip -4 -o addr show scope global | awk '{split($4,a,"/"); print a[1]; exit}')"
+  [[ -n "$SERVER_IPV4" ]] || fail "не найден публичный IPv4 для pilot sslip.io"
+  DOMAIN="${SERVER_IPV4//./-}.sslip.io"
+  DOMAIN_SOURCE="sslip-pilot"
+fi
+
 if [[ -z "$DOMAIN" ]]; then
+  DOMAIN_SOURCE="none"
   HTTPS_STATUS="need-domain"
 elif [[ "$DOMAIN" != *.* ]]; then
   HTTPS_STATUS="invalid-domain"
@@ -341,6 +351,8 @@ database=$DB
 service=$SERVICE
 loopback_api=http://127.0.0.1:$API_PORT
 https_status=$HTTPS_STATUS
+domain=$DOMAIN
+domain_source=$DOMAIN_SOURCE
 public_url=${PUBLIC_URL:-}
 first_login_file=$LOGIN_FILE
 production_database_touched=no
