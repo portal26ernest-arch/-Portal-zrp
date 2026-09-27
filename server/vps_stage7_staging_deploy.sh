@@ -359,8 +359,15 @@ EOF
   rm -f "$TMP_ENV"
   systemctl restart "$SERVICE"
   systemctl is-active --quiet "$TUNNEL_SERVICE" || fail "Quick Tunnel service не active"
-  curl -fsS --max-time 5 "http://127.0.0.1:$TUNNEL_PROXY_PORT/api/ping" >/dev/null ||
-    fail "локальный tunnel proxy перестал отвечать"
+  TUNNEL_PROXY_READY=0
+  for _ in $(seq 1 40); do
+    if curl -fsS --max-time 2 "http://127.0.0.1:$TUNNEL_PROXY_PORT/api/ping" >/dev/null 2>&1; then
+      TUNNEL_PROXY_READY=1
+      break
+    fi
+    sleep 0.25
+  done
+  [[ "$TUNNEL_PROXY_READY" == "1" ]] || fail "локальный tunnel proxy перестал отвечать"
   HTTPS_STATUS="ok"
 fi
 
