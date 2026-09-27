@@ -269,12 +269,17 @@ if [[ "$PILOT_TUNNEL" == "1" ]]; then
     apt-get install -y -qq nginx ca-certificates
   fi
   if ! command -v cloudflared >/dev/null; then
-    CLOUDFLARED_TMP="$(mktemp)"
+    export DEBIAN_FRONTEND=noninteractive
+    install -d -m 0755 /usr/share/keyrings
+    CLOUDFLARE_KEY_TMP="$(mktemp)"
     curl -fsSL --retry 3 --retry-delay 2 \
-      https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
-      -o "$CLOUDFLARED_TMP"
-    install -m 0755 "$CLOUDFLARED_TMP" /usr/local/bin/cloudflared
-    rm -f "$CLOUDFLARED_TMP"
+      https://pkg.cloudflare.com/cloudflare-main.gpg -o "$CLOUDFLARE_KEY_TMP"
+    install -m 0644 "$CLOUDFLARE_KEY_TMP" /usr/share/keyrings/cloudflare-main.gpg
+    rm -f "$CLOUDFLARE_KEY_TMP"
+    printf 'deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main\n' \
+      >/etc/apt/sources.list.d/cloudflared.list
+    apt-get update -qq
+    apt-get install -y -qq cloudflared
   fi
 
   cat >"/etc/nginx/sites-available/portal-stage7-tunnel" <<EOF
