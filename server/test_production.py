@@ -1,8 +1,14 @@
 """Production API tests. Only temporary fixtures, never a deployment database."""
+import base64
+import calendar
+import hashlib
+import io
 import json
 import sqlite3
 import unittest
 import uuid
+import zipfile
+import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 import test_portal_app_server as legacy
 import test_portal_tenancy as isolation
@@ -112,6 +118,22 @@ class ProductionTest(unittest.TestCase):
         finance=self.get('finance')['data']['clients'][0];self.assertEqual(finance['profit'],-500)
         self.get('finance',self.worker,status=403)
 
+    def test_company_overhead_is_not_charged_to_random_client(self):
+        self.work()
+        before=self.get('finance')['data'];base=before['clients'][0]['profit']
+        self.post('expenses',dict(category_code='rent',amount=10,incurred_at=datetime.now().date().isoformat(),note='Склад'))
+        data=self.get('finance')['data']
+        self.assertEqual(data['clients'][0]['profit'],base)
+        self.assertEqual(data['company_overhead'],1000)
+        self.assertEqual(data['net_profit'],base-1000)
+        self.assertEqual(self.get('expenses')['data'][0]['category_code'],'rent')
+        self.post('expenses',dict(category_code='unknown',amount=1),status=400)
+        self.post('expenses',dict(category_code='rent',amount=1),self.worker,status=403)
+        self.post('expenses',dict(category_code='logistics',amount=1,client_id=1))
+        after=self.get('finance')['data']
+        self.assertEqual(after['clients'][0]['profit'],base-100)
+        self.assertEqual(after['company_overhead'],1000)
+
     def test_invoice_payment_chain_and_no_double_billing(self):
         w=self.work();attention=self.get('today')['data']['attention'];self.assertIn('not_invoiced',[a['type'] for a in attention])
         i=self.post('invoices',dict(work_ids=[w['id']],due_at='2020-01-01'))['data']
@@ -187,6 +209,108 @@ class ProductionTest(unittest.TestCase):
         self.post('permissions',dict(user_id=self.worker_id,permissions={'payroll.own':False}))
         self.assertNotIn('salary',self.get('works',self.worker)['data'][0])
         self.request('/api/payroll/mine',self.worker,status=403)
+
+    def test_payroll_period_close_blocks_closed_dates_and_creates_document_snapshot(self):
+        current=self.work()
+        today=datetime.utcnow().date()
+        if today.day>15:start=today.replace(day=1).isoformat();end=today.replace(day=15).isoformat()
+        else:
+            previous=(today.replace(day=1)-timedelta(days=1));start=previous.replace(day=16).isoformat();end=previous.isoformat()
+        with portal.db() as conn:
+            r=Repository(conn,1);old=dict(current,id=str(uuid.uuid4()),completed_at=end+'T12:00:00.000000',created_at=end+'T12:00:00.000000')
+            r.insert('works',{k:v for k,v in old.items() if k not in {'id','company_id'}},old['id']);conn.commit()
+        preview=self.get(f'payroll-periods?period_start={start}&period_end={end}')['data']
+        self.assertEqual(preview['total_salary'],400)
+        closed=self.post('payroll-periods',dict(period_start=start,period_end=end))['data']
+        self.assertEqual(closed['status'],'closed');self.assertEqual(closed['snapshot']['total_salary'],400)
+        self.post('payroll-periods',dict(period_start=start,period_end=end),status=400)
+        current_start=today.replace(day=1 if today.day<=15 else 16).isoformat()
+        current_end=today.replace(day=15 if today.day<=15 else calendar.monthrange(today.year,today.month)[1]).isoformat()
+        self.post('payroll-periods',dict(period_start=current_start,period_end=current_end),status=400)
+        with portal.db() as conn:
+            r=Repository(conn,1);u=next(u for u in r.catalog('users') if u['id']==self.worker_id)
+            fixed=Production(r,u,lambda:end+'T23:00:00.000000')
+            self.assertTrue(fixed.payroll_is_closed(end))
+        document=self.post('documents',dict(document_type='payroll',period_start=start,period_end=end))['data']
+        self.assertEqual(document['status'],'ready');self.assertEqual(len(document['sha256']),64)
+        self.assertTrue(document['filename'].endswith('.xlsx'));self.assertGreater(document['size_bytes'],1000)
+        listed=self.get('documents')['data'][0];self.assertEqual(listed['period_id'],closed['id']);self.assertNotIn('file_b64',listed)
+        self.assertNotIn('details',listed['snapshot'])
+        filedata=self.get('document-file?id='+document['id'])['data'];payload=base64.b64decode(filedata['file_b64'])
+        self.assertEqual(hashlib.sha256(payload).hexdigest(),document['sha256']);self.assertEqual(len(payload),document['size_bytes'])
+        with zipfile.ZipFile(io.BytesIO(payload)) as book:
+            names=set(book.namelist());self.assertIn('xl/workbook.xml',names);self.assertIn('xl/worksheets/sheet1.xml',names)
+            for name in names:
+                if name.endswith('.xml') or name.endswith('.rels'):ET.fromstring(book.read(name))
+
+    def test_chat_general_private_retention_pin_and_company_isolation(self):
+        message=self.post('chat',dict(text='Общее сообщение'),self.worker)['data']
+        self.assertEqual(self.get('chat',self.worker)['data'][0]['text'],'Общее сообщение')
+        self.assertEqual(self.get('chat',self.other_worker)['data'],[])
+        dm=self.post('chat',dict(text='Личное',recipient_user_id=self.admin_id),self.worker)['data']
+        mine=self.get(f'chat?recipient_user_id={self.admin_id}',self.worker)['data']
+        admin=self.get(f'chat?recipient_user_id={self.worker_id}',self.admin)['data']
+        self.assertEqual(mine[-1]['id'],dm['id']);self.assertEqual(admin[-1]['id'],dm['id'])
+        manager=self.role_token('manager')
+        payload=(b'PORTAL-attachment-'*7000)
+        uploaded=self.post('chat',dict(text='Файл',recipient_user_id=self.admin_id,attachment={
+            'name':'proof.txt','mime_type':'text/plain','file_b64':base64.b64encode(payload).decode('ascii')
+        }),self.worker)['data']
+        attachment=uploaded['attachment']
+        downloaded=self.get('chat-file?id='+attachment['id'],self.worker)['data']
+        self.assertEqual(base64.b64decode(downloaded['file_b64']),payload)
+        self.assertEqual(downloaded['sha256'],hashlib.sha256(payload).hexdigest())
+        self.get('chat-file?id='+attachment['id'],manager,status=403)
+        self.post('chat',dict(mode='pin',message_id=dm['id'],pinned=True),manager,status=403)
+        with portal.db() as conn:
+            r=Repository(conn,1)
+            expired=r.insert('chat_messages',dict(room='general',sender_user_id=self.worker_id,sender_name='Old',
+                                                   text='Удалить',created_at='2020-01-01T00:00:00.000000'))
+            kept=r.insert('chat_messages',dict(room='general',sender_user_id=self.worker_id,sender_name='Pinned',
+                                                text='Сохранить',created_at='2020-01-01T00:00:00.000000'))
+            r.insert('chat_pins',dict(message_id=kept['id'],room='general',pinned=True,actor_id=self.admin_id))
+            conn.commit()
+        visible=self.get('chat')['data'];ids={x['id'] for x in visible}
+        self.assertNotIn(expired['id'],ids);self.assertIn(kept['id'],ids)
+        self.assertTrue(next(x for x in visible if x['id']==kept['id'])['pinned'])
+        with portal.db() as conn:
+            r=Repository(conn,1)
+            self.assertIsNone(r.get('chat_messages',expired['id'],False))
+            self.assertIsNotNone(r.get('chat_messages',kept['id'],False))
+            with self.assertRaises(ValueError):r.delete('works',message['id'])
+        self.post('chat',dict(mode='pin',message_id=message['id'],pinned=True),self.worker,status=403)
+
+    def test_large_request_body_exception_is_chat_only(self):
+        result=self.request('/api/v3/batches',self.admin,{'request_id':'oversize','client_id':1,'product':'X','quantity':1,'comment':'x'*70000},status=400)
+        self.assertIn('64',result['error'])
+        payload=b'a'*70000
+        sent=self.post('chat',dict(text='Большой файл',attachment={'name':'a.txt','mime_type':'text/plain','file_b64':base64.b64encode(payload).decode('ascii')}),self.worker)['data']
+        self.assertEqual(sent['attachment']['size_bytes'],len(payload))
+
+    def test_chat_attachment_security_hash_and_retention(self):
+        raw=b'PORTAL attachment'
+        attachment=dict(name='note.txt',mime_type='text/plain',file_b64=base64.b64encode(raw).decode())
+        sent=self.post('chat',dict(text='Файл',attachment=attachment),self.worker)['data']
+        self.assertIn('attachment',sent);meta=sent['attachment'];self.assertNotIn('file_b64',meta)
+        rows=self.get('chat',self.worker)['data'];listed=next(x for x in rows if x['id']==sent['id'])
+        self.assertEqual(listed['attachment']['sha256'],hashlib.sha256(raw).hexdigest())
+        filedata=self.get('chat-file?id='+meta['id'],self.worker)['data']
+        self.assertEqual(base64.b64decode(filedata['file_b64']),raw)
+        self.assertEqual(filedata['sha256'],hashlib.sha256(raw).hexdigest())
+        self.get('chat-file?id='+meta['id'],self.other_worker,status=400)
+        self.post('chat',dict(text='Bad',attachment=dict(name='x.exe',mime_type='application/octet-stream',file_b64='WA==')),self.worker,status=400)
+        too_big=base64.b64encode(b'x'*(2*1024*1024+1)).decode()
+        self.post('chat',dict(attachment=dict(name='big.txt',mime_type='text/plain',file_b64=too_big)),self.worker,status=400)
+        with portal.db() as conn:
+            r=Repository(conn,1)
+            old=r.insert('chat_messages',dict(room='general',sender_user_id=self.worker_id,sender_name='Old',text='',created_at='2020-01-01T00:00:00.000000'))
+            old_file=r.insert('chat_attachments',dict(message_id=old['id'],room='general',original_name='old.txt',filename='PORTAL_chat_old.txt',mime_type='text/plain',size_bytes=1,sha256=hashlib.sha256(b'x').hexdigest(),file_b64='eA==',created_at='2020-01-01T00:00:00.000000'))
+            conn.commit()
+        self.get('chat',self.worker)
+        with portal.db() as conn:
+            r=Repository(conn,1)
+            self.assertIsNone(r.get('chat_messages',old['id'],False))
+            self.assertIsNone(r.get('chat_attachments',old_file['id'],False))
 
     def test_technical_owner_explicit_context_required(self):
         self.request('/api/v3/meta',self.owner,status=403)

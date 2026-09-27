@@ -22,6 +22,7 @@ ROLES = {
 }
 MIGRATIONS = ('postgresql_core_stage4b.sql', 'postgresql_stage3.sql',
               'postgresql_runtime.sql', 'postgresql_rls_context.sql',
+              'postgresql_stage5_chat_retention.sql',
               'postgresql_stage4c.sql')
 TENANT_TABLES = (
     'employees', 'app_users', 'app_sessions', 'portal_clients',

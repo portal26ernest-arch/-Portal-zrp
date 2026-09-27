@@ -5,6 +5,8 @@ globalThis.PortalCore = (() => {
   const modules = [
     {id:'work',title:'Выработка',icon:'plus',description:'Записать работу'},
     {id:'payroll',title:'Зарплата',icon:'wallet',description:'Начисления и выплаты'},
+    {id:'payrollPeriods',title:'Расчётные периоды',icon:'wallet',description:'Предпросмотр и закрытие зарплаты',production:true},
+    {id:'teamChat',title:'Команда',icon:'users',description:'Внутренний чат сотрудников',production:true},
     {id:'clients',title:'Клиенты',icon:'clients',description:'Клиенты и операции'},
     {id:'materials',title:'Склад',icon:'box',description:'Материалы и остатки'},
     {id:'invoices',title:'Счета и оплаты',icon:'receipt',description:'Оплаты и задолженность'},
@@ -14,9 +16,10 @@ globalThis.PortalCore = (() => {
     {id:'permissions',title:'Права сотрудников',icon:'shield',description:'Индивидуальные разрешения',production:true},
     {id:'tariffs',title:'Тарифы',icon:'receipt',description:'Две цены и история',production:true},
     {id:'radar',title:'Финансы',icon:'wallet',description:'Финансовый радар и себестоимость',production:true},
+    {id:'expenses',title:'Расходы',icon:'receipt',description:'Аренда, логистика и прочие расходы',production:true},
     {id:'analytics',title:'PORTAL Аналитика',icon:'grid',description:'Темп и динамика',production:true},
     {id:'control',title:'Контроль PORTAL',icon:'bell',description:'Правила счетов и оплат',production:true},
-    {id:'documents',title:'Документы',icon:'file',description:'Документы компании',future:true},
+    {id:'documents',title:'Документы',icon:'file',description:'Документы компании',production:true},
     {id:'reports',title:'Отчёты',icon:'grid',description:'Производственные отчёты',future:true},
     {id:'news',title:'Новости',icon:'bell',future:true}
   ];
@@ -24,19 +27,19 @@ globalThis.PortalCore = (() => {
     if (['about','settings'].includes(page)) return true;
     if (!user || !roles[user.role]) return false;
     if (Array.isArray(user.permissions) && (user.role!=='platform_owner'||company)) {
-      const map={work:['work.write','tasks.read'],payroll:['payroll.own'],clients:['clients.read'],catalogue:['clients.manage'],materials:['materials.read'],invoices:['invoices.read'],users:['users.manage'],jobs:['tasks.read'],batches:['batches.receive','tasks.read','work.write'],permissions:['users.manage'],tariffs:['rates.employee','rates.client'],radar:['finance.read'],analytics:['analytics.read','work.write'],documents:['documents.read'],reports:['finance.read','analytics.read'],control:['company.settings']};
+      const map={work:['work.write','tasks.read'],payroll:['payroll.own'],payrollPeriods:['payroll.all','payroll.close'],teamChat:['chat.read'],clients:['clients.read'],catalogue:['clients.manage'],materials:['materials.read'],invoices:['invoices.read'],users:['users.manage'],jobs:['tasks.read'],batches:['batches.receive','tasks.read','work.write'],permissions:['users.manage'],tariffs:['rates.employee','rates.client'],radar:['finance.read'],expenses:['expenses.read','expenses.manage'],analytics:['analytics.read','work.write'],documents:['documents.read','documents.manage'],reports:['finance.read','analytics.read'],control:['company.settings']};
       if(map[page])return map[page].some(p=>user.permissions.includes(p));
       if(['dashboard','sections'].includes(page))return true;
     }
-    if(['batches','permissions','tariffs','radar','analytics','control'].includes(page))return false;
+    if(['batches','permissions','tariffs','radar','expenses','analytics','control','payrollPeriods','teamChat','documents'].includes(page))return false;
     if(page==='catalogue')return user.role==='admin'||user.role==='platform_owner'&&!!company;
     if (user.role==='platform_owner') {
       if (['companies','audit'].includes(page)) return true;
       return !!company && ['dashboard','sections','clients','materials','invoices','users','jobs'].includes(page);
     }
     if (['dashboard','sections','jobs'].includes(page)) return true;
-    if (page==='work') return !!user.telegram_id && ['admin','director','manager','packer','shift'].includes(user.role);
-    if (page==='payroll') return !!user.telegram_id;
+    if (page==='work') return !!(user.employee_id??user.telegram_id) && ['admin','director','manager','packer','shift'].includes(user.role);
+    if (page==='payroll') return !!(user.employee_id??user.telegram_id);
     if (page==='clients') return user.role!=='packer';
     if (page==='materials') return ['admin','director','accountant','shift'].includes(user.role);
     if (page==='invoices') return ['admin','director','manager','accountant'].includes(user.role);

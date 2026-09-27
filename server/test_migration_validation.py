@@ -103,6 +103,14 @@ class MigrationValidationTest(unittest.TestCase):
     def test_schema_contract_and_company_scoped_snapshot(self):
         sql = (Path(__file__).parent / 'migrations' / 'postgresql_stage3.sql').read_text(encoding='utf-8')
         self.assertTrue(validate_postgresql_schema(sql))
+        self.assertIn("OLD.kind IN ('chat_messages','chat_pins','chat_attachments')",sql)
+        self.assertIn("RAISE EXCEPTION 'production history is immutable'",sql)
+        retention=(Path(__file__).parent/'migrations'/'postgresql_stage5_chat_retention.sql').read_text(encoding='utf-8')
+        self.assertIn("OLD.kind IN ('chat_messages','chat_pins','chat_attachments')",retention)
+        self.assertIn("ON CONFLICT (company_id,version) DO NOTHING",retention)
+        self.assertNotRegex(retention,r'(?i)\b(?:DROP TABLE|TRUNCATE|ALTER POLICY|CREATE POLICY)\b')
+        rls=(Path(__file__).parent/'migrations'/'postgresql_rls_context.sql').read_text(encoding='utf-8')
+        self.assertIn("(cid,5,CURRENT_TIMESTAMP::text)",rls)
         conn = fixture()
         try:
             one, two = snapshot(conn, 'sqlite', 1), snapshot(conn, 'sqlite', 2)

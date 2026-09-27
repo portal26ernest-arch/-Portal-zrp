@@ -10,8 +10,10 @@ from datetime import datetime, timezone
 
 KINDS = {'batches','tasks','works','tariffs','permissions','plans','usage','expenses',
          'invoices','payments','settings','audit','links','requests','shipments',
-         'access_events','access_sessions','work_timers','timer_events'}
+         'access_events','access_sessions','work_timers','timer_events',
+         'payroll_periods','documents','chat_messages','chat_pins','chat_attachments'}
 MUTABLE = {'batches','tasks','permissions','settings','access_sessions','work_timers'}
+DELETABLE = {'chat_messages','chat_pins','chat_attachments'}
 
 def utcnow():
     return datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec='microseconds')
@@ -64,6 +66,11 @@ class Repository:
                  (json.dumps(value,ensure_ascii=False,sort_keys=True),self.company_id,kind,value['id']))
         return value
 
+    def delete(self, kind, identity):
+        if kind not in DELETABLE: raise ValueError('Эту историю удалять нельзя')
+        self.sql('DELETE FROM portal_production WHERE company_id=? AND kind=? AND id=?',
+                 (self.company_id,kind,str(identity)))
+
     def audit(self, user, event, entity_id):
         # Deliberately no request body, credentials, exception text or names.
         self.insert('audit',dict(actor_id=user['id'],event=event,entity_id=str(entity_id)))
@@ -76,7 +83,10 @@ class Repository:
         fields={'users':'id,display_name,role,telegram_id,active,company_id'}.get(name,'*')
         cursor=self.sql(f'SELECT {fields} FROM {table} WHERE company_id=?',(self.company_id,))
         names=[c[0] for c in cursor.description]
-        return [dict(zip(names,r)) for r in cursor.fetchall()]
+        rows=[dict(zip(names,r)) for r in cursor.fetchall()]
+        if name=='users':
+            for row in rows:row['employee_id']=row.get('telegram_id')
+        return rows
 
     def has_table(self, table):
         if self.dialect=='postgresql':
@@ -93,10 +103,12 @@ class Repository:
 
     def legacy_work(self, user, client, operation, quantity, employee_rate, client_rate, created):
         """Compatibility projection, in the SAME transaction as the new ledger."""
+        employee=user.get('employee_id',user.get('telegram_id'))
+        if employee is None: raise ValueError('Доступ не связан с сотрудником')
         if self.has_table('payroll_payments'):
-            paid=self.sql("SELECT 1 FROM payroll_payments WHERE company_id=? AND telegram_id=? AND period_start<=? AND period_end>=? AND status='paid'",(self.company_id,user['telegram_id'],created.replace('T',' ')[:19],created.replace('T',' ')[:19])).fetchone()
+            paid=self.sql("SELECT 1 FROM payroll_payments WHERE company_id=? AND telegram_id=? AND period_start<=? AND period_end>=? AND status='paid'",(self.company_id,employee,created.replace('T',' ')[:19],created.replace('T',' ')[:19])).fetchone()
             if paid: raise ValueError('Расчётный период уже закрыт')
-        values=dict(company_id=self.company_id,telegram_id=user['telegram_id'],username=user.get('username',''),first_name=user.get('display_name',''),client=client['name'],operation=operation['name'],quantity=quantity,rate=employee_rate/100,salary=quantity*employee_rate/100,client_rate=client_rate/100,revenue=quantity*client_rate/100,direct_cost=0,created_at=created.replace('T',' ')[:19])
+        values=dict(company_id=self.company_id,telegram_id=employee,username=user.get('username',''),first_name=user.get('display_name',''),client=client['name'],operation=operation['name'],quantity=quantity,rate=employee_rate/100,salary=quantity*employee_rate/100,client_rate=client_rate/100,revenue=quantity*client_rate/100,direct_cost=0,created_at=created.replace('T',' ')[:19])
         values={k:v for k,v in values.items() if k in self.columns('work_log')}
         cur=self.sql('INSERT INTO work_log('+','.join(values)+') VALUES('+','.join('?' for _ in values)+')'+(' RETURNING id' if self.dialect=='postgresql' else ''),tuple(values.values()))
         return cur.fetchone()[0] if self.dialect=='postgresql' else cur.lastrowid

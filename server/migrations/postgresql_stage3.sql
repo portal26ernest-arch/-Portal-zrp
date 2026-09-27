@@ -28,6 +28,9 @@ CREATE OR REPLACE FUNCTION portal_production_immutable() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
     IF TG_OP = 'DELETE' THEN
+        IF OLD.kind IN ('chat_messages','chat_pins','chat_attachments') THEN
+            RETURN OLD;
+        END IF;
         RAISE EXCEPTION 'production history is immutable';
     END IF;
     IF OLD.kind NOT IN ('batches','tasks','permissions','settings','access_sessions','work_timers')

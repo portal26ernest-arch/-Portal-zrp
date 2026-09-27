@@ -20,7 +20,7 @@ from production_migrations import migrate as migrate_production
 import production_activity as activity
 from portal_config import load_config
 
-BUILD_ID = "PORTAL Server · 3.1-dev"
+BUILD_ID = "PORTAL Server · 3.2-dev"
 CONFIG = load_config(os.environ)
 DB_PATH = CONFIG.sqlite_path
 tenants.configure(CONFIG)
@@ -84,7 +84,10 @@ def ensure_schema():
                         'portal_manager_service_rates','production_job_assignments','products',
                         'scheduled_runs','system_settings','tariff_versions','user_roles'}
             missing = sorted(name for name in required if not table_exists(conn if name not in {'companies'} else registry, name))
-            if missing or not conn.execute('SELECT 1 FROM portal_runtime_schema WHERE version=1').fetchone() or not conn.execute('SELECT 1 FROM portal_rls_context_schema WHERE version=1').fetchone():
+            if (missing
+                    or not conn.execute('SELECT 1 FROM portal_runtime_schema WHERE version=1').fetchone()
+                    or not conn.execute('SELECT 1 FROM portal_rls_context_schema WHERE version=1').fetchone()
+                    or not conn.execute('SELECT 1 FROM portal_production_migrations WHERE version=5').fetchone()):
                 raise RuntimeError('PostgreSQL runtime schema is incomplete: ' + ', '.join(missing))
             rls_required = required - {'companies','portal_runtime_schema','portal_rls_context_schema'}
             placeholders = ','.join('?' for _ in rls_required)
@@ -97,6 +100,11 @@ def ensure_schema():
             triggers = conn.execute("SELECT count(*) FROM pg_trigger WHERE NOT tgisinternal AND tgname IN ('production_immutable','production_batch_number_immutable','portal_no_delete')").fetchone()[0]
             if triggers < 10:
                 raise RuntimeError('PostgreSQL history triggers are incomplete')
+            retention = conn.execute(
+                "SELECT pg_get_functiondef('portal_production_immutable()'::regprocedure)"
+            ).fetchone()[0]
+            if not all(kind in retention for kind in ('chat_messages','chat_pins','chat_attachments')):
+                raise RuntimeError('PostgreSQL chat retention schema is incomplete')
         return
     if not os.path.exists(DB_PATH):
         raise FileNotFoundError(f"База PORTAL не найдена: {DB_PATH}")
@@ -178,7 +186,14 @@ def user_from_token(token):
             SELECT u.* FROM app_sessions s JOIN app_users u ON u.id=s.user_id
             WHERE s.token=? AND s.expires_at>=? AND u.active=1
         """, (token, now_text())).fetchone()
-        return dict(row) if row and row["role"] in ROLE_LABELS else None
+        return with_employee_id(row) if row and row["role"] in ROLE_LABELS else None
+
+
+def with_employee_id(row):
+    if row is None:return None
+    data=dict(row)
+    if "employee_id" not in data:data["employee_id"]=data.get("telegram_id")
+    return data
 
 
 def require_role(user, allowed):
@@ -491,6 +506,11 @@ def create_internal_employee(conn, display_name, username):
 
 
 def save_user(body, user_id=None):
+    body=dict(body)
+    if "employee_id" in body:
+        if "telegram_id" in body and body["telegram_id"] != body["employee_id"]:
+            raise ValueError("Конфликт ID сотрудника")
+        body["telegram_id"]=body["employee_id"]
     if "company_id" in body and body["company_id"] != tenants.COMPANY_ID.get():
         raise PermissionError("Нельзя менять компанию доступа")
     if user_id is not None and user_id <= 0:
@@ -639,8 +659,11 @@ def read_body(handler):
     if handler.headers.get("Transfer-Encoding"):
         raise ValueError("Требуется Content-Length")
     length = int(handler.headers.get("Content-Length", "0") or 0)
-    if not 0 <= length <= 65536:
-        raise ValueError("Размер запроса должен быть не более 64 КБ")
+    path = urlparse(getattr(handler, "path", "")).path
+    limit = 3 * 1024 * 1024 if path == "/api/v3/chat" else 65536
+    if not 0 <= length <= limit:
+        label = "3 МБ" if limit > 65536 else "64 КБ"
+        raise ValueError("Размер запроса должен быть не более " + label)
     return handler.rfile.read(length) if length else b""
 
 
@@ -760,7 +783,7 @@ class Handler(BaseHTTPRequestHandler):
                 token = create_session(conn, u["id"])
                 repo=Repository(conn,company_id)
                 if repo.ready():activity.login(repo,u['username'],u['id'],True,activity.client_type(self.headers),token)
-                data = {k:v for k,v in dict(u).items() if k not in {"pin_hash","pin_salt"}}
+                data = {k:v for k,v in with_employee_id(u).items() if k not in {"pin_hash","pin_salt"}}
             return self.send_json({"ok":True,"token":token,"user":data})
         if path in {"/api/ping", "/api/setup"}:
             with tenants.company_scope(1):
@@ -1053,8 +1076,8 @@ class Handler(BaseHTTPRequestHandler):
         if path=="/api/users" and method=="GET":
             if not business_can(user,'users.manage',{'admin'}): raise PermissionError("Нет права управления сотрудниками")
             with db() as conn:
-                rows=[dict(r) for r in conn.execute("SELECT id,username,display_name,role,telegram_id,active,created_at FROM app_users ORDER BY display_name").fetchall()]
-                employees=[dict(r) for r in conn.execute("SELECT telegram_id,full_name,username FROM employees ORDER BY full_name").fetchall()]
+                rows=[with_employee_id(r) for r in conn.execute("SELECT id,username,display_name,role,telegram_id,active,created_at FROM app_users ORDER BY display_name").fetchall()]
+                employees=[with_employee_id(r) for r in conn.execute("SELECT telegram_id,full_name,username FROM employees ORDER BY full_name").fetchall()]
             return self.send_json({"ok":True,"users":rows,"employees":employees,"roles":ROLE_LABELS})
         if path=="/api/users" and method=="POST":
             if not business_can(user,'users.manage',{'admin'}): raise PermissionError("Нет права управления сотрудниками")

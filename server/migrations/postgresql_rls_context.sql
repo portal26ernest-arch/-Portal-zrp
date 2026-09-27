@@ -20,7 +20,7 @@ BEGIN
  INSERT INTO public.portal_company_keys(company_id,secret)
  VALUES(cid,encode(public.gen_random_bytes(32),'hex')) ON CONFLICT(company_id) DO NOTHING;
  INSERT INTO public.portal_production_migrations(company_id,version,applied_at)
- VALUES(cid,3,CURRENT_TIMESTAMP::text),(cid,4,CURRENT_TIMESTAMP::text)
+ VALUES(cid,3,CURRENT_TIMESTAMP::text),(cid,4,CURRENT_TIMESTAMP::text),(cid,5,CURRENT_TIMESTAMP::text)
  ON CONFLICT(company_id,version) DO NOTHING;
 END;
 $$;

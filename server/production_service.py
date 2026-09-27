@@ -1,12 +1,15 @@
 """Production domain. Integer minor currency units; append-only accounting facts.
 No SQLite imports or SQL: the repository is the persistence/legacy boundary.
 """
+import base64
+import calendar
 import hashlib
 import json
 import uuid
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from production_repository import utcnow
+from report_xlsx import payroll_xlsx
 import production_permissions as rights
 
 def text(value, name='Название', optional=False):
@@ -25,6 +28,9 @@ def cents(value):
         if not n.is_finite() or n<0 or n>Decimal('1000000000'): raise ValueError()
         return int((n*100).quantize(Decimal('1'),rounding=ROUND_HALF_UP))
     except (ValueError,InvalidOperation): raise ValueError('Цена должна быть неотрицательным числом')
+
+def employee_id(user):
+    return user.get('employee_id',user.get('telegram_id'))
 
 def stamp(value, optional=False):
     if optional and not value: return None
@@ -45,7 +51,7 @@ class Production:
     def visible(self,client_id):
         # Assignment scope is independent of individually granted capabilities.
         if self.u['role']!='manager' or self.u.get('technical_owner'): return True
-        return any(a['client_id']==client_id and a['active'] and a['telegram_id']==self.u.get('telegram_id') for a in self.r.catalog('assignments'))
+        return any(a['client_id']==client_id and a['active'] and a['telegram_id']==employee_id(self.u) for a in self.r.catalog('assignments'))
 
     def client(self,identity,active=False):
         c=next((c for c in self.r.catalog('clients') if c['id']==identity and self.visible(identity)),None)
@@ -111,7 +117,7 @@ class Production:
         users={u['id']:u for u in self.r.catalog('users')}
         for uid in assignees:
             u=users.get(uid)
-            if not u or not u['active'] or not u.get('telegram_id') or 'work.write' not in rights.effective(self.r,u): raise ValueError('Исполнитель не может вносить работу')
+            if not u or not u['active'] or not employee_id(u) or 'work.write' not in rights.effective(self.r,u): raise ValueError('Исполнитель не может вносить работу')
             if not Production(self.r,u).visible(batch['client_id']): raise ValueError('Клиент недоступен исполнителю')
         tariff=self.tariff(op['id']);self.valid_rates(tariff)
         norms=self.norms(op['id'],target)
@@ -141,7 +147,7 @@ class Production:
 
     def work(self,b):
         self.need('work.write')
-        if not self.u.get('telegram_id'): raise ValueError('Доступ не связан с сотрудником')
+        if not employee_id(self.u): raise ValueError('Доступ не связан с сотрудником')
         task=self.entity('tasks',b['task_id']) if b.get('task_id') else None
         if task:
             if self.u['id'] not in task['assignees']: raise PermissionError('Задание назначено другому сотруднику')
@@ -155,6 +161,7 @@ class Production:
             done=sum(w['quantity'] for w in self.r.list('works') if w.get('task_id')==task['id'])
             if done+quantity>task['quantity']: raise ValueError('Количество превышает остаток задания')
         tariff=self.tariff(op_id);self.valid_rates(tariff);now=self.clock()
+        if self.payroll_is_closed(now):raise ValueError('Расчётный период уже закрыт')
         started=stamp(b.get('started_at'),True)
         if started and started>now: raise ValueError('Начало работы в будущем')
         duration=(datetime.fromisoformat(now)-datetime.fromisoformat(started)).total_seconds() if started else None
@@ -169,13 +176,13 @@ class Production:
         legacy_id=self.r.legacy_work(self.u,client,op,quantity,tariff['employee_rate'],tariff['client_rate'],now)
         work=self.r.insert('works',dict(client_id=client_id,client_name=client['name'],operation_id=op_id,operation_name=op['name'],batch_id=batch_id,
             product=batch['product'] if batch else text(b.get('product'),optional=True),task_id=task['id'] if task else None,without_task=not bool(task),
-            user_id=self.u['id'],employee_id=self.u['telegram_id'],quantity=quantity,tariff_id=tariff['id'],tariff_sources=tariff['sources'],employee_rate=tariff['employee_rate'],client_rate=tariff['client_rate'],
+            user_id=self.u['id'],employee_id=employee_id(self.u),quantity=quantity,tariff_id=tariff['id'],tariff_sources=tariff['sources'],employee_rate=tariff['employee_rate'],client_rate=tariff['client_rate'],
             salary=quantity*tariff['employee_rate'],revenue=quantity*tariff['client_rate'],legacy_id=legacy_id,started_at=started,completed_at=now,duration_seconds=duration,
             calendar_seconds=calendar_seconds,net_seconds=duration,pauses=pauses,timing_session_id=timing_id,
             units_per_hour=quantity/duration*3600 if duration and duration>0 else None,quality={'defects':None,'correction_of':None}))
         consumption=self.norms(op_id,quantity)
         for item in consumption:
-            self.r.consume(item['material_id'],float(item['quantity']),item['unit_cost'],legacy_id,self.u['telegram_id'])
+            self.r.consume(item['material_id'],float(item['quantity']),item['unit_cost'],legacy_id,employee_id(self.u))
             self.r.insert('usage',dict(item,work_id=work['id'],batch_id=batch_id,operation_id=op_id,client_id=client_id,source='norm'))
         self.r.project_cost(legacy_id,sum(n['cost'] for n in consumption))
         if task:
@@ -186,13 +193,13 @@ class Production:
         self.need('work.write')
         action=b.get('event');now=self.clock()
         if action=='start':
-            if not self.u.get('telegram_id'):raise PermissionError('Свяжите доступ с сотрудником перед началом работы')
+            if not employee_id(self.u):raise PermissionError('Свяжите доступ с сотрудником перед началом работы')
             task=self.entity('tasks',b['task_id'])
             if self.u['id'] not in task['assignees'] or task['status']=='done':raise PermissionError('Задание недоступно')
             if any(t['user_id']==self.u['id'] and t['status'] in ('running','paused') for t in self.r.list('work_timers')):
                 raise ValueError('Сначала завершите текущую работу')
             timer=self.r.insert('work_timers',dict(task_id=task['id'],batch_id=task['batch_id'],client_id=task['client_id'],product=task['product'],
-                operation_id=task['operation_id'],user_id=self.u['id'],employee_id=self.u.get('telegram_id'),started_at=now,
+                operation_id=task['operation_id'],user_id=self.u['id'],employee_id=employee_id(self.u),started_at=now,
                 running_from=now,pauses=[],status='running',net_seconds=None,calendar_seconds=None,quantity=None,work_id=None))
         else:
             timer=self.entity('work_timers',b['session_id'])
@@ -233,14 +240,171 @@ class Production:
         amount=Decimal(str(b['quantity']))
         if not amount.is_finite() or amount<=0 or amount>1000000: raise ValueError('Некорректный расход')
         unit=cents(m['unit_cost'] or 0);cost=int((amount*unit).quantize(Decimal('1'),rounding=ROUND_HALF_UP))
-        self.r.consume(m['id'],float(amount),unit,w['legacy_id'],self.u.get('telegram_id'))
+        self.r.consume(m['id'],float(amount),unit,w['legacy_id'],employee_id(self.u))
         item=self.r.insert('usage',dict(work_id=w['id'],batch_id=self.batch_for_work(w),operation_id=w['operation_id'],client_id=w['client_id'],material_id=m['id'],quantity=str(amount),unit_cost=unit,cost=cost,source='additional_actual'))
         # The legacy projection retains the original cost snapshot; late facts belong to the ledger.
         return item
 
+    def payroll_bounds(self,start,end):
+        try:
+            s=datetime.strptime(start,'%Y-%m-%d').date();e=datetime.strptime(end,'%Y-%m-%d').date()
+        except (TypeError,ValueError):
+            raise ValueError('Период зарплаты: даты ГГГГ-ММ-ДД')
+        if (s.year,s.month)!=(e.year,e.month):
+            raise ValueError('Расчётный период должен быть внутри одного месяца')
+        last=calendar.monthrange(s.year,s.month)[1]
+        if not ((s.day==1 and e.day==15) or (s.day==16 and e.day==last)):
+            raise ValueError('Допустимы периоды 1–15 или 16–последний день месяца')
+        return s.isoformat(),e.isoformat()
+
+    def payroll_snapshot(self,start,end):
+        self.need('payroll.all');start,end=self.payroll_bounds(start,end)
+        users={u['id']:u for u in self.r.catalog('users')};groups={}
+        works=[w for w in self.r.list('works') if start<=w['completed_at'][:10]<=end]
+        for w in works:
+            g=groups.setdefault(w['user_id'],dict(user_id=w['user_id'],employee_id=w.get('employee_id'),
+                display_name=users.get(w['user_id'],{}).get('display_name','Сотрудник'),quantity=0,salary=0,work_rows=0))
+            g['quantity']+=w['quantity'];g['salary']+=w['salary'];g['work_rows']+=1
+        rows=sorted(groups.values(),key=lambda x:(x['display_name'].casefold(),x['user_id']))
+        details=[dict(work_id=w['id'],user_id=w['user_id'],employee_id=w.get('employee_id'),
+                      display_name=users.get(w['user_id'],{}).get('display_name','Сотрудник'),
+                      client_name=w['client_name'],operation_name=w['operation_name'],quantity=w['quantity'],
+                      employee_rate=w['employee_rate'],salary=w['salary'],completed_at=w['completed_at'])
+                 for w in sorted(works,key=lambda x:(x['completed_at'],x['user_id'],x['id']))]
+        return dict(period_start=start,period_end=end,employees=rows,details=details,total_quantity=sum(x['quantity'] for x in rows),
+                    total_salary=sum(x['salary'] for x in rows),work_rows=sum(x['work_rows'] for x in rows),
+                    currency='RUB',money_unit='kopeck')
+
+    def payroll_period(self,b):
+        self.need('payroll.close');start,end=self.payroll_bounds(b.get('period_start'),b.get('period_end'))
+        local_today=(datetime.fromisoformat(self.clock())+timedelta(minutes=self.settings()['utc_offset_minutes'])).date().isoformat()
+        if end>=local_today:raise ValueError('Закрывать можно только завершившийся расчётный период')
+        for p in self.r.list('payroll_periods'):
+            if not (end<p['period_start'] or start>p['period_end']):
+                raise ValueError('Этот расчётный период уже закрыт или пересекается с закрытым')
+        snapshot=self.payroll_snapshot(start,end)
+        return self.r.insert('payroll_periods',dict(period_start=start,period_end=end,status='closed',
+            closed_by=self.u['id'],closed_at=self.clock(),snapshot=snapshot))
+
+    def payroll_is_closed(self,at):
+        day=at[:10]
+        return any(p['status']=='closed' and p['period_start']<=day<=p['period_end'] for p in self.r.list('payroll_periods'))
+
+    def chat_room(self,recipient=None):
+        if recipient in (None,''):return 'general'
+        try:target=int(recipient)
+        except (TypeError,ValueError):raise ValueError('Сотрудник для личного чата не найден')
+        users={u['id']:u for u in self.r.catalog('users')}
+        if target==self.u['id'] or target not in users or not users[target]['active']:
+            raise ValueError('Сотрудник для личного чата не найден')
+        a,b=sorted((self.u['id'],target));return f'dm:{a}:{b}'
+
+    def chat_room_allowed(self,room):
+        if room=='general':return True
+        parts=str(room).split(':')
+        return len(parts)==3 and parts[0]=='dm' and str(self.u['id']) in parts[1:]
+
+    def chat_command(self,b):
+        mode=b.get('mode','message')
+        if mode=='pin':
+            self.need('chat.moderate');message=self.entity('chat_messages',text(b.get('message_id'),'Сообщение'))
+            if not self.chat_room_allowed(message['room']):raise PermissionError('Личная переписка доступна только её участникам')
+            pinned=b.get('pinned',True)
+            if type(pinned) is not bool:raise ValueError('Некорректный статус закрепления')
+            return self.r.insert('chat_pins',dict(message_id=message['id'],room=message['room'],pinned=pinned,actor_id=self.u['id']))
+        self.need('chat.write');raw=b.get('text','');attachment=b.get('attachment')
+        if not isinstance(raw,str) or len(raw.strip())>4000:raise ValueError('Сообщение: до 4000 символов')
+        if not raw.strip() and not attachment:raise ValueError('Введите сообщение или добавьте файл')
+        room=self.chat_room(b.get('recipient_user_id'))
+        message=self.r.insert('chat_messages',dict(room=room,sender_user_id=self.u['id'],
+            sender_name=self.u.get('display_name') or self.u.get('username','Сотрудник'),text=raw.strip()))
+        if attachment:
+            if not isinstance(attachment,dict):raise ValueError('Некорректное вложение')
+            original=attachment.get('name');mime=attachment.get('mime_type');encoded=attachment.get('file_b64')
+            if not isinstance(original,str) or not original.strip() or len(original.strip())>120:raise ValueError('Имя файла: до 120 символов')
+            types={'image/jpeg':'jpg','image/png':'png','image/webp':'webp','application/pdf':'pdf','text/plain':'txt'}
+            if mime not in types:raise ValueError('Этот тип файла пока не поддерживается')
+            if not isinstance(encoded,str) or len(encoded)>3*1024*1024:raise ValueError('Файл слишком большой')
+            try:data=base64.b64decode(encoded,validate=True)
+            except Exception:raise ValueError('Некорректное содержимое файла')
+            if not data or len(data)>2*1024*1024:raise ValueError('Файл должен быть не больше 2 МБ')
+            saved=self.r.insert('chat_attachments',dict(message_id=message['id'],room=room,original_name=original.strip(),
+                filename=f"PORTAL_chat_{uuid.uuid4().hex[:16]}.{types[mime]}",mime_type=mime,size_bytes=len(data),
+                sha256=hashlib.sha256(data).hexdigest(),file_b64=base64.b64encode(data).decode('ascii')))
+            message=dict(message,attachment={k:saved[k] for k in ('id','original_name','mime_type','size_bytes','sha256')})
+        return message
+
+    def chat_cleanup(self):
+        self.need('chat.read');pins=self.r.list('chat_pins');latest={}
+        for event in pins:latest[event['message_id']]=event
+        cutoff=(datetime.fromisoformat(self.clock())-timedelta(days=14)).isoformat()
+        removed=0
+        attachments=self.r.list('chat_attachments')
+        for message in list(self.r.list('chat_messages')):
+            if message['created_at']>=cutoff or bool(latest.get(message['id'],{}).get('pinned')):continue
+            for attachment in [a for a in attachments if a['message_id']==message['id']]:self.r.delete('chat_attachments',attachment['id'])
+            for event in [p for p in pins if p['message_id']==message['id']]:self.r.delete('chat_pins',event['id'])
+            self.r.delete('chat_messages',message['id']);removed+=1
+        return removed
+
+    def chat_rows(self,recipient=None):
+        self.need('chat.read');self.chat_cleanup();room=self.chat_room(recipient);latest={}
+        for event in self.r.list('chat_pins'):
+            if event['room']==room:latest[event['message_id']]=event
+        attachments={}
+        for item in self.r.list('chat_attachments'):
+            if item['room']==room:
+                attachments[item['message_id']]={k:item[k] for k in ('id','original_name','mime_type','size_bytes','sha256')}
+        result=[]
+        for message in self.r.list('chat_messages'):
+            if message['room']!=room:continue
+            result.append(dict(message,pinned=bool(latest.get(message['id'],{}).get('pinned')),attachment=attachments.get(message['id'])))
+        return result[-200:]
+
+    def chat_file(self,identity):
+        self.need('chat.read');attachment=self.entity('chat_attachments',identity)
+        if not self.chat_room_allowed(attachment['room']):raise PermissionError('Файл личного чата недоступен')
+        return {k:attachment[k] for k in ('id','filename','original_name','mime_type','size_bytes','sha256','file_b64')}
+
+    def document(self,b):
+        self.need('documents.manage')
+        if b.get('document_type')!='payroll':raise ValueError('Пока поддерживается расчётный документ зарплаты')
+        start,end=self.payroll_bounds(b.get('period_start'),b.get('period_end'))
+        period=next((p for p in self.r.list('payroll_periods') if p['period_start']==start and p['period_end']==end and p['status']=='closed'),None)
+        if not period:raise ValueError('Сначала закройте расчётный период')
+        snapshot=period['snapshot'];snapshot_raw=json.dumps(snapshot,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode('utf-8')
+        payload=payroll_xlsx(snapshot);title=text(b.get('title') or f'Расчётный период {start} — {end}','Название документа')
+        filename=f'PORTAL_payroll_{start}_{end}.xlsx'
+        return self.r.insert('documents',dict(document_type='payroll',title=title,
+            period_id=period['id'],period_start=start,period_end=end,status='ready',
+            snapshot_sha256=hashlib.sha256(snapshot_raw).hexdigest(),sha256=hashlib.sha256(payload).hexdigest(),
+            filename=filename,mime_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            size_bytes=len(payload),file_b64=base64.b64encode(payload).decode('ascii'),
+            created_by=self.u['id'],generated_format='xlsx',future_formats=['pdf'],snapshot=snapshot))
+
     def expense(self,b):
-        self.need('finance.read');batch=self.entity('batches',b['batch_id'])
-        return self.r.insert('expenses',dict(batch_id=batch['id'],client_id=batch['client_id'],amount=cents(b['amount']),category=text(b.get('category'),'Статья расхода')))
+        self.need('expenses.manage')
+        categories={'rent':'Аренда','logistics':'Логистика','carrier_pickup':'Забор из ТК',
+                    'marketplace_delivery':'Доставка на маркетплейс','utilities':'Коммунальные расходы',
+                    'waste':'Вывоз мусора','management':'Управленческие расходы','other':'Прочее'}
+        code=b.get('category_code')
+        if code is None and b.get('category'):
+            code='other';label=text(b.get('category'),'Статья расхода')
+        else:
+            if code not in categories:raise ValueError('Выберите категорию расхода')
+            label=categories[code]
+        amount=cents(b.get('amount'))
+        if amount<=0:raise ValueError('Сумма расхода должна быть больше нуля')
+        batch=self.entity('batches',b['batch_id']) if b.get('batch_id') else None
+        client_id=batch['client_id'] if batch else b.get('client_id')
+        if client_id is not None:
+            try:client_id=int(client_id)
+            except (TypeError,ValueError):raise ValueError('Клиент расхода не найден')
+            self.client(client_id)
+        if batch and b.get('client_id') not in (None,batch['client_id']):raise ValueError('Клиент не совпадает с партией')
+        return self.r.insert('expenses',dict(batch_id=batch['id'] if batch else None,client_id=client_id,
+            amount=amount,category_code=code,category=label,incurred_at=stamp(b.get('incurred_at') or self.clock()),
+            note=text(b.get('note'),optional=True),created_by=self.u['id']))
 
     def invoice(self,b):
         self.need('invoices.create');ids=b.get('work_ids')
@@ -367,16 +531,22 @@ class Production:
         for c in self.r.catalog('clients'):
             if not self.visible(c['id']):continue
             rows=[w for w in works if w['client_id']==c['id']];revenue=sum(w['revenue'] for w in rows)
-            salary=sum(w['salary'] for w in rows);material=sum(u['cost'] for u in usage if u['client_id']==c['id']);other=sum(e['amount'] for e in expenses if e['client_id']==c['id'])
+            salary=sum(w['salary'] for w in rows);material=sum(u['cost'] for u in usage if u['client_id']==c['id']);other=sum(e['amount'] for e in expenses if e.get('client_id')==c['id'])
             profit=revenue-salary-material-other;batches=[b for b in self.scoped('batches') if b['client_id']==c['id']]
             clients.append(dict(client_id=c['id'],client_name=c['name'],revenue=revenue,salary=salary,materials=material,other=other,profit=profit,margin=profit/revenue if revenue else None,average_batch_profit=sum(self.economy(b['id'])['fact']['profit'] for b in batches)/len(batches) if batches else None))
         for w in works:
-            month=w['completed_at'][:7];m=months.setdefault(month,dict(revenue=0,salary=0,materials=0,other=0));m['revenue']+=w['revenue'];m['salary']+=w['salary']
-        for rows,key in [(usage,'materials'),(expenses,'other')]:
-            for row in rows:
-                m=months.setdefault(row['created_at'][:7],dict(revenue=0,salary=0,materials=0,other=0));m[key]+=row.get('cost',row.get('amount',0))
-        for m in months.values():m['profit']=m['revenue']-m['salary']-m['materials']-m['other']
-        return dict(clients=clients,months=months,currency='RUB',money_unit='kopeck')
+            month=w['completed_at'][:7];m=months.setdefault(month,dict(revenue=0,salary=0,materials=0,other=0,overhead=0));m['revenue']+=w['revenue'];m['salary']+=w['salary']
+        for row in usage:
+            month=row['created_at'][:7];m=months.setdefault(month,dict(revenue=0,salary=0,materials=0,other=0,overhead=0));m['materials']+=row['cost']
+        for row in expenses:
+            month=(row.get('incurred_at') or row['created_at'])[:7];m=months.setdefault(month,dict(revenue=0,salary=0,materials=0,other=0,overhead=0))
+            if row.get('client_id') is None:m['overhead']+=row['amount']
+            else:m['other']+=row['amount']
+        for m in months.values():
+            m['profit']=m['revenue']-m['salary']-m['materials']-m['other']-m['overhead']
+        overhead=sum(e['amount'] for e in expenses if e.get('client_id') is None)
+        client_profit=sum(c['profit'] for c in clients)
+        return dict(clients=clients,months=months,company_overhead=overhead,client_profit=client_profit,net_profit=client_profit-overhead,currency='RUB',money_unit='kopeck')
 
     def invoices(self):
         self.need('invoices.read');rows=self.scoped('invoices');payments=self.scoped('payments')
@@ -433,16 +603,17 @@ class Production:
         if 'payroll.own' in self.permissions:result['own_salary']=sum(w['salary'] for w in mine)
         if manager:result.update(active_batches=sum(b['stage']!='shipped' for b in batches),in_progress=sum(b['stage']=='in_progress' for b in batches),ready=sum(b['ready'] and b['stage']!='shipped' for b in batches),today_quantity=sum(w['quantity'] for w in works if (datetime.fromisoformat(w['completed_at'])+timedelta(minutes=settings['utc_offset_minutes'])).date().isoformat()==day))
         if 'finance.read' in self.permissions:
-            data=self.finance();result['finance']={key:sum(c[key] for c in data['clients']) for key in ('revenue','salary','materials','other','profit')}
+            data=self.finance();result['finance']={key:sum(c[key] for c in data['clients']) for key in ('revenue','salary','materials','other')}
+            result['finance'].update(company_overhead=data['company_overhead'],profit=data['net_profit'])
             result['expected_profit']=sum(self.economy(b['id'])['plan']['profit'] for b in batches if b['stage']!='shipped')
         if 'invoices.read' in self.permissions:result['debt']=sum(i['remaining'] for i in invoices)
         return result
 
     def command(self,action,body):
         if 'company_id' in body and body['company_id']!=self.r.company_id:raise PermissionError('Компания определяется сессией')
-        methods={'batches':self.batch,'tasks':self.task,'work':self.work,'timers':self.timer,'links':self.link,'tariffs':self.create_tariff,'permissions':self.set_permissions,'usage':self.usage,'expenses':self.expense,'invoices':self.invoice,'payments':self.payment,'settings':self.settings,'shipments':self.ship}
+        methods={'batches':self.batch,'tasks':self.task,'work':self.work,'timers':self.timer,'links':self.link,'tariffs':self.create_tariff,'permissions':self.set_permissions,'usage':self.usage,'expenses':self.expense,'invoices':self.invoice,'payments':self.payment,'settings':self.settings,'shipments':self.ship,'payroll-periods':self.payroll_period,'chat':self.chat_command,'documents':self.document}
         if action not in methods: raise ValueError('Действие не поддерживается')
-        authorization={'batches':'batches.receive','tasks':'tasks.manage','work':'work.write','timers':'work.write','links':'work.link','permissions':'users.manage','usage':'materials.use','expenses':'finance.read','invoices':'invoices.create','payments':'payments.record','settings':'company.settings','shipments':'batches.receive'}
+        authorization={'batches':'batches.receive','tasks':'tasks.manage','work':'work.write','timers':'work.write','links':'work.link','permissions':'users.manage','usage':'materials.use','expenses':'expenses.manage','invoices':'invoices.create','payments':'payments.record','settings':'company.settings','shipments':'batches.receive','payroll-periods':'payroll.close','chat':'chat.write','documents':'documents.manage'}
         if action in authorization:self.need(authorization[action])
         if action=='tariffs':
             for field,key in [('employee_rate','rates.employee'),('client_rate','rates.client')]:
@@ -484,9 +655,33 @@ class Production:
             if not {'work.write','payroll.own','work.link','finance.read','analytics.read','payroll.all','invoices.create'} & self.permissions:raise PermissionError('Нет доступа к выработке')
             return self.works()
         if action=='invoices':return self.invoices()
+        if action=='expenses':
+            self.need('expenses.read');return self.scoped('expenses')
         if action=='finance':return self.finance()
         if action=='economy':return self.economy(params.get('batch_id',[''])[0])
         if action=='analytics':return self.analytics()
+        if action=='payroll-periods':
+            self.need('payroll.all')
+            start=params.get('period_start',[None])[0];end=params.get('period_end',[None])[0]
+            return self.payroll_snapshot(start,end) if start or end else self.r.list('payroll_periods')
+        if action=='chat':return self.chat_rows(params.get('recipient_user_id',[None])[0])
+        if action=='chat-users':
+            self.need('chat.read')
+            return [dict(id=u['id'],display_name=u['display_name']) for u in self.r.catalog('users') if u['active'] and u['id']!=self.u['id']]
+        if action=='chat-file':
+            return self.chat_file(params.get('id',[None])[0])
+        if action=='documents':
+            self.need('documents.read');rows=[]
+            for document in self.r.list('documents'):
+                item=dict(document);item.pop('file_b64',None)
+                if 'snapshot' in item:
+                    snap=dict(item['snapshot']);snap.pop('details',None);item['snapshot']=snap
+                rows.append(item)
+            return rows
+        if action=='document-file':
+            self.need('documents.read');identity=params.get('id',[None])[0]
+            document=self.entity('documents',identity)
+            return {k:document[k] for k in ('id','filename','mime_type','size_bytes','sha256','file_b64')}
         if action=='settings':self.need('company.settings');return self.settings()
         if action=='permissions':
             self.need('users.manage');return [dict(u,permissions=sorted(rights.effective(self.r,u))) for u in self.r.catalog('users')]

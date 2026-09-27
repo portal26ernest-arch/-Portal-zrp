@@ -2,11 +2,19 @@ package ru.portal.app;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.content.ContentValues;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
+import android.provider.MediaStore;
+import android.util.Base64;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
+import android.webkit.ValueCallback;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -16,6 +24,8 @@ import android.view.View;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
@@ -26,8 +36,10 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
+    private static final int FILE_CHOOSER_REQUEST = 42032;
     private WebView webView;
     private PortalBridge bridge;
+    private ValueCallback<Uri[]> filePathCallback;
 
     @SuppressLint({"SetJavaScriptEnabled", "JavascriptInterface"})
     @Override
@@ -56,10 +68,36 @@ public class MainActivity extends Activity {
                 return !url.startsWith("file:///android_asset/");
             }
         });
-        webView.setWebChromeClient(new WebChromeClient());
+        webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
+                if (filePathCallback != null) filePathCallback.onReceiveValue(null);
+                filePathCallback = callback;
+                try {
+                    Intent intent = params.createIntent();
+                    startActivityForResult(intent, FILE_CHOOSER_REQUEST);
+                    return true;
+                } catch (Exception ignored) {
+                    filePathCallback = null;
+                    return false;
+                }
+            }
+        });
         bridge = new PortalBridge(this, webView);
         webView.addJavascriptInterface(bridge, "PortalNative");
         webView.loadUrl("file:///android_asset/index.html");
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == FILE_CHOOSER_REQUEST && filePathCallback != null) {
+            Uri[] result = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
+            filePathCallback.onReceiveValue(result);
+            filePathCallback = null;
+            applyImmersiveMode();
+            return;
+        }
+        super.onActivityResult(requestCode, resultCode, data);
     }
 
     private void applyImmersiveMode() {
@@ -140,6 +178,56 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void checkUpdates(String id) {
             executor.execute(() -> deliver(id, fetchUpdateManifest()));
+        }
+
+        @JavascriptInterface
+        public void saveBase64FileAsync(String id, String filename, String mimeType, String encoded) {
+            executor.execute(() -> deliver(id, saveBase64File(filename, mimeType, encoded)));
+        }
+
+        private String saveBase64File(String filename, String mimeType, String encoded) {
+            Uri pending = null;
+            try {
+                if (filename == null || !filename.matches("[A-Za-z0-9._-]{1,120}") || encoded == null
+                        || encoded.length() > 28 * 1024 * 1024) throw new Exception();
+                boolean allowedType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".equals(mimeType)
+                        || "application/pdf".equals(mimeType)
+                        || "image/jpeg".equals(mimeType) || "image/png".equals(mimeType)
+                        || "image/webp".equals(mimeType) || "text/plain".equals(mimeType);
+                if (!allowedType) throw new Exception();
+                byte[] data = Base64.decode(encoded, Base64.DEFAULT);
+                if (data.length == 0 || data.length > 20 * 1024 * 1024) throw new Exception();
+                String location;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    ContentValues values = new ContentValues();
+                    values.put(MediaStore.Downloads.DISPLAY_NAME, filename);
+                    values.put(MediaStore.Downloads.MIME_TYPE, mimeType);
+                    values.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/PORTAL");
+                    values.put(MediaStore.Downloads.IS_PENDING, 1);
+                    pending = context.getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+                    if (pending == null) throw new Exception();
+                    try (OutputStream out = context.getContentResolver().openOutputStream(pending, "w")) {
+                        if (out == null) throw new Exception();
+                        out.write(data);
+                    }
+                    values.clear(); values.put(MediaStore.Downloads.IS_PENDING, 0);
+                    context.getContentResolver().update(pending, values, null, null);
+                    pending = null;
+                    location = "Downloads/PORTAL/" + filename;
+                } else {
+                    File base = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
+                    if (base == null) base = context.getFilesDir();
+                    File dir = new File(base, "PORTAL");
+                    if (!dir.exists() && !dir.mkdirs()) throw new Exception();
+                    File file = new File(dir, filename);
+                    try (FileOutputStream out = new FileOutputStream(file)) { out.write(data); }
+                    location = file.getAbsolutePath();
+                }
+                return new JSONObject().put("ok", true).put("location", location).toString();
+            } catch (Exception ignored) {
+                if (pending != null) try { context.getContentResolver().delete(pending, null, null); } catch (Exception ignoredDelete) { }
+                return "{\"ok\":false,\"error\":\"Не удалось сохранить документ.\"}";
+            }
         }
 
         private String fetchUpdateManifest() {
@@ -237,7 +325,10 @@ public class MainActivity extends Activity {
                 int code = conn.getResponseCode();
                 InputStream stream = code >= 400 ? conn.getErrorStream() : conn.getInputStream();
                 if (stream == null) return "{\"ok\":false,\"error\":\"HTTP " + code + "\"}";
-                JSONObject result = new JSONObject(readLimited(stream, 2 * 1024 * 1024));
+                int responseLimit = path.startsWith("/api/v3/document-file") ? 30 * 1024 * 1024
+                        : path.startsWith("/api/v3/chat-file") ? 4 * 1024 * 1024
+                        : 2 * 1024 * 1024;
+                JSONObject result = new JSONObject(readLimited(stream, responseLimit));
                 result.put("httpStatus", code);
                 return result.toString();
             } catch (Exception e) {
