@@ -27,8 +27,10 @@ IMPORT_ORDER = ('employees', 'app_users', 'app_sessions', 'portal_clients',
                 'work_log', 'payroll_payments', 'payroll_transactions',
                 'client_invoices', 'client_payments', 'production_jobs',
                 'production_job_progress', 'audit_log',
-                'portal_production_migrations', 'portal_production')
+                'portal_production_migrations', 'portal_production',
+                'payroll_employee_identities','payroll_settlement_entries')
 MONEY = {
+    'payroll_settlement_entries': ('amount_minor',),
     'work_log': ('salary', 'revenue', 'direct_cost'),
     'payroll_transactions': ('amount',),
     'client_invoices': ('amount_due',),
@@ -204,9 +206,10 @@ def identity_maxima(tenants, control=None):
         maxima['companies'] = 1
     for source in sources:
         for table in source_tables(source):
-            if 'id' not in source_columns(source, table):
+            identity_column='employee_id' if table=='payroll_employee_identities' else 'id'
+            if identity_column not in source_columns(source, table):
                 continue
-            value = source.execute('SELECT MAX(id) FROM ' + ident(table)).fetchone()[0]
+            value = source.execute('SELECT MAX('+ident(identity_column)+') FROM ' + ident(table)).fetchone()[0]
             if type(value) is int and value > 0:
                 maxima[table] = max(maxima.get(table, 0), value)
     return maxima
@@ -220,7 +223,8 @@ def sync_identity_sequences(target, maxima):
     """
     checked = 0
     for table, maximum in sorted(maxima.items()):
-        sequence = target.execute("SELECT pg_get_serial_sequence(%s,'id')",
+        identity_column='employee_id' if table=='payroll_employee_identities' else 'id'
+        sequence = target.execute("SELECT pg_get_serial_sequence(%s,'"+identity_column+"')",
                                   ('public.' + ident(table),)).fetchone()[0]
         if sequence is None:
             continue

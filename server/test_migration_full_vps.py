@@ -27,6 +27,7 @@ ROLES = {
 MIGRATIONS = ('postgresql_core_stage4b.sql', 'postgresql_stage3.sql',
               'postgresql_runtime.sql', 'postgresql_rls_context.sql',
               'postgresql_stage5_chat_retention.sql',
+              'postgresql_stage6_payroll_settlement.sql',
               'postgresql_stage4c.sql')
 TENANT_TABLES = (
     'employees', 'app_users', 'app_sessions', 'portal_clients',
@@ -35,7 +36,7 @@ TENANT_TABLES = (
     'payroll_payments', 'payroll_transactions', 'client_invoices',
     'client_payments', 'production_jobs', 'production_job_progress',
     'audit_log', 'portal_production_migrations', 'portal_production',
-    'work_material_consumption',
+    'work_material_consumption', 'payroll_employee_identities','payroll_settlement_entries',
     'backup_log', 'client_access', 'client_invites', 'client_invoice_items',
     'client_name_overrides', 'client_permissions', 'employee_access_requests',
     'employee_chat_messages', 'employee_chat_settings', 'employee_invites',

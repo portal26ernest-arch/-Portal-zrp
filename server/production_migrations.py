@@ -18,6 +18,7 @@ def migrate(conn, company_id, dialect=None):
     if r.ready():
         migrate_activity(r)
         migrate_retention(r)
+        migrate_payroll_settlement(r)
         return
     # Current catalog baseline, not a reconstruction or recalculation of history.
     for operation in r.catalog('operations'):
@@ -35,6 +36,7 @@ def migrate(conn, company_id, dialect=None):
             r.sql(f"CREATE TRIGGER IF NOT EXISTS production_company_{action.lower()} BEFORE {action} ON portal_production WHEN NEW.company_id!={company_id} BEGIN SELECT RAISE(ABORT,'company_id mismatch'); END")
     migrate_activity(r)
     migrate_retention(r)
+    migrate_payroll_settlement(r)
 
 def migrate_activity(r):
     """Version 4 augments the existing session table; no old session is falsified."""
@@ -60,3 +62,103 @@ def migrate_retention(r):
     if not all(marker in definition for marker in required):
         raise RuntimeError('Apply PostgreSQL chat retention migration with the migration operator first')
     r.sql('INSERT INTO portal_production_migrations(company_id,version,applied_at) VALUES(?,5,?)',(r.company_id,utcnow()))
+
+def migrate_payroll_settlement(r):
+    """Version 6 adds the immutable, integer-minor-unit payroll settlement ledger."""
+    if r.dialect=='sqlite':
+        r.sql('CREATE UNIQUE INDEX IF NOT EXISTS payroll_employee_legacy_scope ON employees(company_id,telegram_id)')
+        r.sql(f'''CREATE TABLE IF NOT EXISTS payroll_employee_identities (
+            employee_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_id INTEGER NOT NULL DEFAULT {r.company_id} CHECK (company_id = {r.company_id}),
+            legacy_employee_id INTEGER NOT NULL,
+            UNIQUE(company_id,employee_id),
+            UNIQUE(company_id,legacy_employee_id),
+            FOREIGN KEY(company_id,legacy_employee_id) REFERENCES employees(company_id,telegram_id)
+        )''')
+        r.sql('''CREATE TABLE IF NOT EXISTS payroll_settlement_entries (
+            id TEXT NOT NULL CHECK(length(id) BETWEEN 1 AND 128),
+            company_id INTEGER NOT NULL,
+            employee_id INTEGER NOT NULL CHECK(typeof(employee_id)='integer' AND employee_id>0),
+            payroll_period_id TEXT NOT NULL,
+            payroll_period_kind TEXT NOT NULL DEFAULT 'payroll_periods' CHECK(payroll_period_kind='payroll_periods'),
+            amount_minor INTEGER NOT NULL CHECK(typeof(amount_minor)='integer' AND amount_minor!=0 AND abs(amount_minor)<=100000000000),
+            entry_type TEXT NOT NULL CHECK(entry_type IN ('payout','adjustment','reversal')),
+            effect TEXT NOT NULL CHECK(effect IN ('payment','entitlement')),
+            actor_id INTEGER NOT NULL CHECK(typeof(actor_id)='integer' AND actor_id>0),
+            actor_kind TEXT NOT NULL CHECK(actor_kind IN ('user','platform_owner')),
+            occurred_at TEXT NOT NULL CHECK(length(occurred_at)>0),
+            reason TEXT NOT NULL CHECK(length(trim(reason)) BETWEEN 1 AND 1000),
+            reference TEXT CHECK(reference IS NULL OR length(reference)<=1000),
+            request_id TEXT NOT NULL CHECK(length(request_id) BETWEEN 1 AND 128 AND request_id=trim(request_id)),
+            reversal_of TEXT,
+            PRIMARY KEY(company_id,id),
+            UNIQUE(company_id,request_id),
+            FOREIGN KEY(company_id,employee_id) REFERENCES payroll_employee_identities(company_id,employee_id),
+            FOREIGN KEY(company_id,payroll_period_kind,payroll_period_id) REFERENCES portal_production(company_id,kind,id),
+            FOREIGN KEY(company_id,reversal_of) REFERENCES payroll_settlement_entries(company_id,id),
+            CHECK((entry_type='payout' AND effect='payment' AND amount_minor>0 AND reversal_of IS NULL)
+               OR (entry_type='adjustment' AND effect='entitlement' AND reversal_of IS NULL)
+               OR (entry_type='reversal' AND reversal_of IS NOT NULL))
+        )''')
+        r.sql('CREATE INDEX IF NOT EXISTS payroll_settlement_period_employee ON payroll_settlement_entries(company_id,payroll_period_id,employee_id,occurred_at)')
+        r.sql('CREATE INDEX IF NOT EXISTS payroll_settlement_employee ON payroll_settlement_entries(company_id,employee_id,occurred_at)')
+        r.sql('CREATE UNIQUE INDEX IF NOT EXISTS payroll_settlement_one_reversal ON payroll_settlement_entries(company_id,reversal_of) WHERE reversal_of IS NOT NULL')
+        for action in ('UPDATE','DELETE'):
+            r.sql(f"CREATE TRIGGER IF NOT EXISTS payroll_settlement_no_{action.lower()} BEFORE {action} ON payroll_settlement_entries BEGIN SELECT RAISE(ABORT,'История расчётов зарплаты неизменяема'); END")
+            r.sql(f"CREATE TRIGGER IF NOT EXISTS payroll_identity_no_{action.lower()} BEFORE {action} ON payroll_employee_identities BEGIN SELECT RAISE(ABORT,'Связь сотрудника расчёта неизменяема'); END")
+        r.sql('''CREATE TRIGGER IF NOT EXISTS payroll_settlement_company_insert BEFORE INSERT ON payroll_settlement_entries
+                 WHEN NEW.company_id IS NULL OR NEW.company_id!=(SELECT company_id FROM portal_tenant_identity)
+                 BEGIN SELECT RAISE(ABORT,'Компания записи не совпадает'); END''')
+        r.sql('''CREATE TRIGGER IF NOT EXISTS payroll_settlement_closed_period BEFORE INSERT ON payroll_settlement_entries
+                 WHEN NOT EXISTS (
+                    SELECT 1 FROM portal_production p
+                    JOIN payroll_employee_identities i ON i.company_id=p.company_id AND i.employee_id=NEW.employee_id
+                    WHERE p.company_id=NEW.company_id AND p.kind='payroll_periods' AND p.id=NEW.payroll_period_id
+                      AND json_extract(p.payload,'$.status')='closed'
+                      AND EXISTS (SELECT 1 FROM json_each(p.payload,'$.snapshot.employees') s
+                                  WHERE json_extract(s.value,'$.employee_id')=i.legacy_employee_id))
+                 BEGIN SELECT RAISE(ABORT,'Сотрудник отсутствует в закрытом расчётном периоде'); END''')
+        r.sql('''CREATE TRIGGER IF NOT EXISTS payroll_settlement_reversal_matches BEFORE INSERT ON payroll_settlement_entries
+                 WHEN NEW.entry_type='reversal' AND NOT EXISTS (
+                    SELECT 1 FROM payroll_settlement_entries e WHERE e.company_id=NEW.company_id AND e.id=NEW.reversal_of
+                      AND e.entry_type IN ('payout','adjustment') AND e.employee_id=NEW.employee_id
+                      AND e.payroll_period_id=NEW.payroll_period_id AND e.effect=NEW.effect AND e.amount_minor=-NEW.amount_minor)
+                 BEGIN SELECT RAISE(ABORT,'Сторно должно точно компенсировать исходную запись'); END''')
+        r.sql('''CREATE TRIGGER IF NOT EXISTS payroll_settlement_payout_balance BEFORE INSERT ON payroll_settlement_entries
+                 WHEN NEW.entry_type='payout' AND NEW.amount_minor>(
+                    SELECT coalesce(sum(json_extract(s.value,'$.salary')),0) FROM portal_production p
+                    JOIN payroll_employee_identities i ON i.company_id=p.company_id AND i.employee_id=NEW.employee_id
+                    JOIN json_each(p.payload,'$.snapshot.employees') s
+                    WHERE p.company_id=NEW.company_id AND p.kind='payroll_periods' AND p.id=NEW.payroll_period_id
+                      AND json_extract(s.value,'$.employee_id')=i.legacy_employee_id
+                 )+(
+                    SELECT coalesce(sum(CASE WHEN effect='entitlement' THEN amount_minor ELSE -amount_minor END),0)
+                    FROM payroll_settlement_entries WHERE company_id=NEW.company_id
+                      AND payroll_period_id=NEW.payroll_period_id AND employee_id=NEW.employee_id)
+                 BEGIN SELECT RAISE(ABORT,'Сумма выплаты превышает остаток по закрытому периоду'); END''')
+    elif not r.has_table('payroll_settlement_entries') or not r.has_table('payroll_employee_identities'):
+        raise RuntimeError('Примените PostgreSQL-миграцию реестра расчётов зарплаты оператором')
+    validate_payroll_settlement(r)
+    r.sync_payroll_employees()
+    if not r.sql('SELECT 1 FROM portal_production_migrations WHERE company_id=? AND version=6',(r.company_id,)).fetchone():
+        r.sql('INSERT INTO portal_production_migrations(company_id,version,applied_at) VALUES(?,6,?)',(r.company_id,utcnow()))
+
+
+def validate_payroll_settlement(r):
+    """Fail closed on an older draft or missing append-only/insert protections."""
+    if not {'actor_kind','payroll_period_kind','amount_minor','employee_id','request_id'}.issubset(r.columns('payroll_settlement_entries')):
+        raise RuntimeError('Схема расчётов зарплаты требует проверки оператором')
+    if r.dialect=='sqlite':
+        required={'payroll_settlement_no_update','payroll_settlement_no_delete',
+                  'payroll_settlement_closed_period','payroll_settlement_reversal_matches',
+                  'payroll_identity_no_update','payroll_identity_no_delete','payroll_settlement_company_insert',
+                  'payroll_settlement_payout_balance'}
+        names={row[0] for row in r.sql("SELECT name FROM sqlite_master WHERE type='trigger'").fetchall()}
+    else:
+        required={'payroll_settlement_immutable','payroll_settlement_valid','payroll_identity_immutable'}
+        names={row[0] for row in r.sql("SELECT tgname FROM pg_trigger WHERE NOT tgisinternal AND tgenabled='O' AND tgrelid IN ('payroll_settlement_entries'::regclass,'payroll_employee_identities'::regclass)").fetchall()}
+        definitions=r.sql("SELECT pg_get_functiondef('portal_payroll_settlement_validate()'::regprocedure),pg_get_functiondef('portal_payroll_settlement_immutable()'::regprocedure)").fetchone()
+        if not all(part in definitions[0] for part in ('payroll_periods','closed','reversal_of','legacy_employee_id')) or 'RAISE EXCEPTION' not in definitions[1]:
+            raise RuntimeError('Защита расчётов зарплаты требует проверки оператором')
+    if not required.issubset(names):
+        raise RuntimeError('Защита истории расчётов зарплаты неполна')

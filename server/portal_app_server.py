@@ -80,6 +80,7 @@ def ensure_schema():
                         'client_name_overrides','client_permissions','employee_access_requests',
                         'employee_chat_messages','employee_chat_settings','employee_invites',
                         'expense_requests','managers','marketplace_news','payroll_closure_batches',
+                        'payroll_settlement_entries','payroll_employee_identities',
                         'portal_client_requisites','portal_company_requisites',
                         'portal_manager_service_rates','production_job_assignments','products',
                         'scheduled_runs','system_settings','tariff_versions','user_roles'}
@@ -87,7 +88,7 @@ def ensure_schema():
             if (missing
                     or not conn.execute('SELECT 1 FROM portal_runtime_schema WHERE version=1').fetchone()
                     or not conn.execute('SELECT 1 FROM portal_rls_context_schema WHERE version=1').fetchone()
-                    or not conn.execute('SELECT 1 FROM portal_production_migrations WHERE version=5').fetchone()):
+                    or not conn.execute('SELECT 1 FROM portal_production_migrations WHERE version=6').fetchone()):
                 raise RuntimeError('PostgreSQL runtime schema is incomplete: ' + ', '.join(missing))
             rls_required = required - {'companies','portal_runtime_schema','portal_rls_context_schema'}
             placeholders = ','.join('?' for _ in rls_required)
@@ -97,6 +98,8 @@ def ensure_schema():
             ).fetchone()
             if checks != (len(rls_required), len(rls_required)):
                 raise RuntimeError('Required PostgreSQL company RLS is not forced')
+            from production_migrations import validate_payroll_settlement
+            validate_payroll_settlement(Repository(conn,1))
             triggers = conn.execute("SELECT count(*) FROM pg_trigger WHERE NOT tgisinternal AND tgname IN ('production_immutable','production_batch_number_immutable','portal_no_delete')").fetchone()[0]
             if triggers < 10:
                 raise RuntimeError('PostgreSQL history triggers are incomplete')
@@ -565,6 +568,9 @@ def save_user(body, user_id=None):
         else:
             user_id = conn.execute("INSERT INTO app_users(username,display_name,role,telegram_id,active,pin_salt,pin_hash,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
                                    (username, display, role, tg, active, salt, digest, now_text(), now_text())).lastrowid
+        repo=Repository(conn,tenants.COMPANY_ID.get())
+        if repo.has_table('payroll_employee_identities'):
+            repo.sync_payroll_employees()
         return user_id
 
 
@@ -669,7 +675,15 @@ def read_body(handler):
 
 def parse_body(handler):
     raw = handler.raw_body if hasattr(handler, "raw_body") else read_body(handler)
-    body = json.loads(raw.decode("utf-8")) if raw else {}
+    settlement=urlparse(getattr(handler,'path','')).path=='/api/v3/payroll-settlements'
+    def invalid_constant(value):
+        raise ValueError('В расчёте недопустимы бесконечность и неопределённые числа')
+    try:
+        # Financial decimals retain their exact JSON spelling before Decimal parsing.
+        body = json.loads(raw.decode('utf-8'),parse_float=str,parse_constant=invalid_constant) if raw and settlement else (json.loads(raw.decode('utf-8')) if raw else {})
+    except (UnicodeError,json.JSONDecodeError):
+        if settlement:raise ValueError('Некорректный JSON расчёта зарплаты') from None
+        raise
     if not isinstance(body, dict):
         raise ValueError("Ожидается JSON-объект")
     if getattr(handler, "tenant_request", False) and "company_id" in body:
@@ -870,6 +884,9 @@ class Handler(BaseHTTPRequestHandler):
             if action=='meta' and method=='GET':
                 return self.send_json(dict(ok=True,ready=bool(repo.ready()),permissions=sorted(business_rights.effective(repo,self.request_user)) if repo.ready() else [],catalog=business_rights.public_catalog(),heartbeat_seconds=activity.configuration(repo)[0] if repo.ready() else None))
             if not repo.ready(): raise ValueError('Этап 3 ещё не подключён оператором к этой компании')
+            if action=='payroll-settlements' and (not repo.has_table('payroll_settlement_entries') or
+                    not conn.execute('SELECT 1 FROM portal_production_migrations WHERE company_id=? AND version=6',(repo.company_id,)).fetchone()):
+                raise ValueError('Реестр расчётов зарплаты ещё не подключён оператором к этой компании')
             if action=='presence' and method=='GET':return self.send_json(dict(ok=True,data=activity.presence(repo,self.request_user)))
             if action=='activity' and method=='GET':
                 limit=int(parse_qs(urlparse(self.path).query).get('limit',['100'])[0])

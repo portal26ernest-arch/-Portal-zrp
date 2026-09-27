@@ -71,9 +71,77 @@ class Repository:
         self.sql('DELETE FROM portal_production WHERE company_id=? AND kind=? AND id=?',
                  (self.company_id,kind,str(identity)))
 
-    def audit(self, user, event, entity_id):
+    def audit(self, user, event, entity_id, **details):
         # Deliberately no request body, credentials, exception text or names.
-        self.insert('audit',dict(actor_id=user['id'],event=event,entity_id=str(entity_id)))
+        allowed = {key: details[key] for key in (
+            'entry_type','employee_id','payroll_period_id','amount','request_id',
+            'actor_kind','reason','reason_sha256'
+        ) if key in details}
+        self.insert('audit',dict(actor_id=user['id'],event=event,entity_id=str(entity_id),**allowed))
+
+    def sync_payroll_employees(self):
+        """Assign surrogate payroll IDs; never derive a financial key from Telegram."""
+        self.sql('''INSERT INTO payroll_employee_identities(company_id,legacy_employee_id)
+                    SELECT e.company_id,e.telegram_id FROM employees e
+                    WHERE e.company_id=? AND NOT EXISTS (
+                        SELECT 1 FROM payroll_employee_identities i
+                        WHERE i.company_id=e.company_id AND i.legacy_employee_id=e.telegram_id)
+                    ORDER BY e.telegram_id''', (self.company_id,))
+
+    def payroll_employee(self, identity, legacy=False):
+        # Column names are constants, and both lookup paths verify an existing card.
+        column='legacy_employee_id' if legacy else 'employee_id'
+        row=self.sql('''SELECT i.employee_id,i.legacy_employee_id
+                        FROM payroll_employee_identities i JOIN employees e
+                          ON e.company_id=i.company_id AND e.telegram_id=i.legacy_employee_id
+                        WHERE i.company_id=? AND i.'''+column+'=?',
+                     (self.company_id,identity)).fetchone()
+        if row is None:raise ValueError('Сотрудник не найден в этой компании')
+        return dict(employee_id=row[0],legacy_employee_id=row[1])
+
+    def has_legacy_payroll(self, period, legacy_employee):
+        # Historical payout semantics have not been reconciled into this ledger.
+        # Presence alone blocks a second payout; no old amount is reinterpreted.
+        for table in ('payroll_transactions','payroll_payments'):
+            if self.has_table(table) and self.sql(
+                'SELECT 1 FROM '+table+' WHERE company_id=? AND telegram_id=? '
+                'AND substr(period_start,1,10)<=? AND substr(period_end,1,10)>=? LIMIT 1',
+                (self.company_id,legacy_employee,period['period_end'],period['period_start'])).fetchone():
+                return True
+        return False
+
+    def payroll_settlement(self, identity, required=True):
+        row=self.sql('''SELECT id,company_id,employee_id,payroll_period_id,amount_minor,
+                               entry_type,effect,actor_id,occurred_at,reason,reference,
+                               request_id,reversal_of,actor_kind
+                        FROM payroll_settlement_entries
+                        WHERE company_id=? AND id=?''',(self.company_id,str(identity))).fetchone()
+        if row:
+            keys=('id','company_id','employee_id','payroll_period_id','amount_minor','entry_type',
+                  'effect','actor_id','occurred_at','reason','reference','request_id','reversal_of','actor_kind')
+            return dict(zip(keys,row))
+        if required:raise ValueError('Запись расчёта зарплаты не найдена в этой компании')
+
+    def payroll_settlements(self, period_id=None, employee=None):
+        conditions=['company_id=?'];args=[self.company_id]
+        if period_id is not None:conditions.append('payroll_period_id=?');args.append(str(period_id))
+        if employee is not None:conditions.append('employee_id=?');args.append(employee)
+        cursor=self.sql('''SELECT id,company_id,employee_id,payroll_period_id,amount_minor,
+                                  entry_type,effect,actor_id,occurred_at,reason,reference,
+                                  request_id,reversal_of,actor_kind
+                           FROM payroll_settlement_entries WHERE '''+' AND '.join(conditions)+
+                        ' ORDER BY occurred_at,id',tuple(args))
+        keys=('id','company_id','employee_id','payroll_period_id','amount_minor','entry_type',
+              'effect','actor_id','occurred_at','reason','reference','request_id','reversal_of','actor_kind')
+        return [dict(zip(keys,row)) for row in cursor.fetchall()]
+
+    def insert_payroll_settlement(self, data):
+        value=dict(data,id=str(data.get('id') or uuid.uuid4()),company_id=self.company_id)
+        columns=('id','company_id','employee_id','payroll_period_id','amount_minor','entry_type',
+                 'effect','actor_id','occurred_at','reason','reference','request_id','reversal_of','actor_kind')
+        self.sql('INSERT INTO payroll_settlement_entries('+','.join(columns)+') VALUES('+
+                 ','.join('?' for _ in columns)+')',tuple(value.get(key) for key in columns))
+        return value
 
     def catalog(self, name):
         tables={'clients':'portal_clients','operations':'portal_client_operations','users':'app_users',

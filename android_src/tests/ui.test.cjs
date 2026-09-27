@@ -151,7 +151,7 @@ test('browser UI regression',async t=>{
     await t.test('owner requires company and confirmation, switches scope and rejects stale data',async()=>{
       const {page,errors}=await fixture(browser,'platform_owner');
       await page.locator('#loginCompany').click();await page.locator('#sheetContent [data-action=technicalLogin]').click();
-      assert.equal(await page.locator('#passwordLabel').innerText(),'Пароль Platform Owner');await login(page);
+      assert.equal(await page.locator('#passwordLabel').innerText(),'Пароль владельца платформы');await login(page);
       assert.equal(await page.evaluate(()=>mock.calls.some(c=>c.url==='/api/platform/login')),true);
       assert.equal(await page.locator('[data-action=selectCompany]').count(),2);
       assert.equal((await page.evaluate(()=>mock.calls)).some(c=>c.url.startsWith('/api/dashboard')),false);
@@ -210,7 +210,7 @@ test('browser UI regression',async t=>{
       assert.match(await page.locator('#content').innerText(),/Без задания/);
       await page.evaluate(()=>go('users'));
       await page.waitForFunction(()=>S.page==='users'&&!document.querySelector('.loading'));
-      assert.match(await page.locator('#content').innerText(),/Online/);
+      assert.match(await page.locator('#content').innerText(),/В сети/);
       await page.locator('[data-action=loginHistory]').click();await page.waitForSelector('#sheetContent');
       assert.match(await page.locator('#sheetContent').innerText(),/Вход · Успешно/);
       await page.evaluate(()=>closeSheet());

@@ -5,6 +5,7 @@ import base64
 import calendar
 import hashlib
 import json
+import re
 import uuid
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
@@ -28,6 +29,22 @@ def cents(value):
         if not n.is_finite() or n<0 or n>Decimal('1000000000'): raise ValueError()
         return int((n*100).quantize(Decimal('1'),rounding=ROUND_HALF_UP))
     except (ValueError,InvalidOperation): raise ValueError('Цена должна быть неотрицательным числом')
+
+def settlement_cents(value, signed=False):
+    """Exact rubles at the API boundary; no float conversion or silent rounding."""
+    if type(value) is int:
+        value=str(value)
+    if not isinstance(value,str) or not re.fullmatch(r'-?(?:[0-9]+(?:\.[0-9]{1,2})?|\.[0-9]{1,2})',value) or len(value)>32:
+        raise ValueError('Сумма: число в рублях с точностью до двух знаков после точки')
+    amount=Decimal(value)*100
+    if amount==0 or abs(amount)>100_000_000_000 or (not signed and amount<0):
+        raise ValueError('Сумма должна быть ненулевой, не более 1 000 000 000 рублей; выплата — положительной')
+    return int(amount)
+
+def request_identity(value):
+    if not isinstance(value,str) or not 1<=len(value)<=128 or value.strip()!=value:
+        raise ValueError('Идентификатор запроса: от 1 до 128 символов без пробелов по краям')
+    return value
 
 def employee_id(user):
     return user.get('employee_id',user.get('telegram_id'))
@@ -289,6 +306,116 @@ class Production:
     def payroll_is_closed(self,at):
         day=at[:10]
         return any(p['status']=='closed' and p['period_start']<=day<=p['period_end'] for p in self.r.list('payroll_periods'))
+
+    def payroll_employee_id(self,b,required=True):
+        canonical=b.get('employee_id')
+        legacy=b.get('telegram_id')
+        def normalized(value):
+            if type(value) is int:return value
+            if isinstance(value,str) and re.fullmatch(r'-?[0-9]{1,19}',value):return int(value)
+            raise ValueError('Некорректный идентификатор сотрудника')
+        resolved=self.r.payroll_employee(normalized(canonical))['employee_id'] if canonical is not None else None
+        mapped=self.r.payroll_employee(normalized(legacy),legacy=True)['employee_id'] if legacy is not None else None
+        if resolved is not None and mapped is not None and resolved!=mapped:
+            raise ValueError('Идентификаторы сотрудника не совпадают')
+        value=resolved if resolved is not None else mapped
+        if value is None and not required:return None
+        if value is None:raise ValueError('Укажите сотрудника')
+        return value
+
+    def settlement_employees(self,period):
+        # Closed v3 snapshots retain their historical compatibility IDs unchanged.
+        result=[]
+        for row in period['snapshot']['employees']:
+            legacy=row.get('employee_id')
+            if legacy is None:continue
+            if type(legacy) is not int or type(row.get('salary')) is not int:
+                raise ValueError('Закрытый снимок требует проверки идентификаторов и денежных сумм')
+            identity=self.r.payroll_employee(legacy,legacy=True)['employee_id']
+            if self.r.has_legacy_payroll(period,legacy):
+                raise ValueError('В периоде есть исторические расчёты зарплаты; требуется сверка до новых выплат')
+            result.append(dict(row,employee_id=identity))
+        return result
+
+    def closed_payroll_period(self,identity):
+        period=self.r.get('payroll_periods',text(identity,'Расчётный период'))
+        if period.get('status')!='closed':raise ValueError('Расчёты разрешены только для закрытого расчётного периода')
+        return period
+
+    def settlement_entry(self,row):
+        result=dict(row,amount=row['amount_minor'],money_unit='kopeck',currency='RUB')
+        result.pop('amount_minor',None)
+        return result
+
+    def settlement_summary(self,period,entries,employee=None):
+        employees={}
+        for row in self.settlement_employees(period):
+            identity=row.get('employee_id')
+            if identity is None:continue
+            item=employees.setdefault(identity,dict(employee_id=identity,
+                display_name=row.get('display_name','Сотрудник'),accrued=0,adjustment=0,paid=0,balance=0))
+            item['accrued']+=row['salary'];item['balance']+=row['salary']
+        for entry in entries:
+            item=employees.get(entry['employee_id'])
+            if item is None:continue
+            if entry['effect']=='payment':item['paid']+=entry['amount_minor']
+            else:item['adjustment']+=entry['amount_minor']
+            item['balance']=item['accrued']+item['adjustment']-item['paid']
+        rows=sorted((item for item in employees.values() if employee is None or item['employee_id']==employee),
+                    key=lambda item:(item['display_name'].casefold(),item['employee_id']))
+        totals={key:sum(item[key] for item in rows) for key in ('accrued','adjustment','paid','balance')}
+        return dict(period_id=period['id'],period_start=period['period_start'],period_end=period['period_end'],
+                    status='закрыт',money_unit='kopeck',currency='RUB',employees=rows,totals=totals,
+                    entries=[self.settlement_entry(row) for row in entries if employee is None or row['employee_id']==employee])
+
+    def payroll_settlement(self,b):
+        entry_type=b.get('entry_type')
+        if entry_type not in ('payout','adjustment','reversal'):
+            raise ValueError('Тип записи: выплата, корректировка или сторно')
+        self.need('payroll.settlement.payout' if entry_type=='payout' else 'payroll.settlement.correct')
+        reason=text(b.get('reason'),'Причина')
+        reference=text(b.get('reference'),'Ссылка или основание',optional=True) or None
+        request_id=request_identity(b.get('request_id'))
+        reversal_of=None
+        if entry_type=='reversal':
+            if 'amount' in b:raise ValueError('Сумма сторно определяется исходной записью')
+            target=self.r.payroll_settlement(text(b.get('reversal_of'),'Исходная запись'))
+            if target['entry_type']=='reversal':raise ValueError('Сторно нельзя сторнировать повторно')
+            if any(row['reversal_of']==target['id'] for row in self.r.payroll_settlements(target['payroll_period_id'])):
+                raise ValueError('Исходная запись уже сторнирована')
+            period=self.closed_payroll_period(target['payroll_period_id'])
+            employee=target['employee_id'];amount=-target['amount_minor'];effect=target['effect'];reversal_of=target['id']
+            self.settlement_employees(period)
+            supplied=self.payroll_employee_id(b,False)
+            if supplied is not None and supplied!=employee:raise ValueError('Сотрудник не совпадает с исходной записью')
+            if b.get('payroll_period_id') not in (None,period['id']):raise ValueError('Расчётный период не совпадает с исходной записью')
+        else:
+            period=self.closed_payroll_period(b.get('payroll_period_id'))
+            employee=self.payroll_employee_id(b)
+            if employee not in {row['employee_id'] for row in self.settlement_employees(period)}:
+                raise ValueError('Сотрудник отсутствует в закрытом снимке расчётного периода')
+            amount=settlement_cents(b.get('amount'),signed=entry_type=='adjustment')
+            if amount==0:raise ValueError('Сумма записи после округления не может быть нулевой')
+            effect='payment' if entry_type=='payout' else 'entitlement'
+            if entry_type=='payout':
+                current=self.settlement_summary(period,self.r.payroll_settlements(period['id']),employee)['employees'][0]
+                if amount>current['balance']:raise ValueError('Сумма выплаты превышает остаток по закрытому периоду')
+        item=self.r.insert_payroll_settlement(dict(employee_id=employee,payroll_period_id=period['id'],
+            amount_minor=amount,entry_type=entry_type,effect=effect,actor_id=self.u['id'],
+            occurred_at=self.clock(),reason=reason,reference=reference,request_id=request_id,reversal_of=reversal_of,
+            actor_kind='platform_owner' if self.u.get('technical_owner') else 'user'))
+        return self.settlement_entry(item)
+
+    def payroll_settlement_rows(self,params):
+        self.need('payroll.settlement.read')
+        period_id=params.get('payroll_period_id',[None])[0]
+        if not period_id:raise ValueError('Укажите закрытый расчётный период')
+        period=self.closed_payroll_period(period_id)
+        values={key:params[key][0] for key in ('employee_id','telegram_id') if key in params}
+        employee=self.payroll_employee_id(values,False)
+        if employee is not None and employee not in {row['employee_id'] for row in self.settlement_employees(period)}:
+            raise ValueError('Сотрудник отсутствует в закрытом снимке расчётного периода')
+        return self.settlement_summary(period,self.r.payroll_settlements(period['id'],employee),employee)
 
     def chat_room(self,recipient=None):
         if recipient in (None,''):return 'general'
@@ -610,15 +737,27 @@ class Production:
         return result
 
     def command(self,action,body):
-        if 'company_id' in body and body['company_id']!=self.r.company_id:raise PermissionError('Компания определяется сессией')
-        methods={'batches':self.batch,'tasks':self.task,'work':self.work,'timers':self.timer,'links':self.link,'tariffs':self.create_tariff,'permissions':self.set_permissions,'usage':self.usage,'expenses':self.expense,'invoices':self.invoice,'payments':self.payment,'settings':self.settings,'shipments':self.ship,'payroll-periods':self.payroll_period,'chat':self.chat_command,'documents':self.document}
+        if 'company_id' in body and (type(body['company_id']) is not int or body['company_id']!=self.r.company_id):raise PermissionError('Компания определяется сессией')
+        methods={'batches':self.batch,'tasks':self.task,'work':self.work,'timers':self.timer,'links':self.link,'tariffs':self.create_tariff,'permissions':self.set_permissions,'usage':self.usage,'expenses':self.expense,'invoices':self.invoice,'payments':self.payment,'settings':self.settings,'shipments':self.ship,'payroll-periods':self.payroll_period,'payroll-settlements':self.payroll_settlement,'chat':self.chat_command,'documents':self.document}
         if action not in methods: raise ValueError('Действие не поддерживается')
         authorization={'batches':'batches.receive','tasks':'tasks.manage','work':'work.write','timers':'work.write','links':'work.link','permissions':'users.manage','usage':'materials.use','expenses':'expenses.manage','invoices':'invoices.create','payments':'payments.record','settings':'company.settings','shipments':'batches.receive','payroll-periods':'payroll.close','chat':'chat.write','documents':'documents.manage'}
         if action in authorization:self.need(authorization[action])
+        if action=='payroll-settlements':
+            entry_type=body.get('entry_type')
+            if entry_type not in ('payout','adjustment','reversal'):
+                raise ValueError('Тип записи: выплата, корректировка или сторно')
+            self.need('payroll.settlement.payout' if entry_type=='payout' else 'payroll.settlement.correct')
+            if set(body)-{'company_id','employee_id','telegram_id','payroll_period_id','entry_type',
+                          'amount','reason','reference','request_id','reversal_of'}:
+                raise ValueError('Неизвестные параметры расчёта; автора и время определяет сервер')
+            if entry_type!='reversal' and body.get('reversal_of') is not None:
+                raise ValueError('Исходная запись указывается только для сторно')
+            if not isinstance(body.get('request_id'),str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{1,128}',body['request_id']):
+                raise ValueError('Идентификатор запроса: латинские буквы, цифры, точка, дефис, двоеточие или подчёркивание')
         if action=='tariffs':
             for field,key in [('employee_rate','rates.employee'),('client_rate','rates.client')]:
                 if field in body:self.need(key)
-        key=text(body.get('request_id'),'Идентификатор запроса')
+        key=request_identity(body.get('request_id'))
         fingerprint=hashlib.sha256(json.dumps(dict(action=action,body=body,user=self.u['id']),sort_keys=True).encode()).hexdigest()
         old=self.r.get('requests',key,False)
         if old:
@@ -631,7 +770,13 @@ class Production:
                     result.pop('employee_rate',None);result.pop('salary',None)
             return result
         result=methods[action](body)
-        self.r.audit(self.u,action,result.get('id','control'))
+        if action=='payroll-settlements':
+            self.r.audit(self.u,'payroll_settlement.recorded',result['id'],entry_type=result['entry_type'],
+                employee_id=result['employee_id'],payroll_period_id=result['payroll_period_id'],
+                amount=result['amount'],request_id=result['request_id'],actor_kind=result['actor_kind'],
+                reason={'payout':'Выплата зарплаты','adjustment':'Корректировка начисления','reversal':'Сторно записи'}[result['entry_type']],
+                reason_sha256=hashlib.sha256(result['reason'].encode('utf-8')).hexdigest())
+        else:self.r.audit(self.u,action,result.get('id','control'))
         result=dict(result)
         if action in ('work','tariffs'):
             if not {'finance.read','rates.client','invoices.create'} & self.permissions:
@@ -664,6 +809,7 @@ class Production:
             self.need('payroll.all')
             start=params.get('period_start',[None])[0];end=params.get('period_end',[None])[0]
             return self.payroll_snapshot(start,end) if start or end else self.r.list('payroll_periods')
+        if action=='payroll-settlements':return self.payroll_settlement_rows(params)
         if action=='chat':return self.chat_rows(params.get('recipient_user_id',[None])[0])
         if action=='chat-users':
             self.need('chat.read')
