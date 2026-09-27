@@ -13,6 +13,9 @@ from pathlib import Path
 from migration_import import (ValidationError, open_copy, prepared_source,
                               summary, transfer, transfer_control,
                               identity_maxima, sync_identity_sequences)
+from migration_context import bind_company
+from production_migrations import migrate_payroll_settlement
+from production_repository import Repository
 
 
 def parse_tenant(spec):
@@ -59,6 +62,12 @@ def run(tenant_specs, platform_path=None, apply=False, dsn=None):
                     before = next(x for x in report['companies'] if x['company_id'] == cid)
                     if transferred['counts'] != before['counts'] or transferred['money'] != before['money']:
                         raise ValidationError('Migration FAILED: company reconciliation')
+                # The source can legitimately predate Stage 6. Finalize each imported
+                # company inside this same atomic cutover transaction before the API
+                # is ever allowed to start.
+                for cid, _source in tenants:
+                    bind_company(target, cid)
+                    migrate_payroll_settlement(Repository(target, cid, dialect='postgresql'))
                 report['identity_sequences_checked'] = sync_identity_sequences(
                     target, identity_maxima(tenants, control))
         report['status'] = 'IMPORTED_AND_VERIFIED'
