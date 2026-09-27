@@ -21,6 +21,9 @@ API_PORT="8770"
 BRANCH="${PORTAL_STAGE7_BRANCH:-portal-next-b003}"
 EXPECTED_COMMIT="${PORTAL_STAGE7_EXPECTED_COMMIT:-}"
 PILOT_SSLIP="${PORTAL_STAGE7_PILOT_SSLIP:-0}"
+PILOT_TUNNEL="${PORTAL_STAGE7_PILOT_TUNNEL:-0}"
+TUNNEL_PROXY_PORT="8780"
+TUNNEL_SERVICE="portal-stage7-tunnel.service"
 GATE_BASE="f9dd1b38231e53fba0cb9e96c85cfcc032b7864a"
 
 fail() { echo "ОШИБКА Stage 7: $*" >&2; exit 1; }
@@ -256,6 +259,111 @@ else
   else
     HTTPS_STATUS="dns-ok"
   fi
+fi
+
+if [[ "$PILOT_TUNNEL" == "1" ]]; then
+  echo "Pilot HTTPS: Cloudflare Quick Tunnel"
+  if ! command -v nginx >/dev/null; then
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -qq
+    apt-get install -y -qq nginx ca-certificates
+  fi
+  if ! command -v cloudflared >/dev/null; then
+    CLOUDFLARED_TMP="$(mktemp)"
+    curl -fsSL --retry 3 --retry-delay 2 \
+      https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
+      -o "$CLOUDFLARED_TMP"
+    install -m 0755 "$CLOUDFLARED_TMP" /usr/local/bin/cloudflared
+    rm -f "$CLOUDFLARED_TMP"
+  fi
+
+  cat >"/etc/nginx/sites-available/portal-stage7-tunnel" <<EOF
+server {
+    listen 127.0.0.1:$TUNNEL_PROXY_PORT;
+    server_name _;
+    server_tokens off;
+    client_max_body_size 25m;
+
+    location = /api/setup {
+        return 403;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:$API_PORT;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    }
+}
+EOF
+  ln -sfn /etc/nginx/sites-available/portal-stage7-tunnel \
+    /etc/nginx/sites-enabled/portal-stage7-tunnel
+  nginx -t
+  systemctl enable nginx >/dev/null
+  systemctl restart nginx
+  curl -fsS --max-time 5 "http://127.0.0.1:$TUNNEL_PROXY_PORT/api/ping" >/dev/null ||
+    fail "локальный tunnel proxy не отвечает"
+
+  install -d -m 0750 -o portal-stage7 -g portal-stage7 /var/lib/portal-stage7-tunnel
+  cat >"/etc/systemd/system/$TUNNEL_SERVICE" <<EOF
+[Unit]
+Description=PORTAL Stage 7 Pilot Quick Tunnel
+After=network-online.target portal-stage7.service nginx.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=portal-stage7
+Group=portal-stage7
+Environment=HOME=/var/lib/portal-stage7-tunnel
+WorkingDirectory=/var/lib/portal-stage7-tunnel
+ExecStart=/usr/local/bin/cloudflared tunnel --no-autoupdate --protocol http2 --url http://127.0.0.1:$TUNNEL_PROXY_PORT
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectHome=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  systemctl daemon-reload
+  systemctl enable "$TUNNEL_SERVICE" >/dev/null
+  systemctl restart "$TUNNEL_SERVICE"
+
+  PUBLIC_URL=""
+  for _ in $(seq 1 60); do
+    PUBLIC_URL="$(journalctl -u "$TUNNEL_SERVICE" --since "2 minutes ago" --no-pager 2>/dev/null |
+      grep -Eo 'https://[a-z0-9-]+\.trycloudflare\.com' | tail -n 1 || true)"
+    [[ -n "$PUBLIC_URL" ]] && break
+    sleep 0.5
+  done
+  [[ "$PUBLIC_URL" =~ ^https://[a-z0-9-]+\.trycloudflare\.com$ ]] || {
+    systemctl --no-pager --full status "$TUNNEL_SERVICE" || true
+    fail "Cloudflare Quick Tunnel не выдал HTTPS URL"
+  }
+  DOMAIN="${PUBLIC_URL#https://}"
+  DOMAIN_SOURCE="trycloudflare-pilot"
+
+  TMP_ENV="$(mktemp)"
+  grep -v '^PORTAL_PUBLIC_API_URL=' "$ENV_FILE" >"$TMP_ENV"
+  printf 'PORTAL_PUBLIC_API_URL=%s\n' "$PUBLIC_URL" >>"$TMP_ENV"
+  install -m 0600 "$TMP_ENV" "$ENV_FILE"
+  rm -f "$TMP_ENV"
+  systemctl restart "$SERVICE"
+
+  for _ in $(seq 1 30); do
+    if curl -fsS --max-time 8 "$PUBLIC_URL/api/ping" >/dev/null 2>&1; then
+      break
+    fi
+    sleep 1
+  done
+  curl -fsS --max-time 8 "$PUBLIC_URL/api/ping" >/dev/null ||
+    fail "публичный Quick Tunnel не отвечает"
+  SETUP_CODE="$(curl -sS --max-time 8 -o /dev/null -w '%{http_code}' -X POST "$PUBLIC_URL/api/setup" || true)"
+  [[ "$SETUP_CODE" == "403" ]] || fail "публичный /api/setup не закрыт"
+  HTTPS_STATUS="ok"
 fi
 
 if [[ "$HTTPS_STATUS" == "dns-ok" ]]; then
