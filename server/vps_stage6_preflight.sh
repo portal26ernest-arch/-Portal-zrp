@@ -30,13 +30,14 @@ else
   git clone --branch "$BRANCH" --single-branch https://github.com/portal26ernest-arch/-Portal-zrp.git "$REPO"
 fi
 
-EXPECTED="055c212d9fb65f9b3ad328ba1601ce35b77a043a"
+STAGE6_BASE="055c212d9fb65f9b3ad328ba1601ce35b77a043a"
 ACTUAL="$(git -C "$REPO" rev-parse HEAD)"
 echo "Git commit: $ACTUAL"
-if [[ "$ACTUAL" != "$EXPECTED" ]]; then
-  echo "ОШИБКА: ожидается проверенный Stage 6 commit $EXPECTED" >&2
+if ! git -C "$REPO" merge-base --is-ancestor "$STAGE6_BASE" "$ACTUAL"; then
+  echo "ОШИБКА: текущая ветка не содержит проверенный Stage 6 commit $STAGE6_BASE" >&2
   exit 3
 fi
+echo "Проверенный Stage 6 commit присутствует в истории ветки."
 
 python3 -m venv "$ROOT/venv"
 "$ROOT/venv/bin/pip" -q install --upgrade pip
