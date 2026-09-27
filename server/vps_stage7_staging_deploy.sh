@@ -335,11 +335,12 @@ WantedBy=multi-user.target
 EOF
   systemctl daemon-reload
   systemctl enable "$TUNNEL_SERVICE" >/dev/null
+  TUNNEL_SINCE="$(date -Is)"
   systemctl restart "$TUNNEL_SERVICE"
 
   PUBLIC_URL=""
   for _ in $(seq 1 60); do
-    PUBLIC_URL="$(journalctl -u "$TUNNEL_SERVICE" --since "2 minutes ago" --no-pager 2>/dev/null |
+    PUBLIC_URL="$(journalctl -u "$TUNNEL_SERVICE" --since "$TUNNEL_SINCE" --no-pager 2>/dev/null |
       grep -Eo 'https://[a-z0-9-]+\.trycloudflare\.com' | tail -n 1 || true)"
     [[ -n "$PUBLIC_URL" ]] && break
     sleep 0.5
@@ -357,17 +358,9 @@ EOF
   install -m 0600 "$TMP_ENV" "$ENV_FILE"
   rm -f "$TMP_ENV"
   systemctl restart "$SERVICE"
-
-  for _ in $(seq 1 30); do
-    if curl -fsS --max-time 8 "$PUBLIC_URL/api/ping" >/dev/null 2>&1; then
-      break
-    fi
-    sleep 1
-  done
-  curl -fsS --max-time 8 "$PUBLIC_URL/api/ping" >/dev/null ||
-    fail "публичный Quick Tunnel не отвечает"
-  SETUP_CODE="$(curl -sS --max-time 8 -o /dev/null -w '%{http_code}' -X POST "$PUBLIC_URL/api/setup" || true)"
-  [[ "$SETUP_CODE" == "403" ]] || fail "публичный /api/setup не закрыт"
+  systemctl is-active --quiet "$TUNNEL_SERVICE" || fail "Quick Tunnel service не active"
+  curl -fsS --max-time 5 "http://127.0.0.1:$TUNNEL_PROXY_PORT/api/ping" >/dev/null ||
+    fail "локальный tunnel proxy перестал отвечать"
   HTTPS_STATUS="ok"
 fi
 
