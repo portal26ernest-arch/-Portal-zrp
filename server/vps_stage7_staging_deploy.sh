@@ -19,6 +19,7 @@ TENANT_ROLE="portal_stage7_tenant"
 CONTROL_ROLE="portal_stage7_control"
 API_PORT="8770"
 BRANCH="${PORTAL_STAGE7_BRANCH:-portal-next-b003}"
+EXPECTED_COMMIT="${PORTAL_STAGE7_EXPECTED_COMMIT:-}"
 GATE_BASE="f9dd1b38231e53fba0cb9e96c85cfcc032b7864a"
 
 fail() { echo "ОШИБКА Stage 7: $*" >&2; exit 1; }
@@ -45,6 +46,9 @@ fi
 ACTUAL="$(git -C "$REPO" rev-parse HEAD)"
 git -C "$REPO" merge-base --is-ancestor "$GATE_BASE" "$ACTUAL" ||
   fail "ветка не содержит успешно проверенный Stage 6 gate"
+if [[ -n "$EXPECTED_COMMIT" && "$ACTUAL" != "$EXPECTED_COMMIT" ]]; then
+  fail "получен неожиданный commit: $ACTUAL"
+fi
 echo "Commit: $ACTUAL"
 chmod -R a+rX "$REPO"
 echo "[2/9] Python runtime"
@@ -221,11 +225,30 @@ PING="$(curl -fsS --max-time 3 "http://127.0.0.1:$API_PORT/api/ping")"
 
 echo "[8/9] HTTPS readiness"
 HTTPS_STATUS="pending"
-DOMAIN="${PORTAL_STAGE7_DOMAIN:-$(hostname -f 2>/dev/null || hostname)}"
+DOMAIN="${PORTAL_STAGE7_DOMAIN:-}"
 PUBLIC_URL=""
 
-if [[ "$DOMAIN" == *.* ]] && getent ahosts "$DOMAIN" >/dev/null 2>&1; then
-  HTTPS_STATUS="dns-ok"
+if [[ -z "$DOMAIN" ]]; then
+  HTTPS_STATUS="need-domain"
+elif [[ "$DOMAIN" != *.* ]]; then
+  HTTPS_STATUS="invalid-domain"
+elif ! getent ahosts "$DOMAIN" >/dev/null 2>&1; then
+  HTTPS_STATUS="dns-pending"
+else
+  SERVER_IPS="$(hostname -I 2>/dev/null || true)"
+  DOMAIN_IPS="$(getent ahosts "$DOMAIN" | awk '{print $1}' | sort -u | tr '\n' ' ')"
+  DNS_MATCH=0
+  for ip in $DOMAIN_IPS; do
+    [[ " $SERVER_IPS " == *" $ip "* ]] && DNS_MATCH=1
+  done
+  if [[ "$DNS_MATCH" != "1" ]]; then
+    HTTPS_STATUS="dns-wrong-server"
+  else
+    HTTPS_STATUS="dns-ok"
+  fi
+fi
+
+if [[ "$HTTPS_STATUS" == "dns-ok" ]]; then
   if ! command -v nginx >/dev/null || ! command -v certbot >/dev/null; then
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq
@@ -241,8 +264,6 @@ if [[ "$DOMAIN" == *.* ]] && getent ahosts "$DOMAIN" >/dev/null 2>&1; then
     HTTPS_STATUS="certificate-failed"
     [[ "$NGINX_WAS_ACTIVE" == "1" ]] && systemctl start nginx || true
   fi
-else
-  HTTPS_STATUS="dns-pending"
 fi
 
 if [[ "$HTTPS_STATUS" == "certificate-ok" ]]; then
