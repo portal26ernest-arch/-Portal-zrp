@@ -41,13 +41,15 @@ echo "Проверенный Stage 6 commit присутствует в исто
 
 VENV="/tmp/portal-preflight-venv-$SUFFIX"
 LOG="/tmp/portal-stage6-preflight-$SUFFIX.log"
-rm -rf "$VENV" "/tmp/portal-migration-full-$SUFFIX"
+WORK="/tmp/portal-stage6-work-$SUFFIX"
+rm -rf "$VENV" "$WORK" "/tmp/portal-migration-full-$SUFFIX"
 rm -f "$LOG"
 python3 -m venv "$VENV"
 "$VENV/bin/pip" -q install --upgrade pip
 "$VENV/bin/pip" -q install "psycopg[binary]"
-chown -R postgres:postgres "$VENV"
-chmod 0755 "$ROOT" "$REPO"
+install -d -o postgres -g postgres -m 0700 "$WORK"
+cp -a "$REPO/server" "$WORK/server"
+chown -R postgres:postgres "$VENV" "$WORK"
 
 install -d -o postgres -g postgres -m 0700 "/tmp/portal-migration-full-$SUFFIX"
 install -d -o postgres -g postgres -m 0700 "/tmp/portal-migration-full-$SUFFIX/migrations"
@@ -61,8 +63,8 @@ set +e
 sudo -u postgres env \
   PORTAL_SYNTHETIC_SETUP=1 \
   PORTAL_SYNTHETIC_SUFFIX="$SUFFIX" \
-  PYTHONPATH="$REPO/server" \
-  "$VENV/bin/python" "$REPO/server/test_migration_full_vps.py" \
+  PYTHONPATH="$WORK/server" \
+  "$VENV/bin/python" "$WORK/server/test_migration_full_vps.py" \
   >"$LOG" 2>&1
 RC=$?
 set -e
@@ -79,7 +81,7 @@ set +e
 sudo -u postgres env \
   PORTAL_FULL_CLI_INTEGRATION=1 \
   PORTAL_SYNTHETIC_SUFFIX="$SUFFIX" \
-  PYTHONPATH="$REPO/server" \
+  PYTHONPATH="$WORK/server" \
   "$VENV/bin/python" -m unittest -v test_migration_full_cli \
   >>"$LOG" 2>&1
 RC=$?
