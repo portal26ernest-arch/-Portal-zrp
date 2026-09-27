@@ -54,4 +54,9 @@ def migrate_retention(r):
         r.sql("CREATE TRIGGER production_no_delete BEFORE DELETE ON portal_production WHEN OLD.kind NOT IN ('chat_messages','chat_pins','chat_attachments') BEGIN SELECT RAISE(ABORT,'production history is immutable'); END")
         r.sql('INSERT INTO portal_production_migrations(company_id,version,applied_at) VALUES(?,5,?)',(r.company_id,utcnow()))
         return
-    raise RuntimeError('Apply PostgreSQL chat retention migration with the migration operator first')
+    row=r.sql("SELECT pg_get_functiondef('portal_production_immutable()'::regprocedure)").fetchone()
+    definition=row[0] if row else ''
+    required=('chat_messages','chat_pins','chat_attachments','production history is immutable')
+    if not all(marker in definition for marker in required):
+        raise RuntimeError('Apply PostgreSQL chat retention migration with the migration operator first')
+    r.sql('INSERT INTO portal_production_migrations(company_id,version,applied_at) VALUES(?,5,?)',(r.company_id,utcnow()))

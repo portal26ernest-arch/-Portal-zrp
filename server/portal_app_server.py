@@ -20,7 +20,7 @@ from production_migrations import migrate as migrate_production
 import production_activity as activity
 from portal_config import load_config
 
-BUILD_ID = "PORTAL Server · 3.2-dev"
+BUILD_ID = "PORTAL Server · 3.3-dev"
 CONFIG = load_config(os.environ)
 DB_PATH = CONFIG.sqlite_path
 tenants.configure(CONFIG)

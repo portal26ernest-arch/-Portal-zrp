@@ -7,18 +7,22 @@ import base64
 import hashlib
 import json
 import os
+import re
 import secrets
 import sqlite3
 import subprocess
 from pathlib import Path
 from urllib.parse import quote
 
-ROOT = Path('/tmp/portal-migration-full-20260926')
-DB = 'portal_test_migration_full_20260926'
+SUFFIX = os.environ.get('PORTAL_SYNTHETIC_SUFFIX','20260926')
+if not re.fullmatch(r'[A-Za-z0-9_]{1,24}',SUFFIX):
+    raise RuntimeError('Invalid PORTAL_SYNTHETIC_SUFFIX')
+ROOT = Path('/tmp/portal-migration-full-' + SUFFIX)
+DB = 'portal_test_migration_full_' + SUFFIX
 ROLES = {
-    'migration': 'portal_migration_full_20260926',
-    'tenant': 'portal_tenant_full_20260926',
-    'control': 'portal_control_full_20260926',
+    'migration': 'portal_migration_full_' + SUFFIX,
+    'tenant': 'portal_tenant_full_' + SUFFIX,
+    'control': 'portal_control_full_' + SUFFIX,
 }
 MIGRATIONS = ('postgresql_core_stage4b.sql', 'postgresql_stage3.sql',
               'postgresql_runtime.sql', 'postgresql_rls_context.sql',
@@ -123,7 +127,7 @@ def create_test_database():
     fd = os.open(secrets_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, 'w', encoding='utf-8') as output:
         json.dump(payload, output)
-    print('Synthetic DB, three restricted roles, four migrations and three SQLite copies ready')
+    print('Synthetic DB, three restricted roles, current migrations and three SQLite copies ready')
 
 
 def schema(conn, table):
@@ -216,25 +220,26 @@ def populate_tenant(db, columns, cid, pin):
     add('work_log', id=1, telegram_id=employee, username='worker_' + code.lower(),
         first_name='Сотрудник ' + code, client=name, operation='Упаковка',
         quantity=3, rate=2.35, salary=7.05, client_rate=5.75,
-        revenue=17.25, direct_cost=1.5, created_at=STAMP, updated_at=STAMP)
-    add('payroll_payments', telegram_id=employee, period_start='2026-09-01',
+        revenue=17.25, direct_cost=1.5, unit_direct_cost=0, anomaly_flag=0,
+        created_at=STAMP, updated_at=STAMP)
+    add('payroll_payments', id=1, telegram_id=employee, period_start='2026-09-01',
         period_end='2026-09-30', status='partial')
-    add('payroll_transactions', telegram_id=employee, period_start='2026-09-01',
+    add('payroll_transactions', id=1, telegram_id=employee, period_start='2026-09-01',
         period_end='2026-09-30', amount=7.05)
     add('client_invoices', id=1, client=name, description='Упаковка',
         amount_due=17.25, due_date='2026-10-01', created_at=STAMP)
-    add('client_payments', invoice_id=1, amount=5.75)
+    add('client_payments', id=1, invoice_id=1, amount=5.75)
     add('production_jobs', id=1, client=name, operation='Упаковка',
         product_name=product, status='in_progress', target_quantity=10,
         priority=1, due_at='2026-10-01 12:00:00', updated_at=STAMP,
         internal_cost=7.05)
-    add('production_job_progress', job_id=1, work_id=1, telegram_id=employee,
+    add('production_job_progress', id=1, job_id=1, work_id=1, telegram_id=employee,
         quantity=3, created_at=STAMP)
     add('audit_log', id=1, actor_id=1, action='synthetic', entity_type='work',
         entity_id='1', details='{}', created_at=STAMP)
     add('work_material_consumption', work_id=1, material_id=1,
         quantity=1.5, unit_cost=0.75, updated_at=STAMP)
-    for version in (3, 4):
+    for version in (3, 4, 5):
         add('portal_production_migrations', version=version, applied_at=STAMP)
     ledger = (
         ('batches', 'batch-' + code, {'number': 'PRT-2026-SYNTH-' + code,

@@ -7,6 +7,7 @@ from pathlib import Path
 from migration_validation import (ValidationError, compare, snapshot,
                                   validate_postgresql_schema)
 from production_repository import Repository
+from production_migrations import migrate_retention
 
 
 def fixture():
@@ -171,6 +172,43 @@ class MigrationValidationTest(unittest.TestCase):
                 compare(expected, snapshot(conn, 'sqlite', 1))
         finally:
             conn.close()
+
+
+class RetentionMigrationTest(unittest.TestCase):
+    class Result:
+        def __init__(self, row=None):
+            self.row=row
+        def fetchone(self):
+            return self.row
+
+    class Repo:
+        dialect='postgresql'
+        company_id=1
+        def __init__(self, definition):
+            self.definition=definition
+            self.inserted=False
+        def sql(self, query, args=()):
+            if 'SELECT 1 FROM portal_production_migrations' in query:
+                return RetentionMigrationTest.Result(None)
+            if 'pg_get_functiondef' in query:
+                return RetentionMigrationTest.Result((self.definition,))
+            if 'INSERT INTO portal_production_migrations' in query:
+                self.inserted=True
+                return RetentionMigrationTest.Result(None)
+            raise AssertionError(query)
+
+    def test_postgresql_retention_marker_requires_verified_schema(self):
+        old=self.Repo("RAISE EXCEPTION 'production history is immutable'")
+        with self.assertRaisesRegex(RuntimeError,'chat retention migration'):
+            migrate_retention(old)
+        self.assertFalse(old.inserted)
+
+        current=self.Repo(
+            "chat_messages chat_pins chat_attachments "
+            "RAISE EXCEPTION 'production history is immutable'"
+        )
+        migrate_retention(current)
+        self.assertTrue(current.inserted)
 
 
 if __name__ == '__main__':

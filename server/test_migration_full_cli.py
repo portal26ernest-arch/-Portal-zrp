@@ -21,11 +21,14 @@ from urllib.request import Request, urlopen
 
 from migration_context import bind_company
 from migration_import import open_copy, prepared_source, summary, identity_maxima
-from test_migration_full_vps import ROOT, DB, ROLES, TENANT_TABLES, CONTROL_TABLES
+from test_migration_full_vps import ROOT, DB, ROLES, TENANT_TABLES, CONTROL_TABLES, SUFFIX
 
 ROLLBACK_DB = DB + '_rollback'
 RESTORE_DB = DB + '_restore'
 HERE = Path(__file__).resolve().parent
+TEST_PORT = int(os.environ.get('PORTAL_FULL_CLI_PORT','8767'))
+if not 1024 <= TEST_PORT <= 65535:
+    raise RuntimeError('Invalid PORTAL_FULL_CLI_PORT')
 
 
 @unittest.skipUnless(os.environ.get('PORTAL_FULL_CLI_INTEGRATION') == '1',
@@ -37,8 +40,8 @@ class FullMigrationCLI(unittest.TestCase):
         from psycopg import sql
         from psycopg.conninfo import conninfo_to_dict, make_conninfo
         cls.pg, cls.sql = psycopg, sql
-        if DB != 'portal_test_migration_full_20260926' or os.geteuid() == 0:
-            raise RuntimeError('Use the postgres OS user and fixed isolated test DB')
+        if DB != 'portal_test_migration_full_' + SUFFIX or not DB.startswith('portal_test_migration_full_') or os.geteuid() == 0:
+            raise RuntimeError('Use the postgres OS user and isolated synthetic test DB')
         cls.secrets = json.loads((ROOT / 'secrets.json').read_text())
         cls.dsn = cls.secrets['migration_dsn']
         for kind in ('migration', 'tenant', 'control'):
@@ -191,6 +194,19 @@ class FullMigrationCLI(unittest.TestCase):
                 with c.transaction():
                     c.execute('SELECT portal_bind_company(%s,%s)',(1,keys[1]))
                     c.execute("UPDATE portal_production SET payload=jsonb_set(payload::jsonb,'{salary}','999')::text WHERE kind='works'")
+            with c.transaction():
+                c.execute('SELECT portal_bind_company(%s,%s)',(1,keys[1]))
+                versions={row[0] for row in c.execute('SELECT version FROM portal_production_migrations').fetchall()}
+                self.assertTrue({3,4,5}.issubset(versions))
+                probe='retention-probe-'+self.slug
+                payload=json.dumps({'id':probe,'company_id':1,'probe':True})
+                c.execute("INSERT INTO portal_production(company_id,kind,id,payload,created_at) VALUES(%s,'chat_messages',%s,%s,%s)",
+                          (1,probe,payload,'2020-01-01T00:00:00'))
+                self.assertEqual(c.execute("DELETE FROM portal_production WHERE kind='chat_messages' AND id=%s",(probe,)).rowcount,1)
+            with self.assertRaises(self.pg.Error):
+                with c.transaction():
+                    c.execute('SELECT portal_bind_company(%s,%s)',(1,keys[1]))
+                    c.execute("DELETE FROM portal_production WHERE kind='works'")
             with self.assertRaisesRegex(RuntimeError,'rollback probe'):
                 with c.transaction():
                     c.execute('SELECT portal_bind_company(%s,%s)',(1,keys[1]))
@@ -219,16 +235,16 @@ class FullMigrationCLI(unittest.TestCase):
     def test_07_imported_api_and_restart(self):
         # A dedicated temporary process; the existing 8766 service is untouched.
         with socket.socket() as probe:
-            probe.bind(('127.0.0.1',8767))
+            probe.bind(('127.0.0.1',TEST_PORT))
         env=dict(os.environ,PORTAL_ENV='test',PORTAL_DB_BACKEND='postgresql',
                  PORTAL_DATABASE_URL=self.secrets['tenant_dsn'],
                  PORTAL_CONTROL_DATABASE_URL=self.secrets['control_dsn'],
-                 PORTAL_APP_HOST='127.0.0.1',PORTAL_APP_PORT='8767',
-                 PORTAL_PUBLIC_API_URL='http://127.0.0.1:8767',PYTHONDONTWRITEBYTECODE='1')
+                 PORTAL_APP_HOST='127.0.0.1',PORTAL_APP_PORT=str(TEST_PORT),
+                 PORTAL_PUBLIC_API_URL='http://127.0.0.1:'+str(TEST_PORT),PYTHONDONTWRITEBYTECODE='1')
         def api(path,body=None,token=None):
             headers={'Content-Type':'application/json'}
             if token: headers['Authorization']='Bearer '+token
-            request=Request('http://127.0.0.1:8767'+path,
+            request=Request('http://127.0.0.1:'+str(TEST_PORT)+path,
                             data=json.dumps(body).encode() if body is not None else None,headers=headers)
             try:
                 with urlopen(request,timeout=5) as r: return r.status,json.load(r)
