@@ -240,7 +240,7 @@ def populate_tenant(db, columns, cid, pin):
         entity_id='1', details='{}', created_at=STAMP)
     add('work_material_consumption', work_id=1, material_id=1,
         quantity=1.5, unit_cost=0.75, updated_at=STAMP)
-    for version in (3, 4, 5):
+    for version in (3, 4, 5, 6):
         add('portal_production_migrations', version=version, applied_at=STAMP)
     ledger = (
         ('batches', 'batch-' + code, {'number': 'PRT-2026-SYNTH-' + code,
