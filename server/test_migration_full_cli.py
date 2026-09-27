@@ -26,9 +26,19 @@ from test_migration_full_vps import ROOT, DB, ROLES, TENANT_TABLES, CONTROL_TABL
 ROLLBACK_DB = DB + '_rollback'
 RESTORE_DB = DB + '_restore'
 HERE = Path(__file__).resolve().parent
-TEST_PORT = int(os.environ.get('PORTAL_FULL_CLI_PORT','8767'))
-if not 1024 <= TEST_PORT <= 65535:
+TEST_PORT = int(os.environ.get('PORTAL_FULL_CLI_PORT','0'))
+if not 0 <= TEST_PORT <= 65535:
     raise RuntimeError('Invalid PORTAL_FULL_CLI_PORT')
+
+
+def available_test_port():
+    if TEST_PORT:
+        with socket.socket() as probe:
+            probe.bind(('127.0.0.1', TEST_PORT))
+        return TEST_PORT
+    with socket.socket() as probe:
+        probe.bind(('127.0.0.1', 0))
+        return probe.getsockname()[1]
 
 
 @unittest.skipUnless(os.environ.get('PORTAL_FULL_CLI_INTEGRATION') == '1',
@@ -198,7 +208,7 @@ class FullMigrationCLI(unittest.TestCase):
                 c.execute('SELECT portal_bind_company(%s,%s)',(1,keys[1]))
                 versions={row[0] for row in c.execute('SELECT version FROM portal_production_migrations').fetchall()}
                 self.assertTrue({3,4,5}.issubset(versions))
-                probe='retention-probe-'+self.slug
+                probe='retention-probe-'+SUFFIX
                 payload=json.dumps({'id':probe,'company_id':1,'probe':True})
                 c.execute("INSERT INTO portal_production(company_id,kind,id,payload,created_at) VALUES(%s,'chat_messages',%s,%s,%s)",
                           (1,probe,payload,'2020-01-01T00:00:00'))
@@ -233,18 +243,17 @@ class FullMigrationCLI(unittest.TestCase):
         self.report['checks']['backup_restore']=True
 
     def test_07_imported_api_and_restart(self):
-        # A dedicated temporary process; the existing 8766 service is untouched.
-        with socket.socket() as probe:
-            probe.bind(('127.0.0.1',TEST_PORT))
+        # A dedicated temporary process on a free loopback port; the existing service is untouched.
+        test_port=available_test_port()
         env=dict(os.environ,PORTAL_ENV='test',PORTAL_DB_BACKEND='postgresql',
                  PORTAL_DATABASE_URL=self.secrets['tenant_dsn'],
                  PORTAL_CONTROL_DATABASE_URL=self.secrets['control_dsn'],
-                 PORTAL_APP_HOST='127.0.0.1',PORTAL_APP_PORT=str(TEST_PORT),
-                 PORTAL_PUBLIC_API_URL='http://127.0.0.1:'+str(TEST_PORT),PYTHONDONTWRITEBYTECODE='1')
+                 PORTAL_APP_HOST='127.0.0.1',PORTAL_APP_PORT=str(test_port),
+                 PORTAL_PUBLIC_API_URL='http://127.0.0.1:'+str(test_port),PYTHONDONTWRITEBYTECODE='1')
         def api(path,body=None,token=None):
             headers={'Content-Type':'application/json'}
             if token: headers['Authorization']='Bearer '+token
-            request=Request('http://127.0.0.1:'+str(TEST_PORT)+path,
+            request=Request('http://127.0.0.1:'+str(test_port)+path,
                             data=json.dumps(body).encode() if body is not None else None,headers=headers)
             try:
                 with urlopen(request,timeout=5) as r: return r.status,json.load(r)
