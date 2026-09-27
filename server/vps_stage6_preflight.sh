@@ -39,13 +39,15 @@ if ! git -C "$REPO" merge-base --is-ancestor "$STAGE6_BASE" "$ACTUAL"; then
 fi
 echo "Проверенный Stage 6 commit присутствует в истории ветки."
 
-python3 -m venv "$ROOT/venv"
-"$ROOT/venv/bin/pip" -q install --upgrade pip
-"$ROOT/venv/bin/pip" -q install "psycopg[binary]"
-chmod 0755 "$ROOT" "$ROOT/venv"
-chmod -R a+rX "$ROOT/venv"
-rm -rf "/tmp/portal-migration-full-$SUFFIX"
-rm -f "$ROOT/stage6-preflight.log"
+VENV="/tmp/portal-preflight-venv-$SUFFIX"
+LOG="/tmp/portal-stage6-preflight-$SUFFIX.log"
+rm -rf "$VENV" "/tmp/portal-migration-full-$SUFFIX"
+rm -f "$LOG"
+python3 -m venv "$VENV"
+"$VENV/bin/pip" -q install --upgrade pip
+"$VENV/bin/pip" -q install "psycopg[binary]"
+chown -R postgres:postgres "$VENV"
+chmod 0755 "$ROOT" "$REPO"
 
 install -d -o postgres -g postgres -m 0700 "/tmp/portal-migration-full-$SUFFIX"
 install -d -o postgres -g postgres -m 0700 "/tmp/portal-migration-full-$SUFFIX/migrations"
@@ -60,11 +62,11 @@ sudo -u postgres env \
   PORTAL_SYNTHETIC_SETUP=1 \
   PORTAL_SYNTHETIC_SUFFIX="$SUFFIX" \
   PYTHONPATH="$REPO/server" \
-  "$ROOT/venv/bin/python" "$REPO/server/test_migration_full_vps.py" \
-  >"$ROOT/stage6-preflight.log" 2>&1
+  "$VENV/bin/python" "$REPO/server/test_migration_full_vps.py" \
+  >"$LOG" 2>&1
 RC=$?
 set -e
-cat "$ROOT/stage6-preflight.log"
+cat "$LOG"
 if [[ $RC -ne 0 ]]; then
   echo "ОШИБКА: synthetic setup/preflight не прошёл. Production не изменялся." >&2
   exit $RC
@@ -78,11 +80,11 @@ sudo -u postgres env \
   PORTAL_FULL_CLI_INTEGRATION=1 \
   PORTAL_SYNTHETIC_SUFFIX="$SUFFIX" \
   PYTHONPATH="$REPO/server" \
-  "$ROOT/venv/bin/python" -m unittest -v test_migration_full_cli \
-  >>"$ROOT/stage6-preflight.log" 2>&1
+  "$VENV/bin/python" -m unittest -v test_migration_full_cli \
+  >>"$LOG" 2>&1
 RC=$?
 set -e
-tail -n 120 "$ROOT/stage6-preflight.log"
+tail -n 120 "$LOG"
 if [[ $RC -ne 0 ]]; then
   echo "ОШИБКА: полный Stage 6 gate не прошёл. Production не изменялся." >&2
   exit $RC
