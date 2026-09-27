@@ -42,6 +42,8 @@ echo "Проверенный Stage 6 commit присутствует в исто
 python3 -m venv "$ROOT/venv"
 "$ROOT/venv/bin/pip" -q install --upgrade pip
 "$ROOT/venv/bin/pip" -q install "psycopg[binary]"
+chmod 0755 "$ROOT" "$ROOT/venv"
+chmod -R a+rX "$ROOT/venv"
 rm -rf "/tmp/portal-migration-full-$SUFFIX"
 rm -f "$ROOT/stage6-preflight.log"
 
