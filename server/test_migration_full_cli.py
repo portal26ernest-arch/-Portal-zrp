@@ -261,15 +261,17 @@ class FullMigrationCLI(unittest.TestCase):
                 return e.code,json.load(e)
         def start():
             p=subprocess.Popen([sys.executable,'-B',str(HERE/'portal_app_server.py')],env=env,
-                               stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+                               stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
             for _ in range(50):
-                if p.poll() is not None: self.fail('Isolated imported API failed startup')
+                if p.poll() is not None:
+                    output=p.communicate()[0]
+                    self.fail('Isolated imported API failed startup: '+output[-4000:])
                 try:
                     if api('/api/ping')[0]==200: return p
                 except OSError: pass
                 time.sleep(.1)
-            p.terminate(); p.wait(timeout=5)
-            self.fail('Isolated imported API startup timeout')
+            p.terminate(); output=p.communicate(timeout=5)[0]
+            self.fail('Isolated imported API startup timeout: '+output[-4000:])
         process=start()
         try:
             tokens={}
