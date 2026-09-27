@@ -13,8 +13,8 @@ ENV_FILE="$ENV_DIR/portal.env"
 SECRETS_FILE="$ENV_DIR/db.secrets"
 LOGIN_FILE="$ENV_DIR/first-login.txt"
 SERVICE="portal-stage7.service"
-DB="portal_stage7_staging"
-[[ "$DB" == portal_stage7_* ]] || { echo "ОШИБКА: запрещено использовать не-staging БД" >&2; exit 1; }
+DB="portal_test_stage7_staging"
+[[ "$DB" == portal_test_stage7_* ]] || { echo "ОШИБКА: запрещено использовать не-test staging БД" >&2; exit 1; }
 TENANT_ROLE="portal_stage7_tenant"
 CONTROL_ROLE="portal_stage7_control"
 API_PORT="8770"
@@ -100,7 +100,7 @@ if ! runuser -u postgres -- psql -Atqc "SELECT 1 FROM pg_database WHERE datname=
 fi
 
 echo "[4/9] Схема PostgreSQL"
-SCHEMA_MARKER="$STATE/schema-stage6.ok"
+SCHEMA_MARKER="$STATE/schema-${DB}-stage6.ok"
 if [[ ! -f "$SCHEMA_MARKER" ]]; then
   for migration in \
     postgresql_core_stage4b.sql \
