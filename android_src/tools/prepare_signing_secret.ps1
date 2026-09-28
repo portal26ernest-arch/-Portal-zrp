@@ -11,17 +11,17 @@ $cert = Join-Path $dir "CERT_SHA256.txt"
 
 switch ($Value) {
     "KEYSTORE_B64" {
-        if (-not (Test-Path $p12)) { throw "Сначала создайте portal-release.p12" }
+        if (-not (Test-Path $p12)) { throw "portal-release.p12 not found" }
         [Convert]::ToBase64String([IO.File]::ReadAllBytes($p12)) | Set-Clipboard
-        Write-Host "PORTAL_ANDROID_KEYSTORE_B64 скопирован в буфер обмена."
+        Write-Host "PORTAL_ANDROID_KEYSTORE_B64 copied to clipboard."
     }
     "KEY_ALIAS" {
         "portal-release" | Set-Clipboard
-        Write-Host "PORTAL_ANDROID_KEY_ALIAS скопирован в буфер обмена."
+        Write-Host "PORTAL_ANDROID_KEY_ALIAS copied to clipboard."
     }
     "CERT_SHA256" {
-        if (-not (Test-Path $cert)) { throw "CERT_SHA256.txt не найден" }
+        if (-not (Test-Path $cert)) { throw "CERT_SHA256.txt not found" }
         (Get-Content $cert -Raw).Trim() | Set-Clipboard
-        Write-Host "PORTAL_ANDROID_CERT_SHA256 скопирован в буфер обмена."
+        Write-Host "PORTAL_ANDROID_CERT_SHA256 copied to clipboard."
     }
 }
