@@ -130,7 +130,8 @@ for migration in \
   postgresql_rls_context.sql \
   postgresql_stage5_chat_retention.sql \
   postgresql_stage6_payroll_settlement.sql \
-  postgresql_stage4c.sql
+  postgresql_stage4c.sql \
+  postgresql_stage8_documents_excel.sql
 do
   migration_file="$REPO/server/migrations/$migration"
   checksum="$(sha256sum "$migration_file" | awk '{print $1}')"
@@ -147,6 +148,9 @@ do
   runuser -u postgres -- psql -X -v ON_ERROR_STOP=1 -q -d "$DB" \
     -c "INSERT INTO portal_stage7_schema_migrations(version,checksum) VALUES('$migration','$checksum')"
 done
+
+runuser -u postgres -- psql -X -v ON_ERROR_STOP=1 -q -d "$DB" \
+  -c "GRANT SELECT,INSERT,UPDATE ON portal_documents,portal_excel_imports TO $TENANT_ROLE"
 
 runuser -u postgres -- psql -X -v ON_ERROR_STOP=1 -q -d "$DB" <<SQL
 INSERT INTO companies(id,name,user_limit,created_at,updated_at)
@@ -191,6 +195,7 @@ PORTAL_CONTROL_DATABASE_URL=postgresql://$CONTROL_ROLE:$CONTROL_PASSWORD@127.0.0
 PORTAL_APP_HOST=127.0.0.1
 PORTAL_APP_PORT=$API_PORT
 PORTAL_PUBLIC_API_URL=http://127.0.0.1:$API_PORT
+PORTAL_DOCUMENT_ROOT=$STATE/documents
 PYTHONDONTWRITEBYTECODE=1
 PYTHONUNBUFFERED=1
 EOF
@@ -200,6 +205,7 @@ echo "[6/9] systemd staging API"
 if ! id -u portal-stage7 >/dev/null 2>&1; then
   useradd --system --user-group --home-dir "$ROOT" --shell /usr/sbin/nologin portal-stage7
 fi
+install -d -o portal-stage7 -g portal-stage7 -m 0700 "$STATE/documents"
 
 cat >"/etc/systemd/system/$SERVICE" <<EOF
 [Unit]
