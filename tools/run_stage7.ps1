@@ -21,6 +21,7 @@ $identityFile = $IdentityFile
 $ssh = $SshPath
 $scp = $ScpPath
 $deployScript = Join-Path $repo 'server\vps_stage7_staging_deploy.sh'
+$transferScript = $null
 $logDir = Join-Path $repo 'reports'
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $logPath = Join-Path $logDir ("stage7-runner-{0}.log" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
@@ -49,9 +50,11 @@ $committedDeployHash = (& git -C $repo rev-parse "${commit}:server/vps_stage7_st
 if ($LASTEXITCODE -ne 0 -or $workingDeployHash -ne $committedDeployHash) {
     throw 'The deploy script differs from the pinned commit; commit it before deployment.'
 }
-
- $relayProcess = $null
+$relayProcess = $null
 try {
+    $normalizedDeploy = ([System.IO.File]::ReadAllText($deployScript, [System.Text.Encoding]::UTF8) -replace "`r`n", "`n")
+    $transferScript = Join-Path $env:TEMP ("portal-stage7-deploy-{0}-{1}.sh" -f $commit, [guid]::NewGuid().ToString('N'))
+    [System.IO.File]::WriteAllText($transferScript, $normalizedDeploy, [System.Text.UTF8Encoding]::new($false))
     $connectionHost = $HostName
     $connectionPort = $Port
     if ($UseBannerRelay) {
@@ -94,7 +97,7 @@ try {
 
 & $ssh @sshArgs $remote 'install -d -m 0700 /run/portal-stage7-runner' 2>&1 | ForEach-Object { Write-Log ([string]$_) }
 if ($LASTEXITCODE -ne 0) { Write-Log 'Could not prepare protected remote staging path.'; exit 21 }
-& $scp @scpArgs $deployScript "${remote}:/run/portal-stage7-runner/deploy.sh" 2>&1 | ForEach-Object { Write-Log ([string]$_) }
+& $scp @scpArgs $transferScript "${remote}:/run/portal-stage7-runner/deploy.sh" 2>&1 | ForEach-Object { Write-Log ([string]$_) }
 if ($LASTEXITCODE -ne 0) { Write-Log 'Could not transfer deploy script over verified SSH.'; exit 21 }
 $sslipPilot = if ($Domain -or $UseCloudflareTunnel) { '0' } else { '1' }
 $tunnelPilot = if ($UseCloudflareTunnel) { '1' } else { '0' }
@@ -139,5 +142,8 @@ exit 0
 } finally {
     if ($null -ne $relayProcess -and -not $relayProcess.HasExited) {
         Stop-Process -Id $relayProcess.Id -Force -ErrorAction SilentlyContinue
+    }
+    if ($transferScript -and (Test-Path -LiteralPath $transferScript)) {
+        Remove-Item -LiteralPath $transferScript -Force -ErrorAction SilentlyContinue
     }
 }

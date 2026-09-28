@@ -68,6 +68,8 @@ class Stage7DeploySafetyTests(unittest.TestCase):
                       'PORTAL_STAGE7_DOMAIN=$Domain', 'PORTAL_STAGE7_PILOT_SSLIP=$sslipPilot',
                       'PORTAL_STAGE7_PILOT_TUNNEL=$tunnelPilot', 'UseBannerRelay = $true',
                       'Start-Process -FilePath $python', '-WindowStyle Hidden',
+                      'replace "`r`n", "`n"', 'UTF8Encoding]::new($false)',
+                      'scp @scpArgs $transferScript',
                       'HostKeyAlias=$HostKeyAlias', 'Stop-Process -Id $relayProcess.Id',
                       'STAGE7_RESULT.txt', '-replace "`r", ""',
                       'https://1.1.1.1/dns-query', '--doh-url',
