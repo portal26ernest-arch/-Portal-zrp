@@ -21,6 +21,12 @@ must(/staging\s*\{[\s\S]*?usesCleartextTraffic:\s*"true"/m.test(gradle),
   'Staging build must allow the local HTTP tunnel');
 must(gradle.includes("PORTAL_ANDROID_KEYSTORE") && gradle.includes("portalRelease"),
   'Release signing must be sourced from environment secrets');
+must(gradle.includes("PORTAL_ANDROID_KEYSTORE_TYPE") && gradle.includes("storeType releaseKeystoreType"),
+  'Release signing must use an explicit keystore type');
+must(releaseWorkflow.includes('PORTAL_ANDROID_KEYSTORE_TYPE: PKCS12'),
+  'Signed release must use PKCS12 keystore format');
+must(releaseWorkflow.includes('portal-release.p12'),
+  'Signed release must materialize the keystore as PKCS12');
 must(releaseWorkflow.includes('PORTAL_ANDROID_CERT_SHA256'),
   'Signed release must pin the expected certificate SHA-256');
 must(releaseWorkflow.includes('grep -q "Android Debug"'),

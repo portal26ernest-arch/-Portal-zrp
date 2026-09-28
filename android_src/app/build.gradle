@@ -15,6 +15,7 @@ android {
     def releaseStorePassword = System.getenv('PORTAL_ANDROID_STORE_PASSWORD')
     def releaseKeyAlias = System.getenv('PORTAL_ANDROID_KEY_ALIAS')
     def releaseKeyPassword = System.getenv('PORTAL_ANDROID_KEY_PASSWORD')
+    def releaseKeystoreType = System.getenv('PORTAL_ANDROID_KEYSTORE_TYPE') ?: 'PKCS12'
     def releaseSigningReady = [releaseKeystore, releaseStorePassword, releaseKeyAlias, releaseKeyPassword].every { it }
 
     signingConfigs {
@@ -24,6 +25,7 @@ android {
                 storePassword releaseStorePassword
                 keyAlias releaseKeyAlias
                 keyPassword releaseKeyPassword
+                storeType releaseKeystoreType
             }
         }
     }

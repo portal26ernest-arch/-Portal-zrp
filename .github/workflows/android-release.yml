@@ -18,6 +18,7 @@ jobs:
       PORTAL_ANDROID_KEY_ALIAS: ${{ secrets.PORTAL_ANDROID_KEY_ALIAS }}
       PORTAL_ANDROID_KEY_PASSWORD: ${{ secrets.PORTAL_ANDROID_KEY_PASSWORD }}
       PORTAL_ANDROID_CERT_SHA256: ${{ secrets.PORTAL_ANDROID_CERT_SHA256 }}
+      PORTAL_ANDROID_KEYSTORE_TYPE: PKCS12
     steps:
       - name: Require main branch
         shell: bash
@@ -50,9 +51,10 @@ jobs:
           test "$VERSION_CODE" -gt 2
           test "$CHANNEL" = "release"
           [[ "$UPDATE_MANIFEST_URL" == https://* ]]
-          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/portal-release.jks"
-          chmod 600 "$RUNNER_TEMP/portal-release.jks"
-          echo "PORTAL_ANDROID_KEYSTORE=$RUNNER_TEMP/portal-release.jks" >> "$GITHUB_ENV"
+          test "$PORTAL_ANDROID_KEYSTORE_TYPE" = "PKCS12"
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/portal-release.p12"
+          chmod 600 "$RUNNER_TEMP/portal-release.p12"
+          echo "PORTAL_ANDROID_KEYSTORE=$RUNNER_TEMP/portal-release.p12" >> "$GITHUB_ENV"
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
