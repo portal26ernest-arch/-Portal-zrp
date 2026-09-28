@@ -28,9 +28,17 @@ GATE_BASE="f9dd1b38231e53fba0cb9e96c85cfcc032b7864a"
 
 fail() { echo "ОШИБКА Stage 7: $*" >&2; exit 1; }
 [[ "$(id -u)" -eq 0 ]] || fail "скрипт должен запускаться root"
-for x in git python3 psql curl openssl systemctl runuser; do
+for x in git python3 psql curl openssl systemctl runuser flock sha256sum; do
   command -v "$x" >/dev/null || fail "нет команды $x"
 done
+
+# Serialize retries so two operators/runners cannot race over the same staging DB.
+install -d -m 0755 "$ROOT"
+exec 9>"$ROOT/deploy.lock"
+flock -n 9 || fail "другой Stage 7 deploy уже выполняется"
+
+[[ -n "$EXPECTED_COMMIT" && "$EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ ]] ||
+  fail "PORTAL_STAGE7_EXPECTED_COMMIT должен содержать полный pinned commit SHA"
 
 install -d -m 0755 "$ROOT" "$STATE"
 install -d -m 0700 "$ENV_DIR"
@@ -41,12 +49,17 @@ echo "=== PORTAL Stage 7 staging deploy: $(date -Is) ==="
 
 echo "[1/9] Обновление проверенного кода"
 if [[ -d "$REPO/.git" ]]; then
-  git -C "$REPO" fetch --prune origin "$BRANCH"
-  git -C "$REPO" checkout -f "$BRANCH"
-  git -C "$REPO" reset --hard "origin/$BRANCH"
+  [[ -z "$(git -C "$REPO" status --porcelain)" ]] ||
+    fail "staging checkout is dirty; refusing to overwrite local files"
+  git -C "$REPO" fetch --prune origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
+  git -C "$REPO" cat-file -e "$EXPECTED_COMMIT^{commit}" ||
+    fail "pinned commit is unavailable in staging checkout"
 else
   git clone --branch "$BRANCH" --single-branch https://github.com/portal26ernest-arch/-Portal-zrp.git "$REPO"
 fi
+git -C "$REPO" merge-base --is-ancestor "$EXPECTED_COMMIT" "origin/$BRANCH" 2>/dev/null ||
+  fail "pinned commit is not contained in origin/$BRANCH"
+git -C "$REPO" checkout --detach "$EXPECTED_COMMIT"
 ACTUAL="$(git -C "$REPO" rev-parse HEAD)"
 git -C "$REPO" merge-base --is-ancestor "$GATE_BASE" "$ACTUAL" ||
   fail "ветка не содержит успешно проверенный Stage 6 gate"
@@ -103,23 +116,37 @@ if ! runuser -u postgres -- psql -Atqc "SELECT 1 FROM pg_database WHERE datname=
 fi
 
 echo "[4/9] Схема PostgreSQL"
-SCHEMA_MARKER="$STATE/schema-${DB}-stage6.ok"
-if [[ ! -f "$SCHEMA_MARKER" ]]; then
-  for migration in \
-    postgresql_core_stage4b.sql \
-    postgresql_stage3.sql \
-    postgresql_runtime.sql \
-    postgresql_rls_context.sql \
-    postgresql_stage5_chat_retention.sql \
-    postgresql_stage6_payroll_settlement.sql \
-    postgresql_stage4c.sql
-  do
-    echo "  migration: $migration"
-    runuser -u postgres -- psql -X -v ON_ERROR_STOP=1 -q -d "$DB" \
-      -f "$REPO/server/migrations/$migration"
-  done
-  touch "$SCHEMA_MARKER"
-fi
+runuser -u postgres -- psql -X -v ON_ERROR_STOP=1 -q -d "$DB" <<'SQL'
+CREATE TABLE IF NOT EXISTS portal_stage7_schema_migrations (
+  version TEXT PRIMARY KEY,
+  checksum TEXT NOT NULL,
+  applied_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+SQL
+for migration in \
+  postgresql_core_stage4b.sql \
+  postgresql_stage3.sql \
+  postgresql_runtime.sql \
+  postgresql_rls_context.sql \
+  postgresql_stage5_chat_retention.sql \
+  postgresql_stage6_payroll_settlement.sql \
+  postgresql_stage4c.sql
+do
+  migration_file="$REPO/server/migrations/$migration"
+  checksum="$(sha256sum "$migration_file" | awk '{print $1}')"
+  existing_checksum="$(runuser -u postgres -- psql -X -Atq -d "$DB" \
+    -c "SELECT checksum FROM portal_stage7_schema_migrations WHERE version='$migration'")"
+  if [[ -n "$existing_checksum" ]]; then
+    [[ "$existing_checksum" == "$checksum" ]] ||
+      fail "migration checksum изменился после применения: $migration"
+    echo "  migration already applied: $migration"
+    continue
+  fi
+  echo "  migration: $migration"
+  runuser -u postgres -- psql -X -v ON_ERROR_STOP=1 -q -d "$DB" -f "$migration_file"
+  runuser -u postgres -- psql -X -v ON_ERROR_STOP=1 -q -d "$DB" \
+    -c "INSERT INTO portal_stage7_schema_migrations(version,checksum) VALUES('$migration','$checksum')"
+done
 
 runuser -u postgres -- psql -X -v ON_ERROR_STOP=1 -q -d "$DB" <<SQL
 INSERT INTO companies(id,name,user_limit,created_at,updated_at)
@@ -191,6 +218,15 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true
 ProtectSystem=full
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadOnlyPaths=$REPO
+ReadWritePaths=$ROOT/state
+UMask=0077
 [Install]
 WantedBy=multi-user.target
 EOF
@@ -281,6 +317,9 @@ if [[ "$PILOT_TUNNEL" == "1" ]]; then
     apt-get update -qq
     apt-get install -y -qq cloudflared
   fi
+  CLOUDFLARED_BIN="$(command -v cloudflared)"
+  [[ -n "$CLOUDFLARED_BIN" && -x "$CLOUDFLARED_BIN" ]] ||
+    fail "cloudflared не найден после установки"
 
   cat >"/etc/nginx/sites-available/portal-stage7-tunnel" <<EOF
 server {
@@ -323,7 +362,7 @@ User=portal-stage7
 Group=portal-stage7
 Environment=HOME=/var/lib/portal-stage7-tunnel
 WorkingDirectory=/var/lib/portal-stage7-tunnel
-ExecStart=/usr/local/bin/cloudflared tunnel --no-autoupdate --protocol http2 --url http://127.0.0.1:$TUNNEL_PROXY_PORT
+ExecStart=$CLOUDFLARED_BIN tunnel --no-autoupdate --protocol http2 --url http://127.0.0.1:$TUNNEL_PROXY_PORT
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true
@@ -424,6 +463,13 @@ EOF
   nginx -t
   systemctl enable nginx >/dev/null
   systemctl restart nginx
+  # Certbot timer renews the certificate; this deploy hook safely reloads nginx.
+  install -d -m 0755 /etc/letsencrypt/renewal-hooks/deploy
+  cat > /etc/letsencrypt/renewal-hooks/deploy/portal-stage7-nginx-reload <<'HOOK'
+#!/bin/sh
+systemctl reload nginx
+HOOK
+  chmod 0755 /etc/letsencrypt/renewal-hooks/deploy/portal-stage7-nginx-reload
 
   if command -v ufw >/dev/null && ufw status | grep -q '^Status: active'; then
     ufw allow 80/tcp >/dev/null
