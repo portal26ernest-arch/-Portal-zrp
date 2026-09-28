@@ -49,12 +49,12 @@ XLSX, PDF и JSON сохраняются через существующий `sa
 - `android_src/app/src/main/assets/app.js` — сохранение HTTP status/body в API error для безопасной обработки terminal response.
 - `android_src/app/src/main/assets/ui.css` — адаптивные фильтры и визуальная маркировка архивных записей.
 - `android_src/app/src/main/java/ru/portal/app/MainActivity.java` — JSON в MIME allowlist существующего saver.
-- `android_src/tests/documents-excel.test.cjs`, `android_src/tests/native-shell.test.cjs`, `android_src/tests/ui.test.cjs` — UI/API/native contract checks, including role visibility for Excel Import.
-- `PORTAL_DOCUMENTS_EXCEL_PART2_TASK.md`, `CODEX_PART2_PROMPT.txt` — локальные входные материалы, включены в репозиторий для чистого рабочего дерева.
+- `android_src/tests/documents-excel.test.cjs`, `android_src/tests/native-shell.test.cjs`, `android_src/tests/ui.test.cjs` — UI/API/native contract checks, включая ролевую видимость Excel Import.
+- `PORTAL_DOCUMENTS_EXCEL_PART2_TASK.md` — исходное задание, включено в репозиторий для чистого рабочего дерева.
 
 ## Git и безопасность
 
-Локальные commits: `8e769d2` — Android Documents/Excel UI, native JSON MIME и проверки; `76189ed` — этот отчёт и исходное задание. Push, PR, merge и deploy не выполнялись. Production/VPS, production БД, телефонная SQLite, тарифы, зарплаты и закрытые snapshots не затрагивались. Серверные файлы Part 1 не менялись.
+Локальные commits: `8e769d2` — Android Documents/Excel UI, native JSON MIME и проверки; `76189ed` — отчёт и исходное задание. Последняя правка отчёта зафиксирована отдельно. Push, PR, merge и deploy не выполнялись. Production/VPS, production БД, телефонная SQLite, тарифы, зарплаты и закрытые snapshots не затрагивались. Серверные файлы Part 1 не менялись.
 
 ## Осталось
 
