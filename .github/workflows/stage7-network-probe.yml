@@ -1,0 +1,47 @@
+name: Stage 7 network probe
+
+on:
+  push:
+    branches:
+      - assistant-stage7-verify
+    paths:
+      - ".github/workflows/stage7-network-probe.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe VPS network only
+        shell: bash
+        run: |
+          set +e
+          V4="178.209.127.247"
+          V6="2a03:6f00:a::1:f426"
+          echo "=== IPv4 TCP ==="
+          for p in 22 80 443 2222 2200 2022; do
+            timeout 5 nc -4 -vz "$V4" "$p" >/tmp/nc.out 2>&1
+            rc=$?
+            echo "ipv4_port_${p}_exit=$rc"
+            cat /tmp/nc.out
+          done
+          echo "=== IPv4 SSH keyscan ==="
+          timeout 12 ssh-keyscan -4 -T 8 -t ed25519 "$V4" >/tmp/keyscan4.out 2>/tmp/keyscan4.err
+          echo "ipv4_keyscan_exit=$?"
+          wc -c /tmp/keyscan4.out /tmp/keyscan4.err
+          cat /tmp/keyscan4.err
+          echo "=== IPv6 route/TCP ==="
+          ip -6 route || true
+          for p in 22 80 443; do
+            timeout 5 nc -6 -vz "$V6" "$p" >/tmp/nc6.out 2>&1
+            rc=$?
+            echo "ipv6_port_${p}_exit=$rc"
+            cat /tmp/nc6.out
+          done
+          echo "=== HTTP ==="
+          curl -4 -svI --connect-timeout 6 --max-time 10 "http://$V4/" 2>&1 | tail -n 40
+          echo "=== HTTPS sslip ==="
+          curl -4 -sv --connect-timeout 6 --max-time 10 "https://178-209-127-247.sslip.io/api/ping" 2>&1 | tail -n 60
