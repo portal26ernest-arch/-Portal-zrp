@@ -51,7 +51,7 @@ echo "[1/9] Обновление проверенного кода"
 if [[ -d "$REPO/.git" ]]; then
   [[ -z "$(git -C "$REPO" status --porcelain)" ]] ||
     fail "staging checkout is dirty; refusing to overwrite local files"
-  git -C "$REPO" fetch --prune origin "$BRANCH"
+  git -C "$REPO" fetch --prune origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
   git -C "$REPO" cat-file -e "$EXPECTED_COMMIT^{commit}" ||
     fail "pinned commit is unavailable in staging checkout"
 else
@@ -263,6 +263,17 @@ PING="$(curl -fsS --max-time 3 "http://127.0.0.1:$API_PORT/api/ping")"
 [[ "$PING" != *'"setup_required": true'* && "$PING" != *'"setup_required":true'* ]] ||
   fail "первичный setup не завершён"
 
+echo "[7b/9] Synthetic API/RLS/restart integration"
+(
+  cd "$REPO/server"
+  PORTAL_PG_INTEGRATION=1 \
+  PORTAL_PG_TEST_ENV_FILE="$ENV_FILE" \
+  PORTAL_PG_EXPECTED_APP_PORT="$API_PORT" \
+  PORTAL_PG_EXPECTED_SERVICE="$SERVICE" \
+  PORTAL_PG_TEST_REPORT="$STATE/stage7-integration.json" \
+    "$VENV/bin/python" -m unittest -v test_postgresql_integration
+)
+
 echo "[8/9] HTTPS readiness"
 HTTPS_STATUS="pending"
 DOMAIN="${PORTAL_STAGE7_DOMAIN:-}"
@@ -297,7 +308,7 @@ else
   fi
 fi
 
-if [[ "$PILOT_TUNNEL" == "1" ]]; then
+if [[ "$PILOT_TUNNEL" == "1" && -z "$DOMAIN" ]]; then
   echo "Pilot HTTPS: Cloudflare Quick Tunnel"
   if ! command -v nginx >/dev/null; then
     export DEBIAN_FRONTEND=noninteractive
@@ -317,6 +328,9 @@ if [[ "$PILOT_TUNNEL" == "1" ]]; then
     apt-get update -qq
     apt-get install -y -qq cloudflared
   fi
+  CLOUDFLARED_BIN="$(command -v cloudflared)"
+  [[ -n "$CLOUDFLARED_BIN" && -x "$CLOUDFLARED_BIN" ]] ||
+    fail "cloudflared не найден после установки"
 
   cat >"/etc/nginx/sites-available/portal-stage7-tunnel" <<EOF
 server {
@@ -359,7 +373,7 @@ User=portal-stage7
 Group=portal-stage7
 Environment=HOME=/var/lib/portal-stage7-tunnel
 WorkingDirectory=/var/lib/portal-stage7-tunnel
-ExecStart=/usr/local/bin/cloudflared tunnel --no-autoupdate --protocol http2 --url http://127.0.0.1:$TUNNEL_PROXY_PORT
+ExecStart=$CLOUDFLARED_BIN tunnel --no-autoupdate --protocol http2 --url http://127.0.0.1:$TUNNEL_PROXY_PORT
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true

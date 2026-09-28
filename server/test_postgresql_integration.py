@@ -29,17 +29,23 @@ class PostgreSQLIntegration(unittest.TestCase):
         settings = dict(line.split('=', 1) for line in env_path.read_text().splitlines()
                         if line and not line.startswith('#'))
         cls.db_name = urlsplit(settings['PORTAL_DATABASE_URL']).path.lstrip('/')
+        cls.api_port = os.environ.get('PORTAL_PG_EXPECTED_APP_PORT', '8766')
+        cls.service = os.environ.get('PORTAL_PG_EXPECTED_SERVICE', 'portal-pg-test.service')
+        approved_target = (cls.db_name, cls.api_port, cls.service) in {
+            ('portal_test_api_20260925', '8766', 'portal-pg-test.service'),
+            ('portal_test_stage7_staging', '8770', 'portal-stage7.service'),
+        }
         if (settings.get('PORTAL_ENV') != 'test' or
                 settings.get('PORTAL_DB_BACKEND') != 'postgresql' or
-                cls.db_name != 'portal_test_api_20260925' or
+                not approved_target or
                 urlsplit(settings['PORTAL_CONTROL_DATABASE_URL']).path.lstrip('/') != cls.db_name or
                 settings.get('PORTAL_APP_HOST') != '127.0.0.1' or
-                settings.get('PORTAL_APP_PORT') != '8766'):
+                settings.get('PORTAL_APP_PORT') != cls.api_port):
             raise RuntimeError('Integration target is not the approved isolated test API')
         cls.tenant = psycopg.connect(settings['PORTAL_DATABASE_URL'])
         cls.control = psycopg.connect(settings['PORTAL_CONTROL_DATABASE_URL'])
         cls.company_keys = {}
-        cls.base = 'http://127.0.0.1:8766'
+        cls.base = 'http://127.0.0.1:' + cls.api_port
         cls.slug = secrets.token_hex(5)
         cls.pin = secrets.token_urlsafe(20)
         cls.companies = {}
@@ -241,7 +247,7 @@ class PostgreSQLIntegration(unittest.TestCase):
         self.assert_api('POST','/api/logout',{},users['A']['packer'])
         self.assert_api('GET','/api/v3/works',token=users['A']['packer'],status=401)
 
-        subprocess.run(['systemctl','restart','portal-pg-test.service'],check=True,stdout=subprocess.DEVNULL)
+        subprocess.run(['systemctl','restart',self.service],check=True,stdout=subprocess.DEVNULL)
         for _ in range(20):
             try:
                 if self.api('GET','/api/ping')[0]==200:
