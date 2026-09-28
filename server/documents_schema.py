@@ -61,6 +61,17 @@ IMPORT_DDL = '''CREATE TABLE IF NOT EXISTS portal_excel_imports (
 
 def migrate_documents(r):
     if r.dialect == 'sqlite':
+        from excel_template import REQUISITES
+        for table,key,extra in (('portal_company_requisites','id','director'),('portal_client_requisites','client_id','contact_person')):
+            r.sql('CREATE TABLE IF NOT EXISTS '+table+' (company_id BIGINT NOT NULL,'+key+' BIGINT NOT NULL, PRIMARY KEY(company_id,'+key+'))')
+            existing=r.columns(table)
+            for column in REQUISITES+(extra,'updated_at','updated_by'):
+                if column not in existing:r.sql('ALTER TABLE '+table+' ADD COLUMN '+column+(' BIGINT' if column=='updated_by' else ' TEXT'))
+            r.sql('CREATE UNIQUE INDEX IF NOT EXISTS '+table+'_scope ON '+table+'(company_id,'+key+')')
+            for event in ('INSERT','UPDATE'):
+                r.sql(f'''CREATE TRIGGER IF NOT EXISTS {table}_tenant_{event.lower()} BEFORE {event} ON {table}
+                    WHEN NEW.company_id!=(SELECT company_id FROM portal_tenant_identity)
+                    BEGIN SELECT RAISE(ABORT,'company_id mismatch'); END''')
         # Tenant files are independent; composite keys are still checked locally.
         r.sql('CREATE UNIQUE INDEX IF NOT EXISTS documents_client_scope ON portal_clients(company_id,id)')
         r.sql(DOCUMENT_DDL)

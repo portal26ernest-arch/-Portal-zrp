@@ -21,6 +21,7 @@ import production_activity as activity
 from portal_config import load_config
 from pathlib import Path
 import documents_api
+import excel_import
 from document_domain import LocalFileStorage
 
 BUILD_ID = "PORTAL Server · 3.3-dev"
@@ -669,9 +670,10 @@ def read_body(handler):
         raise ValueError("Требуется Content-Length")
     length = int(handler.headers.get("Content-Length", "0") or 0)
     path = urlparse(getattr(handler, "path", "")).path
-    limit = 3 * 1024 * 1024 if path == "/api/v3/chat" else 65536
+    file_routes={'/api/v3/documents','/api/v3/document-upload','/api/v3/excel-import-preview','/api/v3/excel-import-apply'}
+    limit = 14 * 1024 * 1024 if path in file_routes else 3 * 1024 * 1024 if path == "/api/v3/chat" else 65536
     if not 0 <= length <= limit:
-        label = "3 МБ" if limit > 65536 else "64 КБ"
+        label = "14 МБ" if limit>3*1024*1024 else "3 МБ" if limit > 65536 else "64 КБ"
         raise ValueError("Размер запроса должен быть не более " + label)
     return handler.rfile.read(length) if length else b""
 
@@ -768,6 +770,7 @@ class Handler(BaseHTTPRequestHandler):
     def route(self, method):
         self.tenant_request = False
         path = urlparse(self.path).path
+        readonly_preview=path=='/api/v3/excel-import-preview'
         if path == "/api/platform/login" and method == "POST":
             body = parse_body(self)
             with tenants.control(DB_PATH) as conn:
@@ -820,7 +823,7 @@ class Handler(BaseHTTPRequestHandler):
                 with tenants.company_scope(company_id),db() as conn:
                     activity.logout(Repository(conn,company_id),self.token(),identity)
             return self.send_json({'ok':True})
-        if is_owner:
+        if is_owner and not readonly_preview:
             with tenants.control(DB_PATH) as conn:
                 tenants.audit(conn, identity["id"], company_id, "technical_access", "started", method=method, route=audit_route(path))
         try:
@@ -856,7 +859,7 @@ class Handler(BaseHTTPRequestHandler):
             with tenants.company_scope(company_id):
                 self.tenant_request = True
                 self.request_user = dict(identity, role="admin", company_id=company_id, telegram_id=None, technical_owner=True) if is_owner else identity
-                if not is_owner:
+                if not is_owner and not readonly_preview:
                     with db() as conn:activity.touch(Repository(conn,company_id),self.token(),identity)
                 if path.startswith('/api/v3/'):
                     return self.production_route(method,path)
@@ -873,7 +876,7 @@ class Handler(BaseHTTPRequestHandler):
             self.response_status = 400
             raise
         finally:
-            if is_owner:
+            if is_owner and not readonly_preview:
                 status = getattr(self, "response_status", 500)
                 with tenants.control(DB_PATH) as conn:
                     numeric_ids = [int(p) for p in path.split("/") if p.isdecimal() and len(p) < 19]
@@ -887,6 +890,14 @@ class Handler(BaseHTTPRequestHandler):
             if action=='meta' and method=='GET':
                 return self.send_json(dict(ok=True,ready=bool(repo.ready()),permissions=sorted(business_rights.effective(repo,self.request_user)) if repo.ready() else [],catalog=business_rights.public_catalog(),heartbeat_seconds=activity.configuration(repo)[0] if repo.ready() else None))
             if not repo.ready(): raise ValueError('Этап 3 ещё не подключён оператором к этой компании')
+            if action in excel_import.IMPORT_ACTIONS:
+                if not repo.has_table('portal_excel_imports'):raise ValueError('Сначала примените миграцию Documents/Excel')
+                service=Production(repo,self.request_user)
+                storage=LocalFileStorage(os.environ.get('PORTAL_DOCUMENT_ROOT',str(Path(DB_PATH).resolve().parent/'.portal-documents')))
+                importer=excel_import.ExcelImport(service,storage,tenants.get_company(DB_PATH,repo.company_id))
+                if action=='excel-import-preview' and method=='POST':
+                    return self.send_json(dict(ok=True,data=importer.preview(parse_body(self))))
+                raise ValueError('Метод импорта пока не поддерживается')
             if action=='payroll-settlements' and (not repo.has_table('payroll_settlement_entries') or
                     not conn.execute('SELECT 1 FROM portal_production_migrations WHERE company_id=? AND version=6',(repo.company_id,)).fetchone()):
                 raise ValueError('Реестр расчётов зарплаты ещё не подключён оператором к этой компании')
