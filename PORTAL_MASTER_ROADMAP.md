@@ -153,3 +153,4 @@
 122. ✅ Не допускать одновременную production-запись в старую SQLite и новую PostgreSQL.
 123. ✅ Каждую новую функцию закрывать тестом или явным контрольным сценарием.
 124. ✅ Этот файл является постоянным checklist: перед release проверять все ⏳/🟡 пункты и не терять их между сборками.
+125. 🟡 Stage 7 staging deploy: отдельная test-БД и runtime-роли, checksum-история SQL migrations, pinned commit, безопасный повторный запуск, loopback API, systemd hardening и HTTPS pilot runner подготовлены; требуется успешный прогон на VPS и внешняя проверка HTTPS/API.
