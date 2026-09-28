@@ -129,6 +129,25 @@
 103. ✅ Защита от повторных записей/идемпотентность в критичных сценариях.
 104. ✅ Regression/unit/integration тесты и GitHub gates.
 105. 🟡 Денежные расчёты: новый производственный слой использует cents; legacy REAL-поля ещё требуют дальнейшей нормализации.
+
+## G1. Stage 7 staging — проверено 28.09.2026
+
+- ✅ Изолированный staging deploy на VPS подтверждён на commit `59a19530678bd4ca7de3bea493f88d77fe11c08b`.
+- ✅ Staging БД: `portal_test_stage7_staging`; production БД не переключалась и не изменялась.
+- ✅ API слушает только `127.0.0.1:8770`.
+- ✅ PostgreSQL слушает только loopback `127.0.0.1/[::1]:5432`.
+- ✅ `portal-stage7.service` active/running под отдельным runtime-контуром.
+- ✅ Внешний HTTPS smoke подтверждён через временный Cloudflare Quick Tunnel.
+- ✅ `/api/ping` возвращает healthy и `setup_required=false`.
+- ✅ Внешний `POST /api/setup` блокируется HTTP 403.
+- ✅ Runtime-роли `portal_stage7_tenant` и `portal_stage7_control` не superuser и без BYPASSRLS.
+- ✅ RLS включён на 45 таблицах staging.
+- ✅ Секреты и first-login-файл имеют mode 0600; каталог `/etc/portal-stage7` — 0700.
+- ✅ Stage 7 safety tests: 9/9; полный server regression: 142 OK, 11 skipped.
+- ✅ Для проблемного SSH-пути реализован локальный server-banner-first relay; pinned host key и pinned identity сохранены.
+- ⏳ Production domain/DNS и постоянный production HTTPS остаются отдельным gate.
+- ⏳ Production cutover не выполнялся.
+
 ## H. WMS TalAnt, ТСД и сканирование
 
 106. 🔌 Интеграционный слой PORTAL ↔ TalAnt через официальный API без изменения TalAnt.
