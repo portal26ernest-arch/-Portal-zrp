@@ -70,7 +70,7 @@ Write-Log "Deploying pinned staging commit $commit with SSLIP pilot enabled."
 $deployExit = $LASTEXITCODE
 if ($deployExit -ne 0) { Write-Log "Remote deploy failed with exit code $deployExit."; exit $deployExit }
 
-$result = (& $ssh @sshArgs $remote 'cat /srv/portal-stage7/STAGE7_RESULT.txt' 2>&1 | Out-String).Trim()
+$result = ((& $ssh @sshArgs $remote 'cat /srv/portal-stage7/STAGE7_RESULT.txt' 2>&1 | Out-String) -replace "`r", "").Trim()
 $resultExit = $LASTEXITCODE
 if ($resultExit -ne 0) { Write-Log 'Could not read STAGE7_RESULT.txt.'; exit 21 }
 Write-Log 'Remote result follows:'
