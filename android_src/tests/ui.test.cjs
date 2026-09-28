@@ -56,14 +56,22 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
     localStorage.clear();
     const user={id:1,username:role,display_name:'Тестовый пользователь',role,company_id:1,telegram_id:role==='platform_owner'?null:101};
     const client={id:1,name:'Клиент',active:1};
-    window.mock={calls:[],offline:false,rejectWrite:false,hold:false,held:[],update:{ok:true,configured:false},timer:null,stage3Today:null,stage3Permissions:null,presenceOnline:true};
+    window.mock={calls:[],offline:false,rejectWrite:false,hold:false,held:[],update:{ok:true,configured:false},timer:null,stage3Today:null,stage3Permissions:null,presenceOnline:true,saved:null,previewMode:'ok',applyMode:'ok'};
     const respond=(id,data)=>setTimeout(()=>window.PortalBridgeResult(id,JSON.stringify(data)),0);
-    window.PortalNative={getServerUrl:()=> 'http://127.0.0.1:8765',getAppMetadata:()=>JSON.stringify(metadata),checkUpdates:id=>respond(id,mock.update),requestAsync(id,method,url,payload,token,company){
+    window.PortalNative={getServerUrl:()=> 'http://127.0.0.1:8765',getAppMetadata:()=>JSON.stringify(metadata),checkUpdates:id=>respond(id,mock.update),saveBase64FileAsync(id,filename,mime,file_b64){mock.saved={filename,mime,file_b64};respond(id,{ok:true,location:'Downloads/PORTAL/'+filename});},requestAsync(id,method,url,payload,token,company){
       mock.calls.push({method,url,body:payload?JSON.parse(payload):null,token,company});
       if(mock.offline)return respond(id,{ok:false,network:true,error:'Нет соединения'});
       if(mock.rejectWrite&&method==='POST')return respond(id,{ok:false,httpStatus:401});
       let data={ok:true};
       if(stage3&&url==='/api/v3/meta')Object.assign(data,{ready:true,heartbeat_seconds:60,permissions:mock.stage3Permissions||['work.write','tasks.read','tasks.manage','batches.receive','finance.read','invoices.read','invoices.create','users.manage','access.history.read','payroll.own'],catalog:[{code:'work.write',group:'Работа',label:'Вносить свою выработку',recommended:['Сборщик']},{code:'access.history.read',group:'Сотрудники',label:'Просматривать историю входов сотрудников',recommended:['Управляющий','Администратор']}]});
+      else if(stage3&&url.startsWith('/api/v3/documents?'))data.data={items:[{id:'doc-ready',title:'Готовый документ',document_type:'report_xlsx',category:'report',document_date:'2026-09-29',created_at:'2026-09-29T00:00:00Z',size_bytes:2048,status:'ready',revision:1},{id:'doc-archived',title:'Архивный документ',document_type:'report_pdf',category:'report',document_date:'2026-09-28',created_at:'2026-09-28T00:00:00Z',size_bytes:1024,status:'archived',revision:1}],total:2,page:1,limit:50};
+      else if(stage3&&url.startsWith('/api/v3/document-file?id=')){const result=url.includes('result-');data.data=result?{filename:'PORTAL_import_result.json',mime_type:'application/json',file_b64:'e30='}:{filename:'PORTAL_report.xlsx',mime_type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',file_b64:'UEs='};}
+      else if(stage3&&url==='/api/v3/document-archive'&&method==='POST')data.data={id:'doc-ready',status:'archived'};
+      else if(stage3&&url==='/api/v3/document-template-info')data.data={template_version:'1.0',sheets:['Компания','Сотрудники','Клиенты','Операции_Тарифы']};
+      else if(stage3&&(url==='/api/v3/document-template-blank'||url==='/api/v3/document-template'))data.data={filename:'PORTAL_template_v1.xlsx',mime_type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',file_b64:'UEs='};
+      else if(stage3&&url==='/api/v3/excel-import-preview'&&method==='POST'){const conflict=mock.previewMode==='conflict';data.data={import_id:'import-1',preview_token:'token-1',template_version:'1.0',can_apply:!conflict,summary:{new:conflict?0:1,update:0,unchanged:0,conflict:conflict?1:0,invalid:0},rows:[{sheet:'Клиенты',row:4,classification:conflict?'conflict':'new',errors:conflict?[{code:'duplicate_client'}]:[],changes:conflict?{}:{name:{before:null,after:'Новый клиент'}}}]};}
+      else if(stage3&&url==='/api/v3/excel-import-apply'&&method==='POST'){if(mock.applyMode==='failed')return respond(id,{ok:false,httpStatus:409,error:'Импорт отменён полностью',data:{status:'failed',result_document_id:'result-failed',error_report:[{code:'apply_failed'}]}});if(mock.applyMode==='stale')return respond(id,{ok:false,httpStatus:400,error:'Справочники изменились; повторите preview'});data.data={status:'applied',result_counts:{new:1,updated:0,unchanged:0},result_document_id:'result-ok'};}
+      else if(stage3&&url.startsWith('/api/v3/excel-import-result?id=')){if(mock.applyMode==='failed')data.data={status:'failed',result_document_id:'result-failed',error_report:[{code:'apply_failed'}]};else if(mock.applyMode==='ok')data.data={status:'applied',result_document_id:'result-ok',result_counts:{new:1,updated:0,unchanged:0}};else return respond(id,{ok:false,httpStatus:404,error:'Импорт не найден'});}
       else if(stage3&&url==='/api/v3/today'){const task={id:'task-1',batch_id:'batch-1',client_name:'Клиент',product:'Коробка',batch_number:'PRT-2026-000001',operation_name:'Упаковка',quantity:10,done:2,remaining:8,status:'in_progress',assignees:[1]};data.data=mock.stage3Today||{date:'2026-09-25',mode:role==='admin'?'management':'worker',own_quantity:4,own_salary:500,attention:[],tasks:[task],...(role==='admin'?{today_quantity:17,in_progress:1,ready:1,active_batches:2,finance:{salary:1200,revenue:2500,profit:900},expected_profit:1500,debt:400}:{})};}
       else if(stage3&&url==='/api/v3/tasks')data.data=[{id:'task-1',batch_id:'batch-1',client_name:'Клиент',product:'Коробка',batch_number:'PRT-2026-000001',operation_name:'Упаковка',quantity:10,done:2,remaining:8,status:'in_progress',assignees:[1]}];
       else if(stage3&&url==='/api/v3/timers'&&method==='GET')data.data=mock.timer&&['running','paused'].includes(mock.timer.status)?[mock.timer]:[];
@@ -146,6 +154,44 @@ test('browser UI regression',async t=>{
         for(const name of expected){await page.evaluate(name=>go(name),name);assert.doesNotMatch(await page.locator('#content').innerText(),/Не удалось загрузить/);}
         assert.deepEqual(errors,[]);await page.close();
       }
+    });
+    await t.test('Documents and Excel live flow downloads, archives, previews, applies and rolls back',async()=>{
+      const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);
+      const full=['imports.manage','users.manage','clients.manage','rates.employee','rates.client','company.settings','documents.manage','documents.read','payroll.all','payroll.close'];
+      await page.evaluate(full=>mock.stage3Permissions=full,full);await login(page);
+
+      await page.evaluate(()=>go('documents'));await page.waitForFunction(()=>document.querySelector('#content').innerText.includes('Готовый документ'));
+      assert.equal(await page.locator('[data-action=downloadPortalDocument]').count(),1);
+      await page.locator('[data-action=downloadPortalDocument]').click();await page.waitForFunction(()=>mock.saved?.filename==='PORTAL_report.xlsx');
+      await page.locator('[data-action=archivePortalDocument]').click();await page.locator('[data-action=confirmSheet]').click();
+      await page.waitForFunction(()=>mock.calls.some(c=>c.method==='POST'&&c.url==='/api/v3/document-archive'));
+      await page.locator('#docQuery').fill('акт');await page.locator('#documentsFilters').evaluate(form=>form.requestSubmit());
+      await page.waitForFunction(()=>mock.calls.some(c=>c.url.includes('/api/v3/documents?')&&c.url.includes('q=%D0%B0%D0%BA%D1%82')));
+
+      const file={name:'PORTAL_test.xlsx',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',buffer:Buffer.from('PK-test')};
+      await page.evaluate(()=>go('excelImport'));await page.waitForFunction(()=>document.querySelector('#content').innerText.includes('Шаблон PORTAL 1.0'));
+      await page.locator('[data-action=downloadExcelTemplate][data-kind=blank]').click();await page.waitForFunction(()=>mock.saved?.filename==='PORTAL_template_v1.xlsx');
+      await page.locator('#excelFile').setInputFiles(file);await page.locator('[data-action=previewExcelImport]').click();
+      await page.waitForFunction(()=>document.querySelector('#content').innerText.includes('Проверка завершена'));
+      assert.equal(await page.locator('[data-action=applyExcelImport]').innerText(),'Применить изменения');
+      await page.locator('[data-action=applyExcelImport]').click();await page.evaluate(()=>actions.applyExcelImport());await page.locator('[data-action=confirmSheet]').click();
+      await page.waitForFunction(()=>document.querySelector('#content').innerText.includes('Импорт применён'));
+      assert.equal((await page.evaluate(()=>mock.calls.filter(c=>c.url==='/api/v3/excel-import-apply').length)),1);
+      await page.locator('[data-action=downloadImportResult]').click();await page.waitForFunction(()=>mock.saved?.mime==='application/json');
+
+      await page.evaluate(()=>{mock.previewMode='conflict';mock.applyMode='ok';return go('excelImport');});await page.locator('#excelFile').setInputFiles(file);await page.locator('[data-action=previewExcelImport]').click();
+      await page.waitForFunction(()=>document.querySelector('#content').innerText.includes('Конфликты'));
+      assert.equal(await page.locator('[data-action=applyExcelImport]').count(),0);
+
+      await page.evaluate(()=>{mock.previewMode='ok';mock.applyMode='failed';return go('excelImport');});await page.locator('#excelFile').setInputFiles(file);await page.locator('[data-action=previewExcelImport]').click();await page.waitForSelector('[data-action=applyExcelImport]');
+      await page.locator('[data-action=applyExcelImport]').click();await page.locator('[data-action=confirmSheet]').click();
+      await page.waitForFunction(()=>document.querySelector('#content').innerText.includes('Импорт полностью отменён'));
+      assert.match(await page.locator('#content').innerText(),/Сервер сохранил безопасный отчёт/);
+
+      await page.evaluate(()=>{mock.previewMode='ok';mock.applyMode='stale';return go('excelImport');});await page.locator('#excelFile').setInputFiles(file);await page.locator('[data-action=previewExcelImport]').click();await page.waitForSelector('[data-action=applyExcelImport]');
+      await page.locator('[data-action=applyExcelImport]').click();await page.locator('[data-action=confirmSheet]').click();
+      await page.waitForFunction(()=>document.querySelector('#content').innerText.includes('Preview устарел'));
+      assert.deepEqual(errors,[]);await page.close();
     });
     await t.test('manager records personal work; expired write session returns to login',async()=>{
       const {page,errors}=await fixture(browser);await login(page);await page.evaluate(()=>go('work'));
