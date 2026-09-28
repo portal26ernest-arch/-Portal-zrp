@@ -22,7 +22,7 @@ globalThis.PortalCore = (() => {
     {id:'documents',title:'Документы',icon:'file',description:'Документы компании',production:true},
     {id:'reports',title:'Отчёты',icon:'grid',description:'Каталог управленческих отчётов',preview:true},
     {id:'news',title:'Новости',icon:'bell',description:'Ozon и Wildberries',preview:true},
-    {id:'excelImport',title:'Импорт Excel',icon:'file',description:'Шаблон, проверка и загрузка',preview:true},
+    {id:'excelImport',title:'Импорт Excel',icon:'file',description:'Шаблон, проверка и загрузка',production:true},
     {id:'wms',title:'WMS / ТСД',icon:'box',description:'Сканирование и складские операции',preview:true},
     {id:'notifications',title:'Уведомления',icon:'bell',description:'Что требует внимания',preview:true}
   ];
@@ -30,7 +30,11 @@ globalThis.PortalCore = (() => {
     if (['about','settings'].includes(page)) return true;
     if (!user || !roles[user.role]) return false;
     if (Array.isArray(user.permissions) && (user.role!=='platform_owner'||company)) {
-      const map={work:['work.write','tasks.read'],payroll:['payroll.own'],payrollPeriods:['payroll.all','payroll.close'],teamChat:['chat.read'],clients:['clients.read'],catalogue:['clients.manage'],materials:['materials.read'],invoices:['invoices.read'],users:['users.manage'],jobs:['tasks.read'],batches:['batches.receive','tasks.read','work.write'],permissions:['users.manage'],tariffs:['rates.employee','rates.client'],radar:['finance.read'],expenses:['expenses.read','expenses.manage'],analytics:['analytics.read','work.write'],documents:['documents.read','documents.manage'],reports:['finance.read','analytics.read'],control:['company.settings'],news:['chat.read','clients.read','tasks.read'],excelImport:['company.settings'],wms:['tasks.read','batches.receive','work.write'],notifications:['tasks.read','invoices.read','materials.read','payroll.own']};
+      if(page==='excelImport'){
+        const needed=['imports.manage','users.manage','clients.manage','rates.employee','rates.client','company.settings','documents.manage','documents.read'];
+        return ['admin','director','platform_owner'].includes(user.role)&&needed.every(p=>user.permissions.includes(p));
+      }
+      const map={work:['work.write','tasks.read'],payroll:['payroll.own'],payrollPeriods:['payroll.all','payroll.close'],teamChat:['chat.read'],clients:['clients.read'],catalogue:['clients.manage'],materials:['materials.read'],invoices:['invoices.read'],users:['users.manage'],jobs:['tasks.read'],batches:['batches.receive','tasks.read','work.write'],permissions:['users.manage'],tariffs:['rates.employee','rates.client'],radar:['finance.read'],expenses:['expenses.read','expenses.manage'],analytics:['analytics.read','work.write'],documents:['documents.read','documents.manage'],reports:['finance.read','analytics.read'],control:['company.settings'],news:['chat.read','clients.read','tasks.read'],wms:['tasks.read','batches.receive','work.write'],notifications:['tasks.read','invoices.read','materials.read','payroll.own']};
       if(map[page])return map[page].some(p=>user.permissions.includes(p));
       if(['dashboard','sections'].includes(page))return true;
     }
@@ -47,7 +51,7 @@ globalThis.PortalCore = (() => {
     if (page==='materials') return ['admin','director','accountant','shift'].includes(user.role);
     if (page==='invoices') return ['admin','director','manager','accountant'].includes(user.role);
     if (page==='reports') return ['admin','director','manager','accountant','shift'].includes(user.role);
-    if (page==='excelImport') return ['admin','director'].includes(user.role);
+    if (page==='excelImport') return false;
     if (page==='wms') return ['admin','director','manager','packer','shift'].includes(user.role);
     return page==='users' && ['admin','director'].includes(user.role);
   }

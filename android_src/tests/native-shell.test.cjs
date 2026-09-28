@@ -17,5 +17,6 @@ assert.match(main,/Downloads.*PORTAL|DIRECTORY_DOWNLOADS \+ "\/PORTAL"/);
 assert.match(main,/20 \* 1024 \* 1024/);
 assert.match(main,/document-file.*30 \* 1024 \* 1024/);
 assert.match(main,/openxmlformats-officedocument\.spreadsheetml\.sheet/);
+assert.match(main,/"application\/json"\.equals\(mimeType\)/);
 assert.doesNotMatch(main,/api\.telegram\.org|BOT_TOKEN|OWNER_TELEGRAM_ID/);
 console.log('Native shell checks: OK');

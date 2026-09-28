@@ -60,7 +60,7 @@ async function api(method,path,body,options={}){
     if(epoch!==S.epoch||(!options.global&&view!==S.view))throw {stale:true};
     if(!result.ok){
       if(result.httpStatus===401&&!options.anonymous){logout(false,true);throw new Error('Сессия завершена. Войдите снова.');}
-      throw new Error(result.network&&method==='POST'?'Не удалось подтвердить запись. Проверьте историю перед повтором.':result.error||'Не удалось выполнить запрос');
+      const error=new Error(result.network&&method==='POST'?'Не удалось подтвердить запись. Проверьте историю перед повтором.':result.error||'Не удалось выполнить запрос');error.status=result.httpStatus;error.data=result.data;throw error;
     }
     return result;
   }finally{if(method==='POST')S.writes--;}

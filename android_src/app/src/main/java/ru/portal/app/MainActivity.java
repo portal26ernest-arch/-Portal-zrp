@@ -192,6 +192,7 @@ public class MainActivity extends Activity {
                         || encoded.length() > 28 * 1024 * 1024) throw new Exception();
                 boolean allowedType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".equals(mimeType)
                         || "application/pdf".equals(mimeType)
+                        || "application/json".equals(mimeType)
                         || "image/jpeg".equals(mimeType) || "image/png".equals(mimeType)
                         || "image/webp".equals(mimeType) || "text/plain".equals(mimeType);
                 if (!allowedType) throw new Exception();

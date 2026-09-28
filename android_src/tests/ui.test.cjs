@@ -16,7 +16,7 @@ const core=context.PortalCore;
 async function screenshot(page,name){if(process.env.PORTAL_UI_SCREENSHOTS){fs.mkdirSync(process.env.PORTAL_UI_SCREENSHOTS,{recursive:true});await page.screenshot({path:path.join(process.env.PORTAL_UI_SCREENSHOTS,name+'.png'),fullPage:true});}}
 
 test('all shipped JavaScript parses',()=>{
-  for(const file of ['core.js','app.js','screens.js','production.js','preview.js'])new vm.Script(fs.readFileSync(path.join(assets,file),'utf8'),{filename:file});
+  for(const file of ['core.js','app.js','screens.js','production.js','preview.js','documents_excel.js'])new vm.Script(fs.readFileSync(path.join(assets,file),'utf8'),{filename:file});
 });
 test('time-based greeting uses local hour boundaries',()=>{
   const cases={0:'Доброй ночи',4:'Доброй ночи',5:'Доброе утро',11:'Доброе утро',12:'Добрый день',17:'Добрый день',18:'Добрый вечер',22:'Добрый вечер',23:'Доброй ночи'};
@@ -24,7 +24,7 @@ test('time-based greeting uses local hour boundaries',()=>{
   assert.throws(()=>core.timeGreeting(24),/hour must be 0\.\.23/);
 });
 test('role capabilities and employee linkage',()=>{
-  const expected={admin:['work','payroll','clients','materials','invoices','users','jobs','reports','news','excelImport','wms','notifications'],director:['work','payroll','clients','materials','invoices','users','jobs','reports','news','excelImport','wms','notifications'],manager:['work','payroll','clients','invoices','jobs','reports','news','wms','notifications'],packer:['work','payroll','jobs','news','wms','notifications'],shift:['work','payroll','clients','materials','jobs','reports','news','wms','notifications'],accountant:['payroll','clients','materials','invoices','jobs','reports','news','notifications']};
+  const expected={admin:['work','payroll','clients','materials','invoices','users','jobs','reports','news','wms','notifications'],director:['work','payroll','clients','materials','invoices','users','jobs','reports','news','wms','notifications'],manager:['work','payroll','clients','invoices','jobs','reports','news','wms','notifications'],packer:['work','payroll','jobs','news','wms','notifications'],shift:['work','payroll','clients','materials','jobs','reports','news','wms','notifications'],accountant:['payroll','clients','materials','invoices','jobs','reports','news','notifications']};
   for(const [role,pages] of Object.entries(expected)){
     for(const m of core.modules)assert.equal(core.can(m.id,{role,telegram_id:101},{id:1}),pages.includes(m.id),role+':'+m.id);
     assert.equal(core.can('work',{role}, {id:1}),false);
@@ -33,6 +33,10 @@ test('role capabilities and employee linkage',()=>{
   assert.equal(core.can('dashboard',{role:'platform_owner'},null),false);
   assert.equal(core.can('users',{role:'platform_owner'},{id:2}),true);
   assert.equal(core.can('work',{role:'platform_owner',telegram_id:101},{id:2}),false);
+  const importPermissions=['imports.manage','users.manage','clients.manage','rates.employee','rates.client','company.settings','documents.manage','documents.read'];
+  assert.equal(core.can('excelImport',{role:'admin',permissions:importPermissions},{id:1}),true);
+  assert.equal(core.can('excelImport',{role:'admin',permissions:['company.settings']},{id:1}),false);
+  assert.equal(core.can('excelImport',{role:'platform_owner',permissions:importPermissions},{id:2}),true);
 });
 test('updates: unconfigured, offline, current, newer and invalid manifests',()=>{
   const manifest={schemaVersion:1,...metadata,publishedAt:metadata.buildDate,changelog:'Исправления',apkUrl:'https://github.com/portal26ernest-arch/-Portal-zrp/releases/download/test/app.apk',sha256:'a'.repeat(64)};
