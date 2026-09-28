@@ -57,7 +57,7 @@ class Stage7DeploySafetyTests(unittest.TestCase):
         for token in ('StrictHostKeyChecking=yes', 'UserKnownHostsFile=', 'IdentityFile',
                       'IdentitiesOnly=yes', 'ServerAliveCountMax=2', 'EXPECTED_COMMIT=$commit',
                       'PORTAL_STAGE7_PILOT_SSLIP=1', 'PORTAL_STAGE7_PILOT_TUNNEL=1',
-                      'STAGE7_RESULT.txt',
+                      'STAGE7_RESULT.txt', '-replace "`r", ""',
                       'production_database_touched=no', 'https_status=ok'):
             with self.subTest(token=token):
                 self.assertIn(token, RUNNER)
