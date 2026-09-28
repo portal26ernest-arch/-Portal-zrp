@@ -19,6 +19,9 @@ import production_permissions as business_rights
 from production_migrations import migrate as migrate_production
 import production_activity as activity
 from portal_config import load_config
+from pathlib import Path
+import documents_api
+from document_domain import LocalFileStorage
 
 BUILD_ID = "PORTAL Server · 3.3-dev"
 CONFIG = load_config(os.environ)
@@ -897,6 +900,13 @@ class Handler(BaseHTTPRequestHandler):
                 session=activity.touch(repo,self.token(),self.request_user,True)
                 conn.commit()
                 return self.send_json(dict(ok=True,last_activity_at=session['last_activity_at'] if session else None))
+            if action in documents_api.DOCUMENT_ACTIONS and repo.has_table('portal_documents'):
+                if method=='POST':repo.lock()
+                service=Production(repo,self.request_user)
+                storage=LocalFileStorage(os.environ.get('PORTAL_DOCUMENT_ROOT',str(Path(DB_PATH).resolve().parent/'.portal-documents')))
+                result=documents_api.route(service,storage,action,method,parse_body(self) if method=='POST' else parse_qs(urlparse(self.path).query))
+                if method=='POST':conn.commit()
+                return self.send_json(dict(ok=True,data=result))
             if method=='POST':repo.lock()
             service=Production(repo,self.request_user)
             result=service.command(action,parse_body(self)) if method=='POST' else service.query(action,parse_qs(urlparse(self.path).query))

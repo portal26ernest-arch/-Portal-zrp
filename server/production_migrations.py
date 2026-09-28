@@ -142,6 +142,8 @@ def migrate_payroll_settlement(r):
     r.sync_payroll_employees()
     if not r.sql('SELECT 1 FROM portal_production_migrations WHERE company_id=? AND version=6',(r.company_id,)).fetchone():
         r.sql('INSERT INTO portal_production_migrations(company_id,version,applied_at) VALUES(?,6,?)',(r.company_id,utcnow()))
+    from documents_schema import migrate_documents
+    migrate_documents(r)
 
 
 def validate_payroll_settlement(r):

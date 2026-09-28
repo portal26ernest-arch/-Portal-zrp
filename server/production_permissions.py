@@ -20,6 +20,7 @@ CATALOG = [
  ('chat.write','Команда','Писать во внутренний чат компании','packer manager director admin shift accountant'),
  ('chat.moderate','Команда','Закреплять сообщения внутреннего чата','manager director admin shift'),
  ('documents.manage','Документы','Формировать и регистрировать документы компании','director admin accountant'),
+ ('imports.manage','Документы','Предпросмотр и применение импорта справочников','director admin'),
  ('clients.read','Клиенты','Просматривать карточки клиентов','manager director admin accountant shift'),
  ('clients.manage','Клиенты','Изменять справочник клиентов и операций','director admin'),
  ('rates.employee','Тарифы','Изменять тарифы сотрудников','director admin'),
