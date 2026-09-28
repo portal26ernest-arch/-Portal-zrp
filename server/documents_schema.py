@@ -53,6 +53,7 @@ IMPORT_DDL = '''CREATE TABLE IF NOT EXISTS portal_excel_imports (
  result_counts TEXT NOT NULL,
  error_report TEXT NOT NULL,
  result_document_id TEXT NOT NULL,
+ CHECK((status='applied' AND applied_at IS NOT NULL) OR (status='failed' AND applied_at IS NULL)),
  PRIMARY KEY(company_id,import_id),
  UNIQUE(company_id,checksum),
  FOREIGN KEY(company_id,result_document_id) REFERENCES portal_documents(company_id,id)
@@ -78,6 +79,7 @@ def migrate_documents(r):
         r.sql(IMPORT_DDL)
         r.sql('CREATE INDEX IF NOT EXISTS documents_filter ON portal_documents(company_id,status,document_type,created_at,id)')
         r.sql('CREATE INDEX IF NOT EXISTS documents_refs ON portal_documents(company_id,client_id,employee_id,document_date)')
+        r.sql('CREATE INDEX IF NOT EXISTS documents_fingerprint ON portal_documents(company_id,fingerprint,status)')
         for table in ('portal_documents','portal_excel_imports'):
             for operation in ('INSERT','UPDATE'):
                 r.sql(f'''CREATE TRIGGER IF NOT EXISTS {table}_tenant_{operation.lower()}

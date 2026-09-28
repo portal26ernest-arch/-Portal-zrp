@@ -897,7 +897,16 @@ class Handler(BaseHTTPRequestHandler):
                 importer=excel_import.ExcelImport(service,storage,tenants.get_company(DB_PATH,repo.company_id))
                 if action=='excel-import-preview' and method=='POST':
                     return self.send_json(dict(ok=True,data=importer.preview(parse_body(self))))
-                raise ValueError('Метод импорта пока не поддерживается')
+                if action=='excel-import-apply' and method=='POST':
+                    from excel_apply import apply_import
+                    repo.lock();result=apply_import(importer,parse_body(self));conn.commit()
+                    if result['status']=='failed':
+                        return self.send_json(dict(ok=False,error='Импорт отменён полностью; см. отчёт',data=result),409)
+                    return self.send_json(dict(ok=True,data=result))
+                if action=='excel-import-result' and method=='GET':
+                    from excel_apply import import_result
+                    return self.send_json(dict(ok=True,data=import_result(importer,parse_qs(urlparse(self.path).query).get('id',[None])[0])))
+                raise ValueError('Метод импорта не поддерживается')
             if action=='payroll-settlements' and (not repo.has_table('payroll_settlement_entries') or
                     not conn.execute('SELECT 1 FROM portal_production_migrations WHERE company_id=? AND version=6',(repo.company_id,)).fetchone()):
                 raise ValueError('Реестр расчётов зарплаты ещё не подключён оператором к этой компании')

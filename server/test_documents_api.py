@@ -30,6 +30,8 @@ class DocumentAPITest(unittest.TestCase):
     def test_upload_storage_checksum_metadata_and_duplicate_request(self):
         a=self.upload(request_id='doc-1');b=self.upload(request_id='doc-1')
         self.assertEqual(a['id'],b['id']);self.assertNotIn('file_b64',a);self.assertNotIn('storage_key',a)
+        duplicate=self.upload(request_id='doc-duplicate')
+        self.assertEqual(duplicate['id'],a['id'])
         self.assertEqual(a['checksum_sha256'],hashlib.sha256(PDF).hexdigest())
         self.assertEqual(len(self.get('documents')['data']),1)
         download=self.get('document-file?id='+a['id'])['data']
@@ -98,7 +100,7 @@ class DocumentAPITest(unittest.TestCase):
         self.get('documents?date_from=bad',status=400)
 
     def test_invalid_filename_mime_size_type_and_employee_reference(self):
-        for values in ({'original_filename':'../x.pdf'},{'original_filename':'C:x.pdf'},{'mime_type':'text/plain'},
+        for values in ({'original_filename':'../x.pdf'},{'original_filename':'C:x.pdf'},{'original_filename':'x.pdf '},{'original_filename':' x.pdf'},{'mime_type':'text/plain'},
                        {'document_type':'invoice_xlsx'},{'file_b64':'bad!'},{'file_b64':''},{'employee_id':999999}):
             body=dict(action='upload',document_type='report_pdf',original_filename='x.pdf',mime_type='application/pdf',file_b64=base64.b64encode(PDF).decode())
             body.update(values);self.post('documents',body,status=400)

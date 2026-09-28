@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS portal_documents (
  created_at TEXT NOT NULL,
  document_date TEXT,
  status TEXT NOT NULL CHECK(status IN ('ready','archived')),
- metadata TEXT NOT NULL,
+ metadata JSONB NOT NULL CHECK(jsonb_typeof(metadata)='object'),
  source_kind TEXT NOT NULL CHECK(source_kind IN ('generated','uploaded','imported')),
  revision INTEGER NOT NULL DEFAULT 1 CHECK(revision>0),
  previous_id TEXT,
@@ -47,11 +47,12 @@ CREATE TABLE IF NOT EXISTS portal_excel_imports (
  actor_kind TEXT NOT NULL CHECK(actor_kind IN ('user','platform_owner')),
  created_at TEXT NOT NULL,
  status TEXT NOT NULL CHECK(status IN ('applied','failed')),
- preview_summary TEXT NOT NULL,
+ preview_summary JSONB NOT NULL CHECK(jsonb_typeof(preview_summary)='object'),
  applied_at TEXT,
- result_counts TEXT NOT NULL,
- error_report TEXT NOT NULL,
+ result_counts JSONB NOT NULL CHECK(jsonb_typeof(result_counts)='object'),
+ error_report JSONB NOT NULL CHECK(jsonb_typeof(error_report)='array'),
  result_document_id TEXT NOT NULL,
+ CHECK((status='applied' AND applied_at IS NOT NULL) OR (status='failed' AND applied_at IS NULL)),
  PRIMARY KEY(company_id,import_id),
  UNIQUE(company_id,checksum),
  FOREIGN KEY(company_id,result_document_id) REFERENCES portal_documents(company_id,id)
@@ -59,6 +60,7 @@ CREATE TABLE IF NOT EXISTS portal_excel_imports (
 
 CREATE INDEX IF NOT EXISTS documents_filter ON portal_documents(company_id,status,document_type,created_at,id);
 CREATE INDEX IF NOT EXISTS documents_refs ON portal_documents(company_id,client_id,employee_id,document_date);
+CREATE INDEX IF NOT EXISTS documents_fingerprint ON portal_documents(company_id,fingerprint,status);
 CREATE INDEX IF NOT EXISTS imports_actor ON portal_excel_imports(company_id,actor_id,created_at);
 ALTER TABLE portal_documents ALTER COLUMN company_id SET DEFAULT portal_current_company();
 ALTER TABLE portal_excel_imports ALTER COLUMN company_id SET DEFAULT portal_current_company();

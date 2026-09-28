@@ -27,7 +27,10 @@ def deterministic_zip(payload):
     return out.getvalue()
 
 def xml(raw):
-    if b'<!DOCTYPE' in raw.upper() or b'<!ENTITY' in raw.upper():raise ValueError('DTD/ENTITY запрещены')
+    if len(raw)>4*1024*1024 or raw.count(b'<')>400000:raise ValueError('Превышен лимит XML')
+    try:decoded=raw.decode('utf-8-sig')
+    except UnicodeError:raise ValueError('XML книги должен быть UTF-8') from None
+    if '\x00' in decoded or '<!DOCTYPE' in decoded.upper() or '<!ENTITY' in decoded.upper():raise ValueError('DTD/ENTITY запрещены')
     try:return ET.fromstring(raw)
     except ET.ParseError:raise ValueError('Повреждён XML книги') from None
 
@@ -59,7 +62,7 @@ def inspect_xlsx(payload):
         for item in book.infolist():
             if item.filename.startswith('xl/worksheets/') and item.filename.endswith('.xml'):
                 root=xml(book.read(item));rows=root.findall('{'+NS+'}sheetData/{'+NS+'}row')
-                if len(rows)>MAX_ROWS or sum(len(row) for row in rows)>MAX_CELLS:raise ValueError('Превышен лимит строк/ячеек')
+                if len(rows)>MAX_ROWS+3 or sum(len(row) for row in rows)>MAX_CELLS:raise ValueError('Превышен лимит строк/ячеек')
     return True
 
 def parse_template(payload):

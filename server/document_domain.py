@@ -76,6 +76,7 @@ class LocalFileStorage:
         return payload
 
 def validate_upload(filename,mime_type,payload,document_type=None):
+    if not isinstance(filename,str) or filename!=filename.strip():raise ValueError('Недопустимое имя файла')
     filename=clean_text(filename,255)
     if filename in {'.','..'} or re.search(r'[\\/:\x00-\x1f]',filename) or filename.endswith(('.', ' ')):
         raise ValueError('Недопустимое имя файла')
@@ -114,7 +115,9 @@ class Documents:
             value.update({k:v for k,v in item.get('metadata',{}).items() if k in ('period_start','period_end')})
         return value
     def _row(self,row):
-        item=dict(zip(COLUMNS,row));item['metadata']=json.loads(item['metadata']);return item
+        item=dict(zip(COLUMNS,row))
+        if isinstance(item['metadata'],str):item['metadata']=json.loads(item['metadata'])
+        return item
     def legacy(self,old):
         archived=any(a.get('event')=='document_archived' and a.get('entity_id')==old['id'] for a in self.r.list('audit'))
         return dict(old,document_type='payroll_xlsx' if old.get('document_type')=='payroll' else old.get('document_type','report_xlsx'),
@@ -196,13 +199,24 @@ class Documents:
         if not self.visible(item):raise PermissionError('Документ недоступен')
         semantic={k:v for k,v in item.items() if k not in ('id','created_at','storage_key','fingerprint','request_id')}
         item['fingerprint']=hashlib.sha256(json.dumps(semantic,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
+        receipt_key='document:'+hashlib.sha256(item['request_id'].encode()).hexdigest()
+        receipt=self.r.get('requests',receipt_key,False)
+        if receipt:
+            if receipt['fingerprint']!=item['fingerprint']:raise ValueError('request_id уже использован для другого документа')
+            return self.public(self.get(receipt['document_id']))
         old=self.r.sql('SELECT '+','.join(COLUMNS)+' FROM portal_documents WHERE company_id=? AND request_id=?',(self.r.company_id,item['request_id'])).fetchone()
         if old:
             old=self._row(old)
             if old['fingerprint']!=item['fingerprint']:raise ValueError('request_id уже использован для другого документа')
             return self.public(old)
+        duplicate=self.r.sql("SELECT "+','.join(COLUMNS)+" FROM portal_documents WHERE company_id=? AND fingerprint=? AND status='ready' ORDER BY created_at,id LIMIT 1",(self.r.company_id,item['fingerprint'])).fetchone()
+        if duplicate:
+            duplicate=self._row(duplicate)
+            self.r.insert('requests',dict(fingerprint=item['fingerprint'],document_id=duplicate['id']),receipt_key)
+            return self.public(duplicate)
         item['storage_key']=self.storage.put(payload,self.r.company_id);values=dict(item,metadata=json.dumps(metadata,sort_keys=True,ensure_ascii=False))
         self.r.sql('INSERT INTO portal_documents('+','.join(COLUMNS)+') VALUES('+','.join('?' for _ in COLUMNS)+')',tuple(values[k] for k in COLUMNS))
+        self.r.insert('requests',dict(fingerprint=item['fingerprint'],document_id=item['id']),receipt_key)
         self.r.audit(self.u,'document_uploaded' if source_kind=='uploaded' else 'document_generated',item['id'])
         return self.public(item)
     def archive(self,identity):

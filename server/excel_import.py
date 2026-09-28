@@ -19,6 +19,9 @@ from production_repository import utcnow
 import production_permissions as rights
 
 LOG=logging.getLogger('portal.import.audit')
+if not LOG.handlers:LOG.addHandler(logging.StreamHandler())
+LOG.setLevel(logging.INFO)
+LOG.propagate=False
 _SIGNING_KEY=secrets.token_bytes(32)
 IMPORT_ACTIONS={'excel-import-preview','excel-import-apply','excel-import-result'}
 ROLES={'admin','director','manager','accountant','shift','packer'}
@@ -144,6 +147,9 @@ class ExcelImport:
                             if (role!=user['role'] or enabled!=user['active']) and uid==self.u['id'] and not self.u.get('technical_owner'):raise ValueError('own_access_change_requires_access_api')
                             if enabled and not user['active']:raise ValueError('activation_requires_access_api')
                         normalized=dict(employee_ref=ref,employee_id=eid,full_name=name,profile_username=value['profile_username'],user_id=uid,role=role,active=enabled)
+                        if before and uid is None:
+                            # Omitted account fields mean a profile edit, never an access edit.
+                            before={k:v for k,v in before.items() if k not in ('user_id','role','active')}
                         if not row['errors']:row['classification']='unchanged' if before and same(before,normalized,['full_name','profile_username','user_id','role','active']) else 'update' if before else 'new'
                     else:
                         cid=identifier(value['client_id'],True);oid=identifier(value['operation_id'],True);ref=value['client_ref']
@@ -166,9 +172,9 @@ class ExcelImport:
                         versions=[t for t in state['_tariffs'] if t['operation_id']==oid] if oid else []
                         if changed_rates or (oid is None and normalized['effective_from']):
                             effective=normalized['effective_from']
-                            if not effective or effective<now:issue(row,'tariff_backdated_or_missing_date','conflict')
-                            elif versions and effective<=max(t['effective_from'] for t in versions):issue(row,'tariff_overlap_or_effective_conflict','conflict')
-                        elif before and normalized['effective_from'] not in (None,before['effective_from']):
+                            if not effective or effective<timestamp(now):issue(row,'tariff_backdated_or_missing_date','conflict')
+                            elif versions and effective<=max(timestamp(t['effective_from']) for t in versions):issue(row,'tariff_overlap_or_effective_conflict','conflict')
+                        elif before and normalized['effective_from'] not in (None,timestamp(before['effective_from'])):
                             issue(row,'tariff_date_change_without_new_rates','conflict')
                         normalized['append_tariff']=changed_rates or not before
                         if not row['errors']:row['classification']='update' if before and (changed_rates or normalized['name']!=before['name'] or normalized['active']!=before['active']) else 'unchanged' if before else 'new'
