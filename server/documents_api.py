@@ -1,11 +1,31 @@
 """Additive v3 Documents routes, preserving legacy payroll response fields."""
 import hashlib
 import json
+import base64
 from document_domain import Documents, decode_file, XLSX_MIME
 from report_xlsx import payroll_xlsx
 from portal_excel_workbook import deterministic_zip
 
 DOCUMENT_ACTIONS={'documents','document-file','document-metadata','document-upload','document-archive','document-generate'}
+TEMPLATE_ACTIONS={'document-template','document-template-blank','document-template-info'}
+
+def require_import(service):
+    for permission in ('imports.manage','users.manage','clients.manage','rates.employee','rates.client','company.settings','documents.manage','documents.read'):
+        service.need(permission)
+    if service.u['role'] not in ('admin','director') and not service.u.get('technical_owner'):
+        raise PermissionError('Импорт справочников выполняет директор или администратор компании')
+
+def template_route(service,storage,action,method,values,company):
+    from excel_template import SHEETS,TEMPLATE_VERSION,catalog,workbook
+    service.need('documents.read')
+    if action=='document-template-info':return {'template_version':TEMPLATE_VERSION,'sheets':list(SHEETS),'mapping':{n:[{'key':k,'header':h} for k,h in cols] for n,cols in SHEETS.items()}}
+    if action=='document-template':require_import(service)
+    data=catalog(service,company) if action=='document-template' else {}
+    payload=workbook(data);filename='PORTAL_template_v1.xlsx'
+    if method=='POST':
+        return Documents(service,storage).register(payload,dict(values,document_type='import_template_xlsx',original_filename=filename,mime_type=XLSX_MIME,
+                 title='Стандартный шаблон PORTAL',metadata={'template_version':TEMPLATE_VERSION}),'generated')
+    return dict(filename=filename,mime_type=XLSX_MIME,template_version=TEMPLATE_VERSION,file_b64=base64.b64encode(payload).decode())
 
 def route(service,storage,action,method,values):
     docs=Documents(service,storage)

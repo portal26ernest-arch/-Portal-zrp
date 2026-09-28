@@ -900,11 +900,14 @@ class Handler(BaseHTTPRequestHandler):
                 session=activity.touch(repo,self.token(),self.request_user,True)
                 conn.commit()
                 return self.send_json(dict(ok=True,last_activity_at=session['last_activity_at'] if session else None))
-            if action in documents_api.DOCUMENT_ACTIONS and repo.has_table('portal_documents'):
+            if (action in documents_api.DOCUMENT_ACTIONS and repo.has_table('portal_documents')) or action in documents_api.TEMPLATE_ACTIONS:
                 if method=='POST':repo.lock()
                 service=Production(repo,self.request_user)
                 storage=LocalFileStorage(os.environ.get('PORTAL_DOCUMENT_ROOT',str(Path(DB_PATH).resolve().parent/'.portal-documents')))
-                result=documents_api.route(service,storage,action,method,parse_body(self) if method=='POST' else parse_qs(urlparse(self.path).query))
+                values=parse_body(self) if method=='POST' else parse_qs(urlparse(self.path).query)
+                if action in documents_api.TEMPLATE_ACTIONS:
+                    result=documents_api.template_route(service,storage,action,method,values,tenants.get_company(DB_PATH,repo.company_id))
+                else:result=documents_api.route(service,storage,action,method,values)
                 if method=='POST':conn.commit()
                 return self.send_json(dict(ok=True,data=result))
             if method=='POST':repo.lock()

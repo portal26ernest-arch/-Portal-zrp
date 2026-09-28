@@ -23,6 +23,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
+      - name: Install independent XLSX reader for tests
+        run: python -m pip install -r server/requirements-test.txt
       - name: Run regression and isolation tests over HTTP
         env:
           PORTAL_TEST_HTTP: "1"

@@ -1,0 +1,3 @@
+# Independent OOXML reader for validity and Excel save/round-trip tests only.
+# The server runtime and workbook generator remain dependency-free.
+openpyxl==3.1.5
