@@ -47,7 +47,7 @@
     ].join('');
     paint(
       heading('PORTAL Сегодня',date(d.date),btn('Все разделы','go','data-page="sections"','secondary'))+
-      `<section class="director-hero"><div><span class="eyebrow">${esc(S.company?.name||'Компания')}</span><h2>Добрый день, ${esc(S.me.display_name||S.me.username)}</h2><p class="muted">${esc(status)}</p></div><span class="badge ${attention.length?'amber':'green'}">${attention.length?'Есть задачи':'Всё спокойно'}</span></section>`+
+      `<section class="director-hero"><div><span class="eyebrow">${esc(S.company?.name||'Компания')}</span><h2>${esc(PortalCore.timeGreeting())}, ${esc(S.me.display_name||S.me.username)}</h2><p class="muted">${esc(status)}</p></div><span class="badge ${attention.length?'amber':'green'}">${attention.length?'Есть задачи':'Всё спокойно'}</span></section>`+
       `<section class="dashboard-section"><div class="section-label"><h2>Сегодня</h2><span class="meta">Живая сводка</span></div><div class="today-grid">
         <div class="today-main"><span class="l">Выработка</span><strong>${num(d.today_quantity||0)}</strong><small>шт. сегодня</small></div>
         <div class="today-kpi"><span>Заданий в работе</span><b>${num(inWorkTasks.size)}</b></div>

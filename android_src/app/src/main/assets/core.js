@@ -51,6 +51,14 @@ globalThis.PortalCore = (() => {
     if (page==='wms') return ['admin','director','manager','packer','shift'].includes(user.role);
     return page==='users' && ['admin','director'].includes(user.role);
   }
+  function timeGreeting(value=new Date()) {
+    const hour=value instanceof Date?value.getHours():Number(value);
+    if(!Number.isInteger(hour)||hour<0||hour>23)throw new RangeError('hour must be 0..23');
+    if(hour>=5&&hour<12)return 'Доброе утро';
+    if(hour>=12&&hour<18)return 'Добрый день';
+    if(hour>=18&&hour<23)return 'Добрый вечер';
+    return 'Доброй ночи';
+  }
   function updateState(current,result) {
     if (!result || !result.ok) return {state:'error',title:'Не удалось проверить обновления',description:'Сервис обновлений недоступен. Попробуйте позже.'};
     if (!result.configured) return {state:'unconfigured',title:'Проверка пока недоступна',description:'Официальный источник обновлений ещё не подключён.'};
@@ -66,5 +74,5 @@ globalThis.PortalCore = (() => {
     if (m.versionCode<=current.versionCode) return {state:'latest',title:'Установлена последняя версия',description:'Для вашего канала обновлений новых сборок нет.'};
     return {state:'available',title:'Доступна новая версия',description:'Установка будет доступна через официальный канал распространения.',release:m};
   }
-  return Object.freeze({roles,modules,can,updateState});
+  return Object.freeze({roles,modules,can,timeGreeting,updateState});
 })();

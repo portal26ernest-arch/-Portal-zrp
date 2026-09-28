@@ -18,6 +18,11 @@ async function screenshot(page,name){if(process.env.PORTAL_UI_SCREENSHOTS){fs.mk
 test('all shipped JavaScript parses',()=>{
   for(const file of ['core.js','app.js','screens.js','production.js','preview.js'])new vm.Script(fs.readFileSync(path.join(assets,file),'utf8'),{filename:file});
 });
+test('time-based greeting uses local hour boundaries',()=>{
+  const cases={0:'Доброй ночи',4:'Доброй ночи',5:'Доброе утро',11:'Доброе утро',12:'Добрый день',17:'Добрый день',18:'Добрый вечер',22:'Добрый вечер',23:'Доброй ночи'};
+  for(const [hour,greeting] of Object.entries(cases))assert.equal(core.timeGreeting(Number(hour)),greeting);
+  assert.throws(()=>core.timeGreeting(24),/hour must be 0\.\.23/);
+});
 test('role capabilities and employee linkage',()=>{
   const expected={admin:['work','payroll','clients','materials','invoices','users','jobs','reports','news','excelImport','wms','notifications'],director:['work','payroll','clients','materials','invoices','users','jobs','reports','news','excelImport','wms','notifications'],manager:['work','payroll','clients','invoices','jobs','reports','news','wms','notifications'],packer:['work','payroll','jobs','news','wms','notifications'],shift:['work','payroll','clients','materials','jobs','reports','news','wms','notifications'],accountant:['payroll','clients','materials','invoices','jobs','reports','news','notifications']};
   for(const [role,pages] of Object.entries(expected)){
