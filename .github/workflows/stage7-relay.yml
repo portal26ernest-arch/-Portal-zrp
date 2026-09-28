@@ -33,10 +33,11 @@ jobs:
           openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 -out "$RUNNER_TEMP/stage7_wrap_private.pem" >/dev/null 2>&1
           openssl pkey -in "$RUNNER_TEMP/stage7_wrap_private.pem" -pubout -out "$RUNNER_TEMP/stage7_wrap_public.pem"
           mkdir -p .stage7
+          git rm -f --ignore-unmatch .stage7/secret_payload.b64
           cp "$RUNNER_TEMP/stage7_wrap_public.pem" .stage7/ephemeral_pub.pem
           git config user.name "PORTAL Stage7 Relay"
           git config user.email "stage7-relay@users.noreply.github.com"
-          git add -f .stage7/ephemeral_pub.pem
+          git add -A -f .stage7
           git commit -m "Stage7 relay ephemeral public key [skip ci]"
           git push origin "HEAD:$GITHUB_REF_NAME"
           echo "STAGE7_RELAY_PUBLIC_KEY_READY"
@@ -73,21 +74,113 @@ jobs:
           DEPLOY_LOG="$RUNNER_TEMP/stage7-deploy-output.log"
           RESULT="$RUNNER_TEMP/STAGE7_RESULT.txt"
 
-          ssh-keyscan -T 10 -t ed25519 "$STAGE7_HOST" > "$KH" 2>/dev/null
-          test -s "$KH"
+          RELAY_HOST=127.0.0.1
+          RELAY_PORT=2223
+          cat > "$RUNNER_TEMP/stage7_server_first_relay.py" <<'PY'
+          import os, select, socket, threading
+
+          REMOTE = (os.environ["STAGE7_HOST"], 22)
+          LISTEN = ("127.0.0.1", 2223)
+
+          def recv_line(sock, limit=1024, timeout=12):
+              sock.settimeout(timeout)
+              data = bytearray()
+              while len(data) < limit:
+                  chunk = sock.recv(1)
+                  if not chunk:
+                      break
+                  data += chunk
+                  if data.endswith(b"\n"):
+                      break
+              return bytes(data)
+
+          def pump(client):
+              remote = None
+              try:
+                  remote = socket.create_connection(REMOTE, timeout=12)
+                  server_banner = recv_line(remote)
+                  if not server_banner.startswith(b"SSH-"):
+                      raise RuntimeError("remote SSH banner missing")
+                  client.sendall(server_banner)
+
+                  client_banner = recv_line(client)
+                  if not client_banner.startswith(b"SSH-"):
+                      raise RuntimeError("client SSH banner missing")
+                  remote.sendall(client_banner)
+
+                  client.setblocking(False)
+                  remote.setblocking(False)
+                  peers = {client: remote, remote: client}
+                  pending = {client: bytearray(), remote: bytearray()}
+                  while True:
+                      readers = [s for s in peers if len(pending[peers[s]]) < 1024 * 1024]
+                      writers = [s for s, buf in pending.items() if buf]
+                      readable, writable, _ = select.select(readers, writers, [], 30)
+                      for src in readable:
+                          try:
+                              data = src.recv(65536)
+                          except BlockingIOError:
+                              continue
+                          if not data:
+                              return
+                          pending[peers[src]].extend(data)
+                      for dst in writable:
+                          buf = pending[dst]
+                          if not buf:
+                              continue
+                          try:
+                              sent = dst.send(buf)
+                          except BlockingIOError:
+                              continue
+                          if sent:
+                              del buf[:sent]
+              finally:
+                  for sock in (client, remote):
+                      if sock:
+                          try:
+                              sock.close()
+                          except Exception:
+                              pass
+
+          with socket.socket() as server:
+              server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+              server.bind(LISTEN)
+              server.listen(20)
+              while True:
+                  client, _ = server.accept()
+                  threading.Thread(target=pump, args=(client,), daemon=True).start()
+          PY
+
+          python "$RUNNER_TEMP/stage7_server_first_relay.py" > "$RUNNER_TEMP/stage7-relay.log" 2>&1 &
+          RELAY_PID=$!
+          echo "$RELAY_PID" > "$RUNNER_TEMP/stage7_relay.pid"
+          trap 'kill "$RELAY_PID" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 30); do
+            if ss -ltn | grep -q "127.0.0.1:$RELAY_PORT"; then
+              break
+            fi
+            sleep 0.2
+          done
+          ss -ltn | grep -q "127.0.0.1:$RELAY_PORT"
+
+          KEYSCAN="$(ssh-keyscan -T 12 -p "$RELAY_PORT" -t ed25519 "$RELAY_HOST" 2>/dev/null | head -n1)"
+          test -n "$KEYSCAN"
+          KEY_MATERIAL="$(printf '%s\n' "$KEYSCAN" | awk '{print $2" "$3}')"
+          printf '%s %s\n' "$STAGE7_HOST" "$KEY_MATERIAL" > "$KH"
           ACTUAL_FP="$(ssh-keygen -lf "$KH" -E sha256 | awk 'NR==1 {print $2}')"
           test "$ACTUAL_FP" = "$EXPECTED_HOST_FP"
 
-          SSH_OPTS=(-i "$KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KH" -o ConnectTimeout=12 -o ConnectionAttempts=1 -o ServerAliveInterval=15 -o ServerAliveCountMax=2)
+          SSH_OPTS=(-p "$RELAY_PORT" -i "$KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KH" -o "HostKeyAlias=$STAGE7_HOST" -o ConnectTimeout=12 -o ConnectionAttempts=1 -o ServerAliveInterval=15 -o ServerAliveCountMax=2)
+          REMOTE="$STAGE7_USER@$RELAY_HOST"
 
-          ssh "${SSH_OPTS[@]}" "$STAGE7_USER@$STAGE7_HOST" true
-          ssh "${SSH_OPTS[@]}" "$STAGE7_USER@$STAGE7_HOST" 'install -d -m 0700 /run/portal-stage7-runner'
-          scp -i "$KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KH"             server/vps_stage7_staging_deploy.sh "$STAGE7_USER@$STAGE7_HOST:/run/portal-stage7-runner/deploy.sh"
+          ssh "${SSH_OPTS[@]}" "$REMOTE" true
+          ssh "${SSH_OPTS[@]}" "$REMOTE" 'install -d -m 0700 /run/portal-stage7-runner'
+          scp -P "$RELAY_PORT" -i "$KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KH" -o "HostKeyAlias=$STAGE7_HOST" server/vps_stage7_staging_deploy.sh "$REMOTE:/run/portal-stage7-runner/deploy.sh"
 
           REMOTE_CMD="chmod 0700 /run/portal-stage7-runner/deploy.sh && PORTAL_STAGE7_BRANCH=$STAGE7_BRANCH PORTAL_STAGE7_EXPECTED_COMMIT=$GITHUB_SHA PORTAL_STAGE7_PILOT_SSLIP=1 bash /run/portal-stage7-runner/deploy.sh"
-          ssh "${SSH_OPTS[@]}" "$STAGE7_USER@$STAGE7_HOST" "$REMOTE_CMD" 2>&1 | tee "$DEPLOY_LOG"
+          ssh "${SSH_OPTS[@]}" "$REMOTE" "$REMOTE_CMD" 2>&1 | tee "$DEPLOY_LOG"
 
-          ssh "${SSH_OPTS[@]}" "$STAGE7_USER@$STAGE7_HOST" 'cat /srv/portal-stage7/STAGE7_RESULT.txt' > "$RESULT"
+          ssh "${SSH_OPTS[@]}" "$REMOTE" 'cat /srv/portal-stage7/STAGE7_RESULT.txt' > "$RESULT"
           cat "$RESULT"
 
           grep -Fx "commit=$GITHUB_SHA" "$RESULT"
@@ -133,6 +226,7 @@ jobs:
         if: always()
         shell: bash
         run: |
-          rm -f "$RUNNER_TEMP/infra_vps_01"                 "$RUNNER_TEMP/stage7_wrap_private.pem"                 "$RUNNER_TEMP/stage7_wrap_public.pem"                 "$RUNNER_TEMP/secret_payload.bin"                 "$RUNNER_TEMP/secret_payload.b64"                 "$RUNNER_TEMP/known_hosts"
+          if [ -f "$RUNNER_TEMP/stage7_relay.pid" ]; then kill "$(cat "$RUNNER_TEMP/stage7_relay.pid")" 2>/dev/null || true; fi
+          rm -f "$RUNNER_TEMP/infra_vps_01"                 "$RUNNER_TEMP/stage7_wrap_private.pem"                 "$RUNNER_TEMP/stage7_wrap_public.pem"                 "$RUNNER_TEMP/secret_payload.bin"                 "$RUNNER_TEMP/secret_payload.b64"                 "$RUNNER_TEMP/known_hosts"                 "$RUNNER_TEMP/stage7_server_first_relay.py"                 "$RUNNER_TEMP/stage7-relay.log"                 "$RUNNER_TEMP/stage7_relay.pid"
 
 # relay retry 2026-09-28T17:05+03

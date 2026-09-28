@@ -6,6 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DEPLOY = (ROOT / "server" / "vps_stage7_staging_deploy.sh").read_text(encoding="utf-8")
 RUNNER = (ROOT / "tools" / "run_stage7.ps1").read_text(encoding="utf-8")
+RELAY = (ROOT / ".github" / "workflows" / "stage7-relay.yml").read_text(encoding="utf-8")
 
 
 class Stage7DeploySafetyTests(unittest.TestCase):
@@ -57,6 +58,23 @@ class Stage7DeploySafetyTests(unittest.TestCase):
             with self.subTest(token=token):
                 self.assertIn(token, RUNNER)
         self.assertNotIn('StrictHostKeyChecking=no', RUNNER)
+
+    def test_github_relay_is_server_first_and_rotates_encrypted_payload(self):
+        for token in (
+            'git rm -f --ignore-unmatch .stage7/secret_payload.b64',
+            'server_banner = recv_line(remote)',
+            'client.sendall(server_banner)',
+            'client_banner = recv_line(client)',
+            'remote.sendall(client_banner)',
+            'RELAY_PORT=2223',
+            'HostKeyAlias=$STAGE7_HOST',
+            'EXPECTED_HOST_FP',
+            'production_database_touched=no',
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, RELAY)
+        self.assertNotIn('BEGIN OPENSSH PRIVATE KEY', RELAY)
+        self.assertNotIn('StrictHostKeyChecking=no', RELAY)
 
 
 if __name__ == "__main__":
