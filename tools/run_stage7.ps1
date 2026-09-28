@@ -83,20 +83,37 @@ if ($result -notmatch '(?m)^public_url=(https://[^\s]+)$') { Write-Log 'HTTPS pu
 $publicUrl = $Matches[1].TrimEnd('/')
 $curl = (Get-Command curl.exe -ErrorAction Stop).Source
 $doh = 'https://1.1.1.1/dns-query'
-$pingJson = (& $curl --doh-url $doh --connect-timeout 10 --max-time 20 -fsS "$publicUrl/api/ping" 2>&1 | Out-String).Trim()
-if ($LASTEXITCODE -ne 0) { Write-Log "External HTTPS /api/ping failed through DoH: $pingJson"; exit 23 }
-try {
-    $ping = $pingJson | ConvertFrom-Json
-} catch {
-    Write-Log 'External HTTPS /api/ping returned invalid JSON.'
+$ping = $null
+$lastPingError = ''
+foreach ($attempt in 1..12) {
+    $pingJson = (& $curl --doh-url $doh --connect-timeout 5 --max-time 8 -fsS "$publicUrl/api/ping" 2>&1 | Out-String).Trim()
+    if ($LASTEXITCODE -eq 0) {
+        try {
+            $candidate = $pingJson | ConvertFrom-Json
+            if ($candidate.ok -and -not $candidate.setup_required) {
+                $ping = $candidate
+                break
+            }
+            $lastPingError = 'API returned unhealthy state.'
+        } catch {
+            $lastPingError = 'API returned invalid JSON.'
+        }
+    } else {
+        $lastPingError = $pingJson
+    }
+    if ($attempt -lt 12) { Start-Sleep -Seconds 2 }
+}
+if (-not $ping) {
+    Write-Log "External HTTPS /api/ping did not become ready after bounded retries: $lastPingError"
     exit 23
 }
-if (-not $ping.ok -or $ping.setup_required) {
-    Write-Log 'External HTTPS /api/ping was unhealthy or setup is incomplete.'
-    exit 23
+$setupStatus = ''
+foreach ($attempt in 1..6) {
+    $setupStatus = (& $curl --doh-url $doh --connect-timeout 5 --max-time 8 -sS -o NUL -w '%{http_code}' -X POST -H 'Content-Type: application/json' --data '{}' "$publicUrl/api/setup" 2>&1 | Out-String).Trim()
+    if ($LASTEXITCODE -eq 0 -and $setupStatus -eq '403') { break }
+    if ($attempt -lt 6) { Start-Sleep -Seconds 2 }
 }
-$setupStatus = (& $curl --doh-url $doh --connect-timeout 10 --max-time 20 -sS -o NUL -w '%{http_code}' -X POST -H 'Content-Type: application/json' --data '{}' "$publicUrl/api/setup" 2>&1 | Out-String).Trim()
-if ($LASTEXITCODE -ne 0 -or $setupStatus -ne '403') {
+if ($setupStatus -ne '403') {
     Write-Log "External /api/setup returned HTTP $setupStatus, expected 403."
     exit 24
 }
