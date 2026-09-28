@@ -83,13 +83,29 @@ if ($result -notmatch '(?m)^public_url=(https://[^\s]+)$') { Write-Log 'HTTPS pu
 $publicUrl = $Matches[1].TrimEnd('/')
 $curl = (Get-Command curl.exe -ErrorAction Stop).Source
 $doh = 'https://1.1.1.1/dns-query'
+
+function Invoke-CurlCapture([string[]]$Arguments) {
+    $stdoutPath = [IO.Path]::GetTempFileName()
+    $stderrPath = [IO.Path]::GetTempFileName()
+    try {
+        $proc = Start-Process -FilePath $curl -ArgumentList $Arguments -NoNewWindow -Wait -PassThru -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
+        return [pscustomobject]@{
+            ExitCode = $proc.ExitCode
+            Stdout = ((Get-Content -LiteralPath $stdoutPath -Raw -ErrorAction SilentlyContinue) + '').Trim()
+            Stderr = ((Get-Content -LiteralPath $stderrPath -Raw -ErrorAction SilentlyContinue) + '').Trim()
+        }
+    } finally {
+        Remove-Item $stdoutPath,$stderrPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
 $ping = $null
 $lastPingError = ''
 foreach ($attempt in 1..12) {
-    $pingJson = (& $curl --doh-url $doh --connect-timeout 5 --max-time 8 -fsS "$publicUrl/api/ping" 2>&1 | Out-String).Trim()
-    if ($LASTEXITCODE -eq 0) {
+    $res = Invoke-CurlCapture @('--doh-url',$doh,'--connect-timeout','5','--max-time','8','-fsS',"$publicUrl/api/ping")
+    if ($res.ExitCode -eq 0) {
         try {
-            $candidate = $pingJson | ConvertFrom-Json
+            $candidate = $res.Stdout | ConvertFrom-Json
             if ($candidate.ok -and -not $candidate.setup_required) {
                 $ping = $candidate
                 break
@@ -99,7 +115,7 @@ foreach ($attempt in 1..12) {
             $lastPingError = 'API returned invalid JSON.'
         }
     } else {
-        $lastPingError = $pingJson
+        $lastPingError = $res.Stderr
     }
     if ($attempt -lt 12) { Start-Sleep -Seconds 2 }
 }
@@ -107,10 +123,12 @@ if (-not $ping) {
     Write-Log "External HTTPS /api/ping did not become ready after bounded retries: $lastPingError"
     exit 23
 }
+
 $setupStatus = ''
 foreach ($attempt in 1..6) {
-    $setupStatus = (& $curl --doh-url $doh --connect-timeout 5 --max-time 8 -sS -o NUL -w '%{http_code}' -X POST -H 'Content-Type: application/json' --data '{}' "$publicUrl/api/setup" 2>&1 | Out-String).Trim()
-    if ($LASTEXITCODE -eq 0 -and $setupStatus -eq '403') { break }
+    $res = Invoke-CurlCapture @('--doh-url',$doh,'--connect-timeout','5','--max-time','8','-sS','-o','NUL','-w','%{http_code}','-X','POST','-H','Content-Type: application/json','--data','{}',"$publicUrl/api/setup")
+    $setupStatus = $res.Stdout
+    if ($res.ExitCode -eq 0 -and $setupStatus -eq '403') { break }
     if ($attempt -lt 6) { Start-Sleep -Seconds 2 }
 }
 if ($setupStatus -ne '403') {
