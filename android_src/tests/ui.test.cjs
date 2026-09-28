@@ -16,10 +16,10 @@ const core=context.PortalCore;
 async function screenshot(page,name){if(process.env.PORTAL_UI_SCREENSHOTS){fs.mkdirSync(process.env.PORTAL_UI_SCREENSHOTS,{recursive:true});await page.screenshot({path:path.join(process.env.PORTAL_UI_SCREENSHOTS,name+'.png'),fullPage:true});}}
 
 test('all shipped JavaScript parses',()=>{
-  for(const file of ['core.js','app.js','screens.js','production.js'])new vm.Script(fs.readFileSync(path.join(assets,file),'utf8'),{filename:file});
+  for(const file of ['core.js','app.js','screens.js','production.js','preview.js'])new vm.Script(fs.readFileSync(path.join(assets,file),'utf8'),{filename:file});
 });
 test('role capabilities and employee linkage',()=>{
-  const expected={admin:['work','payroll','clients','materials','invoices','users','jobs'],director:['work','payroll','clients','materials','invoices','jobs'],manager:['work','payroll','clients','invoices','jobs'],packer:['work','payroll','jobs'],shift:['work','payroll','clients','materials','jobs'],accountant:['payroll','clients','materials','invoices','jobs']};
+  const expected={admin:['work','payroll','clients','materials','invoices','users','jobs','reports','news','excelImport','wms','notifications'],director:['work','payroll','clients','materials','invoices','users','jobs','reports','news','excelImport','wms','notifications'],manager:['work','payroll','clients','invoices','jobs','reports','news','wms','notifications'],packer:['work','payroll','jobs','news','wms','notifications'],shift:['work','payroll','clients','materials','jobs','reports','news','wms','notifications'],accountant:['payroll','clients','materials','invoices','jobs','reports','news','notifications']};
   for(const [role,pages] of Object.entries(expected)){
     for(const m of core.modules)assert.equal(core.can(m.id,{role,telegram_id:101},{id:1}),pages.includes(m.id),role+':'+m.id);
     assert.equal(core.can('work',{role}, {id:1}),false);
@@ -172,8 +172,8 @@ test('browser UI regression',async t=>{
       const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);
       await login(page);
       assert.match(await page.locator('#content').innerText(),/PORTAL Сегодня/);
-      assert.match(await page.locator('#content').innerText(),/Ожидаемая прибыль/);
-      assert.match(await page.locator('#content').innerText(),/Дебиторская задолженность/);
+      assert.match(await page.locator('#content').innerText(),/Финансовый радар/);
+      assert.match(await page.locator('#content').innerText(),/Дебиторка/);
       await page.evaluate(()=>{mock.stage3Today={date:'2026-09-25',mode:'management',today_quantity:17,ready:1,active_batches:2,in_progress:0,tasks:[],attention:[]};void go('dashboard');});
       await page.waitForFunction(()=>document.querySelector('#content').textContent.includes('PORTAL Сегодня')&&!document.querySelector('.loading'));
       assert.doesNotMatch(await page.locator('#content').innerText(),/Ожидаемая прибыль|Выручка|Начислено сотрудникам/);

@@ -18,6 +18,8 @@ jobs:
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+      # Temporary Stage 7 preview endpoint. The app still allows changing the server in Settings.
+      PORTAL_STAGING_API_URL: https://belong-level-deutschland-jurisdiction.trycloudflare.com
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -55,7 +57,7 @@ jobs:
         with:
           gradle-version: "8.9"
       - name: Build isolated staging APK
-        run: gradle -p android_src --stacktrace -PportalApiUrl=http://127.0.0.1:18767 assembleStaging
+        run: gradle -p android_src --stacktrace -PportalApiUrl="$PORTAL_STAGING_API_URL" assembleStaging
       - name: Prepare named APK
         id: artifact
         shell: bash
