@@ -54,7 +54,7 @@ XLSX, PDF и JSON сохраняются через существующий `sa
 
 ## Git и безопасность
 
-Локальные commit SHA будут перечислены здесь после фиксации изменений. Push, PR, merge и deploy не выполнялись. Production/VPS, production БД, телефонная SQLite, тарифы, зарплаты и закрытые snapshots не затрагивались. Серверные файлы Part 1 не менялись.
+Локальные commits: `8e769d2` — Android Documents/Excel UI, native JSON MIME и проверки; `76189ed` — этот отчёт и исходное задание. Push, PR, merge и deploy не выполнялись. Production/VPS, production БД, телефонная SQLite, тарифы, зарплаты и закрытые snapshots не затрагивались. Серверные файлы Part 1 не менялись.
 
 ## Осталось
 
