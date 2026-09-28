@@ -25,3 +25,8 @@ reports/
 # Local VPS credentials and host trust (never commit)
 /infra_vps_01
 /infra_vps_01_known_hosts
+## Local generated artifacts
+node_modules/
+*.apk
+*.apk.sha256
+*.patch
