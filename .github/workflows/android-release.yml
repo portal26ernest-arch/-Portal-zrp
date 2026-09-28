@@ -2,9 +2,14 @@ name: Build signed PORTAL Android release
 
 on:
   workflow_dispatch:
+    inputs:
+      release_notes:
+        description: "Что изменилось в этой версии"
+        required: false
+        type: string
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   signed-release:
@@ -19,6 +24,7 @@ jobs:
       PORTAL_ANDROID_KEY_PASSWORD: ${{ secrets.PORTAL_ANDROID_KEY_PASSWORD }}
       PORTAL_ANDROID_CERT_SHA256: ${{ secrets.PORTAL_ANDROID_CERT_SHA256 }}
       PORTAL_ANDROID_KEYSTORE_TYPE: PKCS12
+      PORTAL_RELEASE_NOTES: ${{ inputs.release_notes }}
     steps:
       - name: Require main branch
         shell: bash
@@ -50,7 +56,8 @@ jobs:
           [[ "$VERSION_CODE" =~ ^[0-9]+$ ]]
           test "$VERSION_CODE" -gt 2
           test "$CHANNEL" = "release"
-          [[ "$UPDATE_MANIFEST_URL" == https://* ]]
+          EXPECTED_MANIFEST_URL="https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/portal-update.json"
+          test "$UPDATE_MANIFEST_URL" = "$EXPECTED_MANIFEST_URL"
           test "$PORTAL_ANDROID_KEYSTORE_TYPE" = "PKCS12"
           printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/portal-release.p12"
           chmod 600 "$RUNNER_TEMP/portal-release.p12"
@@ -90,14 +97,45 @@ jobs:
           test "$ACTUAL_CERT" = "$EXPECTED_CERT"
           VERSION=$(sed -n 's/^versionName=//p' android_src/release.properties | tr -d '\r')
           NAME="PORTAL_Android_${VERSION}_release"
+          TAG="portal-android-v${VERSION}"
           cp "$APK" "$NAME.apk"
           sha256sum "$NAME.apk" > "$NAME.apk.sha256"
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+      - name: Сформировать manifest обновления
+        shell: bash
+        run: |
+          set -euo pipefail
+          NAME="${{ steps.artifact.outputs.name }}"
+          TAG="${{ steps.artifact.outputs.tag }}"
+          APK_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${NAME}.apk"
+          NOTES="${PORTAL_RELEASE_NOTES:-Обновление PORTAL.}"
+          python android_src/tools/build_update_manifest.py             --apk "${NAME}.apk"             --apk-url "$APK_URL"             --changelog "$NOTES"             --out portal-update.json
+          python -m json.tool portal-update.json >/dev/null
+
+      - name: Опубликовать GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          NAME="${{ steps.artifact.outputs.name }}"
+          TAG="${{ steps.artifact.outputs.tag }}"
+          VERSION=$(sed -n 's/^versionName=//p' android_src/release.properties | tr -d '\r')
+          NOTES="${PORTAL_RELEASE_NOTES:-Обновление PORTAL.}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$NAME.apk" "$NAME.apk.sha256" portal-update.json --clobber
+            gh release edit "$TAG" --title "PORTAL Android $VERSION" --notes "$NOTES" --latest
+          else
+            gh release create "$TAG" "$NAME.apk" "$NAME.apk.sha256" portal-update.json               --target "$GITHUB_SHA"               --title "PORTAL Android $VERSION"               --notes "$NOTES"               --latest
+          fi
+
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.artifact.outputs.name }}
           path: |
             ${{ steps.artifact.outputs.name }}.apk
             ${{ steps.artifact.outputs.name }}.apk.sha256
+            portal-update.json
           if-no-files-found: error
           retention-days: 30

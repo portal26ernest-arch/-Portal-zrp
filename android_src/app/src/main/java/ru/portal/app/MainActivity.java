@@ -238,13 +238,15 @@ public class MainActivity extends Activity {
                 URL url = new URL(source);
                 if (!"https".equals(url.getProtocol()) || url.getUserInfo() != null) throw new Exception();
                 conn = (HttpURLConnection) url.openConnection();
-                conn.setInstanceFollowRedirects(false);
+                conn.setInstanceFollowRedirects(true);
                 conn.setConnectTimeout(8000);
                 conn.setReadTimeout(10000);
                 conn.setRequestProperty("Accept", "application/json");
                 conn.setRequestProperty("X-Portal-Client", "Android");
-                // No Authorization, company headers, APK download or installation.
+                // No Authorization or company headers. GitHub Release assets use HTTPS redirects.
                 if (conn.getResponseCode() != 200) throw new Exception();
+                URL finalUrl = conn.getURL();
+                if (!"https".equals(finalUrl.getProtocol()) || finalUrl.getUserInfo() != null) throw new Exception();
                 String raw = readLimited(conn.getInputStream(), 65536);
                 return new JSONObject().put("ok", true).put("configured", true).put("manifest", new JSONObject(raw)).toString();
             } catch (Exception ignored) {

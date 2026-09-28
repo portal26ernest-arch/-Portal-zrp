@@ -33,8 +33,16 @@ must(releaseWorkflow.includes('grep -q "Android Debug"'),
   'Signed release must reject Android Debug certificates');
 must(releaseWorkflow.includes('test "$CHANNEL" = "release"'),
   'Signed release must require release channel metadata');
-must(releaseWorkflow.includes('[[ "$UPDATE_MANIFEST_URL" == https://* ]]'),
-  'Signed release must require an HTTPS update manifest');
+must(releaseWorkflow.includes('test "$UPDATE_MANIFEST_URL" = "$EXPECTED_MANIFEST_URL"'),
+  'Signed release must require the exact stable HTTPS update manifest URL');
 must(releaseWorkflow.includes('test "$VERSION_CODE" -gt 2'),
   'Signed release must be newer than the installed b002 versionCode');
+must(releaseWorkflow.includes('contents: write'),
+  'Signed release needs narrowly scoped contents write permission to publish GitHub Release assets');
+must(releaseWorkflow.includes('releases/latest/download/portal-update.json'),
+  'Signed release must pin the stable public update manifest URL');
+must(releaseWorkflow.includes('build_update_manifest.py'),
+  'Signed release must generate a machine-readable update manifest');
+must(releaseWorkflow.includes('gh release create') && releaseWorkflow.includes('portal-update.json'),
+  'Signed release must publish APK, checksum and manifest through GitHub Releases');
 console.log('Android build security checks: OK');

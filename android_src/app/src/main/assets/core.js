@@ -53,7 +53,9 @@ globalThis.PortalCore = (() => {
       && Number.isSafeInteger(m.versionCode) && m.versionCode>0 && typeof m.versionName==='string' && m.versionName.length<=80
       && typeof m.buildNumber==='string' && m.buildNumber.length<=40 && typeof m.publishedAt==='string'
       && /^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(m.publishedAt) && Number.isFinite(Date.parse(m.publishedAt))
-      && typeof m.changelog==='string' && m.changelog.length<=4000;
+      && typeof m.changelog==='string' && m.changelog.length<=4000
+      && typeof m.apkUrl==='string' && /^https:\/\//.test(m.apkUrl) && !/@/.test(m.apkUrl.slice(8).split('/')[0])
+      && typeof m.sha256==='string' && /^[0-9a-f]{64}$/i.test(m.sha256);
     if (!valid || !Number.isSafeInteger(current.versionCode)) return {state:'error',title:'Не удалось проверить обновления',description:'Источник вернул неподходящие данные.'};
     if (m.versionCode<=current.versionCode) return {state:'latest',title:'Установлена последняя версия',description:'Для вашего канала обновлений новых сборок нет.'};
     return {state:'available',title:'Доступна новая версия',description:'Установка будет доступна через официальный канал распространения.',release:m};

@@ -30,13 +30,13 @@ test('role capabilities and employee linkage',()=>{
   assert.equal(core.can('work',{role:'platform_owner',telegram_id:101},{id:2}),false);
 });
 test('updates: unconfigured, offline, current, newer and invalid manifests',()=>{
-  const manifest={schemaVersion:1,...metadata,publishedAt:metadata.buildDate,changelog:'Исправления'};
+  const manifest={schemaVersion:1,...metadata,publishedAt:metadata.buildDate,changelog:'Исправления',apkUrl:'https://github.com/portal26ernest-arch/-Portal-zrp/releases/download/test/app.apk',sha256:'a'.repeat(64)};
   const state=m=>core.updateState(metadata,{ok:true,configured:true,manifest:m}).state;
   assert.equal(core.updateState(metadata,{ok:true,configured:false}).state,'unconfigured');
   assert.equal(core.updateState(metadata,{ok:false}).state,'error');
   assert.equal(state(manifest),'latest');
   assert.equal(state({...manifest,versionCode:metadata.versionCode+1}),'available');
-  for(const patch of [{channel:'other'},{applicationId:'other'},{versionCode:'4'},{publishedAt:'invalid'},{changelog:null}])assert.equal(state({...manifest,...patch}),'error');
+  for(const patch of [{channel:'other'},{applicationId:'other'},{versionCode:'4'},{publishedAt:'invalid'},{changelog:null},{apkUrl:'http://example.test/app.apk'},{apkUrl:'https://user@example.test/app.apk'},{sha256:'bad'}])assert.equal(state({...manifest,...patch}),'error');
 });
 
 // Emulate only the Java bridge transport; run the actual shipped UI and events.
@@ -107,7 +107,7 @@ test('browser UI regression',async t=>{
         assert.match(await page.locator('#content').innerText(),new RegExp(metadata.buildNumber));
         await page.locator('#updateButton').click();await page.waitForSelector('[data-state=unconfigured]');
         await page.evaluate(()=>mock.update={ok:false});await page.locator('#updateButton').click();await page.waitForSelector('[data-state=error]');
-        await page.evaluate(metadata=>mock.update={ok:true,configured:true,manifest:{...metadata,schemaVersion:1,publishedAt:metadata.buildDate,changelog:'Исправления'}},metadata);
+        await page.evaluate(metadata=>mock.update={ok:true,configured:true,manifest:{...metadata,schemaVersion:1,publishedAt:metadata.buildDate,changelog:'Исправления',apkUrl:'https://github.com/portal26ernest-arch/-Portal-zrp/releases/download/test/app.apk',sha256:'a'.repeat(64)}},metadata);
         await page.locator('#updateButton').click();await page.waitForSelector('[data-state=latest]');
         await page.evaluate(()=>{mock.update.manifest.versionCode++;mock.update.manifest.versionName='Тестовая следующая сборка';mock.update.manifest.buildNumber='test-next';mock.update.manifest.changelog='<script>bad()</script>';});
         await page.locator('#updateButton').click();await page.waitForSelector('[data-state=available]');
