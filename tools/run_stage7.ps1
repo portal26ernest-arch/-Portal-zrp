@@ -81,17 +81,24 @@ if ($result -notmatch "(?m)^commit=$commit$" -or $result -notmatch '(?m)^product
 }
 if ($result -notmatch '(?m)^public_url=(https://[^\s]+)$') { Write-Log 'HTTPS public URL missing from result.'; exit 22 }
 $publicUrl = $Matches[1].TrimEnd('/')
+$curl = (Get-Command curl.exe -ErrorAction Stop).Source
+$doh = 'https://cloudflare-dns.com/dns-query'
+$pingJson = (& $curl --doh-url $doh --connect-timeout 10 --max-time 20 -fsS "$publicUrl/api/ping" 2>&1 | Out-String).Trim()
+if ($LASTEXITCODE -ne 0) { Write-Log "External HTTPS /api/ping failed through DoH: $pingJson"; exit 23 }
 try {
-    $ping = Invoke-RestMethod -Uri "$publicUrl/api/ping" -Method Get -TimeoutSec 12
-    if (-not $ping.ok -or $ping.setup_required) { throw 'Public API ping was unhealthy or setup is incomplete.' }
-} catch { Write-Log "External HTTPS /api/ping failed: $($_.Exception.Message)"; exit 23 }
-try {
-    Invoke-WebRequest -Uri "$publicUrl/api/setup" -Method Post -ContentType 'application/json' -Body '{}' -TimeoutSec 12 | Out-Null
-    Write-Log 'External /api/setup unexpectedly accepted a request.'
-    exit 24
+    $ping = $pingJson | ConvertFrom-Json
 } catch {
-    $status = [int]$_.Exception.Response.StatusCode
-    if ($status -ne 403) { Write-Log "External /api/setup returned HTTP $status, expected 403."; exit 24 }
+    Write-Log 'External HTTPS /api/ping returned invalid JSON.'
+    exit 23
 }
-Write-Log 'STAGE7_API_OK; external HTTPS certificate, /api/ping, and setup block verified.'
+if (-not $ping.ok -or $ping.setup_required) {
+    Write-Log 'External HTTPS /api/ping was unhealthy or setup is incomplete.'
+    exit 23
+}
+$setupStatus = (& $curl --doh-url $doh --connect-timeout 10 --max-time 20 -sS -o NUL -w '%{http_code}' -X POST -H 'Content-Type: application/json' --data '{}' "$publicUrl/api/setup" 2>&1 | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or $setupStatus -ne '403') {
+    Write-Log "External /api/setup returned HTTP $setupStatus, expected 403."
+    exit 24
+}
+Write-Log 'STAGE7_API_OK; external HTTPS /api/ping and setup block verified through DNS-over-HTTPS.'
 exit 0
