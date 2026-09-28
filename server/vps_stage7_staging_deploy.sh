@@ -51,7 +51,7 @@ echo "[1/9] Обновление проверенного кода"
 if [[ -d "$REPO/.git" ]]; then
   [[ -z "$(git -C "$REPO" status --porcelain)" ]] ||
     fail "staging checkout is dirty; refusing to overwrite local files"
-  git -C "$REPO" fetch --prune origin "$BRANCH"
+  git -C "$REPO" fetch --prune origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
   git -C "$REPO" cat-file -e "$EXPECTED_COMMIT^{commit}" ||
     fail "pinned commit is unavailable in staging checkout"
 else
