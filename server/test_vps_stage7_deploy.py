@@ -58,7 +58,7 @@ class Stage7DeploySafetyTests(unittest.TestCase):
                       'IdentitiesOnly=yes', 'ServerAliveCountMax=2', 'EXPECTED_COMMIT=$commit',
                       'PORTAL_STAGE7_PILOT_SSLIP=1', 'PORTAL_STAGE7_PILOT_TUNNEL=1',
                       'STAGE7_RESULT.txt', '-replace "`r", ""',
-                      'cloudflare-dns.com/dns-query', '--doh-url',
+                      'https://1.1.1.1/dns-query', '--doh-url',
                       'production_database_touched=no', 'https_status=ok'):
             with self.subTest(token=token):
                 self.assertIn(token, RUNNER)

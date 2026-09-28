@@ -82,7 +82,7 @@ if ($result -notmatch "(?m)^commit=$commit$" -or $result -notmatch '(?m)^product
 if ($result -notmatch '(?m)^public_url=(https://[^\s]+)$') { Write-Log 'HTTPS public URL missing from result.'; exit 22 }
 $publicUrl = $Matches[1].TrimEnd('/')
 $curl = (Get-Command curl.exe -ErrorAction Stop).Source
-$doh = 'https://cloudflare-dns.com/dns-query'
+$doh = 'https://1.1.1.1/dns-query'
 $pingJson = (& $curl --doh-url $doh --connect-timeout 10 --max-time 20 -fsS "$publicUrl/api/ping" 2>&1 | Out-String).Trim()
 if ($LASTEXITCODE -ne 0) { Write-Log "External HTTPS /api/ping failed through DoH: $pingJson"; exit 23 }
 try {
