@@ -152,6 +152,8 @@ runuser -u postgres -- psql -X -v ON_ERROR_STOP=1 -q -d "$DB" <<SQL
 INSERT INTO companies(id,name,user_limit,created_at,updated_at)
 VALUES(1,'PORTAL',NULL,CURRENT_TIMESTAMP::text,CURRENT_TIMESTAMP::text)
 ON CONFLICT(id) DO NOTHING;
+SELECT setval(pg_get_serial_sequence('companies','id'),
+  GREATEST(COALESCE((SELECT MAX(id) FROM companies),1),1),true);
 SELECT portal_provision_company(1);
 SQL
 

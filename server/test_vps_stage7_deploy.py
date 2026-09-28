@@ -41,6 +41,7 @@ class Stage7DeploySafetyTests(unittest.TestCase):
         self.assertIn('PORTAL_PG_EXPECTED_SERVICE="$SERVICE"', DEPLOY)
         self.assertIn('unittest -v test_postgresql_integration', DEPLOY)
         self.assertIn("('portal_test_stage7_staging', '8770', 'portal-stage7.service')", PG_INTEGRATION)
+        self.assertIn("setval(pg_get_serial_sequence('companies','id')", DEPLOY)
 
     def test_database_and_api_are_loopback_only(self):
         self.assertIn('PORTAL_APP_HOST=127.0.0.1', DEPLOY)
