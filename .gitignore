@@ -25,3 +25,5 @@ reports/
 # Local VPS credentials and host trust (never commit)
 /infra_vps_01
 /infra_vps_01_known_hosts
+/.stage7/ephemeral_pub.pem
+/.stage7/secret_payload.b64

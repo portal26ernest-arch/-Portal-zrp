@@ -1,0 +1,136 @@
+name: Temporary Stage 7 relay deploy
+
+on:
+  push:
+    branches: [ "assistant-stage7-verify" ]
+    paths:
+      - ".github/workflows/stage7-relay.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  stage7-relay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      STAGE7_HOST: "178.209.127.247"
+      STAGE7_USER: "root"
+      STAGE7_BRANCH: "assistant-stage7-verify"
+      EXPECTED_HOST_FP: "SHA256:1rAqR6zXQkP4U0KXvasCwZvHnsITSSjxPzuVCwKFQGc"
+
+    steps:
+      - name: Checkout verification branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate ephemeral wrapping key
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 -out "$RUNNER_TEMP/stage7_wrap_private.pem" >/dev/null 2>&1
+          openssl pkey -in "$RUNNER_TEMP/stage7_wrap_private.pem" -pubout -out "$RUNNER_TEMP/stage7_wrap_public.pem"
+          mkdir -p .stage7
+          cp "$RUNNER_TEMP/stage7_wrap_public.pem" .stage7/ephemeral_pub.pem
+          git config user.name "PORTAL Stage7 Relay"
+          git config user.email "stage7-relay@users.noreply.github.com"
+          git add -f .stage7/ephemeral_pub.pem
+          git commit -m "Stage7 relay ephemeral public key [skip ci]"
+          git push origin "HEAD:$GITHUB_REF_NAME"
+          echo "STAGE7_RELAY_PUBLIC_KEY_READY"
+
+      - name: Wait for encrypted SSH payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          payload_found=0
+          for attempt in $(seq 1 120); do
+            git fetch origin "+refs/heads/$GITHUB_REF_NAME:refs/remotes/origin/$GITHUB_REF_NAME" --quiet
+            if git show "origin/$GITHUB_REF_NAME:.stage7/secret_payload.b64" > "$RUNNER_TEMP/secret_payload.b64" 2>/dev/null; then
+              if [ -s "$RUNNER_TEMP/secret_payload.b64" ]; then
+                payload_found=1
+                break
+              fi
+            fi
+            sleep 5
+          done
+          test "$payload_found" = "1"
+          base64 --decode "$RUNNER_TEMP/secret_payload.b64" > "$RUNNER_TEMP/secret_payload.bin"
+          openssl pkeyutl -decrypt             -inkey "$RUNNER_TEMP/stage7_wrap_private.pem"             -in "$RUNNER_TEMP/secret_payload.bin"             -out "$RUNNER_TEMP/infra_vps_01"             -pkeyopt rsa_padding_mode:oaep             -pkeyopt rsa_oaep_md:sha256             -pkeyopt rsa_mgf1_md:sha256
+          chmod 600 "$RUNNER_TEMP/infra_vps_01"
+          ssh-keygen -y -f "$RUNNER_TEMP/infra_vps_01" >/dev/null
+          rm -f "$RUNNER_TEMP/secret_payload.bin" "$RUNNER_TEMP/secret_payload.b64"
+          echo "STAGE7_RELAY_PAYLOAD_DECRYPTED"
+
+      - name: Verify host key and deploy staging only
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEY="$RUNNER_TEMP/infra_vps_01"
+          KH="$RUNNER_TEMP/known_hosts"
+          DEPLOY_LOG="$RUNNER_TEMP/stage7-deploy-output.log"
+          RESULT="$RUNNER_TEMP/STAGE7_RESULT.txt"
+
+          ssh-keyscan -T 10 -t ed25519 "$STAGE7_HOST" > "$KH" 2>/dev/null
+          test -s "$KH"
+          ACTUAL_FP="$(ssh-keygen -lf "$KH" -E sha256 | awk 'NR==1 {print $2}')"
+          test "$ACTUAL_FP" = "$EXPECTED_HOST_FP"
+
+          SSH_OPTS=(-i "$KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KH" -o ConnectTimeout=12 -o ConnectionAttempts=1 -o ServerAliveInterval=15 -o ServerAliveCountMax=2)
+
+          ssh "${SSH_OPTS[@]}" "$STAGE7_USER@$STAGE7_HOST" true
+          ssh "${SSH_OPTS[@]}" "$STAGE7_USER@$STAGE7_HOST" 'install -d -m 0700 /run/portal-stage7-runner'
+          scp -i "$KEY" -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$KH"             server/vps_stage7_staging_deploy.sh "$STAGE7_USER@$STAGE7_HOST:/run/portal-stage7-runner/deploy.sh"
+
+          REMOTE_CMD="chmod 0700 /run/portal-stage7-runner/deploy.sh && PORTAL_STAGE7_BRANCH=$STAGE7_BRANCH PORTAL_STAGE7_EXPECTED_COMMIT=$GITHUB_SHA PORTAL_STAGE7_PILOT_SSLIP=1 bash /run/portal-stage7-runner/deploy.sh"
+          ssh "${SSH_OPTS[@]}" "$STAGE7_USER@$STAGE7_HOST" "$REMOTE_CMD" 2>&1 | tee "$DEPLOY_LOG"
+
+          ssh "${SSH_OPTS[@]}" "$STAGE7_USER@$STAGE7_HOST" 'cat /srv/portal-stage7/STAGE7_RESULT.txt' > "$RESULT"
+          cat "$RESULT"
+
+          grep -Fx "commit=$GITHUB_SHA" "$RESULT"
+          grep -Fx "production_database_touched=no" "$RESULT"
+          grep -Fx "https_status=ok" "$RESULT"
+
+          PUBLIC_URL="$(sed -n 's/^public_url=//p' "$RESULT" | head -n1 | tr -d '\r')"
+          test -n "$PUBLIC_URL"
+          [[ "$PUBLIC_URL" == https://* ]]
+
+          PUBLIC_URL="$PUBLIC_URL" python - <<'PY'
+          import json, os, urllib.error, urllib.request
+          base=os.environ["PUBLIC_URL"].rstrip("/")
+          with urllib.request.urlopen(base+"/api/ping", timeout=15) as r:
+              data=json.load(r)
+          assert data.get("ok") is True, data
+          assert not data.get("setup_required"), data
+          req=urllib.request.Request(base+"/api/setup", data=b"{}", headers={"Content-Type":"application/json"}, method="POST")
+          try:
+              urllib.request.urlopen(req, timeout=15)
+          except urllib.error.HTTPError as e:
+              assert e.code == 403, e.code
+          else:
+              raise AssertionError("/api/setup unexpectedly accepted")
+          print("STAGE7_EXTERNAL_HTTPS_OK")
+          PY
+
+          cp "$RESULT" "$GITHUB_WORKSPACE/STAGE7_RESULT.txt"
+          cp "$DEPLOY_LOG" "$GITHUB_WORKSPACE/STAGE7_DEPLOY_OUTPUT.log"
+
+      - name: Upload non-secret Stage 7 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage7-relay-evidence
+          path: |
+            STAGE7_RESULT.txt
+            STAGE7_DEPLOY_OUTPUT.log
+          if-no-files-found: ignore
+          retention-days: 3
+
+      - name: Destroy temporary key material
+        if: always()
+        shell: bash
+        run: |
+          rm -f "$RUNNER_TEMP/infra_vps_01"                 "$RUNNER_TEMP/stage7_wrap_private.pem"                 "$RUNNER_TEMP/stage7_wrap_public.pem"                 "$RUNNER_TEMP/secret_payload.bin"                 "$RUNNER_TEMP/secret_payload.b64"                 "$RUNNER_TEMP/known_hosts"
