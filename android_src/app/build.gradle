@@ -58,6 +58,7 @@ android {
         }
         staging {
             initWith debug
+            signingConfig signingConfigs.debug
             applicationIdSuffix ".staging"
             versionNameSuffix "-staging"
             manifestPlaceholders = [usesCleartextTraffic: "true", appLabel: "PORTAL STAGING"]
