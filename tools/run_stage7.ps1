@@ -125,9 +125,14 @@ if (-not $ping) {
 }
 
 $setupStatus = ''
+$setupRaw = ''
 foreach ($attempt in 1..6) {
     $res = Invoke-CurlCapture @('--doh-url',$doh,'--connect-timeout','5','--max-time','8','-sS','-o','NUL','-w','%{http_code}','-X','POST','-H','Content-Type: application/json','--data','{}',"$publicUrl/api/setup")
-    $setupStatus = $res.Stdout
+    $setupRaw = $res.Stdout
+    $setupStatus = ''
+    if ($setupRaw -match '(?s)(\d{3})\s*$') {
+        $setupStatus = $Matches[1]
+    }
     if ($res.ExitCode -eq 0 -and $setupStatus -eq '403') { break }
     if ($attempt -lt 6) { Start-Sleep -Seconds 2 }
 }
