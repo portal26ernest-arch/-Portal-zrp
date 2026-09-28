@@ -1,91 +1,86 @@
 # PORTAL — Stage 7 verified report
 
-Дата проверки: 28.09.2026.
+Дата последней проверки: 28.09.2026.
 
 ## Итог
 
-Stage 7 staging подтверждён на реальном VPS. Production cutover не выполнялся.
+Последняя версия Stage 7 успешно развернута на реальном VPS и прошла live API/RLS/restart integration и внешний HTTPS smoke через Cloudflare Quick Tunnel. Production cutover не выполнялся, production database не затрагивалась.
 
 ## Проверенный staging
 
-- Commit, реально развернутый на VPS:
-  `59a19530678bd4ca7de3bea493f88d77fe11c08b`
-- База:
-  `portal_test_stage7_staging`
-- systemd:
-  `portal-stage7.service` — active/running
-- API:
-  `127.0.0.1:8770`
-- PostgreSQL:
-  только `127.0.0.1/[::1]:5432`
-- HTTPS:
-  подтверждён через Cloudflare Quick Tunnel
-- Проверенный pilot URL на момент smoke:
-  `https://redeem-francis-animals-signing.trycloudflare.com`
-- `/api/ping`:
-  `{"ok": true, "build": "PORTAL Server · 3.3-dev", "setup_required": false}`
-- Внешний `POST /api/setup`:
-  HTTP 403
-- `production_database_touched=no`
+- Commit на VPS: `31baa268218960f2e06c75e0ead822f81388c512`.
+- База: `portal_test_stage7_staging`.
+- systemd: `portal-stage7.service` — active/running.
+- API: только `127.0.0.1:8770`.
+- PostgreSQL: только loopback `127.0.0.1/[::1]:5432`.
+- Внешний pilot URL на момент последнего smoke: `https://belong-level-deutschland-jurisdiction.trycloudflare.com`.
+- `/api/ping`: `ok=true`, `setup_required=false`.
+- Внешний `POST /api/setup`: HTTP 403.
+- `production_database_touched=no`.
 
-Quick Tunnel является временным pilot-каналом и не считается production domain.
+Quick Tunnel URL временный, меняется и не является постоянным доменом или production endpoint.
 
-## PostgreSQL / RLS
+## Миграции и изоляция
 
-- `portal_stage7_control`: superuser=false, bypassrls=false
-- `portal_stage7_tenant`: superuser=false, bypassrls=false
-- RLS включён на 45 таблицах staging.
-- production PostgreSQL не переключалась на staging API.
+- История миграций сохраняется по имени файла и checksum; повторный прогон пропускает уже применённые неизменённые миграции, несовпадающий checksum считается ошибкой.
+- Отдельная staging БД и отдельный systemd/runtime контур.
+- Роли `portal_stage7_control` и `portal_stage7_tenant`: не superuser и без BYPASSRLS.
+- RLS/FORCE RLS и tenant isolation проверены; live test покрывает auth, tenant isolation, CRUD и перезапуск сервиса.
+- Исправлена последовательность identity для `companies` после seeded `id=1`; synthetic test company создаётся без конфликта с seed.
+- Секреты не выводились в отчёт; `/etc/portal-stage7` — mode 0700, `db.secrets` и `first-login.txt` — mode 0600.
 
-## Секреты и права
+## HTTPS/domain gate
 
-- `/etc/portal-stage7`: mode 0700
-- `/etc/portal-stage7/db.secrets`: mode 0600
-- `/etc/portal-stage7/first-login.txt`: mode 0600
-- значения секретов в отчёт не выводились.
+SSLIP имя `178-209-127-247.sslip.io` разрешалось на адрес VPS `178.209.127.247`, но Let’s Encrypt HTTP-01 secondary validation не смог получить ответ по TCP/80. Точный блокирующий слой не установлен; firewall/VPN настройки не менялись. Для завершённого staging smoke использован Quick Tunnel. Следовательно, постоянный домен и TLS через собственный домен остаются открытым gate.
 
-## Проверки кода
+## Проверки
 
-Чистая интеграционная версия Stage 7:
-- secret material scan: OK
-- Stage 7 safety tests: 9/9 OK
-- `bash -n server/vps_stage7_staging_deploy.sh`: OK
-- full server regression: 142 OK, 11 skipped
-- `git diff --check`: OK
+- Live VPS integration `test_live_api_crud_rls_and_restart`: passed.
+- Stage 7 safety tests: 11/11 passed.
+- Полный server regression: 144 passed, 11 skipped (тесты с отдельным live контекстом).
+- Python compile для `server/*.py`: passed.
+- Android Node/UI/security suite: 17/17 passed.
+- `bash -n` для deploy script, PowerShell parser для runner, `git diff --check`: passed.
+- GitHub Server workflow для `31baa26`: success. Android UI и APK build workflows прошли на `ad343e3`; более поздние изменения не затрагивали Android source.
+- Локальный Gradle APK build не запускался успешно: в окружении отсутствует JDK/Java. Signed release workflow не запускался.
 
-Skipped-тесты соответствуют тестам, которым требуется отдельный live PostgreSQL/VPS-контекст.
+## SSH transport
 
-## SSH diagnosis
+Direct SSH с Windows зависал после client identification string; маршрут на машине проходил через AdGuard VPN. `plink`/PuTTY отсутствовали, а прямой OpenSSH путь не завершил handshake. Локальный server-banner-first relay позволил пройти handshake. Relay слушает только `127.0.0.1:2223` и перенаправляет на фиксированный VPS `178.209.127.247:22`; deploy runner сохраняет pinned identity, pinned known_hosts и строгую проверку host key. Ключ не встроен в relay. Deploy script перед передачей нормализуется в LF, поскольку рабочая копия Windows хранит его с CRLF.
 
-Прямой SSH к VPS зависал после отправки client identification string, хотя raw TCP получал server banner.
-Низкоуровневый тест подтвердил, что путь работает, если сначала принять SSH banner сервера, а затем отправить client banner.
+## Изменения и коммиты
 
-Для staging verification реализован:
-`tools/ssh_banner_first_relay.py`
+Начиная с базового commit `807944fc61d37e756758c145328a558fb7f78664`, в текущую ветку интегрирована удалённая работа по Stage 7 и Android release readiness, затем добавлены исправления по результатам реального прогона. Основные коммиты:
 
-Безопасность relay:
-- слушает только `127.0.0.1:2223`;
-- удалённый адрес зафиксирован на `178.209.127.247:22`;
-- runner продолжает использовать pinned private identity, pinned known_hosts и StrictHostKeyChecking;
-- private key в relay не встроен.
+- `83bf940` — harden Stage 7 staging deploy automation.
+- `6080830` — merge Stage 7 verification and release readiness.
+- `ee32868` — normalize Stage 7 deploy script transfer.
+- `56d554f` — advance staging company identity sequence.
+- `31baa26` — bounded DNS retries for HTTPS smoke.
 
-## Что НЕ сделано
+Изменения включают закрепление deploy commit и проверку его принадлежности ветке; запрет небезопасного reset; deploy lock; checksum-aware migration history; усиление systemd; certbot nginx reload hook; доменный приоритет и выбор Quick Tunnel как fallback; pinned SSH transport и relay; ограниченные DNS retries; live auth/tenant/CRUD/restart проверки. Удалённая работа включала укрепление Android signing workflow, SHA-256 certificate pinning, PKCS12 helper и release manifest workflow.
 
-- production domain/DNS;
-- постоянный production HTTPS;
-- финальный write-freeze телефона;
-- финальный production import;
-- production cutover;
-- version bump до 3.4;
-- постоянный Android release signing key;
-- signed production APK 3.4.
+## Этап 6 и данные
 
-## Следующий gate
+Stage 6 не менялся. Имеющийся synthetic VPS gate и документированный backup/restore rehearsal Stage 6 остаются доказательством для того этапа. Отдельный новый Stage 7 backup/restore rehearsal в этом цикле не проводился. Production DB/API не переключались, production данные не удалялись и не изменялись.
 
-1. Зафиксировать проверенный Stage 7 код в `portal-next-b003`.
-2. Подготовить постоянный Android release signing key.
-3. Перевести metadata на PORTAL 3.4 только после release-gate.
-4. Собрать signed APK 3.4.
-5. Проверить APK package/version/signature/HTTPS.
-6. Установить 3.4 на физический телефон и выполнить pilot.
-7. Только после pilot — финальный snapshot SQLite и отдельное решение о production cutover.
+## Готовность 3.4
+
+PORTAL 3.4 не является release candidate. Версия и серверный `BUILD_ID` остаются `3.3-dev`; manifest URL пуст. Подготовлены workflow/helper для постоянной подписи, но постоянный release keystore и требуемые GitHub secrets/API URL не настроены; signed APK 3.4 не собран. Дополнительно отсутствует локальный JDK для сборки. Нельзя переходить к выпуску, установке на телефон или production cutover до закрытия release gates и проверки физического pilot.
+
+## Следующие задачи
+
+1. Подтвердить и разрешить внешний вход TCP/80 на VPS для HTTP-01; не открывать PostgreSQL или loopback API.
+2. Выбрать постоянное staging имя и проверить его DNS на адрес VPS.
+3. Повторить Stage 7 deploy со значением `PORTAL_STAGE7_DOMAIN` и подтвердить сертификат собственного домена.
+4. Подготовить и надёжно сохранить постоянный Android release signing key.
+5. Настроить release secrets и постоянный HTTPS manifest/API URL в GitHub.
+6. Установить JDK в Android build runner или локальное build окружение.
+7. После закрытия gate повысить version metadata до 3.4 согласованным commit.
+8. Собрать signed APK и проверить package, version, signature и certificate pin.
+9. Установить APK на физический телефон и выполнить pilot без production write.
+10. Только после отдельного решения владельца выполнить write-freeze, финальный snapshot/import/reconciliation и рассматривать production cutover.
+
+## Откат
+
+Stage 7 изолирован отдельной БД, service, runtime user и loopback API. Откат staging выполняется возвратом deploy к ранее проверенному commit и восстановлением staging-состояния по runbook/backup. Не удалять staging/production базы и не переключать production API в рамках проверки. Любой production cutover требует отдельного решения и проверенного rollback rehearsal.
