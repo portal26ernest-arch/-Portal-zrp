@@ -101,8 +101,9 @@ if ($LASTEXITCODE -ne 0) { Write-Log 'Could not prepare protected remote staging
 if ($LASTEXITCODE -ne 0) { Write-Log 'Could not transfer deploy script over verified SSH.'; exit 21 }
 $sslipPilot = if ($Domain -or $UseCloudflareTunnel) { '0' } else { '1' }
 $tunnelPilot = if ($UseCloudflareTunnel) { '1' } else { '0' }
+$pilotMode = if ($Domain) { "domain=$Domain" } elseif ($UseCloudflareTunnel) { 'Cloudflare Quick Tunnel' } else { 'SSLIP pilot' }
 $deploy = "chmod 0700 /run/portal-stage7-runner/deploy.sh && PORTAL_STAGE7_BRANCH=$Branch PORTAL_STAGE7_EXPECTED_COMMIT=$commit PORTAL_STAGE7_DOMAIN=$Domain PORTAL_STAGE7_PILOT_SSLIP=$sslipPilot PORTAL_STAGE7_PILOT_TUNNEL=$tunnelPilot bash /run/portal-stage7-runner/deploy.sh"
-Write-Log "Deploying pinned staging commit $commit with SSLIP pilot enabled."
+Write-Log "Deploying pinned staging commit $commit with HTTPS pilot mode: $pilotMode."
 & $ssh @sshArgs $remote $deploy 2>&1 | ForEach-Object { Write-Log ([string]$_) }
 $deployExit = $LASTEXITCODE
 if ($deployExit -ne 0) { Write-Log "Remote deploy failed with exit code $deployExit."; exit $deployExit }
@@ -119,9 +120,19 @@ if ($result -notmatch "(?m)^commit=$commit$" -or $result -notmatch '(?m)^product
 if ($result -notmatch '(?m)^public_url=(https://[^\s]+)$') { Write-Log 'HTTPS public URL missing from result.'; exit 22 }
 $publicUrl = $Matches[1].TrimEnd('/')
 $curl = (Get-Command curl.exe -ErrorAction Stop).Source
-$doh = 'https://1.1.1.1/dns-query'
-$pingJson = (& $curl --doh-url $doh --connect-timeout 10 --max-time 20 -fsS "$publicUrl/api/ping" 2>&1 | Out-String).Trim()
-if ($LASTEXITCODE -ne 0) { Write-Log "External HTTPS /api/ping failed through DoH: $pingJson"; exit 23 }
+$pingJson = ''
+$pingExit = 1
+foreach ($attempt in 1..5) {
+    $pingJson = (& $curl --connect-timeout 8 --max-time 15 -fsS "$publicUrl/api/ping" 2>&1 | Out-String).Trim()
+    $pingExit = $LASTEXITCODE
+    if ($pingExit -eq 0) { break }
+    if ($attempt -lt 5) {
+        $delay = @(2,4,8,12)[$attempt - 1]
+        Write-Log "External HTTPS /api/ping retry $attempt/5 in ${delay}s after DNS or connect error."
+        Start-Sleep -Seconds $delay
+    }
+}
+if ($pingExit -ne 0) { Write-Log "External HTTPS /api/ping failed after bounded retries: $pingJson"; exit 23 }
 try {
     $ping = $pingJson | ConvertFrom-Json
 } catch {
@@ -132,12 +143,19 @@ if (-not $ping.ok -or $ping.setup_required) {
     Write-Log 'External HTTPS /api/ping was unhealthy or setup is incomplete.'
     exit 23
 }
-$setupStatus = (& $curl --doh-url $doh --connect-timeout 10 --max-time 20 -sS -o NUL -w '%{http_code}' -X POST -H 'Content-Type: application/json' --data '{}' "$publicUrl/api/setup" 2>&1 | Out-String).Trim()
-if ($LASTEXITCODE -ne 0 -or $setupStatus -ne '403') {
+$setupStatus = ''
+$setupExit = 1
+foreach ($attempt in 1..3) {
+    $setupStatus = (& $curl --connect-timeout 8 --max-time 15 -sS -o NUL -w '%{http_code}' -X POST -H 'Content-Type: application/json' --data '{}' "$publicUrl/api/setup" 2>&1 | Out-String).Trim()
+    $setupExit = $LASTEXITCODE
+    if ($setupExit -eq 0 -and $setupStatus -eq '403') { break }
+    if ($attempt -lt 3) { Start-Sleep -Seconds (2 * $attempt) }
+}
+if ($setupExit -ne 0 -or $setupStatus -ne '403') {
     Write-Log "External /api/setup returned HTTP $setupStatus, expected 403."
     exit 24
 }
-Write-Log 'STAGE7_API_OK; external HTTPS /api/ping and setup block verified through DNS-over-HTTPS.'
+Write-Log 'STAGE7_API_OK; external HTTPS certificate, /api/ping and /api/setup block verified.'
 exit 0
 } finally {
     if ($null -ne $relayProcess -and -not $relayProcess.HasExited) {

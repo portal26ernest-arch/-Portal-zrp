@@ -71,13 +71,15 @@ class Stage7DeploySafetyTests(unittest.TestCase):
                       'Start-Process -FilePath $python', '-WindowStyle Hidden',
                       'replace "`r`n", "`n"', 'UTF8Encoding]::new($false)',
                       'scp @scpArgs $transferScript',
+                      'HTTPS pilot mode: $pilotMode', 'foreach ($attempt in 1..5)',
+                      'Start-Sleep -Seconds $delay',
                       'HostKeyAlias=$HostKeyAlias', 'Stop-Process -Id $relayProcess.Id',
                       'STAGE7_RESULT.txt', '-replace "`r", ""',
-                      'https://1.1.1.1/dns-query', '--doh-url',
                       'production_database_touched=no', 'https_status=ok'):
             with self.subTest(token=token):
                 self.assertIn(token, RUNNER)
         self.assertNotIn('StrictHostKeyChecking=no', RUNNER)
+        self.assertNotIn('--doh-url', RUNNER)
 
     def test_explicit_domain_wins_and_sslip_is_default_pilot(self):
         self.assertIn('[string]$Domain', RUNNER)
