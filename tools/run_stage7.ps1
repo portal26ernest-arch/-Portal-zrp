@@ -64,7 +64,7 @@ if (-not $connected) { Write-Log 'SSH preflight failed after bounded retries.'; 
 if ($LASTEXITCODE -ne 0) { Write-Log 'Could not prepare protected remote staging path.'; exit 21 }
 & $scp @scpArgs $deployScript "${remote}:/run/portal-stage7-runner/deploy.sh" 2>&1 | ForEach-Object { Write-Log ([string]$_) }
 if ($LASTEXITCODE -ne 0) { Write-Log 'Could not transfer deploy script over verified SSH.'; exit 21 }
-$deploy = "chmod 0700 /run/portal-stage7-runner/deploy.sh && PORTAL_STAGE7_BRANCH=$Branch PORTAL_STAGE7_EXPECTED_COMMIT=$commit PORTAL_STAGE7_PILOT_SSLIP=1 bash /run/portal-stage7-runner/deploy.sh"
+$deploy = "chmod 0700 /run/portal-stage7-runner/deploy.sh && PORTAL_STAGE7_BRANCH=$Branch PORTAL_STAGE7_EXPECTED_COMMIT=$commit PORTAL_STAGE7_PILOT_SSLIP=1 PORTAL_STAGE7_PILOT_TUNNEL=1 bash /run/portal-stage7-runner/deploy.sh"
 Write-Log "Deploying pinned staging commit $commit with SSLIP pilot enabled."
 & $ssh @sshArgs $remote $deploy 2>&1 | ForEach-Object { Write-Log ([string]$_) }
 $deployExit = $LASTEXITCODE

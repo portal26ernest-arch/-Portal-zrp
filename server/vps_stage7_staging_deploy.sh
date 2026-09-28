@@ -317,6 +317,9 @@ if [[ "$PILOT_TUNNEL" == "1" ]]; then
     apt-get update -qq
     apt-get install -y -qq cloudflared
   fi
+  CLOUDFLARED_BIN="$(command -v cloudflared)"
+  [[ -n "$CLOUDFLARED_BIN" && -x "$CLOUDFLARED_BIN" ]] ||
+    fail "cloudflared не найден после установки"
 
   cat >"/etc/nginx/sites-available/portal-stage7-tunnel" <<EOF
 server {
@@ -359,7 +362,7 @@ User=portal-stage7
 Group=portal-stage7
 Environment=HOME=/var/lib/portal-stage7-tunnel
 WorkingDirectory=/var/lib/portal-stage7-tunnel
-ExecStart=/usr/local/bin/cloudflared tunnel --no-autoupdate --protocol http2 --url http://127.0.0.1:$TUNNEL_PROXY_PORT
+ExecStart=$CLOUDFLARED_BIN tunnel --no-autoupdate --protocol http2 --url http://127.0.0.1:$TUNNEL_PROXY_PORT
 Restart=on-failure
 RestartSec=5
 NoNewPrivileges=true

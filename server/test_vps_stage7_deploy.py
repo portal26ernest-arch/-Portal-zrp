@@ -50,11 +50,14 @@ class Stage7DeploySafetyTests(unittest.TestCase):
         self.assertIn('return 403;', DEPLOY)
         self.assertIn('renewal-hooks/deploy/portal-stage7-nginx-reload', DEPLOY)
         self.assertIn('PILOT_SSLIP', DEPLOY)
+        self.assertIn('CLOUDFLARED_BIN="$(command -v cloudflared)"', DEPLOY)
+        self.assertIn('ExecStart=$CLOUDFLARED_BIN tunnel', DEPLOY)
 
     def test_runner_uses_pinned_host_key_commit_and_verifies_remote_report(self):
         for token in ('StrictHostKeyChecking=yes', 'UserKnownHostsFile=', 'IdentityFile',
                       'IdentitiesOnly=yes', 'ServerAliveCountMax=2', 'EXPECTED_COMMIT=$commit',
-                      'PORTAL_STAGE7_PILOT_SSLIP=1', 'STAGE7_RESULT.txt',
+                      'PORTAL_STAGE7_PILOT_SSLIP=1', 'PORTAL_STAGE7_PILOT_TUNNEL=1',
+                      'STAGE7_RESULT.txt',
                       'production_database_touched=no', 'https_status=ok'):
             with self.subTest(token=token):
                 self.assertIn(token, RUNNER)
