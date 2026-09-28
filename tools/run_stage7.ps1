@@ -1,18 +1,22 @@
 [CmdletBinding()]
 param(
     [string]$HostName = '178.209.127.247',
+    [int]$Port = 22,
+    [string]$HostKeyAlias = '',
     [string]$UserName = $(if ($env:PORTAL_STAGE7_SSH_USER) { $env:PORTAL_STAGE7_SSH_USER } else { 'root' }),
     [string]$Branch = 'portal-next-b003',
     [string]$IdentityFile = $(if ($env:PORTAL_STAGE7_SSH_KEY) { $env:PORTAL_STAGE7_SSH_KEY } else { Join-Path (Resolve-Path (Join-Path $PSScriptRoot '..')).Path 'infra_vps_01' }),
-    [string]$KnownHostsFile = $(if ($env:PORTAL_STAGE7_KNOWN_HOSTS) { $env:PORTAL_STAGE7_KNOWN_HOSTS } else { Join-Path (Resolve-Path (Join-Path $PSScriptRoot '..')).Path 'infra_vps_01_known_hosts' })
+    [string]$KnownHostsFile = $(if ($env:PORTAL_STAGE7_KNOWN_HOSTS) { $env:PORTAL_STAGE7_KNOWN_HOSTS } else { Join-Path (Resolve-Path (Join-Path $PSScriptRoot '..')).Path 'infra_vps_01_known_hosts' }),
+    [string]$SshPath = $(if (Test-Path 'C:\Program Files\Git\usr\bin\ssh.exe') { 'C:\Program Files\Git\usr\bin\ssh.exe' } else { (Get-Command ssh.exe -ErrorAction Stop).Source }),
+    [string]$ScpPath = $(if (Test-Path 'C:\Program Files\Git\usr\bin\scp.exe') { 'C:\Program Files\Git\usr\bin\scp.exe' } else { (Get-Command scp.exe -ErrorAction Stop).Source })
 )
 
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $knownHosts = $KnownHostsFile
 $identityFile = $IdentityFile
-$ssh = (Get-Command ssh.exe -ErrorAction Stop).Source
-$scp = (Get-Command scp.exe -ErrorAction Stop).Source
+$ssh = $SshPath
+$scp = $ScpPath
 $deployScript = Join-Path $repo 'server\vps_stage7_staging_deploy.sh'
 $logDir = Join-Path $repo 'reports'
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
@@ -40,8 +44,12 @@ if ($LASTEXITCODE -ne 0 -or $workingDeployHash -ne $committedDeployHash) {
     throw 'The deploy script differs from the pinned commit; commit it before deployment.'
 }
 
-$sshArgs = @('-i',$identityFile,'-o','IdentitiesOnly=yes','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o',"UserKnownHostsFile=$knownHosts",'-o','ConnectTimeout=10','-o','ConnectionAttempts=1','-o','ServerAliveInterval=15','-o','ServerAliveCountMax=2')
-$scpArgs = @('-i',$identityFile,'-B','-o','IdentitiesOnly=yes','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o',"UserKnownHostsFile=$knownHosts",'-o','ConnectTimeout=10','-o','ConnectionAttempts=1')
+$sshArgs = @('-4','-F','/dev/null','-p',"$Port",'-i',$identityFile,'-o','IdentitiesOnly=yes','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o',"UserKnownHostsFile=$knownHosts",'-o','ConnectTimeout=10','-o','ConnectionAttempts=1','-o','ServerAliveInterval=15','-o','ServerAliveCountMax=2')
+$scpArgs = @('-4','-F','/dev/null','-P',"$Port",'-i',$identityFile,'-B','-o','IdentitiesOnly=yes','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o',"UserKnownHostsFile=$knownHosts",'-o','ConnectTimeout=10','-o','ConnectionAttempts=1')
+if ($HostKeyAlias) {
+    $sshArgs += @('-o',"HostKeyAlias=$HostKeyAlias")
+    $scpArgs += @('-o',"HostKeyAlias=$HostKeyAlias")
+}
 $remote = "${UserName}@${HostName}"
 Write-Log "Stage 7 runner started; branch=$Branch commit=$commit host=$HostName"
 $connected = $false
