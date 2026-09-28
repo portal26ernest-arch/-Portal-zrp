@@ -1,0 +1,34 @@
+name: Stage 7 public smoke
+
+on:
+  push:
+    branches:
+      - assistant-stage7-verify
+    paths:
+      - ".github/workflows/stage7-public-smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      PORTAL_STAGE7_PUBLIC_URL: https://redeem-francis-animals-signing.trycloudflare.com
+    steps:
+      - name: Verify public ping and setup block
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$(curl -fsS --connect-timeout 10 --max-time 20 "$PORTAL_STAGE7_PUBLIC_URL/api/ping")"
+          BODY="$body" python3 - <<'PY'
+          import json, os
+          data=json.loads(os.environ["BODY"])
+          assert data.get("ok") is True, data
+          assert not data.get("setup_required"), data
+          print("STAGE7_PUBLIC_PING_OK")
+          PY
+          status="$(curl -sS -o /tmp/setup.out -w '%{http_code}'             --connect-timeout 10 --max-time 20             -X POST -H 'Content-Type: application/json' -d '{}'             "$PORTAL_STAGE7_PUBLIC_URL/api/setup")"
+          test "$status" = "403"
+          echo "STAGE7_PUBLIC_SETUP_BLOCK_OK"
