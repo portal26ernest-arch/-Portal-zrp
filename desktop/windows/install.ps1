@@ -37,6 +37,7 @@ if ($DryRun) { $plan | ConvertTo-Json -Compress; exit 0 }
 New-Item -ItemType Directory -Force -Path $installRoot | Out-Null
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "PortalDesktop.ps1") -Destination $launcher -Force
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "uninstall.ps1") -Destination (Join-Path $installRoot "uninstall.ps1") -Force
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot "README.md") -Destination (Join-Path $installRoot "README.md") -Force
 
 [ordered]@{
     schema_version = 1
