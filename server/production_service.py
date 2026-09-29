@@ -947,4 +947,16 @@ class Production:
                 if {'rates.client','finance.read'}&self.permissions:item['client_rate']=t.get('client_rate')
                 operations.append(item)
             return dict(clients=[c for c in self.r.catalog('clients') if c['active'] and self.visible(c['id'])],operations=operations,users=self.r.catalog('users') if 'tasks.manage' in self.permissions else [])
+        if action=='tariff-history':
+            if not ({'rates.employee','rates.client','finance.read','payroll.own'}&self.permissions):raise PermissionError('Нет доступа к истории тарифов')
+            try:operation_id=int(params.get('operation_id',[''])[0])
+            except (TypeError,ValueError):raise ValueError('Укажите операцию тарифа')
+            op=next((item for item in self.r.catalog('operations') if item['id']==operation_id),None)
+            if not op:raise ValueError('Операция не найдена')
+            self.client(op['client_id'])
+            rows=sorted((dict(t) for t in self.r.list('tariffs') if t['operation_id']==operation_id),key=lambda t:(t['effective_from'],t['created_at'],t['id']),reverse=True)
+            for row in rows:
+                if 'rates.employee' not in self.permissions:row.pop('employee_rate',None)
+                if 'rates.client' not in self.permissions:row.pop('client_rate',None)
+            return rows
         raise ValueError('Раздел не найден')

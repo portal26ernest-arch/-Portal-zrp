@@ -189,6 +189,11 @@ class ProductionTest(unittest.TestCase):
         future=(datetime.utcnow()+timedelta(days=1)).isoformat()
         self.post('tariffs',dict(client_id=1,operation_id=1,employee_rate=99,effective_from=future))
         self.assertEqual(self.work()['salary'],600)
+        history=self.get('tariff-history?operation_id=1')['data']
+        self.assertEqual(len(history),3)
+        self.assertEqual(history[0]['employee_rate'],9900)
+        self.assertEqual(history[-1]['employee_rate'],200)
+        self.get('tariff-history?operation_id=1&company_id=2',status=403)
         self.post('tariffs',dict(client_id=1,operation_id=1,employee_rate=1,effective_from='2020-01-01'),status=400)
 
     def test_individual_grant_deny_and_legacy_bypass(self):
