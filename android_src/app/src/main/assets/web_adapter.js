@@ -89,7 +89,7 @@
         try { data = await response.json(); }
         catch { data = {ok:false, error:'Некорректный ответ сервера'}; }
         if (!data || typeof data !== 'object' || Array.isArray(data)) data = {ok:false, error:'Некорректный ответ сервера'};
-        result(id, {...data, ok:response.ok && data.ok !== false, httpStatus:response.status, data});
+        result(id, {...data, ok:response.ok && data.ok !== false, httpStatus:response.status});
       } catch {
         fail(id, 'Нет соединения с сервером', true);
       }

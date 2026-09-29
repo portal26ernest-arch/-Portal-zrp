@@ -1,6 +1,7 @@
 """Opt-in disposable PostgreSQL fixture: never accepts a production DSN.
 
-Run as the postgres OS user with PORTAL_DOCUMENTS_PG_INTEGRATION=1.
+Run as the postgres OS user with PORTAL_DOCUMENTS_PG_INTEGRATION=1 (or
+PORTAL_WEB_PG_E2E=1 for the same disposable fixture under the Web gate).
 Creates a fresh randomly named portal_test_documents_* database, two restricted
 roles, synthetic companies and an in-process HTTP handler. Removes only resources
 created by this fixture. Normal regression runs skip this isolated live gate.
@@ -21,7 +22,9 @@ MIGRATIONS=('postgresql_core_stage4b.sql','postgresql_stage3.sql','postgresql_ru
  'postgresql_rls_context.sql','postgresql_stage5_chat_retention.sql','postgresql_stage6_payroll_settlement.sql',
  'postgresql_stage4c.sql','postgresql_stage8_documents_excel.sql')
 
-@unittest.skipUnless(os.environ.get('PORTAL_DOCUMENTS_PG_INTEGRATION')=='1','requires disposable local PostgreSQL fixture')
+_WEB_E2E=os.environ.get('PORTAL_WEB_PG_E2E')=='1'
+_DOCS_E2E=os.environ.get('PORTAL_DOCUMENTS_PG_INTEGRATION')=='1'
+@unittest.skipUnless(_DOCS_E2E or _WEB_E2E,'requires disposable local PostgreSQL fixture')
 class DocumentsPostgreSQLTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -31,8 +34,11 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         from psycopg.conninfo import make_conninfo
         if os.getuid()!=pwd.getpwnam('postgres').pw_uid:raise RuntimeError('Run disposable fixture as postgres OS user')
         cls.pg,cls.sql=psycopg,sql;cls.created_db=False;cls.created_roles=[]
-        suffix=secrets.token_hex(6);cls.database='portal_test_documents_'+suffix
-        cls.roles={'tenant':'portal_docs_t_'+suffix,'control':'portal_docs_c_'+suffix}
+        suffix=secrets.token_hex(6)
+        db_prefix='portal_test_web_' if _WEB_E2E else 'portal_test_documents_'
+        role_prefix='portal_web_' if _WEB_E2E else 'portal_docs_'
+        cls.database=db_prefix+suffix
+        cls.roles={'tenant':role_prefix+'t_'+suffix,'control':role_prefix+'c_'+suffix}
         cls.super_connection=psycopg.connect('dbname=postgres user=postgres host=/var/run/postgresql',autocommit=True)
         cls.tmp=tempfile.TemporaryDirectory(prefix='portal-documents-pg-')
         try:
@@ -84,13 +90,17 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
             from production_repository import Repository,utcnow
             from production_migrations import migrate
             cls.tokens={}
-            salt,pin_hash=cls.portal.hash_pin(secrets.token_urlsafe(20))
+            cls.synthetic_pin=secrets.token_urlsafe(20)
+            salt,pin_hash=cls.portal.hash_pin(cls.synthetic_pin)
             for cid in (1,2):
                 with cls.portal.tenants.company_scope(cid),cls.portal.db() as conn:
                     r=Repository(conn,cid)
                     r.sql('INSERT INTO employees(company_id,telegram_id,full_name,username) VALUES(?,101,?,?)',(cid,'Synthetic person '+str(cid),'profile'))
                     r.sql('''INSERT INTO app_users(company_id,id,username,display_name,role,telegram_id,active,pin_salt,pin_hash,created_at,updated_at)
                          VALUES(?,1,'admin','Synthetic admin','admin',101,1,?,?,?,?)''',(cid,salt,pin_hash,utcnow(),utcnow()))
+                    r.sql('INSERT INTO employees(company_id,telegram_id,full_name,username) VALUES(?,102,?,?)',(cid,'Synthetic packer '+str(cid),'packer'))
+                    r.sql('''INSERT INTO app_users(company_id,id,username,display_name,role,telegram_id,active,pin_salt,pin_hash,created_at,updated_at)
+                         VALUES(?,2,'packer','Synthetic packer','packer',102,1,?,?,?,?)''',(cid,salt,pin_hash,utcnow(),utcnow()))
                     r.sql("INSERT INTO portal_clients(company_id,id,name,active,created_at,updated_at) VALUES(?,1,'Synthetic client',1,?,?)",(cid,utcnow(),utcnow()))
                     r.sql("INSERT INTO portal_client_operations(company_id,id,client_id,name,employee_rate,client_rate,created_at,updated_at) VALUES(?,1,1,'Packing',2,5,?,?)",(cid,utcnow(),utcnow()))
                     r.insert('tariffs',dict(client_id=1,operation_id=1,employee_rate=200,client_rate=500,effective_from=utcnow()))
@@ -122,7 +132,8 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
                 else:os.environ[key]=value
         if hasattr(cls,'super_connection'):
             if cls.created_db:
-                if not cls.database.startswith('portal_test_documents_'):raise RuntimeError('Unexpected disposable database name')
+                expected='portal_test_web_' if _WEB_E2E else 'portal_test_documents_'
+                if not cls.database.startswith(expected):raise RuntimeError('Unexpected disposable database name')
                 cls.super_connection.execute(cls.sql.SQL('DROP DATABASE {}').format(cls.sql.Identifier(cls.database)))
             for role in cls.created_roles:cls.super_connection.execute(cls.sql.SQL('DROP ROLE {}').format(cls.sql.Identifier(role)))
             cls.super_connection.close()
@@ -171,6 +182,20 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.assertNotIn(doc['id'],[d['id'] for d in self.get('documents',self.tokens[1])['data']])
         self.assertEqual(self.get('document-metadata?id='+doc['id'],self.tokens[2])['data']['company_id'],2)
 
+    @unittest.skipUnless(_WEB_E2E,'Web browser gate only')
+    def test_real_web_static_login_meta_and_company_scope_in_browser(self):
+        """Use Chromium against this fixture's real loopback API; no API routes are mocked."""
+        import shutil
+        node=shutil.which('node')
+        if not node:self.skipTest('Node.js is unavailable')
+        script=Path(__file__).resolve().parents[1]/'android_src'/'tests'/'web-postgresql.playwright.cjs'
+        env=os.environ.copy()
+        env.update(PORTAL_WEB_E2E_ORIGIN='http://127.0.0.1:%d'%self.http.server_address[1],
+                   PORTAL_WEB_E2E_PIN=self.synthetic_pin,
+                   PORTAL_WEB_E2E_COMPANY_A='1',PORTAL_WEB_E2E_COMPANY_B='2')
+        result=subprocess.run([node,str(script)],cwd=script.parent,env=env,text=True,capture_output=True,timeout=90)
+        self.assertEqual(result.returncode,0,'Browser E2E failed: '+result.stdout+'\n'+result.stderr)
+
     def test_generated_invoice_and_payroll_documents_are_company_scoped_and_financially_read_only(self):
         from datetime import date,timedelta
         from production_repository import Repository
@@ -185,11 +210,13 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         with patch.dict('sys.modules',{'pdf_documents':type('FakePdfRenderer',(),{'invoice_pdf':staticmethod(fake_invoice),'payroll_slip_pdf':staticmethod(fake_payroll)})()}):
             invoice_doc=self.post('document-generate',dict(document_type='invoice_pdf',invoice_id=invoice['id']),self.tokens[1])['data']
             invoice_doc_retry=self.post('document-generate',dict(document_type='invoice_pdf',invoice_id=invoice['id']),self.tokens[1])['data']
-            self.assertNotEqual(invoice_doc['id'],invoice_doc_retry['id'])
+            self.assertEqual(invoice_doc['id'],invoice_doc_retry['id'])
             self.assertEqual(base64.b64decode(self.get('document-file?id='+invoice_doc['id'],self.tokens[1])['data']['file_b64']),pdf)
             for document_id in (invoice_doc['id'],invoice_doc_retry['id']):
                 self.get('document-file?id='+document_id,self.tokens[2],status=400)
                 self.get('document-metadata?id='+document_id,self.tokens[2],status=400)
+            self.assertEqual(self.get('works',self.tokens[1])['data'],work_before)
+            self.assertEqual(self.get('invoices',self.tokens[1])['data'],invoice_before)
 
             today=date.today()
             if today.day>15:
@@ -201,6 +228,7 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
             with self.portal.tenants.company_scope(1),self.portal.db() as conn:
                 Repository(conn,1).insert('works',{k:v for k,v in historical.items() if k not in {'id','company_id'}},historical['id'])
                 conn.commit()
+            works_for_payroll=self.get('works',self.tokens[1])['data']
             period=self.post('payroll-periods',dict(period_start=start.isoformat(),period_end=end.isoformat()),self.tokens[1])['data']
             employee_id=period['snapshot']['employees'][0]['employee_id']
             with self.portal.tenants.company_scope(1),self.portal.db() as conn:
@@ -210,6 +238,7 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
             payroll_body=dict(document_type='payroll_slip_pdf',payroll_period_id=period['id'],employee_id=employee_id)
             payroll_doc=self.post('document-generate',payroll_body,self.tokens[1])['data']
             payroll_retry=self.post('document-generate',payroll_body,self.tokens[1])['data']
+            self.assertEqual(payroll_doc['id'],payroll_retry['id'])
             self.assertEqual(base64.b64decode(self.get('document-file?id='+payroll_doc['id'],self.tokens[1])['data']['file_b64']),pdf)
             for document_id in (payroll_doc['id'],payroll_retry['id']):
                 self.get('document-file?id='+document_id,self.tokens[2],status=400)
@@ -219,12 +248,12 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
             self.assertEqual(repo.get('payroll_periods',period['id'])['snapshot'],snapshot_before)
             self.assertEqual(repo.payroll_settlements(period['id'],employee_id),settlements_before)
             rows=conn.execute("SELECT document_type,category,company_id,invoice_id,client_id,employee_id,payroll_period_id,metadata,storage_key FROM portal_documents WHERE id IN (?,?,?,?) ORDER BY document_type",(invoice_doc['id'],invoice_doc_retry['id'],payroll_doc['id'],payroll_retry['id'])).fetchall()
-            self.assertEqual(len(rows),4)
+            self.assertEqual(len(rows),2)
             self.assertEqual({row['company_id'] for row in rows},{1})
             self.assertTrue(all(row['metadata'] and row['storage_key'] for row in rows))
-            self.assertEqual(sum(row['document_type']=='invoice_pdf' and row['invoice_id']==invoice['id'] and row['client_id']==invoice['client_id'] for row in rows),2)
-            self.assertEqual(sum(row['document_type']=='payroll_slip_pdf' and row['employee_id']==employee_id and row['payroll_period_id']==period['id'] for row in rows),2)
-        self.assertEqual(self.get('works',self.tokens[1])['data'],work_before)
+            self.assertEqual(sum(row['document_type']=='invoice_pdf' and row['invoice_id']==invoice['id'] and row['client_id']==invoice['client_id'] for row in rows),1)
+            self.assertEqual(sum(row['document_type']=='payroll_slip_pdf' and row['employee_id']==employee_id and row['payroll_period_id']==period['id'] for row in rows),1)
+        self.assertEqual(self.get('works',self.tokens[1])['data'],works_for_payroll)
         self.assertEqual(self.get('invoices',self.tokens[1])['data'],invoice_before)
 
     def test_pg_preview_apply_retry_failure_rollback_and_job_immutability(self):

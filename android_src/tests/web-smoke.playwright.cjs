@@ -17,9 +17,10 @@ test('same shared Web UI supports role menus, owner company selection, and Docum
     else if(url.pathname==='/api/company')data={ok:true,company:{id:1,name:'Test company'}};
     else if(url.pathname==='/api/v3/meta')data={ok:true,ready:true,permissions:role==='packer'?['work.write','tasks.read']:['documents.read','documents.manage','users.manage','clients.manage','rates.employee','rates.client','company.settings','imports.manage','work.write','tasks.read'],catalog:[],heartbeat_seconds:600};
     else if(url.pathname==='/api/platform/companies')data={ok:true,companies:[{id:1,name:'Test company',status:'active'}]};
-    else if(url.pathname.includes('/documents'))data={ok:true,rows:[],documents:[],total:0};
-    else if(url.pathname.endsWith('/today'))data={ok:true,tasks:[],mode:'management',attention:[]};
-    else if(url.pathname.endsWith('/timers'))data={ok:true,timers:[]};
+    else if(url.pathname.endsWith('/document-template-info'))data={ok:true,data:{template_version:'v1.0',sheets:[]}};
+    else if(url.pathname.includes('/documents'))data={ok:true,data:{items:[],page:1,limit:50,total:0}};
+    else if(url.pathname.endsWith('/today'))data={ok:true,data:{tasks:[],mode:'management',attention:[]}};
+    else if(url.pathname.endsWith('/timers'))data={ok:true,data:[]};
     await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(data)});
    });
    await page.goto(origin+'/web/');await page.locator('#loginUser').fill('tester');await page.locator('#loginPin').fill('1234');await page.locator('#loginSubmit').click();

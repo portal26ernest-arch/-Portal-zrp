@@ -15,7 +15,7 @@ test('browser uses shared shell, same-origin API and session scoped token storag
   assert.ok(adapter.includes("headers.Authorization = 'Bearer ' + token"));
   assert.ok(adapter.includes("headers['X-Portal-Company']"));
   assert.ok(adapter.includes("credentials:'same-origin'"));
-  assert.ok(adapter.includes("redirect:'error'"));
+  assert.ok(adapter.includes("redirect:'error'"));assert.ok(!adapter.includes('httpStatus:response.status, data'));
   assert.ok(!/[?&]token=/i.test(adapter));
   assert.ok(app.includes('browserClient?sessionStorage:localStorage'));
   assert.ok(app.includes('sessionStorage.clear()'));
