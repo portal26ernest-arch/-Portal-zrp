@@ -9,7 +9,7 @@
 - Confirmed payroll append-only settlement ledger and cent-based storage already exist with `server/test_payroll_settlement.py`; invitation UI, payments sheet, complete audit UI, multiple roadmap features and Windows installer are not yet proven complete.
 - Selected 3.5 staging metadata because repository release metadata was still 3.4/34. Added Part 12 branch to Server/Web/Android build push triggers without changing security permissions or production release triggers.
 - Extended the staging APK artifact contents with version metadata, changelog, checksum and a report generated only after workflow validations pass.
-- APK SHA-256 is also emitted in the GitHub Actions job summary to make the exact staging artifact verifiable without exposing credentials.
+- APK SHA-256 is emitted in the GitHub Actions job summary and embedded in the public artifact name, alongside a `.sha256` file, so the exact staging artifact can be identified without API credentials.
 - Added payroll XLSX «Выплаты» sheet from append-only settlement entries and integrated it through the active Documents generation route; item 52 moved to ✅ after unit and HTTP integration tests passed.
 - Added a production cutover runbook, external blockers list, and this checkpoint. No production action was performed.
 
