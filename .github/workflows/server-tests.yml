@@ -3,7 +3,7 @@ name: PORTAL server isolation tests
 on:
   workflow_dispatch:
   push:
-    branches: ["portal-next-b003", "assistant-release-3.4-candidate", "assistant-part10-web-invoice-e2e"]
+    branches: ["portal-next-b003", "assistant-release-3.4-candidate", "assistant-part10-web-invoice-e2e", "assistant-part11-web-template-download"]
     paths: ["server/**", ".github/workflows/server-tests.yml"]
   pull_request:
     paths: ["server/**", ".github/workflows/server-tests.yml"]
@@ -25,8 +25,8 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Install independent XLSX reader for tests
         run: python -m pip install -r server/requirements-test.txt
-      - name: Compile Part 10 disposable fixture
-        run: python -m py_compile server/web_pg_part10_fixture_host.py
+      - name: Compile disposable Web fixtures
+        run: python -m py_compile server/web_pg_part10_fixture_host.py server/web_pg_part11_fixture_host.py
       - name: Run regression and isolation tests over HTTP
         env:
           PORTAL_TEST_HTTP: "1"
