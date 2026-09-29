@@ -198,6 +198,36 @@ Commits after the prior checkpoint: `0d477bf` tariff history query/view, `9bf376
 
 **Production cutover NOT performed.** Production DB/service/configuration, DNS, financial operations, signing secrets and physical device were untouched.
 
+## Automatic continuation update — tested code SHA `aa5cc64`
+
+### DONE NOW
+
+- Company audit view now offers actor, action, entity and date filters, with browser coverage confirming all query parameters are sent. This closes a UI filtering increment only; owner-audit authorization and PostgreSQL audit/RLS evidence are still pending.
+- Shared payroll settlement UI now has a Playwright role-flow: an authorized admin adds a payment, sees paid/balance refresh while prior ledger history stays visible; a Manager with read-only settlement capability cannot write a payment.
+- Web Share automated coverage now exercises the supported share path, user cancellation, unsupported capability fallback, object URL revocation, and file name/MIME allowlist.
+
+### TESTS / COUNTS
+
+- `node --test android_src/tests/ui.test.cjs`: **20 pass / 0 fail / 0 skip** at `aa5cc64`.
+- `node --test android_src/tests/documents-excel.test.cjs`: **8 pass / 0 fail / 0 skip** at `320b6d9`.
+- `node --test android_src/tests/web-share.test.cjs`: **5 pass / 0 fail / 0 skip** at `6137328`.
+- From `server/`, `python -m unittest test_payroll_settlement -v`: **25 pass / 0 fail / 0 skip**, including workbook payment sheet and immutable snapshot coverage. Invoking that module from repository root initially failed module discovery; rerunning with the documented module directory passed.
+- Relevant JS syntax checks and `git diff --check`: passed. No migration or server implementation changed in this continuation.
+- GitHub runs for `6137328`: Web checks, Android UI, APK build all success. `aa5cc64` Android UI and APK build both succeeded; its Web workflow was not triggered for UI-test-only changes. Latest server run remains green #45 at `26e595d`, with no server-source changes. `cec4536` Web/UI/APK all green.
+
+### D / ISOLATION EVIDENCE
+
+- The real disposable PostgreSQL Documents two-session test and backup/restore rehearsal did not run: this environment has no `psql`, no test DSN configured, and no PostgreSQL opt-in flag. Repository workflows do not expose an isolated VPS runner for dispatch. No disposable database, role or temporary test resource was created, and production remains untouched.
+- No CI artifact was downloaded, so no new APK hash is claimed. Staging metadata remains `3.5-dev-staging`, versionCode `35`.
+
+### NOT DONE / NEXT
+
+- Continue the real disposable PostgreSQL D test and cleanup proof when an isolated runner is available, while proceeding with C reminder framework/metrics and B/A software tasks.
+- A–D remain incomplete; roadmap counts remain **72 ✅ / 34 🟡 / 8 ⏳ / 12 🔌**. No completion or blocked flag was created.
+- Current tested code SHA: `aa5cc64`; docs-only checkpoint is to be committed and pushed after this report/matrix/progress update. Android UI/APK checks for that code SHA passed.
+
+Production cutover **NOT performed**.
+
 ## Automatic continuation update — current code checkpoint `aa94fa3`
 
 - `e85078e` completes a limited Documents UI parity increment: virtual grouping by available company/client/employee, category, type and month metadata, with current/archive labels. Browser tests verify folders and document states; this is not evidence of cross-client server synchronization.

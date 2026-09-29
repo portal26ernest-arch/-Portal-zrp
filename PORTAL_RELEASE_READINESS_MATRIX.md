@@ -7,14 +7,14 @@ Statuses reflect the current roadmap and prior verified reports. `✅` means evi
 | 2 | Server and PostgreSQL tenant isolation | ✅ | Part 8 report; Part 10/11 real PostgreSQL E2E | Continue release regression | No |
 | 10–11 | Invitations and access requests | 🟡 | `0006547`, `b6b4092`; server lifecycle tests; Playwright 19/19 includes one-time token and manager denial; Android UI #26 green | Full accept/approve/revoke role matrix and disposable PostgreSQL RLS rehearsal | No |
 | 12 | Company settings and user limits | 🟡 | `0006547`; `test_portal_tenancy` 15/15; owner UI, active-count API, server seat/concurrency tests; Server #42/Web #15 green | Verify owner/director UI in Playwright; confirm module-toggle support/model | No |
-| 15 | Administrative audit UI | 🟡 | `0006547`; filtered company/owner audit views; full server discovery at `b6b4092` | Owner audit filter/entity coverage and PostgreSQL audit/RLS integration | No |
+| 15 | Administrative audit UI | 🟡 | `0006547`, `cec4536`, `aa5cc64`; company UI filters actor/action/entity/date; Playwright 20/20 | Owner audit policy/filter coverage and PostgreSQL audit/RLS integration | No |
 | 17 | Client 360 | 🟡 | `9bf3769`; Playwright Client 360 fixture; permission-aware source-backed detail view | Complete editable blocks, documents drilldown and API role/E2E checks | No |
 | 19 | Effective-date tariff history | 🟡 | `0d477bf`, `9bf3769`; history service test/shared UI; Server #45 and Web #19 green | Overlap/conflict and historical-work proofs; write role matrix | No |
 | 28 | Batch plan/fact economics | 🟡 | Batch/economy API in `server/production_service.py` | Verify complete plan/fact inputs and UI | No |
 | 32 | Managed FBS/FBO/returns | 🟡 | Shipment/batch API exists | Complete workflow states, assignment, return and idempotent UI | No |
 | 33 | Name normalization/history | 🟡 | Roadmap only | Alias/rename history migration and tests | No |
 | 35 | Product catalog UI | 🟡 | Catalog API baseline | Complete CRUD/archive/search and associations | No |
-| 38 | Payroll accrued/paid/balance | 🟡 | `server/test_payroll_settlement.py`; UI contract `documents-excel.test.cjs` (17 Node UI tests pass) | Shared-client settlement UI added in `0770275`; requires browser/role-flow and disposable PostgreSQL validation | No |
+| 38 | Payroll accrued/paid/balance | 🟡 | `0770275`, `320b6d9`; `server.test_payroll_settlement` 25/25; Web admin-payout/read-only-manager flow; payroll XLSX payment sheet test | Disposable PostgreSQL settlement/RLS E2E remains unrun | No |
 | 42 | Receivables aging/overdue | 🟡 | `26e595d`; cents-based aging boundary/partial-payment/pagination test and browser filters; Server #45/Web #19 green | Disposable PostgreSQL integration and broader role/filter proof | No |
 | 43 | Profitability | 🟡 | Finance/economy API in production service | Validate unified client/batch/company calculations and UI | No |
 | 44–45 | PORTAL Сегодня/financial radar | 🟡 | `today()` in production service | Complete required source-backed metrics and honest empty states | No |
@@ -22,7 +22,7 @@ Statuses reflect the current roadmap and prior verified reports. `✅` means evi
 | 47 | Scheduled reminders | ⏳ | No scheduler framework evidenced | Implement idempotent company-scoped jobs and tests | No |
 | 52 | Payroll XLSX payments sheet | ✅ | `server/test_report_xlsx.py`; `PayrollSettlementTest.test_payroll_xlsx_document_includes_settlement_sheet_and_payment_date` | None for the tested generation flow | No |
 | 53,55–56,68 | Documents UI and cross-client sync | 🟡 | `490be25` same-company two-session E2E test added; `e85078e` shared UI virtual folders/current-vs-archive labels; Web #20 green | Run two-session create/list/download/archive and cross-company denial on disposable PostgreSQL; complete history/revision parity | No |
-| 59–63 | Android/Web save/share/email | 🟡 | Android source contracts; `web-share.test.cjs` 3/3 cancellation/fallback/revoke/allowlist; Web #15 predates this test file | Verify follow-up in Web CI; physical native share/device details remain manual | Yes (device check only) |
+| 59–63 | Android/Web save/share/email | 🟡 | `6137328`; `web-share.test.cjs` 5/5 share/cancel/unsupported fallback/object URL/MIME checks; `native-shell.test.cjs` Android source contracts | Final CI rerun for follow-up and physical native chooser detail remain | Yes (device check only) |
 | 77–79 | Marketplace news ingestion | 🟡 | Part 5 trusted boundary and read API | No proven public official source; scheduler/operator framework incomplete | Yes (source only if available) |
 | 80–83 | Android app/update/release | 🟡 | `PORTAL_RELEASE_3_4_CANDIDATE_REPORT.md`, CI run 24 | CI build 3.5; protected prod release secrets/approval; user device check | Yes |
 | 84 | Functional Web client | ✅ | Parts 8,10,11 reports; Part 10 real role matrix | No new functional blocker for verified scenarios | No |
@@ -38,4 +38,4 @@ Statuses reflect the current roadmap and prior verified reports. `✅` means evi
 
 See `PORTAL_FINAL_EXTERNAL_BLOCKERS.md` for only external/provider actions. The Part 12 final report will replace this checkpoint matrix with the final evidence and test run IDs when work completes.
 
-Latest code checkpoint: `aa94fa3`; worktree is clean and branch is pushed. `05ab65e` integrates the parallel infrastructure commit `1066c77`; follow-up `aa94fa3` suppresses arbitrary SQL validation output and rejects unsafe backup filename prefixes. No roadmap status was promoted. No Part 12 disposable PostgreSQL/VPS rehearsal or backup restore was run; existing cross-session Documents E2E is still opt-in and unexecuted.
+Latest code checkpoint: `aa5cc64`; worktree is clean and branch is pushed. `05ab65e` integrates infrastructure commit `1066c77`; `aa94fa3` suppresses arbitrary restore-validation output and rejects unsafe backup filename prefixes. This checkpoint added audit entity/date UI coverage, payroll settlement role flow, and Web Share success/fallback tests. No roadmap status was promoted. No Part 12 disposable PostgreSQL/VPS rehearsal or backup restore was run; existing cross-session Documents E2E remains opt-in and unexecuted.

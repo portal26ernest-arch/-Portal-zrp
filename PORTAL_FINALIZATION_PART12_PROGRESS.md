@@ -180,3 +180,34 @@ Latest code checkpoint before Continuation №2: `8460c71` (branch pushed).
 4. Then run new disposable PostgreSQL/RLS and backup-restore rehearsals only against `portal_test_*`; inventory legacy REAL money and employee_id/telegram_id boundaries; investigate thin Windows client and news operator scheduler; full final regression and CI.
 
 **NOT DONE:** A–D remain incomplete; no Part 12 disposable PostgreSQL/VPS run or cleanup proof; no owner-visible artifact hash was fetched for latest APK. Tested code SHA: `aa94fa3`; current clean branch SHA: `c3b2588` (docs-only after tests). Production DB/service/DNS/financial operations/cutover remain untouched. No completion/blocked flag was created because software work remains.
+
+## AUTOMATIC CONTINUATION — checkpoint `aa5cc64` (2026-09-30)
+
+### DONE NOW
+
+- `cec4536`: company audit filter UI now includes an entity ID and retains actor/action/entity/date selections when results reload.
+- `320b6d9`: browser payroll settlement role-flow covers an authorized administrator adding a payment, refreshed paid/balance totals and retained prior payment history; a Manager with read capability but no payout capability sees no payment action and cannot post.
+- `6137328`: Web Share tests cover successful file share with title/text, cancellation without forced download, unsupported/canShare-false safe download, object URL revocation, and filename/MIME rejection.
+- `aa5cc64`: Playwright audit scenario submits actor, action, entity and date range filters and verifies every query parameter.
+- No production data, service, secrets, signing material, domain or device was touched. No roadmap item status changed.
+
+### TESTS / CI EVIDENCE
+
+- `node --test android_src/tests/ui.test.cjs`: **20 passed, 0 skipped, 0 failed** at `aa5cc64`.
+- `node --test android_src/tests/documents-excel.test.cjs`: **8 passed, 0 failed** at `320b6d9`.
+- `node --test android_src/tests/web-share.test.cjs`: **5 passed, 0 failed** at `6137328`.
+- `python -m unittest test_payroll_settlement -v` from `server/`: **25 passed, 0 failed**, including XLSX payment sheet, integer cents, snapshot immutability, idempotency, overpayment/concurrency and role/company isolation. An initial invocation from repository root failed module import because this suite expects `server/` as working directory; the corrected command passed.
+- `node --check android_src/app/src/main/assets/production.js`, `node --check android_src/tests/ui.test.cjs`, and `git diff --check`: passed.
+- GitHub API: commit `6137328` Web checks, Android UI, and APK build all succeeded. Commit `aa5cc64` Android UI and APK build both succeeded; its Web workflow was not triggered by the UI-test-only path change. Earlier commit `cec4536` had Web, Android UI and APK green. Latest Server workflow remains #45 at `26e595d`; server source was unchanged in these commits.
+- Disposable Documents PostgreSQL test was **not run**. This checkout had no `psql`, no configured test database DSN, and no opt-in PostgreSQL E2E environment flag; no DB/role/temp resource was created. No available isolated VPS runner was found in the repository workflow configuration. Production DB/service remained untouched.
+
+### NOT DONE / EXACT NEXT
+
+- D: execute `server/test_documents_postgresql.py` through an isolated disposable PostgreSQL runner for same-company two-session create/list/download/archive and cross-company denial; finish any parity gaps and capture DB/role/temp cleanup proof. This is still a test execution gate, not a reason to stop other code work.
+- C: implement the disabled-by-default company-scoped reminder/job framework (cadence, idempotency, injected clock, retry/run metadata) and add reconciliation/time/duplicate tests. Profitability/radar/productivity require further source-backed review; do not invent missing allocations or values.
+- B: product CRUD/archive/search, canonical rename/alias history, batch plan/fact and generic FBS/FBO/return lifecycle remain incomplete. A: invitation approval/revocation/settings/owner-audit role matrix and PostgreSQL RLS proof remain incomplete.
+- Then inspect legacy REAL-money fields and employee_id/telegram_id runtime boundary, run backup restore only on disposable resources, and complete final regression/CI/roadmap evidence.
+- Roadmap remains **72 ✅ / 34 🟡 / 8 ⏳ / 12 🔌**; this checkpoint promotes nothing.
+- Branch `codex-finalization-megapack-part12` code SHA `aa5cc64` has green Android UI and APK build checks and is pushed. This docs update is uncommitted and must be committed/pushed before ending the turn. No completion/blocked flag is appropriate.
+
+Production cutover **NOT performed**.
