@@ -37,7 +37,7 @@ async function loginCompany(page, username) {
 }
 async function loginOwner(page) {
   await page.locator('[data-action="loginOptions"]').click();
-  await page.locator('[data-action="technicalLogin"]').click();
+  await page.locator('[data-action="technicalLogin"]:visible').first().click();
   await page.locator('#loginUser').fill(ownerUser);
   await page.locator('#loginPin').fill(ownerPin);
   await page.locator('#loginSubmit').click();
