@@ -111,7 +111,7 @@
 80. 🟡 Android-приложение: основной функционал есть, production cutover ещё не завершён.
 81. ✅ Полноэкранный immersive-режим Android с восстановлением после возврата фокуса.
 82. ✅ Встроенная проверка, безопасная загрузка, checksum/package/version/signer validation и системный Android Installer реализованы; Node контрактные тесты проходят. Отдельный gate: проверить разрешение неизвестных приложений и реальную установку/обновление на устройстве.
-83. 🟡 Release workflow проверяет подпись и pin сертификата, APK package/version metadata и соответствие manifest артефакту. Production signing key и резервная копия существуют, SHA-256 совпадает, key material не отслеживается Git; остаются CI-secret/release gate и доказательство update поверх установленной production APK.
+83. 🟡 Release workflow проверяет подпись и pin сертификата, APK package/version metadata и соответствие manifest артефакту. Production signing key и резервная копия существуют и совпадают; staging CI run 24 на commit c46917f успешно собрал и проверил installable signed staging APK. Открыты production GitHub Secrets/manual release gate и доказательство установки/обновления на физическом устройстве.
 84. ✅ Первый функциональный Web-клиент подтверждён реальным Chromium → HTTP API → disposable PostgreSQL staging E2E: login/meta, Documents, archive/download, Excel preview/apply/result, cross-company denial и logout/revocation.
 85. ⏳ Windows installer/обновление Desktop-клиента.
 86. 🟡 Core UI и permission model общие для Android/Web; локальная browser role-матрица проходит, а реальный PostgreSQL browser E2E подтверждён для admin. Реальные Platform Owner/Packer scopes и Android device parity ещё требуют staging-проверки.
@@ -159,16 +159,16 @@
 
 ## G2. Documents + Excel Part 3 — локальный частичный срез (29.09.2026)
 
-- 🟡 Android Share Sheet для ready Documents/Excel шаблонов/безопасного import result добавлен локально: FileProvider `content://`, внутренний cache, MIME allowlist, read grant и chooser. Source contract tests прошли; staging Java compile не завершился.
+- 🟡 Android Share Sheet для ready Documents/Excel шаблонов/безопасного import result добавлен: FileProvider content://, внутренний cache, MIME allowlist, read grant и chooser. Source contract tests прошли; staging Java/Gradle compile подтверждён GitHub CI 29.09.2026. Реальный share/save flow на физическом Android ещё требует device gate.
 - 🟡 PDF «Счёт на оплату» и краткий PDF «Расчётный лист» реализованы локально из invoice/closed-payroll snapshots и scoped Documents API; invoice/payroll route tests проверяют права, tenant scope и неизменность фактов с тестовым renderer. Реальный A4 smoke пропущен без ReportLab/Unicode font; PostgreSQL PDF end-to-end остаётся открытым.
 - ⏳ Part 3 production/Android release gates открыты. Тестовый итог и ограничения см. `PORTAL_DOCUMENTS_EXCEL_PART3_REPORT.md`.
 
 ## G3. Documents + Excel Part 4 — проверки и сверка статусов (29.09.2026)
 
 - 🟡 До Part 4 уже существовали Android blank/prefill template download и сохранение, XLSX picker/upload/preview/явный apply/result, Share Sheet/email intent, invoice/payroll PDF routes и Documents registration. Part 4 не дублировал эти функции.
-- 🟡 Ошибка запуска Android file chooser теперь завершает ожидающий WebView callback значением `null`; source contract test проверяет и успешный, и отменённый/ошибочный возврат. Реальный Android device flow и Java compile локально недоступны.
+- 🟡 Ошибка запуска Android file chooser теперь завершает ожидающий WebView callback значением null; source contract test проверяет успешный и отменённый/ошибочный возврат. Staging Java compile подтверждён CI; реальный Android device/WebView flow остаётся открытым.
 - 🟡 Добавлены runnable PDF route smoke с реальными изолированными test API records и PostgreSQL PDF generated-Documents integration test. Оба требуют исполнения в среде с pinned renderer/изолированным PostgreSQL соответственно.
-- ⏳ Production rollout, Desktop/Web client/sync, постоянные домен/HTTPS и Android signing остаются отдельными незакрытыми воротами.
+- ⏳ Production rollout, Desktop/Web client/sync и постоянные домен/HTTPS остаются открыты. Android production-signing workflow и постоянный key подготовлены; до релиза остаются GitHub Secrets/manual release gate и физическая установка/обновление.
 - Точные команды и ограничения см. `PORTAL_DOCUMENTS_EXCEL_PART4_REPORT.md`.
 
 ## G4. Web + PostgreSQL Part 8 — реальные staging-gates (29.09.2026)
