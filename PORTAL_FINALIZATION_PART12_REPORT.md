@@ -224,9 +224,19 @@ Commits after the prior checkpoint: `0d477bf` tariff history query/view, `9bf376
 
 - Continue the real disposable PostgreSQL D test and cleanup proof when an isolated runner is available, while proceeding with C reminder framework/metrics and B/A software tasks.
 - A–D remain incomplete; roadmap counts remain **72 ✅ / 34 🟡 / 8 ⏳ / 12 🔌**. No completion or blocked flag was created.
-- Current tested code SHA: `aa5cc64`; docs-only checkpoint is to be committed and pushed after this report/matrix/progress update. Android UI/APK checks for that code SHA passed.
+- Current tested code SHA: `aa5cc64`; the follow-on docs checkpoint is source-only. Android UI/APK checks for the tested code SHA passed.
 
 Production cutover **NOT performed**.
+
+### Broader regression and source audit at code SHA `aa5cc64`
+
+- Full server unittest discovery: **212 pass / 0 fail / 20 skip**. All skips are opt-in integration gates; no disposable database or role was created by this run.
+- All Node `*.test.cjs` files: **41 pass / 0 fail / 0 skip**. Web adapter/share/smoke set: **9 pass / 0 fail / 0 skip**.
+- `python -m compileall -q server ops`, parse of all **5** workflow YAML files, relevant JavaScript syntax checks and `git diff --check`: passed.
+- Read-only identity audit: legacy server endpoints in `server/portal_app_server.py` still use `telegram_id` for employee linkage, assignments, work and payroll compatibility. Stage 3 uses canonical `employee_id` where available but still has a compatibility fallback; roadmap item 102 remains 🟡 and historic columns remain intentionally intact.
+- Read-only money audit: settlement/receivables paths use integer minor units, while legacy endpoint calculations still convert money/quantity/stock values to `float`. A complete live SQLite `REAL` column inventory and reconciliation migration have not been performed; roadmap item 105 remains 🟡.
+- Exact next software block is the disabled-by-default internal reminder runner with idempotency/cadence/retry/time tests, followed by remaining B product/name/batch workflows and A invite approval/settings/owner audit checks. The D real disposable PostgreSQL test remains unexecuted because this environment has no PostgreSQL client, DSN, opt-in flag, or repository-provided VPS runner.
+- The audit does not change the **72 ✅ / 34 🟡 / 8 ⏳ / 12 🔌** roadmap counts. Production cutover **NOT performed**.
 
 ## Automatic continuation update — current code checkpoint `aa94fa3`
 

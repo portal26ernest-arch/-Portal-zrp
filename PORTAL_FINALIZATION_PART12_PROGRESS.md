@@ -208,6 +208,15 @@ Latest code checkpoint before Continuation №2: `8460c71` (branch pushed).
 - B: product CRUD/archive/search, canonical rename/alias history, batch plan/fact and generic FBS/FBO/return lifecycle remain incomplete. A: invitation approval/revocation/settings/owner-audit role matrix and PostgreSQL RLS proof remain incomplete.
 - Then inspect legacy REAL-money fields and employee_id/telegram_id runtime boundary, run backup restore only on disposable resources, and complete final regression/CI/roadmap evidence.
 - Roadmap remains **72 ✅ / 34 🟡 / 8 ⏳ / 12 🔌**; this checkpoint promotes nothing.
-- Branch `codex-finalization-megapack-part12` code SHA `aa5cc64` has green Android UI and APK build checks and is pushed. This docs update is uncommitted and must be committed/pushed before ending the turn. No completion/blocked flag is appropriate.
+- Branch `codex-finalization-megapack-part12` tested code SHA `aa5cc64` has green Android UI and APK build checks and is pushed; this checkpoint records its regression/audit evidence without changing source. No completion/blocked flag is appropriate.
 
 Production cutover **NOT performed**.
+
+### Regression / identity-money audit update — source SHA `aa5cc64`
+
+- Full server discovery from `server/`: `python -m unittest discover -s . -p "test*.py"` — **212 passed, 20 skipped, 0 failed**. Skips include the opt-in disposable PostgreSQL/VPS integrations. This source tree is unchanged at docs checkpoint `8f0d56e`.
+- Full Node test files `*.test.cjs`: **41 passed, 0 failed, 0 skipped**. Web workflow-equivalent adapter/share/smoke set: **9 passed**. `python -m compileall -q server ops`, all **5** workflow YAML parses, JS syntax and `git diff --check` passed.
+- Read-only runtime audit found `telegram_id` remains used by legacy endpoints in `server/portal_app_server.py` for employee linkage, assignments, work, payroll and summaries. Stage 3 code prefers `employee_id`, but compatibility fallback and historical `telegram_id` storage are still live; item 102 cannot be closed.
+- New finance paths use integer minor units for payroll settlements/receivables, but legacy routes still call `float(...)` for work economics, cost/stock consumption and payroll summaries. No full deployed SQLite `REAL` inventory was run, and no cents migration was attempted. Item 105 remains 🟡.
+- **Exact NEXT:** implement and test the disabled-by-default internal reminder runner, then continue B stable-ID product/rename/batch workflow gaps and A approval/settings/owner-audit coverage. Keep the real Documents PostgreSQL cross-session test and cleanup proof as an isolated execution gate; continue software work while that runner is unavailable. Finish with legacy money/identity remediation design only after all use sites and historical data are inventoried.
+- Roadmap counts unchanged: **72 ✅ / 34 🟡 / 8 ⏳ / 12 🔌**. No completion/blocked flag created. Production cutover **NOT performed**.
