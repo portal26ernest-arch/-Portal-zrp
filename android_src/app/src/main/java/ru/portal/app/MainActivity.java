@@ -7,6 +7,9 @@ import android.content.Context;
 import android.content.ClipData;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
+import android.content.pm.Signature;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -31,6 +34,10 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.security.MessageDigest;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
+import java.util.Locale;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -199,6 +206,11 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public void downloadAndInstallUpdate(String id, String manifestJson) {
+            executor.execute(() -> downloadUpdate(id, manifestJson));
+        }
+
+        @JavascriptInterface
         public void saveBase64FileAsync(String id, String filename, String mimeType, String encoded) {
             executor.execute(() -> deliver(id, saveBase64File(filename, mimeType, encoded)));
         }
@@ -308,23 +320,197 @@ public class MainActivity extends Activity {
             if (source.isEmpty()) return "{\"ok\":true,\"configured\":false}";
             HttpURLConnection conn = null;
             try {
-                URL url = new URL(source);
-                if (!"https".equals(url.getProtocol()) || url.getUserInfo() != null) throw new Exception();
-                conn = (HttpURLConnection) url.openConnection();
-                conn.setInstanceFollowRedirects(true);
-                conn.setConnectTimeout(8000);
-                conn.setReadTimeout(10000);
-                conn.setRequestProperty("Accept", "application/json");
-                conn.setRequestProperty("X-Portal-Client", "Android");
-                // No Authorization or company headers. GitHub Release assets use HTTPS redirects.
-                if (conn.getResponseCode() != 200) throw new Exception();
-                URL finalUrl = conn.getURL();
-                if (!"https".equals(finalUrl.getProtocol()) || finalUrl.getUserInfo() != null) throw new Exception();
-                String raw = readLimited(conn.getInputStream(), 65536);
+                if (!validManifestUrl(source)) throw new Exception();
+                HttpResult response = getOfficial(source, 65536, true);
+                if (response.code != 200) throw new Exception();
+                String raw = new String(response.body, StandardCharsets.UTF_8);
                 return new JSONObject().put("ok", true).put("configured", true).put("manifest", new JSONObject(raw)).toString();
             } catch (Exception ignored) {
                 return "{\"ok\":false,\"error\":\"Сервис обновлений недоступен. Повторите позже.\"}";
             } finally { if (conn != null) conn.disconnect(); }
+        }
+
+        private boolean validManifestUrl(String value) {
+            try {
+                URL u = new URL(value);
+                return "https".equalsIgnoreCase(u.getProtocol()) && u.getUserInfo() == null
+                    && "github.com".equalsIgnoreCase(u.getHost()) && (u.getPort() == -1 || u.getPort() == 443)
+                    && "/portal26ernest-arch/-Portal-zrp/releases/latest/download/portal-update.json".equals(u.getPath())
+                    && u.getQuery() == null && u.getRef() == null;
+            } catch (Exception e) { return false; }
+        }
+
+        private boolean allowedReleaseHost(URL u) {
+            String h = u.getHost() == null ? "" : u.getHost().toLowerCase(Locale.ROOT);
+            return "github.com".equals(h) || "release-assets.githubusercontent.com".equals(h);
+        }
+
+        private HttpResult getOfficial(String address, int limit, boolean json) throws Exception {
+            URL url = new URL(address);
+            for (int redirects = 0; redirects <= 5; redirects++) {
+                if (!"https".equalsIgnoreCase(url.getProtocol()) || url.getUserInfo() != null || !allowedReleaseHost(url)
+                        || (url.getPort() != -1 && url.getPort() != 443)) throw new UpdateFailure("invalid_url");
+                HttpURLConnection c = (HttpURLConnection) url.openConnection();
+                c.setInstanceFollowRedirects(false); c.setConnectTimeout(10000); c.setReadTimeout(20000);
+                c.setRequestMethod("GET");
+                if (json) c.setRequestProperty("Accept", "application/json");
+                int code = c.getResponseCode();
+                if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
+                    String location = c.getHeaderField("Location"); c.disconnect();
+                    if (redirects == 5 || location == null) throw new UpdateFailure("invalid_url");
+                    url = new URL(url, location);
+                    continue;
+                }
+                if (code != 200) { c.disconnect(); throw new UpdateFailure("network"); }
+                long declared = c.getContentLengthLong();
+                if (declared > limit) { c.disconnect(); throw new UpdateFailure("size_limit"); }
+                try (InputStream in = c.getInputStream(); java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream()) {
+                    byte[] buf = new byte[16384]; int n;
+                    while ((n = in.read(buf)) != -1) { if ((long)out.size() + n > limit) throw new UpdateFailure("size_limit"); out.write(buf, 0, n); }
+                    return new HttpResult(code, out.toByteArray());
+                } finally { c.disconnect(); }
+            }
+            throw new UpdateFailure("invalid_url");
+        }
+
+        private static final class HttpResult { final int code; final byte[] body; HttpResult(int c, byte[] b) { code=c; body=b; } }
+        private static final class DownloadResult { final byte[] sha256; final long bytes; DownloadResult(byte[] digest, long size) { sha256=digest; bytes=size; } }
+        private static final class UpdateFailure extends Exception { final String kind; UpdateFailure(String k) { kind=k; } }
+
+        private DownloadResult downloadOfficialToFile(String address, File target, long limit) throws Exception {
+            URL url = new URL(address);
+            for (int redirects = 0; redirects <= 5; redirects++) {
+                if (!"https".equalsIgnoreCase(url.getProtocol()) || url.getUserInfo() != null || !allowedReleaseHost(url)
+                        || (url.getPort() != -1 && url.getPort() != 443)) throw new UpdateFailure("invalid_url");
+                HttpURLConnection c = (HttpURLConnection) url.openConnection();
+                c.setInstanceFollowRedirects(false);
+                c.setConnectTimeout(10000);
+                c.setReadTimeout(30000);
+                c.setRequestMethod("GET");
+                int code = c.getResponseCode();
+                if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
+                    String location = c.getHeaderField("Location");
+                    c.disconnect();
+                    if (redirects == 5 || location == null) throw new UpdateFailure("invalid_url");
+                    url = new URL(url, location);
+                    continue;
+                }
+                if (code != 200) { c.disconnect(); throw new UpdateFailure("network"); }
+                long declared = c.getContentLengthLong();
+                if (declared > limit) { c.disconnect(); throw new UpdateFailure("size_limit"); }
+                MessageDigest digest = MessageDigest.getInstance("SHA-256");
+                long total = 0;
+                try (InputStream in = c.getInputStream(); FileOutputStream out = new FileOutputStream(target)) {
+                    byte[] buf = new byte[16384];
+                    int n;
+                    while ((n = in.read(buf)) != -1) {
+                        total += n;
+                        if (total > limit) throw new UpdateFailure("size_limit");
+                        digest.update(buf, 0, n);
+                        out.write(buf, 0, n);
+                    }
+                    out.getFD().sync();
+                    return new DownloadResult(digest.digest(), total);
+                } finally {
+                    c.disconnect();
+                }
+            }
+            throw new UpdateFailure("invalid_url");
+        }
+
+        private void downloadUpdate(String id, String manifestJson) {
+            File part = null;
+            try {
+                JSONObject m = new JSONObject(manifestJson);
+                String url = m.getString("apkUrl"), versionName = m.getString("versionName"), hash = m.getString("sha256");
+                Object versionValue=m.get("versionCode");
+                if (!(versionValue instanceof Number) || ((Number)versionValue).doubleValue()!=((Number)versionValue).longValue()) throw new UpdateFailure("version_mismatch");
+                long version = ((Number)versionValue).longValue();
+                String publishedAt=m.getString("publishedAt");
+                if (m.getInt("schemaVersion") != 1 || !BuildConfig.APPLICATION_ID.equals(m.getString("applicationId"))
+                    || !"release".equals(BuildConfig.RELEASE_CHANNEL) || !"release".equals(m.getString("channel"))
+                    || version <= BuildConfig.VERSION_CODE || !hash.matches("(?i)[0-9a-f]{64}")
+                    || !versionName.matches("[A-Za-z0-9._-]{1,80}")
+                    || !m.getString("buildNumber").matches("[A-Za-z0-9._-]{1,40}")
+                    || !publishedAt.matches("\\d{4}-\\d{2}-\\d{2}T.*Z") || publishedAt.length() > 40
+                    || m.getString("changelog").length() > 4000) throw new UpdateFailure("package_mismatch");
+                try { java.time.Instant.parse(publishedAt); } catch (Exception invalidDate) { throw new UpdateFailure("package_mismatch"); }
+                String asset = "PORTAL_Android_" + versionName + "_release.apk";
+                if (!url.equals("https://github.com/portal26ernest-arch/-Portal-zrp/releases/download/portal-android-v" + versionName + "/" + asset)) throw new UpdateFailure("invalid_url");
+                File dir = new File(context.getCacheDir(), "updates");
+                if (!dir.exists() && !dir.mkdirs()) throw new UpdateFailure("network");
+                cleanUpdateCache(dir);
+                part = new File(dir, UUID.randomUUID() + ".part");
+                DownloadResult response = downloadOfficialToFile(url, part, 100L * 1024 * 1024);
+                byte[] expected = hex(hash);
+                if (!MessageDigest.isEqual(expected, response.sha256)) throw new UpdateFailure("checksum_mismatch");
+                verifyUpdateApk(part, version, versionName);
+                File ready = new File(dir, "portal-update-" + UUID.randomUUID() + ".apk");
+                if (!part.renameTo(ready)) throw new UpdateFailure("network");
+                part = null;
+                final File verified = ready;
+                ((Activity)context).runOnUiThread(() -> launchInstaller(id, verified));
+            } catch (UpdateFailure e) { if (part != null) part.delete(); deliver(id, updateError(e.kind)); }
+            catch (Exception e) { if (part != null) part.delete(); deliver(id, updateError("network")); }
+        }
+
+        private byte[] hex(String s) { byte[] b=new byte[32]; for(int i=0;i<b.length;i++) b[i]=(byte)Integer.parseInt(s.substring(i*2,i*2+2),16); return b; }
+        private void cleanUpdateCache(File dir) {
+            File[] files=dir.listFiles(); if(files==null)return; long now=System.currentTimeMillis(), total=0;
+            for(File f:files) { if(now-f.lastModified()>24L*60*60*1000) f.delete(); else total+=f.length(); }
+            if(total>200L*1024*1024) for(File f:files) { if(f.isFile()) f.delete(); }
+        }
+        private void verifyUpdateApk(File apk, long expectedVersion, String expectedName) throws Exception {
+            PackageManager pm=context.getPackageManager(); PackageInfo installed, archive;
+            if(Build.VERSION.SDK_INT>=28) {
+                installed=pm.getPackageInfo(BuildConfig.APPLICATION_ID, PackageManager.GET_SIGNING_CERTIFICATES);
+                archive=pm.getPackageArchiveInfo(apk.getAbsolutePath(), PackageManager.GET_SIGNING_CERTIFICATES);
+            } else {
+                installed=pm.getPackageInfo(BuildConfig.APPLICATION_ID, PackageManager.GET_SIGNATURES);
+                archive=pm.getPackageArchiveInfo(apk.getAbsolutePath(), PackageManager.GET_SIGNATURES);
+            }
+            if(archive==null || !BuildConfig.APPLICATION_ID.equals(archive.packageName)) throw new UpdateFailure("package_mismatch");
+            long archived=Build.VERSION.SDK_INT>=28?archive.getLongVersionCode():archive.versionCode;
+            if(archived<=BuildConfig.VERSION_CODE || archived!=expectedVersion || !expectedName.equals(archive.versionName)) throw new UpdateFailure("version_mismatch");
+            Signature[] a, b;
+            if(Build.VERSION.SDK_INT>=28) {
+                if(installed.signingInfo==null || archive.signingInfo==null) throw new UpdateFailure("signature_mismatch");
+                a=installed.signingInfo.getApkContentsSigners(); b=archive.signingInfo.getApkContentsSigners();
+            }
+            else { a=installed.signatures; b=archive.signatures; }
+            if(a==null || b==null || a.length!=1 || b.length!=1 || !MessageDigest.isEqual(certDigest(installed,a[0]),certDigest(archive,b[0]))) throw new UpdateFailure("signature_mismatch");
+        }
+        private byte[] certDigest(PackageInfo ignored, Signature signature) throws Exception {
+            X509Certificate cert=(X509Certificate)CertificateFactory.getInstance("X.509").generateCertificate(new java.io.ByteArrayInputStream(signature.toByteArray()));
+            return MessageDigest.getInstance("SHA-256").digest(cert.getEncoded());
+        }
+        private String updateError(String kind) {
+            String message;
+            switch(kind) {
+                case "invalid_url": message="Недопустимая ссылка или перенаправление обновления."; break;
+                case "size_limit": message="Размер APK превышает 100 MiB."; break;
+                case "checksum_mismatch": message="Контрольная сумма APK не совпала."; break;
+                case "package_mismatch": message="Файл предназначен для другого приложения."; break;
+                case "version_mismatch": message="Версия APK не соответствует обновлению или не является новой."; break;
+                case "signature_mismatch": message="Подпись APK не совпадает с установленной PORTAL."; break;
+                case "permission_required": message="Разрешите PORTAL устанавливать приложения в настройках Android и повторите установку."; break;
+                case "no_installer": message="На устройстве не найден установщик приложений."; break;
+                default: message="Не удалось загрузить APK. Проверьте сеть и повторите попытку.";
+            }
+            try{return new JSONObject().put("ok",false).put("errorCode",kind).put("error",message).toString();}catch(Exception e){return "{\"ok\":false}";}
+        }
+        private void launchInstaller(String id, File apk) {
+            try {
+                if(Build.VERSION.SDK_INT>=26 && !context.getPackageManager().canRequestPackageInstalls()) {
+                    Intent settings=new Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:"+context.getPackageName()));
+                    context.startActivity(settings); deliver(id,updateError("permission_required")); return;
+                }
+                Uri uri=FileProvider.getUriForFile(context,BuildConfig.APPLICATION_ID+".files",apk);
+                Intent install=new Intent(Intent.ACTION_VIEW); install.setDataAndType(uri,"application/vnd.android.package-archive");
+                install.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION); context.startActivity(install);
+                deliver(id,"{\"ok\":true,\"state\":\"ready\"}");
+            } catch(android.content.ActivityNotFoundException e) { deliver(id,updateError("no_installer")); }
+            catch(Exception e) { deliver(id,updateError("network")); }
         }
 
         private String readLimited(InputStream stream, int limit) throws Exception {

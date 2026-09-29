@@ -88,6 +88,11 @@ jobs:
           set -euo pipefail
           APK=$(find android_src/app/build/outputs/apk/release -name '*.apk' -type f | head -n 1)
           test -n "$APK"
+          BADGING=$("$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK")
+          grep -q "^package: name='ru.portal.app'" <<< "$BADGING"
+          VERSION=$(sed -n 's/^versionName=//p' android_src/release.properties | tr -d '\r')
+          VERSION_CODE=$(sed -n 's/^versionCode=//p' android_src/release.properties | tr -d '\r')
+          grep -q "^package:.*versionCode='$VERSION_CODE'.*versionName='$VERSION'" <<< "$BADGING"
           CERT_INFO=$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK")
           printf '%s\n' "$CERT_INFO"
           ! printf '%s\n' "$CERT_INFO" | grep -q "Android Debug"
@@ -112,6 +117,7 @@ jobs:
           NOTES="${PORTAL_RELEASE_NOTES:-Обновление PORTAL.}"
           python android_src/tools/build_update_manifest.py             --apk "${NAME}.apk"             --apk-url "$APK_URL"             --changelog "$NOTES"             --out portal-update.json
           python -m json.tool portal-update.json >/dev/null
+          python android_src/tools/validate_release_artifact.py --properties android_src/release.properties --apk "${NAME}.apk" --manifest portal-update.json --repository "$GITHUB_REPOSITORY" --tag "$TAG"
 
       - name: Опубликовать GitHub Release
         shell: bash
@@ -129,6 +135,12 @@ jobs:
           else
             gh release create "$TAG" "$NAME.apk" "$NAME.apk.sha256" portal-update.json               --target "$GITHUB_SHA"               --title "PORTAL Android $VERSION"               --notes "$NOTES"               --latest
           fi
+
+      - name: Remove signing material from runner
+        if: always()
+        shell: bash
+        run: |
+          if [ -n "${PORTAL_ANDROID_KEYSTORE:-}" ]; then rm -f -- "$PORTAL_ANDROID_KEYSTORE"; fi
 
       - uses: actions/upload-artifact@v4
         with:

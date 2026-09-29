@@ -61,13 +61,20 @@ test('role capabilities and employee linkage',()=>{
   assert.equal(core.can('excelImport',{role:'platform_owner',permissions:importPermissions},{id:2}),true);
 });
 test('updates: unconfigured, offline, current, newer and invalid manifests',()=>{
-  const manifest={schemaVersion:1,...metadata,publishedAt:metadata.buildDate,changelog:'Исправления',apkUrl:'https://github.com/portal26ernest-arch/-Portal-zrp/releases/download/test/app.apk',sha256:'a'.repeat(64)};
+  const manifest={schemaVersion:1,...metadata,publishedAt:metadata.buildDate+'T12:00:00Z',changelog:'Исправления',apkUrl:'https://github.com/portal26ernest-arch/-Portal-zrp/releases/download/portal-android-v3.4-dev/PORTAL_Android_3.4-dev_release.apk',sha256:'a'.repeat(64)};
   const state=m=>core.updateState(metadata,{ok:true,configured:true,manifest:m}).state;
   assert.equal(core.updateState(metadata,{ok:true,configured:false}).state,'unconfigured');
   assert.equal(core.updateState(metadata,{ok:false}).state,'error');
   assert.equal(state(manifest),'latest');
   assert.equal(state({...manifest,versionCode:metadata.versionCode+1}),'available');
-  for(const patch of [{channel:'other'},{applicationId:'other'},{versionCode:'4'},{publishedAt:'invalid'},{changelog:null},{apkUrl:'http://example.test/app.apk'},{apkUrl:'https://user@example.test/app.apk'},{sha256:'bad'}])assert.equal(state({...manifest,...patch}),'error');
+  for(const patch of [{channel:'other'},{applicationId:'other'},{versionCode:'4'},{publishedAt:'invalid'},{changelog:null},{apkUrl:'http://example.test/app.apk'},{apkUrl:'https://user@example.test/app.apk'},{apkUrl:manifest.apkUrl.replace('portal-android-v3.4-dev','portal-android-v3.5')},{sha256:'bad'}])assert.equal(state({...manifest,...patch}),'error');
+});
+test('update install action is available only for verified available state and renders progress',()=>{
+  const app=fs.readFileSync(path.join(assets,'app.js'),'utf8');
+  assert.match(app,/u\.state==='available'\?btn\('Скачать и установить','installUpdate'/);
+  assert.match(app,/state:'downloading',title:'Загружаем и проверяем…'/);
+  assert.match(app,/state:'ready',title:'Готово к установке'/);
+  assert.match(app,/S\.update\?\.state!=='available'\|\|!S\.update\.release/);
 });
 
 // Emulate only the Java bridge transport; run the actual shipped UI and events.
@@ -147,9 +154,9 @@ test('browser UI regression',async t=>{
         assert.match(await page.locator('#content').innerText(),new RegExp(metadata.buildNumber));
         await page.locator('#updateButton').click();await page.waitForSelector('[data-state=unconfigured]');
         await page.evaluate(()=>mock.update={ok:false});await page.locator('#updateButton').click();await page.waitForSelector('[data-state=error]');
-        await page.evaluate(metadata=>mock.update={ok:true,configured:true,manifest:{...metadata,schemaVersion:1,publishedAt:metadata.buildDate,changelog:'Исправления',apkUrl:'https://github.com/portal26ernest-arch/-Portal-zrp/releases/download/test/app.apk',sha256:'a'.repeat(64)}},metadata);
+        await page.evaluate(metadata=>mock.update={ok:true,configured:true,manifest:{...metadata,schemaVersion:1,publishedAt:metadata.buildDate+'T12:00:00Z',changelog:'Исправления',apkUrl:'https://github.com/portal26ernest-arch/-Portal-zrp/releases/download/portal-android-v3.4-dev/PORTAL_Android_3.4-dev_release.apk',sha256:'a'.repeat(64)}},metadata);
         await page.locator('#updateButton').click();await page.waitForSelector('[data-state=latest]');
-        await page.evaluate(()=>{mock.update.manifest.versionCode++;mock.update.manifest.versionName='Тестовая следующая сборка';mock.update.manifest.buildNumber='test-next';mock.update.manifest.changelog='<script>bad()</script>';});
+        await page.evaluate(()=>{mock.update.manifest.versionCode++;mock.update.manifest.versionName='3.5';mock.update.manifest.apkUrl='https://github.com/portal26ernest-arch/-Portal-zrp/releases/download/portal-android-v3.5/PORTAL_Android_3.5_release.apk';mock.update.manifest.buildNumber='test-next';mock.update.manifest.changelog='<script>bad()</script>';});
         await page.locator('#updateButton').click();await page.waitForSelector('[data-state=available]');
         assert.equal(await page.locator('#updateState script').count(),0);
         await page.evaluate(()=>{mock.update.manifest.changelog='Улучшения интерфейса';});await page.locator('#updateButton').click();await page.waitForSelector('[data-state=available]');

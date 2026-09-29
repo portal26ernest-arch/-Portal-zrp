@@ -67,12 +67,14 @@ globalThis.PortalCore = (() => {
     if (!result || !result.ok) return {state:'error',title:'Не удалось проверить обновления',description:'Сервис обновлений недоступен. Попробуйте позже.'};
     if (!result.configured) return {state:'unconfigured',title:'Проверка пока недоступна',description:'Официальный источник обновлений ещё не подключён.'};
     const m=result.manifest;
+    const versionOk=m && typeof m.versionName==='string' && /^[A-Za-z0-9._-]{1,80}$/.test(m.versionName);
+    const expectedApkUrl=versionOk?'https://github.com/portal26ernest-arch/-Portal-zrp/releases/download/portal-android-v'+m.versionName+'/PORTAL_Android_'+m.versionName+'_release.apk':'';
     const valid=m && m.schemaVersion===1 && m.applicationId===current.applicationId && m.channel===current.channel
-      && Number.isSafeInteger(m.versionCode) && m.versionCode>0 && typeof m.versionName==='string' && m.versionName.length<=80
-      && typeof m.buildNumber==='string' && m.buildNumber.length<=40 && typeof m.publishedAt==='string'
-      && /^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(m.publishedAt) && Number.isFinite(Date.parse(m.publishedAt))
+      && Number.isSafeInteger(m.versionCode) && m.versionCode>0 && versionOk
+      && typeof m.buildNumber==='string' && /^[A-Za-z0-9._-]{1,40}$/.test(m.buildNumber) && typeof m.publishedAt==='string'
+      && m.publishedAt.length<=40 && /^\d{4}-\d{2}-\d{2}T.*Z$/.test(m.publishedAt) && Number.isFinite(Date.parse(m.publishedAt))
       && typeof m.changelog==='string' && m.changelog.length<=4000
-      && typeof m.apkUrl==='string' && /^https:\/\//.test(m.apkUrl) && !/@/.test(m.apkUrl.slice(8).split('/')[0])
+      && typeof m.apkUrl==='string' && m.apkUrl===expectedApkUrl
       && typeof m.sha256==='string' && /^[0-9a-f]{64}$/i.test(m.sha256);
     if (!valid || !Number.isSafeInteger(current.versionCode)) return {state:'error',title:'Не удалось проверить обновления',description:'Источник вернул неподходящие данные.'};
     if (m.versionCode<=current.versionCode) return {state:'latest',title:'Установлена последняя версия',description:'Для вашего канала обновлений новых сборок нет.'};

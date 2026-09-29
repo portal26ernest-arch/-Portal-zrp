@@ -110,8 +110,8 @@
 
 80. 🟡 Android-приложение: основной функционал есть, production cutover ещё не завершён.
 81. ✅ Полноэкранный immersive-режим Android с восстановлением после возврата фокуса.
-82. 🟡 Встроенная проверка обновлений APK: manifest/CI подготовлены, полноценная production-установка ещё не завершена.
-83. ⏳ Постоянный Android signing key и проверка обновления поверх установленной production APK.
+82. ✅ Встроенная проверка, безопасная загрузка, checksum/package/version/signer validation и системный Android Installer реализованы; Node контрактные тесты проходят. Отдельный gate: проверить разрешение неизвестных приложений и реальную установку/обновление на устройстве.
+83. 🟡 Release workflow проверяет подпись и pin сертификата, APK package/version metadata и соответствие manifest артефакту. Постоянного signing key и доказательства update поверх установленной production APK пока нет.
 84. ⏳ Полноценный Desktop/Web-клиент на едином API/PostgreSQL.
 85. ⏳ Windows installer/обновление Desktop-клиента.
 86. ⏳ Единый UX и права между Android и Desktop/Web.
