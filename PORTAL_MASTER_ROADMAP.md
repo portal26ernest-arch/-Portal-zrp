@@ -111,7 +111,7 @@
 80. 🟡 Android-приложение: основной функционал есть, production cutover ещё не завершён.
 81. ✅ Полноэкранный immersive-режим Android с восстановлением после возврата фокуса.
 82. ✅ Встроенная проверка, безопасная загрузка, checksum/package/version/signer validation и системный Android Installer реализованы; Node контрактные тесты проходят. Отдельный gate: проверить разрешение неизвестных приложений и реальную установку/обновление на устройстве.
-83. 🟡 Release workflow проверяет подпись и pin сертификата, APK package/version metadata и соответствие manifest артефакту. Постоянного signing key и доказательства update поверх установленной production APK пока нет.
+83. 🟡 Release workflow проверяет подпись и pin сертификата, APK package/version metadata и соответствие manifest артефакту. Production signing key и резервная копия существуют, SHA-256 совпадает, key material не отслеживается Git; остаются CI-secret/release gate и доказательство update поверх установленной production APK.
 84. ✅ Первый функциональный Web-клиент подтверждён реальным Chromium → HTTP API → disposable PostgreSQL staging E2E: login/meta, Documents, archive/download, Excel preview/apply/result, cross-company denial и logout/revocation.
 85. ⏳ Windows installer/обновление Desktop-клиента.
 86. 🟡 Core UI и permission model общие для Android/Web; локальная browser role-матрица проходит, а реальный PostgreSQL browser E2E подтверждён для admin. Реальные Platform Owner/Packer scopes и Android device parity ещё требуют staging-проверки.

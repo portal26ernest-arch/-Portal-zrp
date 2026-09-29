@@ -3,7 +3,7 @@ name: Build PORTAL Android APK
 on:
   workflow_dispatch:
   push:
-    branches: [ "main", "portal-next-b003", "codex-documents-excel-part4", "codex-communications-news-part5" ]
+    branches: [ "main", "portal-next-b003", "codex-documents-excel-part4", "codex-communications-news-part5", "assistant-release-3.4-candidate" ]
     paths:
       - "android_src/**"
       - ".github/workflows/android-build.yml"
