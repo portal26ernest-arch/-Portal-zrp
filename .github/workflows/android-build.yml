@@ -78,7 +78,14 @@ jobs:
           APK=$(find android_src/app/build/outputs/apk/staging -name '*.apk' -type f | head -n 1)
           test -n "$APK"
           cp "$APK" "$NAME.apk"
-          sha256sum "$NAME.apk" > "$NAME.apk.sha256"
+          APK_SHA256=$(sha256sum "$NAME.apk" | awk '{print $1}')
+          printf '%s  %s\n' "$APK_SHA256" "$NAME.apk" > "$NAME.apk.sha256"
+          {
+            echo "## PORTAL staging APK"
+            echo "- Version: 3.5-dev-staging (versionCode 35; build 3.5)"
+            echo "- Artifact: $NAME"
+            echo "- APK SHA-256: $APK_SHA256"
+          } >> "$GITHUB_STEP_SUMMARY"
           sed 's/^versionName=.*/versionName=3.5-dev-staging/' android_src/release.properties > "$NAME.version.properties"
           cp PORTAL_PART12_CHANGELOG.md "$NAME.changelog.md"
           cat > "$NAME.test-report.txt" <<'REPORT'
