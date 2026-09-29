@@ -439,12 +439,33 @@ class Production:
             pinned=b.get('pinned',True)
             if type(pinned) is not bool:raise ValueError('Некорректный статус закрепления')
             return self.r.insert('chat_pins',dict(message_id=message['id'],room=message['room'],pinned=pinned,actor_id=self.u['id']))
-        self.need('chat.write');raw=b.get('text','');attachment=b.get('attachment')
+        self.need('chat.write')
+        subtype=b.get('subtype','text')
+        request_id=b.get('request_id')
+        if not isinstance(request_id,str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{1,128}',request_id):
+            raise ValueError('Некорректный request id')
+        previous=next((m for m in self.r.list('chat_messages') if m.get('request_id')==request_id and m.get('sender_user_id')==self.u['id']),None)
+        if previous:return previous
+        if subtype=='sticker':
+            key=b.get('sticker_key')
+            if key not in {'accepted','in_progress','done','help','important','thanks'}:raise ValueError('Неизвестный системный стикер')
+            if b.get('recipient_user_id') not in (None,''):raise ValueError('Стикеры доступны только в общем чате')
+            return self.r.insert('chat_messages',dict(room='general',sender_user_id=self.u['id'],sender_name=self.u.get('display_name') or self.u.get('username','Сотрудник'),message_type='sticker',sticker_key=key,text='',request_id=request_id))
+        if subtype=='absence_notice':
+            day=b.get('absence_date');comment=b.get('comment','')
+            try:
+                parsed=datetime.strptime(day,'%Y-%m-%d')
+                if parsed.date().isoformat()!=day:raise ValueError()
+            except (TypeError,ValueError):raise ValueError('Укажите корректную дату дня невыхода')
+            if not isinstance(comment,str) or len(comment.strip())>300:raise ValueError('Комментарий должен содержать не более 300 символов')
+            if b.get('recipient_user_id') not in (None,''):raise ValueError('Сообщение о невыходе доступно только в общем чате')
+            return self.r.insert('chat_messages',dict(room='general',sender_user_id=self.u['id'],sender_name=self.u.get('display_name') or self.u.get('username','Сотрудник'),message_type='absence_notice',absence_date=day,comment=comment.strip(),text='',request_id=request_id))
+        raw=b.get('text','');attachment=b.get('attachment')
         if not isinstance(raw,str) or len(raw.strip())>4000:raise ValueError('Сообщение: до 4000 символов')
         if not raw.strip() and not attachment:raise ValueError('Введите сообщение или добавьте файл')
         room=self.chat_room(b.get('recipient_user_id'))
         message=self.r.insert('chat_messages',dict(room=room,sender_user_id=self.u['id'],
-            sender_name=self.u.get('display_name') or self.u.get('username','Сотрудник'),text=raw.strip()))
+            sender_name=self.u.get('display_name') or self.u.get('username','Сотрудник'),text=raw.strip(),request_id=request_id))
         if attachment:
             if not isinstance(attachment,dict):raise ValueError('Некорректное вложение')
             original=attachment.get('name');mime=attachment.get('mime_type');encoded=attachment.get('file_b64')

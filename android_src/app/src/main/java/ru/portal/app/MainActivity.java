@@ -64,11 +64,17 @@ public class MainActivity extends Activity {
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                return !request.getUrl().toString().startsWith("file:///android_asset/");
+                Uri uri=request.getUrl();
+                if (uri.toString().startsWith("file:///android_asset/")) return false;
+                openOfficialSource(uri);
+                return true;
             }
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                return !url.startsWith("file:///android_asset/");
+                Uri uri=Uri.parse(url);
+                if (uri.toString().startsWith("file:///android_asset/")) return false;
+                openOfficialSource(uri);
+                return true;
             }
         });
         webView.setWebChromeClient(new WebChromeClient() {
@@ -90,6 +96,14 @@ public class MainActivity extends Activity {
         bridge = new PortalBridge(this, webView);
         webView.addJavascriptInterface(bridge, "PortalNative");
         webView.loadUrl("file:///android_asset/index.html");
+    }
+
+    private void openOfficialSource(Uri uri) {
+        String host=uri.getHost();
+        if (!"https".equalsIgnoreCase(uri.getScheme()) || host==null ||
+                !(host.equalsIgnoreCase("seller.ozon.ru") || host.equalsIgnoreCase("seller.wildberries.ru")) ||
+                uri.getUserInfo()!=null || (uri.getPort()!=-1 && uri.getPort()!=443)) return;
+        try { startActivity(new Intent(Intent.ACTION_VIEW, uri)); } catch (Exception ignored) { }
     }
 
     @Override

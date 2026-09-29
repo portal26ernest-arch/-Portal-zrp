@@ -48,6 +48,36 @@ class ProductionTest(unittest.TestCase):
         self.post('batches',dict(client_id=1,product='X',quantity=1,company_id=self.other),status=403)
         self.get('batches?company_id=2',status=403)
 
+    def test_chat_stickers_absence_validation_idempotency_and_tenant_scope(self):
+        for key in ('accepted','in_progress','done','help','important','thanks'):
+            item=self.post('chat',dict(subtype='sticker',sticker_key=key))['data']
+            self.assertEqual((item['message_type'],item['sticker_key']),('sticker',key))
+        self.post('chat',dict(subtype='sticker',sticker_key='../x'),status=400)
+        self.post('chat',dict(subtype='absence_notice',absence_date='2026-02-30',comment=''),status=400)
+        self.post('chat',dict(subtype='absence_notice',absence_date='2026-09-29',comment='x'*301),status=400)
+        notice=self.post('chat',dict(subtype='absence_notice',absence_date='2026-09-29',comment='Причина',request_id='absence-once'))['data']
+        again=self.post('chat',dict(subtype='absence_notice',absence_date='2026-09-29',comment='Причина',request_id='absence-once'))['data']
+        self.assertEqual(again['id'],notice['id'])
+        rows=self.get('chat')['data']
+        self.assertEqual(rows[-1]['absence_date'],'2026-09-29')
+        self.assertEqual(next(row for row in rows if row.get('sticker_key')=='accepted')['message_type'],'sticker')
+        self.get('chat',self.other_admin)
+        self.assertEqual(self.get('chat',self.other_admin)['data'],[])
+        self.post('chat',dict(subtype='absence_notice',absence_date='2026-09-29'),self.other_admin)
+
+    def test_chat_write_capability_required_for_absence(self):
+        self.post('permissions',dict(user_id=self.worker_id,permissions={'chat.read':True,'chat.write':False}))
+        self.post('chat',dict(subtype='absence_notice',absence_date='2026-09-29'),self.worker,status=403)
+
+    def test_marketplace_news_read_is_company_scoped_and_has_no_employee_write(self):
+        with portal.db() as conn:
+            conn.execute('''CREATE TABLE IF NOT EXISTS marketplace_news(id INTEGER PRIMARY KEY AUTOINCREMENT,company_id INTEGER,source TEXT,title TEXT,body TEXT,url TEXT,published_at TEXT,fetched_at TEXT,is_regulation INTEGER,external_key TEXT,UNIQUE(company_id,external_key))''')
+            conn.execute("INSERT INTO marketplace_news(company_id,source,title,body,url,published_at,fetched_at,is_regulation,external_key) VALUES(1,'ozon','A','Summary','https://seller.ozon.ru/a','2026-09-29','now',0,'a')")
+            conn.execute("INSERT INTO marketplace_news(company_id,source,title,body,url,published_at,fetched_at,is_regulation,external_key) VALUES(2,'ozon','B','Summary','https://seller.ozon.ru/b','2026-09-29','now',0,'b')")
+        rows=self.get('marketplace-news?source=ozon&limit=10')['data']
+        self.assertEqual([row['title'] for row in rows],['A'])
+        self.post('marketplace-news',dict(source='ozon',title='employee write'),status=400)
+
     def test_task_work_assignment_remaining_and_completion(self):
         b=self.batch();t=self.task(b)
         w=self.work(task_id=t['id'])

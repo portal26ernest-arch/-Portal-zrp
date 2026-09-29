@@ -920,6 +920,25 @@ class Handler(BaseHTTPRequestHandler):
                 session=activity.touch(repo,self.token(),self.request_user,True)
                 conn.commit()
                 return self.send_json(dict(ok=True,last_activity_at=session['last_activity_at'] if session else None))
+            if action=='marketplace-news' and method=='GET':
+                service=Production(repo,self.request_user)
+                if not {'chat.read','clients.read','tasks.read'} & service.permissions:raise PermissionError('Недостаточно прав для чтения новостей')
+                query=parse_qs(urlparse(self.path).query)
+                source=query.get('source',['all'])[0]
+                if source not in ('all','ozon','wildberries'):raise ValueError('Фильтр source должен быть all, ozon или wildberries')
+                try:limit=max(1,min(100,int(query.get('limit',['30'])[0])));offset=max(0,int(query.get('offset',['0'])[0]))
+                except (ValueError,TypeError):raise ValueError('Некорректная пагинация')
+                where='company_id=?';args=[repo.company_id]
+                if source!='all':where+=' AND source=?';args.append(source)
+                rows=conn.execute('SELECT source,title,body,published_at,url,is_regulation FROM marketplace_news WHERE '+where+' ORDER BY published_at DESC NULLS LAST,id DESC LIMIT ? OFFSET ?',tuple(args+[limit,offset])).fetchall()
+                from marketplace_news import canonical_url
+                names=('source','title','body','published_at','url','is_regulation');items=[]
+                for row in rows:
+                    item=dict(zip(names,row));item['body']=(item['body'] or '')[:600]
+                    try:item['url']=canonical_url(item['source'],item['url'])
+                    except ValueError:item['url']=None
+                    items.append(item)
+                return self.send_json(dict(ok=True,data=items,next_offset=offset+len(rows) if len(rows)==limit else None))
             if (action in documents_api.DOCUMENT_ACTIONS and repo.has_table('portal_documents')) or action in documents_api.TEMPLATE_ACTIONS:
                 if method=='POST':repo.lock()
                 service=Production(repo,self.request_user)

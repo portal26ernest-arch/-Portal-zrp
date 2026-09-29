@@ -90,13 +90,18 @@
       `<div class="report-grid">${items.map(([title,text])=>`<button class="report-card" data-action="previewFeature" data-title="${esc(title)}" data-text="${esc(text)}"><span class="tile-icon">${icon('grid')}</span><b>${esc(title)}</b><small>${esc(text)}</small><span class="meta">Открыть макет →</span></button>`).join('')}</div>`);
   };
 
-  screens.news=async()=>{
-    const card=(market,title)=>`<article class="news-card"><div class="row between"><span class="market-badge">${esc(market)}</span>${previewBadge}</div><h3>${esc(title)}</h3><p class="meta">Демо-карточка интерфейса. В рабочем режиме здесь будет официальная публикация с датой и ссылкой на первоисточник.</p></article>`;
-    paint(heading('Новости','Только официальные источники Ozon и Wildberries',previewBadge)+
-      '<div class="segmented"><span class="active">Все</span><span>Ozon</span><span>Wildberries</span></div>'+
-      '<div class="list">'+card('Ozon','Официальные изменения площадки')+card('Wildberries','Официальные изменения площадки')+'</div>'+
-      '<div class="notice">В preview APK новости намеренно демонстрационные. Реальные заголовки появятся только после подключения официальных источников и защиты от дублей.</div>');
-  };
+  let newsFilter='all';
+  const safeNewsUrl=value=>{try{const u=new URL(value);return u.protocol==='https:'&&['seller.ozon.ru','seller.wildberries.ru'].includes(u.hostname)&&(!u.port||u.port==='443')&&!u.username&&!u.password?u.href:null;}catch{return null;}};
+  async function renderNews(){
+    const root=$('content');if(!root)return;
+    let items=[],unavailable=false;
+    if(S.stage3&&S.company){try{items=await productionGet('marketplace-news?source='+encodeURIComponent(newsFilter)+'&limit=50');}catch{unavailable=true;}}
+    const tabs=[['all','Все'],['ozon','Ozon'],['wildberries','Wildberries']].map(([key,label])=>`<button class="${newsFilter===key?'active':''}" type="button" data-action="newsFilter" data-filter="${key}">${label}</button>`).join('');
+    const cards=items.map(item=>{const url=safeNewsUrl(item.url);const source=item.source==='ozon'?'Ozon':'Wildberries';const dateText=item.published_at?new Date(item.published_at).toLocaleDateString('ru-RU'):'Дата не указана';return `<article class="news-card"><div class="row between"><span class="market-badge">${esc(source)}</span><span class="meta">${esc(dateText)}</span></div>${item.is_regulation?'<span class="badge">Нормативное</span>':''}<h3>${esc(item.title)}</h3><p>${esc(item.body)}</p>${url?`<a class="btn secondary" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Открыть первоисточник</a>`:'<span class="meta">Ссылка источника недоступна</span>'}</article>`;}).join('');
+    paint(heading('Новости','Официальные публикации Ozon и Wildberries',items.length?'LIVE':'' )+`<div class="segmented">${tabs}</div><div class="list">${cards||`<p class="empty">${unavailable?'Новости сейчас недоступны. Попробуйте позже.':'Пока нет опубликованных новостей. Источник ещё не подключён.'}</p>`}</div>`);
+  }
+  screens.news=renderNews;
+  actions.newsFilter=async button=>{newsFilter=button.dataset.filter;await renderNews();};
   screens.excelImport=async()=>{
     const steps=[
       ['1','Получить шаблон','Компания · Сотрудники · Клиенты · Операции/Тарифы'],

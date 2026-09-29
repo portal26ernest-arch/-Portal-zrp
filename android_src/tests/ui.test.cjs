@@ -5,7 +5,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const {pathToFileURL} = require('node:url');
-const {chromium} = require('playwright');
+let chromium;
+try { ({chromium}=require('playwright')); } catch { chromium=null; }
 const assets = path.resolve(__dirname, '../app/src/main/assets');
 const metadata = Object.fromEntries(fs.readFileSync(path.resolve(__dirname,'../release.properties'),'utf8').split(/\r?\n/).filter(l=>l&&!l.startsWith('#')).map(l=>{const i=l.indexOf('=');return [l.slice(0,i),l.slice(i+1)];}));
 metadata.versionCode=Number(metadata.versionCode);
@@ -17,6 +18,27 @@ async function screenshot(page,name){if(process.env.PORTAL_UI_SCREENSHOTS){fs.mk
 
 test('all shipped JavaScript parses',()=>{
   for(const file of ['core.js','app.js','screens.js','production.js','preview.js','documents_excel.js'])new vm.Script(fs.readFileSync(path.join(assets,file),'utf8'),{filename:file});
+});
+test('system sticker catalog, rendering and absence notice use structured safe fields',()=>{
+  const catalog=JSON.parse(fs.readFileSync(path.join(assets,'stickers/catalog.json'),'utf8'));
+  assert.deepEqual(catalog.stickers.map(x=>x.key),['accepted','in_progress','done','help','important','thanks']);
+  for(const item of catalog.stickers){assert.match(item.asset,/^[a-z_]+\.svg$/);assert.ok(fs.existsSync(path.join(assets,'stickers',item.asset)));}
+  const production=fs.readFileSync(path.join(assets,'production.js'),'utf8');
+  assert.match(production,/subtype:'sticker',sticker_key:button\.dataset\.key/);
+  assert.match(production,/subtype:'absence_notice',absence_date:/);
+  assert.match(production,/esc\(m\.absence_date\)/);
+  assert.match(production,/portalStickers\.find\(x=>x\[0\]===m\.sticker_key\)/);
+});
+test('marketplace news is live/empty, escaped and links only to official HTTPS hosts',()=>{
+  const preview=fs.readFileSync(path.join(assets,'preview.js'),'utf8');
+  assert.match(preview,/marketplace-news\?source=/);
+  assert.match(preview,/Пока нет опубликованных новостей/);
+  assert.match(preview,/esc\(item\.title\)/);assert.match(preview,/esc\(item\.body\)/);
+  assert.match(preview,/u\.protocol==='https:'/);
+  assert.match(preview,/!u\.port\|\|u\.port==='443'/);
+  assert.match(preview,/seller\.ozon\.ru','seller\.wildberries\.ru/);
+  assert.match(preview,/Открыть первоисточник/);
+  assert.doesNotMatch(preview,/innerHTML\s*=\s*item\.body/);
 });
 test('time-based greeting uses local hour boundaries',()=>{
   const cases={0:'Доброй ночи',4:'Доброй ночи',5:'Доброе утро',11:'Доброе утро',12:'Добрый день',17:'Добрый день',18:'Добрый вечер',22:'Добрый вечер',23:'Доброй ночи'};
@@ -112,6 +134,7 @@ async function login(page){
   await page.waitForFunction(()=>!document.querySelector('#app').classList.contains('hidden')&&!document.querySelector('.loading'));
 }
 test('browser UI regression',async t=>{
+  if(!chromium){t.skip('Playwright is not installed in this environment');return;}
   const browser=await chromium.launch({headless:true,...(process.env.PORTAL_BROWSER_PATH?{executablePath:process.env.PORTAL_BROWSER_PATH}:{})});
   try{
     await t.test('login at phone/tablet sizes, themes, metadata and update failures',async()=>{
