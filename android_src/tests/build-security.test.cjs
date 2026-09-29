@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const root = path.resolve(__dirname, '..');
 const gradle = fs.readFileSync(path.join(root, 'app', 'build.gradle'), 'utf8');
+const gradleProperties = fs.readFileSync(path.join(root, 'gradle.properties'), 'utf8');
 const manifest = fs.readFileSync(path.join(root, 'app', 'src', 'main', 'AndroidManifest.xml'), 'utf8');
 const releaseWorkflow = fs.readFileSync(path.join(root, '..', '.github', 'workflows', 'android-release.yml'), 'utf8');
 
@@ -13,6 +14,8 @@ must(manifest.includes('android:usesCleartextTraffic="${usesCleartextTraffic}"')
   'Manifest must use a per-build cleartext placeholder');
 must(manifest.includes('android:allowBackup="false"'),
   'Production client data backup must be disabled');
+must(/^android\.useAndroidX=true$/m.test(gradleProperties),
+  'AndroidX must be enabled for AndroidX runtime dependencies');
 must(/release\s*\{[\s\S]*?usesCleartextTraffic:\s*"false"/m.test(gradle),
   'Release build must disable cleartext HTTP');
 must(/staging\s*\{[\s\S]*?applicationIdSuffix\s+"\.staging"/m.test(gradle),
