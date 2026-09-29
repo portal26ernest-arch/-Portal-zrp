@@ -24,7 +24,7 @@ def _font():
 
 def _write(title, rows):
     font=_font();out=BytesIO();page_w,page_h=A4
-    doc=canvas.Canvas(out,pagesize=A4,pageCompression=1)
+    doc=canvas.Canvas(out,pagesize=A4,pageCompression=1,invariant=1)
     doc.setTitle(title);y=page_h-52
     doc.setFont(font,16);doc.drawString(46,y,title);y-=34
     for label,value in rows:
