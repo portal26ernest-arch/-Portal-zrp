@@ -33,3 +33,14 @@ This track is isolated from Codex Part 12 A–D implementation.
 - Rclone transport uses an externally configured remote and never accepts embedded passwords/tokens/access keys.
 - Real provider credentials and the final off-server destination remain owner/provider deployment inputs; they are not committed.
 - Unit coverage is in `ops/test_offsite_backup.py`.
+
+
+## HTTPS endpoint preflight
+
+- `ops/https_endpoint_preflight.py` performs read-only production endpoint checks.
+- Requires a credential-free standard-port HTTPS URL.
+- Verifies trusted TLS, certificate lifetime threshold, `/api/ping`, HSTS and core security headers.
+- Verifies plain HTTP redirects safely to the same HTTPS hostname.
+- Can optionally prove that the internal API port (for example 8770) is not reachable publicly.
+- A failed TLS/header/ping/redirect/public-port check returns NO-GO; the tool never changes DNS, proxy, certificate, service or database state.
+- Unit coverage is in `ops/test_https_endpoint_preflight.py`.
