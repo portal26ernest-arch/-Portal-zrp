@@ -2,7 +2,7 @@ name: PORTAL Web checks
 
 on:
   push:
-    branches: ["main", "codex-desktop-web-part7", "assistant-release-3.4-candidate"]
+    branches: ["main", "codex-desktop-web-part7", "assistant-release-3.4-candidate", "assistant-part10-web-invoice-e2e"]
     paths:
       - "server/**"
       - "android_src/app/src/main/assets/**"
@@ -34,4 +34,5 @@ jobs:
       - run: npm install --no-save playwright@1.62.1
       - run: npx playwright install --with-deps chromium
       - run: python -m unittest server.test_web_static server.test_portal_app_server -v
+      - run: node --check android_src/tests/web-postgresql-part10.playwright.cjs
       - run: node --test android_src/tests/web-adapter.test.cjs android_src/tests/web-smoke.playwright.cjs
