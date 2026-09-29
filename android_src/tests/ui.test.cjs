@@ -110,6 +110,7 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
       else if(stage3&&url==='/api/v3/invoices')data.data=[];
       else if(stage3&&url==='/api/v3/documents')data.data=[];
       else if(stage3&&url==='/api/v3/finance')data.data={clients:[]};
+      else if(stage3&&url.startsWith('/api/v3/receivables'))data.data={as_of:'2026-09-30',money_unit:'kopeck',outstanding:12500,overdue:4000,total:2,page:1,limit:50,buckets:{current:{count:1,amount:8500},days_1_7:{count:1,amount:4000},days_8_30:{count:0,amount:0},days_31_60:{count:0,amount:0},days_61_plus:{count:0,amount:0},undated:{count:0,amount:0}},clients:[{client_id:1,name:'Клиент',outstanding:12500}],items:[{invoice_id:1,client_id:1,amount:8500,paid:0,outstanding:8500,due_at:'2026-09-30',overdue_days:0,bucket:'current'},{invoice_id:2,client_id:1,amount:6000,paid:2000,outstanding:4000,due_at:'2026-09-29',overdue_days:1,bucket:'days_1_7'}]};
       else if(stage3&&url==='/api/v3/catalog')data.data={clients:[{id:1,name:'Клиент'}],operations:[{id:1,client_id:1,name:'Упаковка'}],users:[]};
       else if(stage3&&url==='/api/v3/works')data.data=[{id:'work-free',client_id:1,client_name:'Клиент',operation_name:'Упаковка',quantity:3,salary:300,completed_at:'2026-09-25T09:20:00',without_task:true,batch_id:null}];
       else if(stage3&&url==='/api/v3/work'&&method==='POST')data.data={id:'work-free',salary:300,without_task:true};
@@ -233,6 +234,20 @@ test('browser UI regression',async t=>{
       await page.waitForFunction(()=>document.querySelector('#content').innerText.includes('Preview устарел'));
       assert.deepEqual(errors,[]);await page.close();
     });
+    await t.test('receivables screen renders cents-backed aging and applies client and bucket filters',async()=>{
+      const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);
+      await page.evaluate(()=>mock.stage3Permissions=['invoices.read']);await login(page);
+      await page.evaluate(()=>go('invoices'));await page.locator('[data-action=viewReceivables]').click();
+      await page.waitForFunction(()=>document.querySelector('#content').textContent.includes('Дебиторская задолженность'));
+      assert.match(await page.locator('#content').innerText(),/125 ₽/);
+      assert.match(await page.locator('#content').innerText(),/40 ₽/);
+      assert.equal(await page.locator('#content .item').count(),2);
+      await page.locator('#receivablesBucket').selectOption('days_1_7');
+      await page.waitForFunction(()=>document.querySelectorAll('#content .item').length===1);
+      await page.locator('#receivablesClient').selectOption('1');
+      await page.waitForFunction(()=>mock.calls.some(c=>c.url.includes('/api/v3/receivables?')&&c.url.includes('client_id=1')));
+      assert.deepEqual(errors,[]);await page.close();
+    });
     await t.test('manager records personal work; expired write session returns to login',async()=>{
       const {page,errors}=await fixture(browser);await login(page);await page.evaluate(()=>go('work'));
       await page.locator('#wClient').selectOption('1');await page.waitForFunction(()=>!document.querySelector('#wOp').disabled);
@@ -265,6 +280,7 @@ test('browser UI regression',async t=>{
     });
     await t.test('Stage 3 timer, presence, activity and system information',async()=>{
       const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);
+      await page.evaluate(()=>mock.stage3Permissions=['work.write','tasks.read','tasks.manage','batches.receive','finance.read','invoices.read','invoices.create','users.manage','clients.read','clients.manage','access.history.read','payroll.own']);
       await login(page);
       assert.match(await page.locator('#content').innerText(),/PORTAL Сегодня/);
       assert.match(await page.locator('#content').innerText(),/Финансовый радар/);
@@ -313,7 +329,7 @@ test('browser UI regression',async t=>{
       assert.match(await page.locator('#sheetContent').innerText(),/Активность в системе/);
       assert.match(await page.locator('#sheetContent').innerText(),/История входов/);
       await page.evaluate(()=>{closeSheet();go('clients');});
-      await page.waitForFunction(()=>S.page==='clients'&&!document.querySelector('.loading'));
+      await page.waitForSelector('#content [data-action=openClient]');
       await page.locator('[data-action=openClient]').click();await page.waitForSelector('#sheetContent');
       assert.match(await page.locator('#sheetContent').innerText(),/Реквизиты и контакты/);
       assert.match(await page.locator('#sheetContent').innerText(),/Сводка экономики недоступна/);

@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 from unittest.mock import patch
 import test_portal_app_server as legacy
 import test_portal_tenancy as isolation
-from production_repository import Repository
+from production_repository import Repository, utcnow
 from production_migrations import migrate
 from production_service import Production
 
@@ -259,6 +259,27 @@ class ProductionTest(unittest.TestCase):
         self.post('payments',dict(invoice_id=i['id'],amount=7),status=400)
         self.post('payments',dict(invoice_id=i['id'],amount=6));self.assertEqual(self.get('invoices')['data'][0]['status'],'paid')
         self.assertNotIn('not_invoiced',[a['type'] for a in self.get('today')['data']['attention']])
+
+    def test_receivables_aging_boundaries_partial_payment_and_cents_reconcile(self):
+        today=(datetime.fromisoformat(utcnow())+timedelta(minutes=180)).date()
+        offsets=(0,1,7,8,30,31,60,61);created=[]
+        for index,days in enumerate(offsets):
+            work=self.work();due=(today-timedelta(days=days)).isoformat()
+            invoice=self.post('invoices',dict(work_ids=[work['id']],due_at=due))['data'];created.append(invoice)
+            if index==2:self.post('payments',dict(invoice_id=invoice['id'],amount='4.00'))
+        report=self.get('receivables')['data']
+        self.assertEqual(report['money_unit'],'kopeck')
+        self.assertEqual((report['outstanding'],report['overdue']),(7600,6600))
+        self.assertEqual({key:value['count'] for key,value in report['buckets'].items() if key!='undated'},
+                         {'current':1,'days_1_7':2,'days_8_30':2,'days_31_60':2,'days_61_plus':1})
+        self.assertEqual(report['buckets']['days_1_7']['amount'],1600)
+        self.assertEqual(sum(bucket['amount'] for bucket in report['buckets'].values()),report['outstanding'])
+        self.assertEqual(report['clients'][0]['outstanding'],report['outstanding'])
+        page=self.get('receivables?page=2&limit=3')['data']
+        self.assertEqual((page['page'],page['limit'],page['total'],len(page['items'])),(2,3,8,3))
+        self.assertEqual(page['outstanding'],report['outstanding'])
+        self.get('receivables?client_id=9999',status=403)
+        self.get('receivables',self.worker,status=403)
 
     def test_idempotency_and_transaction_rollback(self):
         body=dict(client_id=1,operation_id=1,quantity=2,request_id='retry-work')

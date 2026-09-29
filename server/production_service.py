@@ -787,6 +787,39 @@ class Production:
             i['status']='paid' if not i['remaining'] else 'partial' if i['paid'] else 'unpaid'
         return rows
 
+    def receivables(self,params):
+        self.need('invoices.read')
+        client_filter=params.get('client_id',[None])[0]
+        if client_filter not in (None,''):
+            try:client_filter=int(client_filter)
+            except (TypeError,ValueError):raise ValueError('Некорректный клиент')
+            self.client(client_filter)
+        local_today=(datetime.fromisoformat(self.clock())+timedelta(minutes=self.settings()['utc_offset_minutes'])).date()
+        buckets={key:dict(count=0,amount=0) for key in ('current','days_1_7','days_8_30','days_31_60','days_61_plus','undated')}
+        clients={};items=[];overdue_total=0;outstanding_total=0
+        for invoice in self.invoices():
+            remaining=invoice['remaining']
+            if remaining<=0 or (client_filter is not None and invoice['client_id']!=client_filter):continue
+            due_text=invoice.get('due_at');overdue=0
+            if not due_text:bucket='undated'
+            else:
+                try:due_date=datetime.fromisoformat(due_text).date()
+                except (TypeError,ValueError):raise ValueError('В счёте сохранена некорректная дата оплаты')
+                overdue=max(0,(local_today-due_date).days)
+                bucket='current' if overdue==0 else 'days_1_7' if overdue<=7 else 'days_8_30' if overdue<=30 else 'days_31_60' if overdue<=60 else 'days_61_plus'
+            item=dict(invoice_id=invoice['id'],client_id=invoice['client_id'],amount=invoice['amount'],paid=invoice['paid'],outstanding=remaining,due_at=due_text,overdue_days=overdue,bucket=bucket,status=invoice['status'])
+            items.append(item);outstanding_total+=remaining;buckets[bucket]['count']+=1;buckets[bucket]['amount']+=remaining
+            if overdue:overdue_total+=remaining
+            total=clients.setdefault(invoice['client_id'],dict(client_id=invoice['client_id'],name=invoice.get('client_name') or next((c['name'] for c in self.r.catalog('clients') if c['id']==invoice['client_id']),''),outstanding=0,overdue=0,invoice_count=0))
+            total['outstanding']+=remaining;total['invoice_count']+=1
+            if overdue:total['overdue']+=remaining
+        items.sort(key=lambda row:(row['due_at'] or '9999-12-31',row['invoice_id']))
+        try:page=max(1,int(params.get('page',['1'])[0] or 1));limit=min(100,max(1,int(params.get('limit',['50'])[0] or 50)))
+        except (TypeError,ValueError):raise ValueError('Некорректная страница дебиторки')
+        total=len(items);items=items[(page-1)*limit:page*limit]
+        return dict(as_of=local_today.isoformat(),currency='RUB',money_unit='kopeck',outstanding=outstanding_total,overdue=overdue_total,
+                    buckets=buckets,clients=sorted(clients.values(),key=lambda row:(row['name'].casefold(),row['client_id'])),items=items,page=page,limit=limit,total=total)
+
     def analytics(self):
         all_team='analytics.read' in self.permissions
         if not all_team:self.need('work.write')
@@ -905,6 +938,7 @@ class Production:
             if not {'work.write','payroll.own','work.link','finance.read','analytics.read','payroll.all','invoices.create'} & self.permissions:raise PermissionError('Нет доступа к выработке')
             return self.works()
         if action=='invoices':return self.invoices()
+        if action=='receivables':return self.receivables(params)
         if action=='expenses':
             self.need('expenses.read');return self.scoped('expenses')
         if action=='finance':return self.finance()
