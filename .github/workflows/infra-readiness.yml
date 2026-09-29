@@ -35,7 +35,8 @@ jobs:
             ops.test_offsite_backup \
             ops.test_release_audits \
             ops.test_release_gate \
-            ops.test_https_endpoint_preflight -v
+            ops.test_https_endpoint_preflight \
+            ops.test_render_nginx_config -v
 
       - name: Compile ops tools
         run: |
@@ -47,7 +48,8 @@ jobs:
             ops/money_field_inventory.py \
             ops/cutover_dry_run.py \
             ops/release_gate.py \
-            ops/https_endpoint_preflight.py
+            ops/https_endpoint_preflight.py \
+            ops/render_nginx_config.py
 
       - name: Verify runtime identity boundary
         run: |
