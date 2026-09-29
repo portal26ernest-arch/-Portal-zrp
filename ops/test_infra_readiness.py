@@ -63,11 +63,12 @@ class InfraReadinessTest(unittest.TestCase):
 
     def test_nginx_template_keeps_api_loopback_and_https(self):
         text = (ROOT / "deploy/nginx/portal.conf.template").read_text(encoding="utf-8")
-        self.assertIn("proxy_pass http://127.0.0.1:8770;", text)
+        self.assertIn("proxy_pass http://127.0.0.1:__PORTAL_LOOPBACK_PORT__;", text)
         self.assertIn("return 301 https://$host$request_uri;", text)
         self.assertIn("Strict-Transport-Security", text)
         self.assertIn("ssl_protocols TLSv1.2 TLSv1.3;", text)
-        self.assertNotIn("0.0.0.0:8770", text)
+        self.assertNotIn("proxy_pass http://0.0.0.0:", text)
+        self.assertNotIn("proxy_pass http://127.0.0.1:8770;", text)
 
     def test_systemd_backup_is_hardened_and_no_inline_password(self):
         text = (ROOT / "deploy/systemd/portal-backup.service").read_text(encoding="utf-8")
@@ -81,6 +82,19 @@ class InfraReadinessTest(unittest.TestCase):
         text = (ROOT / "ops/backup.env.example").read_text(encoding="utf-8")
         self.assertNotIn("PGPASSWORD=", text)
         self.assertIn("PGPASSFILE=/etc/portal/.pgpass", text)
+
+    def test_api_service_is_loopback_hardened_and_fail_closed(self):
+        service = (ROOT / "deploy/systemd/portal-api.service").read_text(encoding="utf-8")
+        env = (ROOT / "deploy/systemd/portal.env.example").read_text(encoding="utf-8")
+        self.assertIn("EnvironmentFile=/etc/portal/portal.env", service)
+        self.assertIn("NoNewPrivileges=true", service)
+        self.assertIn("ProtectSystem=strict", service)
+        self.assertIn("ReadWritePaths=/var/lib/portal/documents", service)
+        self.assertIn("PORTAL_APP_HOST=127.0.0.1", env)
+        self.assertIn("PORTAL_APP_PORT=8765", env)
+        self.assertIn("PORTAL_ENABLE_POSTGRES_PRODUCTION=false", env)
+        self.assertEqual(env.count("PORTAL_DATABASE_URL="), 1)
+        self.assertEqual(env.count("PORTAL_CONTROL_DATABASE_URL="), 1)
 
 
 if __name__ == "__main__":
