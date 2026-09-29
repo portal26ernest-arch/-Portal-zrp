@@ -107,6 +107,9 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
       else if(stage3&&url==='/api/v3/timers'&&method==='GET')data.data=mock.timer&&['running','paused'].includes(mock.timer.status)?[mock.timer]:[];
       else if(stage3&&url==='/api/v3/timers'&&method==='POST'){const b=JSON.parse(payload);mock.timer={id:'timer-1',task_id:'task-1',user_id:1,started_at:'2026-09-25T09:12:00',pauses:[],status:({start:'running',pause:'paused',resume:'running',finish:'completed'})[b.event]};data.data=mock.timer;}
       else if(stage3&&url==='/api/v3/batches')data.data=[{id:'batch-1',number:'PRT-2026-000001',client_id:1,client_name:'Клиент',product:'Коробка',received_at:'2026-09-24',quantity:10,done:2,remaining:8,stage:'in_progress',operations:[{operation:'Упаковка',done:2,planned:10}],ready:false}];
+      else if(stage3&&url==='/api/v3/invoices')data.data=[];
+      else if(stage3&&url==='/api/v3/documents')data.data=[];
+      else if(stage3&&url==='/api/v3/finance')data.data={clients:[]};
       else if(stage3&&url==='/api/v3/catalog')data.data={clients:[{id:1,name:'Клиент'}],operations:[{id:1,client_id:1,name:'Упаковка'}],users:[]};
       else if(stage3&&url==='/api/v3/works')data.data=[{id:'work-free',client_id:1,client_name:'Клиент',operation_name:'Упаковка',quantity:3,salary:300,completed_at:'2026-09-25T09:20:00',without_task:true,batch_id:null}];
       else if(stage3&&url==='/api/v3/work'&&method==='POST')data.data={id:'work-free',salary:300,without_task:true};
@@ -309,6 +312,11 @@ test('browser UI regression',async t=>{
       await page.locator('[data-action=employeeActivity]').click();await page.waitForSelector('#sheetContent');
       assert.match(await page.locator('#sheetContent').innerText(),/Активность в системе/);
       assert.match(await page.locator('#sheetContent').innerText(),/История входов/);
+      await page.evaluate(()=>{closeSheet();go('clients');});
+      await page.waitForFunction(()=>S.page==='clients'&&!document.querySelector('.loading'));
+      await page.locator('[data-action=openClient]').click();await page.waitForSelector('#sheetContent');
+      assert.match(await page.locator('#sheetContent').innerText(),/Реквизиты и контакты/);
+      assert.match(await page.locator('#sheetContent').innerText(),/Сводка экономики недоступна/);
       await page.evaluate(()=>{closeSheet();go('about');});
       await page.waitForFunction(()=>document.querySelector('#content').textContent.includes('О системе PORTAL'));
       assert.match(await page.locator('#content').innerText(),/Разработчик и правообладатель — Вартанян Эрнест/);

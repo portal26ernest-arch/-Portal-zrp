@@ -194,6 +194,10 @@ class ProductionTest(unittest.TestCase):
         self.assertEqual(history[0]['employee_rate'],9900)
         self.assertEqual(history[-1]['employee_rate'],200)
         self.get('tariff-history?operation_id=1&company_id=2',status=403)
+        self.post('permissions',dict(user_id=self.worker_id,permissions={'rates.client':True}))
+        manager_history=self.get('tariff-history?operation_id=1',self.worker)['data']
+        self.assertNotIn('employee_rate',manager_history[0])
+        self.assertIn('client_rate',manager_history[0])
         self.post('tariffs',dict(client_id=1,operation_id=1,employee_rate=1,effective_from='2020-01-01'),status=400)
 
     def test_individual_grant_deny_and_legacy_bypass(self):
