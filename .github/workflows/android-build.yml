@@ -58,6 +58,15 @@ jobs:
           gradle-version: "8.9"
       - name: Build isolated staging APK
         run: gradle -p android_src --stacktrace -PportalApiUrl="$PORTAL_STAGING_API_URL" assembleStaging
+      - name: Verify isolated staging APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=$(find android_src/app/build/outputs/apk/staging -name '*.apk' -type f | head -n 1)
+          test -n "$APK"
+          BADGING=$("$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK")
+          grep -q "^package: name='ru.portal.app.staging'.*versionCode='34'.*versionName='3.4-dev-staging'" <<< "$BADGING"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
       - name: Prepare named APK
         id: artifact
         shell: bash

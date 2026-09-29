@@ -22,6 +22,8 @@ must(/staging\s*\{[\s\S]*?applicationIdSuffix\s+"\.staging"/m.test(gradle),
   'Staging build must use a separate application id');
 must(/staging\s*\{[\s\S]*?usesCleartextTraffic:\s*"true"/m.test(gradle),
   'Staging build must allow the local HTTP tunnel');
+must(/staging\s*\{[\s\S]*?signingConfig\s+signingConfigs\.debug/m.test(gradle),
+  'Staging build must be explicitly signed for installability');
 must(gradle.includes("PORTAL_ANDROID_KEYSTORE") && gradle.includes("portalRelease"),
   'Release signing must be sourced from environment secrets');
 must(gradle.includes("PORTAL_ANDROID_KEYSTORE_TYPE") && gradle.includes("storeType releaseKeystoreType"),
