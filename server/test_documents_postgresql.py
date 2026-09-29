@@ -109,6 +109,14 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
                     r.insert('tariffs',dict(client_id=1,operation_id=1,employee_rate=200,client_rate=500,effective_from=utcnow()))
                     cls.tokens[cid]=cls.portal.create_session(conn,1)
                 with cls.portal.tenants.company_scope(cid),cls.portal.db() as conn:migrate(conn,cid)
+            # A second, independent account/session in company 1 proves that
+            # documents are server truth shared across clients, not session state.
+            with cls.portal.tenants.company_scope(1),cls.portal.db() as conn:
+                r=Repository(conn,1)
+                r.sql('INSERT INTO employees(company_id,telegram_id,full_name,username) VALUES(?,103,?,?)',(1,'Synthetic second director','second'))
+                r.sql('''INSERT INTO app_users(company_id,id,username,display_name,role,telegram_id,active,pin_salt,pin_hash,created_at,updated_at)
+                     VALUES(?,3,'second-director','Synthetic second director','director',103,1,?,?,?,?)''',(1,salt,pin_hash,utcnow(),utcnow()))
+                cls.tokens['same_company_second_session']=cls.portal.create_session(conn,3)
             # Only the fixture administrator adjusts sequences after explicit IDs.
             with psycopg.connect('dbname='+cls.database+' user=postgres host=/var/run/postgresql',autocommit=True) as admin:
                 for table in ('app_users','portal_clients','portal_client_operations'):
@@ -184,6 +192,23 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.request('/api/v3/documents',self.tokens[1],status=403,extra_headers={'X-Portal-Company':'2'})
         self.assertNotIn(doc['id'],[d['id'] for d in self.get('documents',self.tokens[1])['data']])
         self.assertEqual(self.get('document-metadata?id='+doc['id'],self.tokens[2])['data']['company_id'],2)
+
+    def test_document_is_shared_between_independent_same_company_sessions(self):
+        """Create/list/download/archive must resolve through the company server ledger."""
+        first=self.tokens[1]
+        second=self.tokens['same_company_second_session']
+        doc=self.upload(first)
+        listed=self.get('documents',second)['data']
+        self.assertIn(doc['id'],[row['id'] for row in listed])
+        metadata=self.get('document-metadata?id='+doc['id'],second)['data']
+        self.assertEqual(metadata['company_id'],1)
+        file_data=self.get('document-file?id='+doc['id'],second)['data']
+        self.assertEqual(base64.b64decode(file_data['file_b64']),b'%PDF-1.4\nSynthetic\n%%EOF\n')
+        archived=self.post('documents',dict(action='archive',id=doc['id']),second)['data']
+        self.assertEqual(archived['status'],'archived')
+        refreshed=self.get('documents?include_archived=true',first)['data']
+        self.assertEqual(next(row for row in refreshed if row['id']==doc['id'])['status'],'archived')
+        self.get('document-metadata?id='+doc['id'],first)
 
     @unittest.skipUnless(_WEB_E2E,'Web browser gate only')
     def test_real_web_static_login_meta_and_company_scope_in_browser(self):
