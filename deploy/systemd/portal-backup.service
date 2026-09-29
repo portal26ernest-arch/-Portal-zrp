@@ -1,0 +1,16 @@
+[Unit]
+Description=PORTAL PostgreSQL backup
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=portal
+Group=portal
+EnvironmentFile=/etc/portal/backup.env
+ExecStart=/usr/bin/python3 /srv/portal/current/ops/postgres_backup.py --database portal --output-dir /var/backups/portal --retention-days 14
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/backups/portal
