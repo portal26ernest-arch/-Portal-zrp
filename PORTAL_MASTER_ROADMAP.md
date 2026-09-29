@@ -114,7 +114,7 @@
 83. 🟡 Release workflow проверяет подпись и pin сертификата, APK package/version metadata и соответствие manifest артефакту. Production signing key и резервная копия существуют и совпадают; staging CI run 24 на commit c46917f успешно собрал и проверил installable signed staging APK. Открыты production GitHub Secrets/manual release gate и доказательство установки/обновления на физическом устройстве.
 84. ✅ Первый функциональный Web-клиент подтверждён реальным Chromium → HTTP API → disposable PostgreSQL staging E2E: login/meta, Documents, archive/download, Excel preview/apply/result, cross-company denial и logout/revocation.
 85. ⏳ Windows installer/обновление Desktop-клиента.
-86. 🟡 Core UI и permission model общие для Android/Web; локальная browser role-матрица проходит, а реальный PostgreSQL browser E2E подтверждён для admin. Реальные Platform Owner/Packer scopes и Android device parity ещё требуют staging-проверки.
+86. 🟡 Core UI и permission model общие для Android/Web; реальный Chromium → HTTP API → disposable PostgreSQL E2E подтверждён для admin/director/manager/packer и Platform Owner, включая явный выбор компании и cross-company scope. Открытой остаётся только физическая Android user-flow/parity проверка готовой APK без технических прогонов на телефоне.
 87. ✅ Десятичная нумерация сборок 3.0 → 3.1 → … → 3.9 → 4.0.
 88. ✅ GitHub CI: серверные тесты, Android UI и сборка APK, отдельные Web/Playwright checks.
 
@@ -179,8 +179,22 @@
 - ✅ Найден и исправлен production-дефект недетерминированных PDF: ReportLab `invariant=1`, повторная генерация возвращает тот же scoped Document.
 - ✅ Финальная локальная регрессия Part 8: Python 199 OK / 19 skipped, Node 31/31 PASS, compileall/node-check/diff-check OK.
 - ✅ После VPS-тестов: disposable DB/roles и временные ReportLab dependencies удалены; production Stage 7/production DB не менялись.
-- 🟡 Открыты реальные Platform Owner/Packer browser scopes, Android device/WebView flows, Web download blank/prefill template, production rollout и Windows installer.
+- 🟡 Platform Owner/Packer browser scopes закрыты Part 10. Открыты Android user-flow/parity готовой APK, Web download blank/prefill template, production rollout и Windows installer.
 - Полный отчёт: `PORTAL_WEB_POSTGRES_PART8_REPORT.md`.
+
+## G5. Web + Invoice revisions Part 10 — реальные role/revision gates (29.09.2026)
+
+- ✅ Реальный Chromium → HTTP API → disposable PostgreSQL E2E подтверждён для Director, Manager, Packer и Platform Owner.
+- ✅ Director через Web сформировал и скачал `invoice_xlsx`, затем перевёл счёт `finalized → editing`.
+- ✅ Manager через Web изменил разрешённую строку счёта и сохранил `revision 2`; итоговое состояние снова `finalized`.
+- ✅ Packer не видит раздел счетов и получает HTTP 403 при прямом запросе invoices API.
+- ✅ Platform Owner до выбора компании получает HTTP 403, после явного выбора компании A работает в её scope, а компания B возвращает пустой список счетов.
+- ✅ Owner audit за тестовый сценарий: 16 записей; чужая компания: 0 счетов.
+- ✅ Финальный результат: `BROWSER_EXIT=0`, `FIXTURE_VERIFIED=True`, `INVOICE_REVISION=2`, `INVOICE_XLSX_DOCUMENTS=1`, `PART10_REAL_WEB_PG_E2E=PASS`.
+- ✅ Cleanup доказан: после теста disposable DB = 0, disposable roles = 0; production DB/service не изменялись.
+- ✅ GitHub Web и Server CI для ветки Part 10 прошли; локально targeted server 28/28 и Web/Playwright 4/4.
+- 🟡 Остаются Android user-flow/parity готовой APK, Web blank/prefill download, Windows installer, production domain/HTTPS и production cutover.
+- Полный отчёт: `PORTAL_PART10_WEB_INVOICE_E2E_REPORT.md`.
 
 ## H. WMS TalAnt, ТСД и сканирование
 
