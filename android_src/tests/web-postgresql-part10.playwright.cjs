@@ -49,8 +49,8 @@ async function goTo(page, target) {
   if (target !== 'sections') {
     await page.locator('[data-action="go"][data-page="sections"]:visible').first().click();
   }
-  await page.locator('[data-page="' + target + '"]').waitFor();
-  await page.locator('[data-page="' + target + '"]').click();
+  await page.locator('[data-page="' + target + '"]:visible').first().waitFor();
+  await page.locator('[data-page="' + target + '"]:visible').first().click();
 }
 
 async function api(page, token, path, options = {}) {
