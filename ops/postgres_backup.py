@@ -17,6 +17,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -38,6 +39,8 @@ def run_checked(argv: list[str]) -> None:
 def prune_old(directory: Path, prefix: str, retention_days: int, keep: set[Path]) -> list[str]:
     if retention_days < 1:
         raise ValueError("retention_days must be >= 1")
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", prefix):
+        raise ValueError("prefix must be a simple filename prefix")
     cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=retention_days)
     removed: list[str] = []
     for p in directory.glob(prefix + "*"):
@@ -69,6 +72,8 @@ def main() -> int:
         raise SystemExit("--database must be a plain DB name, not a credential-bearing DSN")
     if args.retention_days < 1:
         raise SystemExit("--retention-days must be >= 1")
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", args.prefix):
+        raise SystemExit("--prefix must be a simple filename prefix")
 
     out_dir = Path(args.output_dir).expanduser().resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
