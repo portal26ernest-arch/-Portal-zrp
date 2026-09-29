@@ -32,10 +32,29 @@ test('Web Share cancellation reports cancel without forcing a download',async()=
   assert.deepEqual(env.counters,{created:0,revoked:0,clicked:0});
 });
 
+test('Web Share sends the selected allowlisted file and metadata without creating a download URL',async()=>{
+  let sent;
+  const env=browser({share:payload=>{sent=payload;return Promise.resolve();},canShare:({files})=>files[0].name==='report.pdf'});
+  env.api.shareBase64FileAsync('share-ok',...fileArgs,'finance@example.test','Invoice report','Please review this report');
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(env.results.get('share-ok').shared,true);
+  assert.equal(sent.files[0].name,'report.pdf');assert.equal(sent.files[0].type,'application/pdf');
+  assert.equal(sent.title,'Invoice report');assert.equal(sent.text,'Please review this report');
+  assert.deepEqual(env.counters,{created:0,revoked:0,clicked:0});
+});
+
 test('unsupported Web Share safely downloads allowlisted files and revokes object URLs',()=>{
   const env=browser();
   env.api.shareBase64FileAsync('share-2',...fileArgs);
   assert.equal(env.results.get('share-2').ok,true);
+  assert.equal(env.counters.created,1);assert.equal(env.counters.clicked,1);assert.equal(env.counters.revoked,0);
+  env.timers[0]();assert.equal(env.counters.revoked,1);
+});
+
+test('browser without file sharing capability falls back to the safe download path',()=>{
+  const env=browser({share:()=>{throw new Error('must not call share');},canShare:()=>false});
+  env.api.shareBase64FileAsync('share-fallback',...fileArgs);
+  assert.equal(env.results.get('share-fallback').ok,true);
   assert.equal(env.counters.created,1);assert.equal(env.counters.clicked,1);assert.equal(env.counters.revoked,0);
   env.timers[0]();assert.equal(env.counters.revoked,1);
 });
