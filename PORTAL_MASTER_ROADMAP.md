@@ -72,7 +72,7 @@
 55. 🟡 Filters/paging Documents API и общий Web list/search UI реализованы; серверные regression-тесты фильтрации проходят, полная browser-матрица остаётся для staging.
 56. 🟡 Общий Web-экран Documents и серверные права/archive покрыты backend-тестами и browser smoke; production deployment ещё не проверен.
 57. ✅ Стандартный Excel-шаблон PORTAL v1.0: четыре русских листа, blank/prefill API для директора и выбранной компании Platform Owner; openpyxl round trip и изоляция проверены.
-58. 🟡 В Web доступны blank/prefilled шаблоны; реальный XLSX upload/preview/apply browser E2E пройден, но фактическое скачивание blank/prefilled template через браузер остаётся отдельным staging-gate.
+58. ✅ Web blank/prefilled Excel template download подтверждён реальным Chromium → HTTP API → disposable PostgreSQL E2E: реальные browser downloads, XLSX signature, MIME/filename, SHA-256 совпадение с server payload, разные blank/prefill contents и cross-company HTTP 403.
 59. 🟡 Android bridge сохраняет поддерживаемые файлы в Downloads через system picker/MediaStore; source/UI tests есть, Java compile и проверка на устройстве открыты.
 60. 🟡 Web Share API с безопасным download fallback реализован; фактическое поведение Share в целевых браузерах ещё нужно проверить.
 61. 🟡 Email/тема/текст передаются в системный Android intent; отправка остаётся под контролем выбранного приложения, SMTP/API отправка не добавлена.
@@ -179,7 +179,7 @@
 - ✅ Найден и исправлен production-дефект недетерминированных PDF: ReportLab `invariant=1`, повторная генерация возвращает тот же scoped Document.
 - ✅ Финальная локальная регрессия Part 8: Python 199 OK / 19 skipped, Node 31/31 PASS, compileall/node-check/diff-check OK.
 - ✅ После VPS-тестов: disposable DB/roles и временные ReportLab dependencies удалены; production Stage 7/production DB не менялись.
-- 🟡 Platform Owner/Packer browser scopes закрыты Part 10. Открыты Android user-flow/parity готовой APK, Web download blank/prefill template, production rollout и Windows installer.
+- 🟡 Platform Owner/Packer browser scopes закрыты Part 10; Web download blank/prefill template закрыт Part 11. Открыты Android user-flow/parity готовой APK, production rollout и Windows installer.
 - Полный отчёт: `PORTAL_WEB_POSTGRES_PART8_REPORT.md`.
 
 ## G5. Web + Invoice revisions Part 10 — реальные role/revision gates (29.09.2026)
@@ -193,8 +193,19 @@
 - ✅ Финальный результат: `BROWSER_EXIT=0`, `FIXTURE_VERIFIED=True`, `INVOICE_REVISION=2`, `INVOICE_XLSX_DOCUMENTS=1`, `PART10_REAL_WEB_PG_E2E=PASS`.
 - ✅ Cleanup доказан: после теста disposable DB = 0, disposable roles = 0; production DB/service не изменялись.
 - ✅ GitHub Web и Server CI для ветки Part 10 прошли; локально targeted server 28/28 и Web/Playwright 4/4.
-- 🟡 Остаются Android user-flow/parity готовой APK, Web blank/prefill download, Windows installer, production domain/HTTPS и production cutover.
+- 🟡 Web blank/prefill download закрыт Part 11. Остаются Android user-flow/parity готовой APK, Windows installer, production domain/HTTPS и production cutover.
 - Полный отчёт: `PORTAL_PART10_WEB_INVOICE_E2E_REPORT.md`.
+
+## G6. Web Excel template download Part 11 — реальный staging-gate (29.09.2026)
+
+- ✅ Blank и prefilled PORTAL Excel templates реально скачаны через Chromium Web UI с настоящего HTTP API поверх disposable PostgreSQL.
+- ✅ Browser download и server payload полностью совпали по SHA-256; оба файла имеют корректный XLSX/ZIP signature и MIME.
+- ✅ Blank и prefilled содержимое различаются: 5689 и 6094 байта соответственно в проверенном запуске.
+- ✅ Director не может подменить company scope: forged `X-Portal-Company` получил HTTP 403.
+- ✅ GET/download шаблонов не изменяет clients/operations/employees/Documents: before/after counts идентичны.
+- ✅ Финальный результат: `BROWSER_EXIT=0`, `PART11_BROWSER_DOWNLOAD=PASS`, `FIXTURE_VERIFIED=True`, `PART11_REAL_WEB_TEMPLATE_DOWNLOAD=PASS`.
+- ✅ Cleanup: disposable DB = 0, disposable roles = 0; production DB/service не использовались как test target.
+- Полный отчёт: `PORTAL_PART11_WEB_TEMPLATE_DOWNLOAD_REPORT.md`.
 
 ## H. WMS TalAnt, ТСД и сканирование
 
@@ -215,7 +226,7 @@
 
 118. ✅ Не удалять подтверждённые функции и тарифы ради рефакторинга.
 119. ✅ Все изменения вести в одном основном проекте/репозитории с номерами сборок.
-120. ✅ Сначала быстрые локальные unit/security проверки, затем основной интеграционный прогон на VPS.
+120. ✅ Release-проверки и технические прогоны выполняются в GitHub/GitHub Actions и на VPS; телефон используется только для скачивания/установки готовой APK и обычной пользовательской проверки.
 121. ✅ Телефон после production cutover — только клиент, не сервер.
 122. ✅ Не допускать одновременную production-запись в старую SQLite и новую PostgreSQL.
 123. ✅ Каждую новую функцию закрывать тестом или явным контрольным сценарием.
