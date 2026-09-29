@@ -38,10 +38,10 @@ jobs:
           $name = "PORTAL_Windows_$env:PORTAL_DESKTOP_VERSION"
           $stage = Join-Path $env:RUNNER_TEMP $name
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
-          Copy-Item .\desktop\windows\PortalDesktop.ps1,$stage
-          Copy-Item .\desktop\windows\install.ps1,$stage
-          Copy-Item .\desktop\windows\uninstall.ps1,$stage
-          Copy-Item .\desktop\windows\README.md,$stage
+          Copy-Item -LiteralPath .\desktop\windows\PortalDesktop.ps1 -Destination $stage
+          Copy-Item -LiteralPath .\desktop\windows\install.ps1 -Destination $stage
+          Copy-Item -LiteralPath .\desktop\windows\uninstall.ps1 -Destination $stage
+          Copy-Item -LiteralPath .\desktop\windows\README.md -Destination $stage
           $manifest = [ordered]@{
             schema_version = 1
             version = $env:PORTAL_DESKTOP_VERSION
