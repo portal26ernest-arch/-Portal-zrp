@@ -2,7 +2,7 @@ name: PORTAL Web checks
 
 on:
   push:
-    branches: ["main", "codex-desktop-web-part7"]
+    branches: ["main", "codex-desktop-web-part7", "assistant-release-3.4-candidate"]
     paths:
       - "server/**"
       - "android_src/app/src/main/assets/**"
