@@ -220,3 +220,10 @@ Production cutover **NOT performed**.
 - New finance paths use integer minor units for payroll settlements/receivables, but legacy routes still call `float(...)` for work economics, cost/stock consumption and payroll summaries. No full deployed SQLite `REAL` inventory was run, and no cents migration was attempted. Item 105 remains 🟡.
 - **Exact NEXT:** implement and test the disabled-by-default internal reminder runner, then continue B stable-ID product/rename/batch workflow gaps and A approval/settings/owner-audit coverage. Keep the real Documents PostgreSQL cross-session test and cleanup proof as an isolated execution gate; continue software work while that runner is unavailable. Finish with legacy money/identity remediation design only after all use sites and historical data are inventoried.
 - Roadmap counts unchanged: **72 ✅ / 34 🟡 / 8 ⏳ / 12 🔌**. No completion/blocked flag created. Production cutover **NOT performed**.
+
+## Block A targeted addition — code/test SHA `2ca0ad0`
+
+- Added backend API integration coverage for company audit entity/date filters, actor/action match, pagination with descending chronology, redacted summaries, and forbidden packer/forged-company access.
+- `python -m unittest test_production -v` from `server/`: **32 passed, 0 failed** (includes the new audit test). Full server discovery immediately before this test-only addition was **212 passed, 20 skipped, 0 failed**.
+- GitHub server isolation and Web workflows for `2ca0ad0` were in progress at the last poll; Android source did not change. Do not claim those workflows green until checked.
+- Exact NEXT stays: disabled-by-default reminder runner and B product/name/batch workflow gaps; then complete A settings/owner-audit coverage and D disposable PostgreSQL cross-session proof. No test status or roadmap count was promoted by the mocked/test-fixture browser work.

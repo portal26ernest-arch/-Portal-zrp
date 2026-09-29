@@ -238,6 +238,13 @@ Production cutover **NOT performed**.
 - Exact next software block is the disabled-by-default internal reminder runner with idempotency/cadence/retry/time tests, followed by remaining B product/name/batch workflows and A invite approval/settings/owner audit checks. The D real disposable PostgreSQL test remains unexecuted because this environment has no PostgreSQL client, DSN, opt-in flag, or repository-provided VPS runner.
 - The audit does not change the **72 ✅ / 34 🟡 / 8 ⏳ / 12 🔌** roadmap counts. Production cutover **NOT performed**.
 
+### Block A test addition — SHA `2ca0ad0`
+
+- Added company-audit API integration assertions for actor/action/entity/date selection, safe summaries without PIN/token strings, pagination, descending chronology, and denial of packer and forged company-scope requests.
+- `python -m unittest test_production -v` from `server/`: **32 pass / 0 fail / 0 skip**, including the new test. Full server discovery immediately before this test-only addition was **212 pass / 0 fail / 20 skip**.
+- GitHub server-isolation and Web checks for `2ca0ad0` were in progress at the last poll; Android files did not change. Check the final workflow state before reporting a green SHA.
+- No roadmap status changed. Audit item 15 remains 🟡 until owner-audit policy and PostgreSQL/RLS integration are proven.
+
 ## Automatic continuation update — current code checkpoint `aa94fa3`
 
 - `e85078e` completes a limited Documents UI parity increment: virtual grouping by available company/client/employee, category, type and month metadata, with current/archive labels. Browser tests verify folders and document states; this is not evidence of cross-client server synchronization.
