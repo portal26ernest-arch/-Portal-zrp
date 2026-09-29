@@ -1,0 +1,2 @@
+# Runtime dependency for server generated Unicode A4 PDFs.
+reportlab==5.0.1

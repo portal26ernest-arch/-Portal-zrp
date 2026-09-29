@@ -165,6 +165,7 @@ test('browser UI regression',async t=>{
       await page.locator('[data-action=downloadPortalDocument]').click();await page.waitForFunction(()=>mock.saved?.filename==='PORTAL_report.xlsx');
       await page.locator('[data-action=archivePortalDocument]').click();await page.locator('[data-action=confirmSheet]').click();
       await page.waitForFunction(()=>mock.calls.some(c=>c.method==='POST'&&c.url==='/api/v3/document-archive'));
+      await page.waitForFunction(()=>mock.calls.filter(c=>c.url.startsWith('/api/v3/documents?')).length>=2);
       await page.locator('#docQuery').fill('акт');await page.locator('#documentsFilters').evaluate(form=>form.requestSubmit());
       await page.waitForFunction(()=>mock.calls.some(c=>c.url.includes('/api/v3/documents?')&&c.url.includes('q=%D0%B0%D0%BA%D1%82')));
 

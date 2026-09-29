@@ -1,3 +1,4 @@
 # Independent OOXML reader for validity and Excel save/round-trip tests only.
-# The server runtime and workbook generator remain dependency-free.
+# ReportLab is also required at runtime for Unicode A4 PDF documents.
 openpyxl==3.1.5
+reportlab==5.0.1

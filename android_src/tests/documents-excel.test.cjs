@@ -41,6 +41,15 @@ test('Downloads use the system picker, private MediaStore save and a strict MIME
   assert.match(shell,/"application\/json"\.equals\(mimeType\)/);
 });
 
+test('Share actions are wired for ready documents, templates and safe import results',()=>{
+  assert.match(source,/sharePortalDocument/);
+  assert.match(source,/shareExcelTemplate/);
+  assert.match(source,/shareImportResult/);
+  assert.match(source,/!archived && d\.status === 'ready'.*Поделиться/s);
+  assert.match(source,/window\.prompt\('Email получателя \(необязательно\)'/);
+  assert.match(shell,/FileProvider\.getUriForFile/);
+});
+
 test('Capabilities, owner company context, role visibility and expired-session behavior stay enforced',()=>{
   for(const permission of ['imports.manage','users.manage','clients.manage','rates.employee','rates.client','company.settings','documents.manage','documents.read'])assert.ok(source.includes(permission),permission);
   assert.match(source,/function requireCompany\(\)[\s\S]*isOwner\(\) && !S\.company/);
@@ -48,4 +57,16 @@ test('Capabilities, owner company context, role visibility and expired-session b
   assert.match(core,/id:'excelImport'.*production:true/);
   assert.match(app,/result\.httpStatus===401[\s\S]*logout\(false,true\)/);
   assert.match(app,/isOwner\(\)&&!options\.sessionControl[\s\S]*выберите компанию/);
+});
+
+test('PDF generation and ready document sharing are live capability gated actions',()=>{
+  const production=fs.readFileSync(path.join(assets,'production.js'),'utf8');
+  assert.match(production,/document-generate/);
+  assert.match(production,/document_type:'invoice_pdf'/);
+  assert.match(production,/document_type:'payroll_slip_pdf'/);
+  assert.match(production,/allowed\('invoices\.read'\)/);
+  assert.match(production,/allowed\('payroll\.settlement\.read'\)/);
+  assert.match(source,/sharePortalDocument/);
+  assert.match(source,/shareBase64FileAsync/);
+  assert.match(source,/row\.status !== 'ready'/);
 });

@@ -5,9 +5,14 @@ import json
 import sqlite3
 import tempfile
 import unittest
+import sys
+import uuid
+from datetime import datetime, timedelta
+from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
 from document_domain import LocalFileStorage, Documents, validate_upload, MAX_DOCUMENT_BYTES
+from production_repository import Repository
 import test_production as fixtures
 
 portal=fixtures.portal
@@ -20,6 +25,7 @@ class DocumentAPITest(unittest.TestCase):
     role_token=fixtures.ProductionTest.role_token
     post=fixtures.ProductionTest.post
     get=fixtures.ProductionTest.get
+    work=fixtures.ProductionTest.work
 
     def upload(self,token=None,**values):
         body=dict(action='upload',document_type='report_pdf',original_filename='Отчёт.pdf',mime_type='application/pdf',
@@ -106,6 +112,62 @@ class DocumentAPITest(unittest.TestCase):
             body.update(values);self.post('documents',body,status=400)
         with self.assertRaises(ValueError):validate_upload('x.pdf','application/pdf',b'x'*(MAX_DOCUMENT_BYTES+1),'report_pdf')
         self.assertEqual(self.get('documents')['data'],[])
+
+    def test_invoice_pdf_generation_permissions_tenant_scope_and_financial_immutability(self):
+        work=self.work()
+        invoice=self.post('invoices',dict(work_ids=[work['id']]))['data']
+        before=(self.get('works')['data'],self.get('invoices')['data'])
+        renderer=SimpleNamespace(invoice_pdf=lambda *args: PDF)
+        import documents_api
+        errors=[];original_route=documents_api.route
+        def traced(*args):
+            try:return original_route(*args)
+            except Exception as error:errors.append(error);raise
+        with patch.dict(sys.modules,{'pdf_documents':renderer}),patch('documents_api.route',side_effect=traced):
+            try:doc=self.post('document-generate',dict(document_type='invoice_pdf',invoice_id=invoice['id']))['data']
+            except AssertionError:self.fail('PDF route failed: '+repr(errors))
+            self.assertEqual(doc['document_type'],'invoice_pdf')
+            self.assertEqual(doc['client_id'],invoice['client_id'])
+            self.assertEqual(base64.b64decode(self.get('document-file?id='+doc['id'])['data']['file_b64']),PDF)
+            self.post('document-generate',dict(document_type='invoice_pdf',invoice_id=invoice['id']),self.worker,status=403)
+            self.post('document-generate',dict(document_type='invoice_pdf',invoice_id=invoice['id']),self.other_admin,status=400)
+            self.post('document-generate',dict(document_type='payroll_slip_pdf',payroll_period_id='unknown',employee_id=1),self.worker,status=403)
+        after=(self.get('works')['data'],self.get('invoices')['data'])
+        self.assertEqual(after,before)
+        with portal.db() as conn:
+            row=conn.execute('SELECT status,document_type FROM portal_documents WHERE id=?',(doc['id'],)).fetchone()
+            self.assertEqual(tuple(row),('ready','invoice_pdf'))
+
+    def test_payroll_slip_uses_closed_snapshot_permissions_scope_and_immutable_facts(self):
+        work=self.work();today=datetime.utcnow().date()
+        if today.day>15:start=today.replace(day=1).isoformat();end=today.replace(day=15).isoformat()
+        else:
+            previous=today.replace(day=1)-timedelta(days=1)
+            start=previous.replace(day=16).isoformat();end=previous.isoformat()
+        with portal.db() as conn:
+            repo=Repository(conn,1)
+            source=dict(work,id=str(uuid.uuid4()),completed_at=end+'T12:00:00.000000',created_at=end+'T12:00:00.000000')
+            repo.insert('works',{k:v for k,v in source.items() if k not in {'id','company_id'}},source['id'])
+            conn.commit()
+        period=self.post('payroll-periods',dict(period_start=start,period_end=end))['data']
+        employee=period['snapshot']['employees'][0]
+        with portal.db() as conn:
+            payroll_employee=Repository(conn,1).payroll_employee(employee['employee_id'],legacy=True)['employee_id']
+            settlements_before=Repository(conn,1).payroll_settlements(period['id'],payroll_employee)
+        renderer=SimpleNamespace(payroll_slip_pdf=lambda *args: PDF)
+        with patch.dict(sys.modules,{'pdf_documents':renderer}):
+            doc=self.post('document-generate',dict(document_type='payroll_slip_pdf',payroll_period_id=period['id'],employee_id=payroll_employee))['data']
+            self.post('document-generate',dict(document_type='payroll_slip_pdf',payroll_period_id=period['id'],employee_id=payroll_employee),self.worker,status=403)
+            self.post('document-generate',dict(document_type='payroll_slip_pdf',payroll_period_id=period['id'],employee_id=payroll_employee),self.other_admin,status=400)
+        self.assertEqual(doc['document_type'],'payroll_slip_pdf')
+        self.assertEqual(doc['employee_id'],payroll_employee)
+        self.assertEqual(doc['payroll_period_id'],period['id'])
+        self.assertEqual(base64.b64decode(self.get('document-file?id='+doc['id'])['data']['file_b64']),PDF)
+        saved=next(p for p in self.get('payroll-periods')['data'] if p['id']==period['id'])
+        self.assertEqual(saved['snapshot'],period['snapshot'])
+        with portal.db() as conn:
+            settlements_after=Repository(conn,1).payroll_settlements(period['id'],payroll_employee)
+        self.assertEqual(settlements_after,settlements_before)
 
 class BlobStorageTest(unittest.TestCase):
     def test_content_addressed_company_keys_atomic_retry_and_traversal(self):

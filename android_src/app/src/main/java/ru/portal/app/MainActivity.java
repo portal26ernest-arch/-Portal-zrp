@@ -4,6 +4,7 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.ContentValues;
 import android.content.Context;
+import android.content.ClipData;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.net.Uri;
@@ -20,6 +21,7 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.webkit.WebResourceRequest;
 import android.view.View;
+import androidx.core.content.FileProvider;
 
 import org.json.JSONObject;
 
@@ -34,6 +36,7 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.UUID;
 
 public class MainActivity extends Activity {
     private static final int FILE_CHOOSER_REQUEST = 42032;
@@ -183,6 +186,60 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void saveBase64FileAsync(String id, String filename, String mimeType, String encoded) {
             executor.execute(() -> deliver(id, saveBase64File(filename, mimeType, encoded)));
+        }
+
+        @JavascriptInterface
+        public void shareBase64FileAsync(String id, String filename, String mimeType, String encoded,
+                                         String recipient, String subject, String message) {
+            executor.execute(() -> {
+                String result = prepareShare(filename, mimeType, encoded);
+                try {
+                    JSONObject parsed = new JSONObject(result);
+                    if (!parsed.optBoolean("ok")) { deliver(id, result); return; }
+                    Uri uri = Uri.parse(parsed.getString("uri"));
+                    ((Activity) context).runOnUiThread(() -> {
+                        try {
+                            Intent send = new Intent(Intent.ACTION_SEND);
+                            send.setType(mimeType);
+                            send.putExtra(Intent.EXTRA_STREAM, uri);
+                            String cleanRecipient = recipient == null ? "" : recipient.trim();
+                            if (cleanRecipient.length() <= 254 && cleanRecipient.matches("[^\\s@,;]+@[^\\s@,;]+\\.[^\\s@,;]+"))
+                                send.putExtra(Intent.EXTRA_EMAIL, new String[]{cleanRecipient});
+                            if (subject != null && !subject.trim().isEmpty()) send.putExtra(Intent.EXTRA_SUBJECT, subject.trim().substring(0, Math.min(160, subject.trim().length())));
+                            if (message != null && !message.trim().isEmpty()) send.putExtra(Intent.EXTRA_TEXT, message.trim().substring(0, Math.min(2000, message.trim().length())));
+                            send.setClipData(ClipData.newUri(context.getContentResolver(), "PORTAL document", uri));
+                            send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                            context.startActivity(Intent.createChooser(send, "Поделиться документом"));
+                            deliver(id, "{\"ok\":true}");
+                        } catch (Exception ignored) { deliver(id, "{\"ok\":false,\"error\":\"Не удалось открыть меню отправки.\"}"); }
+                    });
+                } catch (Exception ignored) { deliver(id, "{\"ok\":false,\"error\":\"Не удалось подготовить документ.\"}"); }
+            });
+        }
+
+        private String prepareShare(String filename, String mimeType, String encoded) {
+            try {
+                String expected = filename == null ? "" : filename.toLowerCase(java.util.Locale.ROOT);
+                boolean allowed = ("application/pdf".equals(mimeType) && expected.endsWith(".pdf"))
+                    || ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".equals(mimeType) && expected.endsWith(".xlsx"))
+                    || ("application/json".equals(mimeType) && expected.endsWith(".json"));
+                if (!allowed || !filename.matches("[A-Za-z0-9._-]{1,120}") || encoded == null || encoded.length() > 28 * 1024 * 1024) throw new Exception();
+                byte[] data = Base64.decode(encoded, Base64.DEFAULT);
+                if (data.length == 0 || data.length > 20 * 1024 * 1024) throw new Exception();
+                File dir = new File(context.getCacheDir(), "shared");
+                if (!dir.exists() && !dir.mkdirs()) throw new Exception();
+                long now = System.currentTimeMillis(), total = 0;
+                File[] cached = dir.listFiles();
+                if (cached != null) for (File old : cached) {
+                    if (now - old.lastModified() > 24L * 60 * 60 * 1000) old.delete();
+                    else total += old.length();
+                }
+                if (total + data.length > 40L * 1024 * 1024) throw new Exception();
+                File file = new File(dir, UUID.randomUUID().toString() + "_" + filename);
+                try (FileOutputStream out = new FileOutputStream(file)) { out.write(data); }
+                Uri uri = FileProvider.getUriForFile(context, BuildConfig.APPLICATION_ID + ".files", file);
+                return new JSONObject().put("ok", true).put("uri", uri.toString()).toString();
+            } catch (Exception ignored) { return "{\"ok\":false,\"error\":\"Не удалось подготовить документ.\"}"; }
         }
 
         private String saveBase64File(String filename, String mimeType, String encoded) {

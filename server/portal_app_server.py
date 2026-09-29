@@ -927,7 +927,7 @@ class Handler(BaseHTTPRequestHandler):
                 values=parse_body(self) if method=='POST' else parse_qs(urlparse(self.path).query)
                 if action in documents_api.TEMPLATE_ACTIONS:
                     result=documents_api.template_route(service,storage,action,method,values,tenants.get_company(DB_PATH,repo.company_id))
-                else:result=documents_api.route(service,storage,action,method,values)
+                else:result=documents_api.route(service,storage,action,method,values,tenants.get_company(DB_PATH,repo.company_id))
                 if method=='POST':conn.commit()
                 return self.send_json(dict(ok=True,data=result))
             if method=='POST':repo.lock()

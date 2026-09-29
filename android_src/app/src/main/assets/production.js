@@ -106,7 +106,7 @@ forms.tariffForm=async form=>{const o=S.tariffOperation,b={client_id:o.client_id
 screens.invoices=async()=>{
   if(!S.stage3)return previous.invoices();
   const rows=await productionGet('invoices');S.productionInvoices=rows;
-  paint(heading('Счета и оплаты','Начисления из выработки',allowed('invoices.create')?btn('Подготовить счёт','newInvoice'):'')+`<div class="list">${rows.map(i=>`<div class="item"><b>Счёт · ${date(i.created_at)}</b><p>${rub(i.amount)} · Остаток ${rub(i.remaining)}</p><span class="badge">${({paid:'Оплачен',partial:'Частично оплачен',unpaid:'Не оплачен'})[i.status]}</span>${i.remaining&&allowed('payments.record')?btn('Внести оплату','recordPayment',`data-id="${i.id}"`,'secondary'):''}</div>`).join('')||'<p class="empty">Новых счетов нет</p>'}</div>${btn('Ранее созданные счета','legacyInvoices','','text block')}`);
+  paint(heading('Счета и оплаты','Начисления из выработки',allowed('invoices.create')?btn('Подготовить счёт','newInvoice'):'')+`<div class="list">${rows.map(i=>`<div class="item"><b>Счёт · ${date(i.created_at)}</b><p>${rub(i.amount)} · Остаток ${rub(i.remaining)}</p><span class="badge">${({paid:'Оплачен',partial:'Частично оплачен',unpaid:'Не оплачен'})[i.status]}</span>${i.remaining&&allowed('payments.record')?btn('Внести оплату','recordPayment',`data-id="${i.id}"`,'secondary'):''}${allowed('documents.manage')&&allowed('invoices.read')?btn('PDF счёта','generateInvoicePdf',`data-id="${esc(i.id)}"`,'secondary'):''}</div>`).join('')||'<p class="empty">Новых счетов нет</p>'}</div>${btn('Ранее созданные счета','legacyInvoices','','text block')}`);
 };
 actions.legacyInvoices=()=>previous.invoices();
 actions.newInvoice=async()=>{const [rows,invoices]=await Promise.all([productionGet('works'),productionGet('invoices')]);const billed=new Set(invoices.flatMap(i=>i.work_ids));S.unbilledWorks=rows.filter(w=>!billed.has(w.id));openSheet('Выставить выполненную работу',`<p class="meta">Выберите работы одного клиента. Повторное начисление исключено.</p><form id="invoiceForm">${S.unbilledWorks.map(w=>`<label class="permission-row"><input type="checkbox" data-work="${w.id}"><span>${esc(w.client_name)} · ${esc(w.operation_name)}<small>${num(w.quantity)} шт. · ${rub(w.revenue)}</small></span></label>`).join('')||'<p>Невыставленных работ нет</p>'}${field('invoiceDue','Оплатить до','','datetime-local')}<button class="btn block" type="submit">Создать счёт</button></form>`);};
@@ -127,7 +127,7 @@ screens.payrollPeriods=async()=>{
   const rows=await productionGet('payroll-periods'),[start,end]=currentPayrollBounds();S.payrollPeriods=rows;
   paint(heading('Расчётные периоды','Предпросмотр → закрытие → неизменяемый снимок')+
     (allowed('payroll.close')?`<form id="payrollPreviewForm" class="card">${field('payrollStart','Начало',start,'date','required')}${field('payrollEnd','Конец',end,'date','required')}<button class="btn block" type="submit">Предпросмотр периода</button></form>`:'')+
-    `<div class="list">${rows.slice().reverse().map(p=>`<article class="item"><b>${esc(p.period_start)} — ${esc(p.period_end)}</b><p class="meta">Закрыт ${esc(date(p.closed_at))}</p><p>Выработка ${num(p.snapshot.total_quantity)} шт. · Зарплата ${rub(p.snapshot.total_salary)}</p><span class="badge green">Закрыт</span></article>`).join('')||'<p class="empty">Закрытых периодов пока нет</p>'}</div>`);
+    `<div class="list">${rows.slice().reverse().map(p=>`<article class="item"><b>${esc(p.period_start)} — ${esc(p.period_end)}</b><p class="meta">Закрыт ${esc(date(p.closed_at))}</p><p>Выработка ${num(p.snapshot.total_quantity)} шт. · Зарплата ${rub(p.snapshot.total_salary)}</p><span class="badge green">Закрыт</span>${allowed('payroll.all')&&allowed('payroll.settlement.read')&&allowed('documents.manage')?`<div class="item-actions">${(p.snapshot.employees||[]).filter(e=>Number.isInteger(e.employee_id)&&e.employee_id>0).map(e=>btn('PDF · '+esc(e.display_name),'generatePayrollSlip',`data-period="${esc(p.id)}" data-employee="${esc(e.employee_id)}"`,'secondary')).join('')}</div>`:''}</article>`).join('')||'<p class="empty">Закрытых периодов пока нет</p>'}</div>`);
 };
 forms.payrollPreviewForm=async form=>{
   const start=$('payrollStart').value,end=$('payrollEnd').value,d=await productionGet(`payroll-periods?period_start=${encodeURIComponent(start)}&period_end=${encodeURIComponent(end)}`);S.payrollPreview=d;
@@ -142,10 +142,26 @@ screens.documents=async()=>{
 actions.newPayrollDocument=async()=>{
   const periods=await productionGet('payroll-periods');if(!periods.length)return toast('Сначала закройте расчётный период',true);
   S.documentPeriods=periods;
-  openSheet('Расчётный документ',`<form id="documentForm">${selectField('documentPeriod','Закрытый период',periods.slice().reverse().map(p=>`<option value="${esc(p.id)}">${esc(p.period_start)} — ${esc(p.period_end)} · ${rub(p.snapshot.total_salary)}</option>`).join(''))}${field('documentTitle','Название — необязательно','','text','maxlength="200"')}<p class="meta">PORTAL зафиксирует неизменяемый снимок. XLSX формируется именно из него; PDF добавим отдельным генератором.</p><button class="btn block" type="submit">Создать снимок</button></form>`);
+  openSheet('Расчётный документ',`<form id="documentForm">${selectField('documentPeriod','Закрытый период',periods.slice().reverse().map(p=>`<option value="${esc(p.id)}">${esc(p.period_start)} — ${esc(p.period_end)} · ${rub(p.snapshot.total_salary)}</option>`).join(''))}${field('documentTitle','Название — необязательно','','text','maxlength="200"')}<p class="meta">PORTAL зафиксирует неизменяемый снимок. Общий XLSX строится из него; PDF расчётного листа создаётся отдельно для сотрудника из закрытого периода.</p><button class="btn block" type="submit">Создать снимок</button></form>`);
 };
 forms.documentForm=async form=>{const p=S.documentPeriods.find(x=>x.id===$('documentPeriod').value);if(!p)throw new Error('Выберите период');await productionPost('documents',{document_type:'payroll',period_start:p.period_start,period_end:p.period_end,title:$('documentTitle').value.trim()||undefined},form);closeSheet();toast('Документ зафиксирован');await go('documents');};
 actions.saveDocument=async button=>{if(typeof window.PortalNative?.saveBase64FileAsync!=='function')throw new Error('Сохранение доступно в Android-приложении');const file=await productionGet('document-file?id='+encodeURIComponent(button.dataset.id));const result=await nativePromise(id=>PortalNative.saveBase64FileAsync(id,file.filename,file.mime_type,file.file_b64));if(!result.ok)throw new Error(result.error||'Не удалось сохранить документ');toast('Сохранено · '+result.location);};
+async function createAndSavePdf(body){
+  const doc=await productionPost('document-generate',body);
+  if(typeof window.PortalNative?.saveBase64FileAsync!=='function'){toast('PDF создан в разделе «Документы»');return;}
+  const file=await productionGet('document-file?id='+encodeURIComponent(doc.id));
+  const result=await nativePromise(id=>PortalNative.saveBase64FileAsync(id,file.filename,file.mime_type,file.file_b64));
+  if(!result.ok)throw new Error(result.error||'PDF создан, но сохранить его не удалось');
+  toast('PDF создан и сохранён · '+result.location);
+};
+actions.generateInvoicePdf=async button=>{
+  if(!allowed('documents.manage')||!allowed('invoices.read'))throw new Error('Недостаточно прав для генерации счёта');
+  await createAndSavePdf({document_type:'invoice_pdf',invoice_id:button.dataset.id});
+};
+actions.generatePayrollSlip=async button=>{
+  if(!allowed('documents.manage')||!allowed('payroll.all')||!allowed('payroll.settlement.read'))throw new Error('Недостаточно прав для расчётного листа');
+  await createAndSavePdf({document_type:'payroll_slip_pdf',payroll_period_id:button.dataset.period,employee_id:Number(button.dataset.employee)});
+};
 function chatAttachment(file){
   if(!file)return Promise.resolve(null);
   const allowedTypes=new Set(['image/jpeg','image/png','image/webp','application/pdf','text/plain']);

@@ -93,6 +93,19 @@
     toast('Сохранено · ' + saved.location);
   }
 
+  async function sharePayload(file) {
+    if (!window.PortalNative?.shareBase64FileAsync) throw new Error('Системная отправка доступна в Android-приложении');
+    const mime = file?.mime_type;
+    if (![XLSX, PDF, JSON_MIME].includes(mime)) throw new Error('Неподдерживаемый тип файла');
+    const recipient = window.prompt('Email получателя (необязательно)', '') || '';
+    const subject = window.prompt('Тема (необязательно)', file.filename || '') || '';
+    const text = window.prompt('Текст (необязательно)', '') || '';
+    const result = await nativePromise(id => PortalNative.shareBase64FileAsync(
+      id, safeFileName(file.filename), mime, file.file_b64, recipient, subject, text
+    ));
+    if (!result.ok) throw new Error(result.error || 'Не удалось открыть системную отправку');
+  }
+
   function renderDocs() {
     const rows = state.rows.map(d => {
       const archived = d.status === 'archived';
@@ -106,6 +119,7 @@
         <p class="meta">${size} · версия ${h(d.revision || 1)}</p>
         <div class="item-actions">
           ${!archived && d.status === 'ready' ? btn('Скачать', 'downloadPortalDocument', `data-id="${h(d.id)}"`, 'secondary') : ''}
+          ${!archived && d.status === 'ready' && window.PortalNative?.shareBase64FileAsync ? btn('Поделиться', 'sharePortalDocument', `data-id="${h(d.id)}"`, 'secondary') : ''}
           ${!archived && allowed('documents.manage') ? btn('В архив', 'archivePortalDocument', `data-id="${h(d.id)}"`, 'text') : ''}
         </div>
       </article>`;
@@ -195,6 +209,14 @@
     await savePayload(file);
   };
 
+  actions.sharePortalDocument = async button => {
+    requireDocs();
+    const row = state.rows.find(item => String(item.id) === String(button.dataset.id));
+    if (!row || row.status !== 'ready') throw new Error('Документ недоступен для отправки');
+    const file = await productionGet('document-file?id=' + encodeURIComponent(button.dataset.id));
+    await sharePayload(file);
+  };
+
   actions.archivePortalDocument = async button => {
     requireDocs();
     if (!allowed('documents.manage')) throw new Error('Нет права архивировать документы');
@@ -266,7 +288,9 @@
         <p class="meta">Шаблон PORTAL ${h(state.templateInfo?.template_version || 'v1.0')} · ${SHEETS.join(' · ')}</p>
         <div class="stack">
           ${btn('Скачать пустой шаблон', 'downloadExcelTemplate', 'data-kind="blank"', 'secondary block')}
+          ${window.PortalNative?.shareBase64FileAsync ? btn('Поделиться пустым шаблоном', 'shareExcelTemplate', 'data-kind="blank"', 'secondary block') : ''}
           ${btn('Скачать шаблон с данными компании', 'downloadExcelTemplate', 'data-kind="prefill"', 'secondary block')}
+          ${window.PortalNative?.shareBase64FileAsync ? btn('Поделиться шаблоном компании', 'shareExcelTemplate', 'data-kind="prefill"', 'secondary block') : ''}
         </div>
       </div>
       <div class="card">
@@ -319,6 +343,12 @@
     const endpoint = button.dataset.kind === 'prefill' ? 'document-template' : 'document-template-blank';
     const file = await productionGet(endpoint);
     await savePayload(file);
+  };
+
+  actions.shareExcelTemplate = async button => {
+    if (button.dataset.kind === 'prefill') requireImport(); else requireDocs();
+    const endpoint = button.dataset.kind === 'prefill' ? 'document-template' : 'document-template-blank';
+    await sharePayload(await productionGet(endpoint));
   };
 
   actions.previewExcelImport = async () => {
@@ -396,7 +426,7 @@
         const counts = result.result_counts || {};
         renderImport(
           `<div class="notice">Импорт применён: новых ${num(counts.new || 0)}, обновлено ${num(counts.updated || 0)}, без изменений ${num(counts.unchanged || 0)}.</div>` +
-          (result.result_document_id ? btn('Скачать отчёт импорта', 'downloadImportResult', `data-id="${h(result.result_document_id)}"`, 'secondary') : '')
+          (result.result_document_id ? btn('Скачать отчёт импорта', 'downloadImportResult', `data-id="${h(result.result_document_id)}"`, 'secondary') + (window.PortalNative?.shareBase64FileAsync ? btn('Поделиться отчётом', 'shareImportResult', `data-id="${h(result.result_document_id)}"`, 'secondary') : '') : '')
         );
         toast('Импорт применён');
         return;
@@ -404,7 +434,7 @@
 
       renderImport(
         `<div class="notice warning">Импорт полностью отменён. Ошибок: ${num(result.error_report?.length || 0)}. Скачайте безопасный отчёт и выполните новый preview после исправления файла.</div>` +
-        (result.result_document_id ? btn('Скачать отчёт импорта', 'downloadImportResult', `data-id="${h(result.result_document_id)}"`, 'secondary') : '')
+        (result.result_document_id ? btn('Скачать отчёт импорта', 'downloadImportResult', `data-id="${h(result.result_document_id)}"`, 'secondary') + (window.PortalNative?.shareBase64FileAsync ? btn('Поделиться отчётом', 'shareImportResult', `data-id="${h(result.result_document_id)}"`, 'secondary') : '') : '')
       );
     } catch (error) {
       let terminal = null;
@@ -419,7 +449,7 @@
       if (terminal?.status === 'failed') {
         renderImport(
           `<div class="notice warning">Импорт полностью отменён. Ошибок: ${num(terminal.error_report?.length || 0)}. Сервер сохранил безопасный отчёт.</div>` +
-          (terminal.result_document_id ? btn('Скачать отчёт импорта', 'downloadImportResult', `data-id="${h(terminal.result_document_id)}"`, 'secondary') : '')
+          (terminal.result_document_id ? btn('Скачать отчёт импорта', 'downloadImportResult', `data-id="${h(terminal.result_document_id)}"`, 'secondary') + (window.PortalNative?.shareBase64FileAsync ? btn('Поделиться отчётом', 'shareImportResult', `data-id="${h(terminal.result_document_id)}"`, 'secondary') : '') : '')
         );
         return;
       }
@@ -428,7 +458,7 @@
         const counts = terminal.result_counts || {};
         renderImport(
           `<div class="notice">Импорт уже применён: новых ${num(counts.new || 0)}, обновлено ${num(counts.updated || 0)}, без изменений ${num(counts.unchanged || 0)}. Повтор не создал второй импорт.</div>` +
-          (terminal.result_document_id ? btn('Скачать отчёт импорта', 'downloadImportResult', `data-id="${h(terminal.result_document_id)}"`, 'secondary') : '')
+          (terminal.result_document_id ? btn('Скачать отчёт импорта', 'downloadImportResult', `data-id="${h(terminal.result_document_id)}"`, 'secondary') + (window.PortalNative?.shareBase64FileAsync ? btn('Поделиться отчётом', 'shareImportResult', `data-id="${h(terminal.result_document_id)}"`, 'secondary') : '') : '')
         );
         return;
       }
@@ -446,5 +476,10 @@
     requireImport();
     const file = await productionGet('document-file?id=' + encodeURIComponent(button.dataset.id));
     await savePayload(file);
+  };
+
+  actions.shareImportResult = async button => {
+    requireImport();
+    await sharePayload(await productionGet('document-file?id=' + encodeURIComponent(button.dataset.id)));
   };
 })();
