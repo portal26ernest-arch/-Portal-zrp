@@ -107,7 +107,7 @@
   }
 
   function renderDocs() {
-    const rows = state.rows.map(d => {
+    const documentCard = d => {
       const archived = d.status === 'archived';
       const size = d.size_bytes ? `${Math.max(1, Math.round(d.size_bytes / 1024))} КБ` : '—';
       return `<article class="item ${archived ? 'archived-document' : ''}" data-document-id="${h(d.id)}">
@@ -116,14 +116,25 @@
           <span class="badge ${archived ? 'amber' : 'green'}">${archived ? 'В архиве' : h(d.status || 'готов')}</span>
         </div>
         <p class="meta">${h(d.document_type)} · ${h(d.category)} · ${h((d.document_date || d.created_at || '').slice(0, 10))}</p>
-        <p class="meta">${size} · версия ${h(d.revision || 1)}</p>
+        <p class="meta">${d.client_id ? `Клиент #${h(d.client_id)} · ` : ''}${d.employee_id ? `Сотрудник #${h(d.employee_id)} · ` : ''}${size} · версия ${h(d.revision || 1)} · ${archived ? 'архивная запись' : 'текущая версия'}</p>
         <div class="item-actions">
           ${!archived && d.status === 'ready' ? btn('Скачать', 'downloadPortalDocument', `data-id="${h(d.id)}"`, 'secondary') : ''}
           ${!archived && d.status === 'ready' && window.PortalNative?.shareBase64FileAsync ? btn('Поделиться', 'sharePortalDocument', `data-id="${h(d.id)}"`, 'secondary') : ''}
           ${!archived && allowed('documents.manage') ? btn('В архив', 'archivePortalDocument', `data-id="${h(d.id)}"`, 'text') : ''}
         </div>
       </article>`;
-    }).join('');
+    };
+    const folders = new Map();
+    for (const d of state.rows) {
+      const month = (d.document_date || d.created_at || '').slice(0, 7) || 'без даты';
+      const folder = [d.category || 'Без категории', d.document_type || 'Без типа', month,
+        d.client_id ? `клиент #${d.client_id}` : 'компания', d.employee_id ? `сотрудник #${d.employee_id}` : ''].filter(Boolean).join(' / ');
+      if (!folders.has(folder)) folders.set(folder, []);
+      folders.get(folder).push(d);
+    }
+    const rows = [...folders.entries()].map(([folder, docs]) =>
+      `<section class="card document-folder" data-document-folder="${h(folder)}"><h3>${h(folder)}</h3><div class="list">${docs.map(documentCard).join('')}</div></section>`
+    ).join('');
 
     const createButton = allowed('documents.manage')
       ? btn('Создать расчётный документ', 'newPayrollDocument', '', 'secondary')

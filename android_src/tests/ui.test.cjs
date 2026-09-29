@@ -201,6 +201,9 @@ test('browser UI regression',async t=>{
       await page.evaluate(full=>mock.stage3Permissions=full,full);await login(page);
 
       await page.evaluate(()=>go('documents'));await page.waitForFunction(()=>document.querySelector('#content').innerText.includes('Готовый документ'));
+      assert.equal(await page.locator('#content [data-document-folder]').count(),2);
+      assert.match(await page.locator('#content').innerText(),/текущая версия/);
+      assert.match(await page.locator('#content').innerText(),/архивная запись/);
       assert.equal(await page.locator('[data-action=downloadPortalDocument]').count(),1);
       await page.locator('[data-action=downloadPortalDocument]').click();await page.waitForFunction(()=>mock.saved?.filename==='PORTAL_report.xlsx');
       await page.locator('[data-action=archivePortalDocument]').click();await page.locator('[data-action=confirmSheet]').click();
