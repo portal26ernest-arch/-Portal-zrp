@@ -233,3 +233,11 @@
 124. ✅ Этот файл является постоянным checklist: перед release проверять все ⏳/🟡 пункты и не терять их между сборками.
 125. 🟡 Stage 7 baseline и последняя версия кода подтверждены в PORTAL_STAGE7_VERIFIED_REPORT.md: отдельная test-БД, checksum-история migrations, loopback API/PostgreSQL, runtime-роли, RLS, live CRUD/tenant isolation/restart и внешний HTTPS Quick Tunnel smoke. SSLIP DNS разрешается на VPS, но HTTP-01 на TCP/80 не прошёл; постоянный домен/HTTPS и 3.4 release gate остаются открыты.
 126. ✅ Канонический визуальный регламент preview APK хранится в `docs/PORTAL_UI_BLUEPRINT_PREVIEW_APK.md`. Каждая preview APK должна сохранять утверждённую карту меню/экранов, директорский `PORTAL Сегодня`, состояния LIVE/PREVIEW/FUTURE и запрет на мёртвые кнопки.
+
+## J. Part 12 finalization candidate (30.09.2026)
+
+- Base verified: `bc95a942021bb5c43d112f51d2c2e7881059b47a` (Part 11); company knowledge commit `615495c3fef1f134ac651416f60b37809bda6380` is included.
+- Candidate Android metadata advanced from 3.4/34 to `3.5-dev-staging`/35. This is a staging build candidate only; no release workflow or production endpoint is authorized by this change.
+- Part 12 implementation is in progress. No additional roadmap item is marked complete by this bootstrap checkpoint. Existing Parts 8–11 evidence remains authoritative for their verified items.
+- Production cutover, DB mutation, DNS changes, production service/config changes, and real financial operations were not performed.
+- Windows installer is not yet implemented; local `dotnet` is unavailable. See `PORTAL_FINALIZATION_PART12_PROGRESS.md` for remaining work and `PORTAL_FINAL_EXTERNAL_BLOCKERS.md` for provider/owner actions.

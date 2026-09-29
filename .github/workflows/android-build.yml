@@ -3,7 +3,7 @@ name: Build PORTAL Android APK
 on:
   workflow_dispatch:
   push:
-    branches: [ "main", "portal-next-b003", "codex-documents-excel-part4", "codex-communications-news-part5", "assistant-release-3.4-candidate" ]
+    branches: [ "main", "portal-next-b003", "codex-documents-excel-part4", "codex-communications-news-part5", "assistant-release-3.4-candidate", "codex-finalization-megapack-part12" ]
     paths:
       - "android_src/**"
       - ".github/workflows/android-build.yml"
@@ -65,7 +65,7 @@ jobs:
           APK=$(find android_src/app/build/outputs/apk/staging -name '*.apk' -type f | head -n 1)
           test -n "$APK"
           BADGING=$("$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK")
-          grep -q "^package: name='ru.portal.app.staging'.*versionCode='34'.*versionName='3.4-dev-staging'" <<< "$BADGING"
+          grep -q "^package: name='ru.portal.app.staging'.*versionCode='35'.*versionName='3.5-dev-staging'" <<< "$BADGING"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
       - name: Prepare named APK
         id: artifact
@@ -79,6 +79,21 @@ jobs:
           test -n "$APK"
           cp "$APK" "$NAME.apk"
           sha256sum "$NAME.apk" > "$NAME.apk.sha256"
+          sed 's/^versionName=.*/versionName=3.5-dev-staging/' android_src/release.properties > "$NAME.version.properties"
+          cp PORTAL_PART12_CHANGELOG.md "$NAME.changelog.md"
+          cat > "$NAME.test-report.txt" <<'REPORT'
+          PORTAL 3.5-dev-staging artifact validation
+          This report is emitted only after the workflow's set -e validation steps pass.
+          Passed: node android_src/tests/build-security.test.cjs
+          Passed: node android_src/tests/employee-create-mode.test.cjs
+          Passed: node android_src/tests/native-shell.test.cjs
+          Passed: node android_src/tests/legacy-boundary.test.cjs
+          Passed: node android_src/tests/documents-chat.test.cjs
+          Passed: Gradle assembleStaging
+          Passed: Android package/version metadata check (ru.portal.app.staging, 3.5-dev-staging, 35)
+          Passed: apksigner verify --verbose
+          Detailed CI results are available in the GitHub Actions run containing this artifact.
+          REPORT
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
@@ -86,5 +101,8 @@ jobs:
           path: |
             ${{ steps.artifact.outputs.name }}.apk
             ${{ steps.artifact.outputs.name }}.apk.sha256
+            ${{ steps.artifact.outputs.name }}.version.properties
+            ${{ steps.artifact.outputs.name }}.changelog.md
+            ${{ steps.artifact.outputs.name }}.test-report.txt
           if-no-files-found: error
           retention-days: 30

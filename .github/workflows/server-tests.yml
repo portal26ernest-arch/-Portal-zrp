@@ -3,7 +3,7 @@ name: PORTAL server isolation tests
 on:
   workflow_dispatch:
   push:
-    branches: ["portal-next-b003", "assistant-release-3.4-candidate", "assistant-part10-web-invoice-e2e", "assistant-part11-web-template-download"]
+    branches: ["portal-next-b003", "assistant-release-3.4-candidate", "assistant-part10-web-invoice-e2e", "assistant-part11-web-template-download", "codex-finalization-megapack-part12"]
     paths: ["server/**", ".github/workflows/server-tests.yml"]
   pull_request:
     paths: ["server/**", ".github/workflows/server-tests.yml"]
