@@ -61,27 +61,27 @@
 47. ⏳ Автоматические проверки/напоминания по невыставленным работам и неоплатам по расписанию.
 48. ✅ Общий payroll Excel в новом APK/VPS-контуре: сводка, сотрудники и детализация.
 49. ✅ Excel-расчётные листы по каждому сотруднику формируются отдельными листами.
-50. 🟡 Серверный A4 PDF-расчётный лист строится только из закрытого payroll snapshot и регистрируется как scoped Document; реальный renderer smoke с ReportLab 5.0.1/Unicode font не прошёл в локальном окружении.
-51. 🟡 PDF «Счёт на оплату» использует существующие invoice/client/company data и строки работ, а invoice/payroll routes регистрируют scoped Documents; PostgreSQL E2E test добавлен, но локально не исполнен, реальный renderer gate открыт.
+50. ✅ Серверный A4 PDF-расчётный лист строится только из закрытого payroll snapshot и регистрируется как scoped Document; реальный ReportLab 5.0.1 + Unicode font smoke и PostgreSQL/RLS gate пройдены на изолированном VPS.
+51. ✅ PDF «Счёт на оплату» использует существующие invoice/client/company data и строки работ; реальный renderer, повторная детерминированная генерация, scoped Documents и PostgreSQL/RLS E2E подтверждены на изолированном VPS.
 52. 🟡 Экспорт «Сводка / Детализация» реализован; отдельный лист фактических выплат ещё требуется.
 
 ## D. Документы и Excel-импорт/экспорт
 
 53. 🟡 Общий Documents API подключён к Android/Web UI; в Web реализованы список, фильтры, поиск, пагинация, скачивание, архивирование и PDF-действия. Production rollout ещё не проверен.
-54. 🟡 Blob и document metadata разделены, есть company-scoped storage и PostgreSQL/RLS слой; PDF генераторы локальны, а PDF-specific PostgreSQL E2E ожидает изолированный PG прогон.
+54. ✅ Blob и document metadata разделены, company-scoped storage и FORCE RLS подтверждены; PDF-specific PostgreSQL E2E с реальным renderer прошёл в одноразовой test DB с cleanup.
 55. 🟡 Filters/paging Documents API и общий Web list/search UI реализованы; серверные regression-тесты фильтрации проходят, полная browser-матрица остаётся для staging.
 56. 🟡 Общий Web-экран Documents и серверные права/archive покрыты backend-тестами и browser smoke; production deployment ещё не проверен.
 57. ✅ Стандартный Excel-шаблон PORTAL v1.0: четыре русских листа, blank/prefill API для директора и выбранной компании Platform Owner; openpyxl round trip и изоляция проверены.
-58. 🟡 В Web доступны blank/prefilled шаблоны; browser adapter проверяет MIME/размер и скачивание, а end-to-end проверка фактического файла остаётся staging-gate.
+58. 🟡 В Web доступны blank/prefilled шаблоны; реальный XLSX upload/preview/apply browser E2E пройден, но фактическое скачивание blank/prefilled template через браузер остаётся отдельным staging-gate.
 59. 🟡 Android bridge сохраняет поддерживаемые файлы в Downloads через system picker/MediaStore; source/UI tests есть, Java compile и проверка на устройстве открыты.
 60. 🟡 Web Share API с безопасным download fallback реализован; фактическое поведение Share в целевых браузерах ещё нужно проверить.
 61. 🟡 Email/тема/текст передаются в системный Android intent; отправка остаётся под контролем выбранного приложения, SMTP/API отправка не добавлена.
-62. 🟡 Web Excel chooser использует обычный file input; Chromium smoke подтверждает контрол, полный upload/preview/apply round-trip ожидает staging.
-63. 🟡 Общий Android/Web Excel UI содержит chooser, preview/classifications, явное подтверждение apply и download/share результата; browser smoke проходит, полный XLSX round-trip ожидает staging.
+62. ✅ Web Excel chooser прошёл реальный Chromium → HTTP API → PostgreSQL staging round-trip: file input, preview, явное подтверждение, apply и скачивание результата.
+63. 🟡 Общий Android/Web Excel UI содержит chooser, preview/classifications, явное подтверждение apply и download/share результата; реальный Web XLSX staging round-trip пройден, Android device/WebView flow ещё требует проверки.
 64. ✅ Backend-валидация Excel: версия/листы/колонки, типы/роли/деньги/даты, ссылки, конфликты тарифов и лимиты ZIP/XML/строк проверены.
 65. ✅ Backend: дубли, неоднозначные identity, unique-конфликты и идемпотентный повтор import_id/checksum проверены, включая реальную PostgreSQL.
 66. ✅ Backend: явный apply к выбранной компании, атомарный rollback, неизменяемый результат и отчёт в Documents проверены в SQLite и одноразовой PostgreSQL. Production rollout не выполнялся.
-67. 🟡 Payroll XLSX export и invoice/payroll PDF routes реализованы; реальный PDF renderer и PDF PostgreSQL E2E gates открыты.
+67. ✅ Payroll XLSX export и invoice/payroll PDF routes реализованы; реальный ReportLab renderer и PDF PostgreSQL E2E с tenant isolation/immutability подтверждены.
 68. 🟡 Общий Documents API и Web-скачивание доступны; полный cross-client sync workflow и production-проверка остаются открытыми.
 
 ## E. Внутренние коммуникации
@@ -112,9 +112,9 @@
 81. ✅ Полноэкранный immersive-режим Android с восстановлением после возврата фокуса.
 82. ✅ Встроенная проверка, безопасная загрузка, checksum/package/version/signer validation и системный Android Installer реализованы; Node контрактные тесты проходят. Отдельный gate: проверить разрешение неизвестных приложений и реальную установку/обновление на устройстве.
 83. 🟡 Release workflow проверяет подпись и pin сертификата, APK package/version metadata и соответствие manifest артефакту. Постоянного signing key и доказательства update поверх установленной production APK пока нет.
-84. 🟡 Первый функциональный Web-клиент на общем UI/API реализован; остаются PostgreSQL staging и E2E-проверка прикладных сценариев.
+84. ✅ Первый функциональный Web-клиент подтверждён реальным Chromium → HTTP API → disposable PostgreSQL staging E2E: login/meta, Documents, archive/download, Excel preview/apply/result, cross-company denial и logout/revocation.
 85. ⏳ Windows installer/обновление Desktop-клиента.
-86. 🟡 Core UI и permission model общие для Android/Web; полная platform parity и browser-поведение требуют дополнительной staging-проверки.
+86. 🟡 Core UI и permission model общие для Android/Web; локальная browser role-матрица проходит, а реальный PostgreSQL browser E2E подтверждён для admin. Реальные Platform Owner/Packer scopes и Android device parity ещё требуют staging-проверки.
 87. ✅ Десятичная нумерация сборок 3.0 → 3.1 → … → 3.9 → 4.0.
 88. ✅ GitHub CI: серверные тесты, Android UI и сборка APK, отдельные Web/Playwright checks.
 
@@ -170,6 +170,17 @@
 - 🟡 Добавлены runnable PDF route smoke с реальными изолированными test API records и PostgreSQL PDF generated-Documents integration test. Оба требуют исполнения в среде с pinned renderer/изолированным PostgreSQL соответственно.
 - ⏳ Production rollout, Desktop/Web client/sync, постоянные домен/HTTPS и Android signing остаются отдельными незакрытыми воротами.
 - Точные команды и ограничения см. `PORTAL_DOCUMENTS_EXCEL_PART4_REPORT.md`.
+
+## G4. Web + PostgreSQL Part 8 — реальные staging-gates (29.09.2026)
+
+- ✅ Реальный Chromium → HTTP API → disposable PostgreSQL E2E пройден: login/meta, Documents download/archive, XLSX preview/apply/result, cross-company 403 и logout/revocation 401.
+- ✅ Финальный PostgreSQL Documents/Excel/PDF suite: 6 tests OK, 1 browser-only skip; browser gate выполнен отдельно через Windows Chromium и SSH tunnel.
+- ✅ Реальный ReportLab 5.0.1 + DejaVuSans PDF smoke: 1/1 OK; A4, Unicode/Cyrillic, signature order и financial immutability подтверждены.
+- ✅ Найден и исправлен production-дефект недетерминированных PDF: ReportLab `invariant=1`, повторная генерация возвращает тот же scoped Document.
+- ✅ Финальная локальная регрессия Part 8: Python 199 OK / 19 skipped, Node 31/31 PASS, compileall/node-check/diff-check OK.
+- ✅ После VPS-тестов: disposable DB/roles и временные ReportLab dependencies удалены; production Stage 7/production DB не менялись.
+- 🟡 Открыты реальные Platform Owner/Packer browser scopes, Android device/WebView flows, Web download blank/prefill template, production rollout и Windows installer.
+- Полный отчёт: `PORTAL_WEB_POSTGRES_PART8_REPORT.md`.
 
 ## H. WMS TalAnt, ТСД и сканирование
 

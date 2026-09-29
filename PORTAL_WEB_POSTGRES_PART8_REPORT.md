@@ -1,36 +1,88 @@
-# PORTAL Web + PostgreSQL Staging Part 8
+# PORTAL Web + PostgreSQL Part 8 — verified report
 
-Дата: 29.09.2026  
-Ветка: `codex-web-postgres-part8`  
-База: `c1a53bc33a136836a170f68f2548182a77a0c6e4`
+Дата: 29.09.2026
+Ветка: `codex-web-postgres-part8`
+База Part 8: `c1a53bc` (Part 7)
+Проверенный implementation HEAD до обновления отчёта: `7dd6c7c`
 
-## Результат
+## Итог
 
-Добавлен opt-in gate `server/test_web_postgresql_e2e.py`. Он повторно использует существующий disposable Documents/PostgreSQL fixture, а не создаёт параллельный migration/fixture стек. Переменная `PORTAL_WEB_PG_E2E=1` выбирает отдельные случайные ресурсы `portal_test_web_*`, `portal_web_t_*`, `portal_web_c_*`. Fixture применяет актуальные миграции Stage 8, включает FORCE RLS проверки существующих Documents/Excel тестов, запускает API на loopback и сохраняет blobs во временном каталоге. Cleanup останавливает HTTP server, восстанавливает настройки, удаляет только имена с ожидаемым prefix и удаляет temp directory.
+Part 8 прошёл реальные staging-gates для Web → HTTP API → PostgreSQL, Documents/Excel и PDF. Production БД, production service и `/srv/portal-stage7` не изменялись: для проверок использовались одноразовые ресурсы в `/tmp` и случайные test DB/roles.
 
-Для режима Web добавлен `android_src/tests/web-postgresql.playwright.cjs`: реальный `/web/`, login и `/api/v3/meta`, переход на Documents, попытка подменить company header и проверка отзыва сессии через `/api/logout`. В тесте отсутствует `page.route` и mock бизнес API. PIN и токены передаются только дочернему процессу через environment и не печатаются.
+## Реальный Web/PostgreSQL E2E
 
-## Проверки в этой среде
+Web fixture поднимался на VPS под `postgres` с БД префикса `portal_test_web_*` и ролями `portal_web_*`. API слушал loopback; Chromium запускался на Windows и подключался через SSH local tunnel. Business API не мокировался.
 
-- Android/Web Node suite: **31 passed, 0 failed, 0 skipped**.
-- Существующий mocked Web Playwright smoke: **1 passed**.
-- `python -m unittest discover -p test_*.py`: **197 tests, OK, 17 skipped** (environment gates).
-- `python -m compileall -q server android_src/tools`: **успешно**.
-- `git diff --check`: **успешно**.
-- Targeted `test_documents_api`, `test_documents_pdf`, `test_excel_import`, `test_web_postgresql_e2e`: **28 tests, OK, 2 skipped** (environment gates).
+Подтверждено:
+- вход admin и реальный `/api/v3/meta`;
+- Documents list, PDF download, archive и блокировка download после archive;
+- реальный XLSX file chooser → preview → explicit confirm/apply → import result download;
+- synthetic импорт создал 1 запись только в company A и 0 в company B;
+- forged `X-Portal-Company` для другой компании получил HTTP 403;
+- logout отозвал token, повторный `/api/me` получил HTTP 401, reload вернул login;
+- итог: `BROWSER_EXIT=0`, `FIXTURE_VERIFIED=True`, `CLEANUP_COMPLETE=True`.
 
-## Ограничения исполнения
+Первый прогон выявил дефект самого Playwright-test: ожидаемые 403/401 ошибочно считались console errors. Исправлено commit `481aef1`; неожиданные page/console errors по-прежнему запрещены.
 
-Реальный PostgreSQL Web gate **не запускался**: в текущей Windows-среде отсутствуют `psql`, `pg_ctl`, `initdb`, `psycopg`, локальный PostgreSQL, WSL Linux runtime и Docker/Podman. ReportLab также отсутствует. Поэтому disposable DB/roles не создавались и cleanup proof реального запуска отсутствует. Новая Playwright ветка требует Chromium и Node `playwright` в среде запуска; до PG среды она не проверена.
+## PostgreSQL/Documents/Excel
 
-PDF checks в имеющемся PostgreSQL fixture используют синтетические bytes через patched renderer. Они не считаются real PDF renderer gate. Отдельный `test_documents_pdf.py` не заменяет renderer отсутствие mock-ом, но в данной среде его ReportLab runtime prerequisite отсутствует.
+Финальный VPS suite на реальном PostgreSQL: **6 tests, OK, 1 skipped**. Единственный skip — browser-only test, потому что Chromium уже был исполнен отдельно через внешний Windows browser-host.
 
-Platform Owner реальный Web scope не подтверждён этим Part 8 fixture; роль и credentials Owner не создаются. Excel preview/apply, rollback и idempotency покрываются существующими API tests на disposable PostgreSQL fixture, но браузерный XLSX round-trip с file chooser этим gate не подтверждён.
+Пройдены:
+- runtime roles не superuser и без BYPASSRLS;
+- FORCE RLS и cross-company guards для Documents/Excel;
+- metadata/download/archive tenant isolation;
+- Excel preview без мутаций, apply, retry/idempotency, synthetic failure rollback и immutable result;
+- invoice/payroll Documents company scope и финансовая неизменность;
+- реальный PDF renderer внутри disposable PostgreSQL fixture.
 
-## Roadmap
+## Реальный PDF renderer
 
-Roadmap не повышен: пункты 84 и 86 остаются 🟡, пункты PDF 50/51 остаются 🟡, 85 остаётся ⏳. Другие пункты 53–68 не менялись без нового подтверждения. Не было основания отмечать PostgreSQL Web E2E, role parity или реальный PDF renderer как пройденные.
+На VPS найден системный Unicode font `/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf`. `reportlab==5.0.1` устанавливался только во временный `/tmp` target и после теста удалялся; Stage 7 venv не изменялся.
 
-## Рекомендуемый Part 9
+Standalone real PDF smoke: **1/1 OK**. Подтверждены реальные `%PDF`, `%%EOF`, A4/MediaBox, Unicode/Cyrillic font, порядок подписей расчётного листа и отсутствие клиентской детализации в кратком payroll slip.
 
-Запустить opt-in gate на изолированном Linux PostgreSQL staging runner с pinned Python/ReportLab/Unicode font и Chromium; получить подтверждённое завершение cleanup. Затем добавить браузерный XLSX round-trip с preview/apply/result и отдельно решить безопасную модель synthetic Platform Owner fixture. По итогам обновлять только те roadmap пункты, которые реально прошли.
+Комбинированный ReportLab + PostgreSQL/RLS gate также пройден. Он выявил настоящий production-дефект: одинаковая повторная генерация PDF создавала разные checksums/Document ID из-за недетерминированных PDF metadata. Renderer переведён на ReportLab `invariant=1` в commit `e7f8643`; после этого повторная генерация стала детерминированной и возвращает тот же Document.
+
+Отдельно исправлена проверка Unicode glyph в smoke-test (`ord('Р')`, commit `678b444`) и изолирован payroll period нового PG/PDF test от других test cases (commit `7dd6c7c`).
+
+## Финальная локальная регрессия
+
+- Python server: **199 tests OK, 19 skipped**.
+- Node/Android/Web: **31/31 PASS**.
+- `python -m compileall -q server android_src/tools`: OK.
+- `node --check android_src/tests/web-postgresql.playwright.cjs`: OK.
+- `git diff --check`: OK.
+
+Warnings ограничены существующими `datetime.utcnow()` deprecation и отдельными SQLite ResourceWarning; test failures отсутствуют.
+
+## Cleanup и безопасность
+
+После финальных VPS-тестов отдельно подтверждено:
+- `DB_CLEAN`: disposable `portal_test_documents_*` / `portal_test_web_*` отсутствуют;
+- `ROLE_CLEAN`: disposable `portal_docs_*` / `portal_web_*` роли отсутствуют;
+- `TEMP_DEPS_CLEAN`: временный ReportLab target удалён;
+- production PostgreSQL не переключалась и не использовалась как test target;
+- production Stage 7 service/config не менялись.
+
+## Коммиты Part 8
+
+- `9dee44d` — Web PostgreSQL Part 8 staging E2E gate.
+- `481aef1` — корректная обработка ожидаемых HTTP 403/401 в browser E2E.
+- `678b444` — корректная Unicode glyph assertion для ReportLab.
+- `c8e17a7` — combined real PDF + PostgreSQL verification gate.
+- `e7f8643` — deterministic PDF generation через ReportLab invariant mode.
+- `7dd6c7c` — независимый historical payroll fixture для полного suite.
+
+## Roadmap после проверки
+
+Переведены в ✅ только подтверждённые gates: **50, 51, 54, 62, 67, 84**.
+
+Остаются открытыми:
+- реальное скачивание blank/prefilled Excel template через Web browser;
+- Android device/WebView file/save/share/install flows и Java/device gate;
+- реальный PostgreSQL browser E2E для Platform Owner/Packer scopes и полная platform parity;
+- production rollout/cutover, постоянный production domain/HTTPS и Windows installer;
+- полный cross-client Documents sync workflow.
+
+Part 8 готов к интеграции в release-кандидат после обычной merge/rebase проверки; production cutover этим отчётом не разрешается.
