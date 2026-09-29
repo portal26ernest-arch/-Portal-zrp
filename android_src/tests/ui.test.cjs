@@ -348,6 +348,13 @@ test('browser UI regression',async t=>{
       await page.locator('[data-action=employeeActivity]').click();await page.waitForSelector('#sheetContent');
       assert.match(await page.locator('#sheetContent').innerText(),/Активность в системе/);
       assert.match(await page.locator('#sheetContent').innerText(),/История входов/);
+      await page.evaluate(()=>closeSheet());
+      await page.locator('[data-action=companyAudit]').click();await page.waitForSelector('#auditEntity');
+      await page.locator('#auditActor').fill('7');await page.locator('#auditAction').fill('access_invite.created');await page.locator('#auditEntity').fill('invite-42');
+      await page.locator('#auditFilterForm [type=submit]').click();
+      await page.waitForFunction(()=>mock.calls.some(c=>c.url.startsWith('/api/v3/audit?')&&c.url.includes('entity_id=invite-42')));
+      const auditCall=await page.evaluate(()=>mock.calls.filter(c=>c.url.startsWith('/api/v3/audit?')).at(-1).url);
+      assert.match(auditCall,/actor_id=7/);assert.match(auditCall,/action=access_invite\.created/);assert.match(auditCall,/entity_id=invite-42/);
       await page.evaluate(()=>{closeSheet();go('clients');});
       await page.waitForSelector('#content [data-action=openClient]');
       await page.locator('[data-action=openClient]').click();await page.waitForSelector('#sheetContent');
