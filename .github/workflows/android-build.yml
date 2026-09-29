@@ -74,12 +74,13 @@ jobs:
           VERSION=$(sed -n 's/^versionName=//p' android_src/release.properties | tr -d '\r')
           [[ "$VERSION" =~ ^[A-Za-z0-9._-]+$ ]]
           NAME="PORTAL_Android_${VERSION}_staging"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
           APK=$(find android_src/app/build/outputs/apk/staging -name '*.apk' -type f | head -n 1)
           test -n "$APK"
           cp "$APK" "$NAME.apk"
           APK_SHA256=$(sha256sum "$NAME.apk" | awk '{print $1}')
           printf '%s  %s\n' "$APK_SHA256" "$NAME.apk" > "$NAME.apk.sha256"
-          echo "name=${NAME}_${APK_SHA256}" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=${NAME}_${APK_SHA256}" >> "$GITHUB_OUTPUT"
           {
             echo "## PORTAL staging APK"
             echo "- Version: 3.5-dev-staging (versionCode 35; build 3.5)"
@@ -104,7 +105,7 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.artifact.outputs.name }}
+          name: ${{ steps.artifact.outputs.artifact_name }}
           path: |
             ${{ steps.artifact.outputs.name }}.apk
             ${{ steps.artifact.outputs.name }}.apk.sha256
