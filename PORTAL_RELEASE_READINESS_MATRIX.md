@@ -14,14 +14,14 @@ Statuses reflect the current roadmap and prior verified reports. `✅` means evi
 | 32 | Managed FBS/FBO/returns | 🟡 | Shipment/batch API exists | Complete workflow states, assignment, return and idempotent UI | No |
 | 33 | Name normalization/history | 🟡 | Roadmap only | Alias/rename history migration and tests | No |
 | 35 | Product catalog UI | 🟡 | Catalog API baseline | Complete CRUD/archive/search and associations | No |
-| 38 | Payroll accrued/paid/balance | 🟡 | `server/test_payroll_settlement.py` | Payroll payment UI/export integration remains incomplete | No |
+| 38 | Payroll accrued/paid/balance | 🟡 | `server/test_payroll_settlement.py`; UI contract `documents-excel.test.cjs` (17 Node UI tests pass) | Shared-client settlement UI added in `0770275`; requires browser/role-flow and disposable PostgreSQL validation | No |
 | 42 | Receivables aging/overdue | 🟡 | Invoice/payment API; today attention check in production service | Aging buckets, client totals, filters and tests | No |
 | 43 | Profitability | 🟡 | Finance/economy API in production service | Validate unified client/batch/company calculations and UI | No |
 | 44–45 | PORTAL Сегодня/financial radar | 🟡 | `today()` in production service | Complete required source-backed metrics and honest empty states | No |
 | 46 | Productivity | 🟡 | Work records and analytics API | Unit/hour/quality period comparisons where source data exists | No |
 | 47 | Scheduled reminders | ⏳ | No scheduler framework evidenced | Implement idempotent company-scoped jobs and tests | No |
 | 52 | Payroll XLSX payments sheet | ✅ | `server/test_report_xlsx.py`; `PayrollSettlementTest.test_payroll_xlsx_document_includes_settlement_sheet_and_payment_date` | None for the tested generation flow | No |
-| 53,55–56,68 | Documents UI and cross-client sync | 🟡 | Parts 8/10/11; `PORTAL_PART11_WEB_TEMPLATE_DOWNLOAD_REPORT.md` | Cross-client create/list/download/archive E2E across sessions | No |
+| 53,55–56,68 | Documents UI and cross-client sync | 🟡 | Parts 8/10/11; E2E case added in `490be25` but local PostgreSQL gate skipped | Run two-session same-company create/list/download/archive E2E on disposable PostgreSQL; complete remaining UI parity | No |
 | 59–63 | Android/Web save/share/email | 🟡 | Android source contracts and Part 11 browser tests | Complete Web Share browser matrix; device check remains manual | Yes (device check only) |
 | 77–79 | Marketplace news ingestion | 🟡 | Part 5 trusted boundary and read API | No proven public official source; scheduler/operator framework incomplete | Yes (source only if available) |
 | 80–83 | Android app/update/release | 🟡 | `PORTAL_RELEASE_3_4_CANDIDATE_REPORT.md`, CI run 24 | CI build 3.5; protected prod release secrets/approval; user device check | Yes |
@@ -37,3 +37,5 @@ Statuses reflect the current roadmap and prior verified reports. `✅` means evi
 | 106–117 | TalAnt/WMS integration | 🔌 | No official API/sandbox evidence provided | Official API, sandbox and credentials | Yes |
 
 See `PORTAL_FINAL_EXTERNAL_BLOCKERS.md` for only external/provider actions. The Part 12 final report will replace this checkpoint matrix with the final evidence and test run IDs when work completes.
+
+Continuation №1 code checkpoints: `490be25` and `0770275`. No roadmap item was promoted on these changes: the PostgreSQL cross-session case has not run, and payroll settlement UI has only local source/contract verification so far.

@@ -40,3 +40,46 @@
 - GitHub at `f963649`: Server #40 and Web #12 both succeeded.
 - GitHub Android UI and APK build at `8408a33` succeeded. APK build #32 at `0eb573e` built the APK but artifact upload failed because hash-suffixed artifact name was incorrectly used as local file prefix. Fixed in `2b95dff`.
 - Android build #33 at `2b95dff` succeeded. Artifact `PORTAL_Android_3.5-dev_staging_1804d3eaaeb95a87bd5424bf781f6cda767e1861bac004a43bba3126a884d054`; APK SHA-256 `1804d3eaaeb95a87bd5424bf781f6cda767e1861bac004a43bba3126a884d054`; ZIP SHA-256 `dd98bfb5532ceb3e80a70a63e866f7f904bdfe4a1cd151c4c17f3d9fa6473e01`.
+
+## CONTINUATION №1 CHECKPOINT — 2026-09-30
+
+### DONE NOW
+
+- Continued in the existing Part 12 worktree/branch; starting checkpoint `42510ab` verified clean and current with origin. No other worktree was changed.
+- Added `test_document_is_shared_between_independent_same_company_sessions` to `server/test_documents_postgresql.py`. It creates two independent auth sessions in company 1 and exercises create/list/metadata/download/archive/reflected archive over HTTP. This is an opt-in disposable PostgreSQL E2E and was **not executed locally**.
+- Added shared Android/Web payroll settlement UI over the existing append-only `/api/v3/payroll-settlements` API: period totals, employee accrued/paid/balance, permission-gated payout, immutable history, and reversal event. No backend ledger/schema was replaced.
+- Commits pushed to the Part 12 feature branch: `490be25` (Documents same-company cross-session E2E coverage), `0770275` (payroll settlement UI).
+
+### PREVIOUSLY PROVEN
+
+- Part 12 payroll settlement XLSX export and staging metadata/build 3.5/35 remain as documented above. Existing APK #33 evidence applies to `2b95dff`, not the new HEAD.
+- Parts 1–11 evidence remains in its original reports; it is not recast as a new Part 12 run.
+
+### TESTS RUN NOW
+
+- `python -m unittest test_documents_api test_portal_documents test_postgresql_documents_schema -q` from `server/`: **21 passed, 0 failed**.
+- `python -m unittest test_documents_postgresql -v` from `server/`: **7 skipped**, all require the opt-in isolated PostgreSQL runner; no PostgreSQL resource was created.
+- `node --test android_src/tests/ui.test.cjs android_src/tests/documents-chat.test.cjs android_src/tests/documents-excel.test.cjs`: **17 passed, 1 skipped, 0 failed**; skip is local Playwright absence.
+- `python -m unittest test_payroll_settlement test_report_xlsx -q` from `server/`: **27 passed, 0 failed**.
+- `node --check android_src/app/src/main/assets/production.js`, `python -m compileall -q server`, and `git diff --check`: passed.
+- One attempted Python invocation from repository root used server module names and failed to import; the same suites were rerun from `server/` and passed. No code/test failure resulted.
+
+### GITHUB CI
+
+- Push of `490be25` triggered Web checks #13 (run `36638474846`) and Server isolation #41 (run `36638474891`). At last observation, the public Actions listing showed server #41 in progress; final conclusions must wait for the runs after latest pushed SHA `0770275`.
+- Push of `0770275` triggered asset-based UI/build workflows. CLI `gh` is absent; public Actions page is available but does not yet expose a final status for the latest SHA. Do not record CI as green until confirmed.
+
+### NOT DONE / NEXT
+
+- Block A: invitation/access-request lifecycle and UI, settings/active-seat management, company audit UI. Existing `employee_invites` is legacy Telegram-oriented and stores raw tokens; active app auth uses another model. Continue with an additive secure design, do not reuse legacy tokens.
+- Block B: Client 360, effective-date tariff history UI/overlap tests, client/product rename history and catalog UI, batch economics and managed internal FBS/FBO/returns.
+- Block C: receivables aging, canonical profitability, full dashboard/productivity, reminder scheduler. Settlement UI code is now present, but needs Web/Android role-flow tests and real PostgreSQL integration coverage.
+- Block D: run the new same-company cross-session Documents E2E on a disposable PostgreSQL runner, expand UI folder/grouping/history/empty/error parity, finish Web Share path matrix, and recheck Android file contracts.
+- Then run broad regression, verify all four latest-SHA CI gates including Android APK build, update evidence-based roadmap/matrix/report, and commit/push a clean checkpoint.
+
+### EXTERNAL / ENVIRONMENT LIMIT
+
+- Local machine has no installed WSL distribution or `psql`; the disposable PostgreSQL E2E could not run locally. No VPS runner/credentials are exposed via the available tools. This is an execution limitation, not evidence that the feature passes or a reason to stop software work.
+- Production database/service/configuration, DNS, signing secrets and physical phone were untouched. Production cutover **NOT performed**.
+
+Latest code checkpoint: `0770275` (branch pushed; documentation update pending in this checkpoint commit).

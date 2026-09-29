@@ -100,3 +100,34 @@ Only roadmap item 52 changed, after its workbook and HTTP/Documents integration 
 ## Explicit production statement
 
 **Production cutover was NOT performed.** This checkpoint does not mark Part 12 complete. Continue from `PORTAL_FINALIZATION_PART12_PROGRESS.md` and update this report only from verified evidence.
+
+## Continuation №1 update — checkpoint `0770275`
+
+This section supersedes the earlier report's “current HEAD” for the continuation work; earlier CI/APK evidence above remains attached only to the SHA where it ran.
+
+### DONE NOW
+
+- `490be25 test: cover same-company cross-session document sharing` adds an opt-in real PostgreSQL/HTTP E2E case using two independent auth sessions in one company. It tests create → list/metadata/download → archive → archive visibility across sessions. The fixture also retains cross-company denial tests. The new PostgreSQL case was skipped locally because this Windows environment has no WSL distribution or `psql`; it is not marked passed.
+- `0770275 feat: add payroll settlement UI` adds balances/history and permission-gated payment and reversal actions to the shared client on top of the existing append-only, cents-based API. Payroll server ledger and migrations were not modified.
+
+### TESTS AT THIS CHECKPOINT
+
+- `python -m unittest test_documents_api test_portal_documents test_postgresql_documents_schema -q` (from `server/`): **21 passed, 0 failed**.
+- `python -m unittest test_documents_postgresql -v` (from `server/`): **7 skipped**, all require opt-in disposable PostgreSQL.
+- `python -m unittest test_payroll_settlement test_report_xlsx -q` (from `server/`): **27 passed, 0 failed**.
+- `node --test android_src/tests/ui.test.cjs android_src/tests/documents-chat.test.cjs android_src/tests/documents-excel.test.cjs`: **17 passed, 1 skipped, 0 failed** (Playwright unavailable locally).
+- `node --check android_src/app/src/main/assets/production.js`, `python -m compileall -q server`, `git diff --check`: passed.
+- GitHub Actions runs for `490be25`: Web #13 (run `36638474846`) and Server #41 (run `36638474891`) were observed; Server #41 was still in progress at last observation. `0770275` has since been pushed and triggered new branch workflows; results remain to be read and recorded. `gh` CLI is unavailable.
+- No Part 12 disposable PostgreSQL/VPS E2E or cleanup rehearsal occurred; no temporary DB/roles/files were created. Previous Parts 8–11 evidence is not represented as new Part 12 evidence.
+
+### Roadmap reconciliation
+
+No roadmap statuses changed on this continuation checkpoint. Item 38 stays 🟡 pending actual UI role-flow and integration validation. Items 53/55/56/68 stay 🟡 pending running the new disposable PostgreSQL cross-session test and the remaining UI parity work. Current numbered status counts remain **72 ✅ / 34 🟡 / 8 ⏳ / 12 🔌**, unchanged from the previous report checkpoint.
+
+### NEXT — software work remains
+
+- Finish Blocks A–D as specified in the continuation task. Highest-priority immediate work: invitation/access lifecycle and company audit/settings; then B client/tariff/product/batch workflows; then finance aging/profitability/dashboard/reminders; then run Documents two-session E2E and finish parity/share tests.
+- Run all four required latest-SHA GitHub gates (Server, Web, Android UI, Android staging build) and fix software failures.
+- Use an available isolated disposable PostgreSQL runner for the new cross-session E2E and migration/rollback tests; no production DB/service may be touched.
+
+**Security boundary:** Production DB/service/configuration, domain/DNS, signing secrets and physical phone were untouched. Production import/cutover **NOT performed**. This is an in-progress checkpoint, not final readiness or completion.
