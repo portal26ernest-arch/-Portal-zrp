@@ -131,7 +131,9 @@ for migration in \
   postgresql_stage5_chat_retention.sql \
   postgresql_stage6_payroll_settlement.sql \
   postgresql_stage4c.sql \
-  postgresql_stage8_documents_excel.sql
+  postgresql_stage8_documents_excel.sql \
+  postgresql_stage9_invoice_revisions.sql \
+  postgresql_stage10_access_invites.sql
 do
   migration_file="$REPO/server/migrations/$migration"
   checksum="$(sha256sum "$migration_file" | awk '{print $1}')"
@@ -169,6 +171,10 @@ for table in $TENANT_TABLES; do
   runuser -u postgres -- psql -X -v ON_ERROR_STOP=1 -q -d "$DB" \
     -c "GRANT SELECT,INSERT,UPDATE,DELETE ON $table TO $TENANT_ROLE"
 done
+runuser -u postgres -- psql -X -v ON_ERROR_STOP=1 -q -d "$DB" \
+  -c "GRANT SELECT,INSERT,UPDATE ON portal_access_invites TO $TENANT_ROLE"
+runuser -u postgres -- psql -X -v ON_ERROR_STOP=1 -q -d "$DB" \
+  -c "REVOKE DELETE ON portal_access_invites FROM $TENANT_ROLE"
 
 runuser -u postgres -- psql -X -v ON_ERROR_STOP=1 -q -d "$DB" <<SQL
 GRANT CONNECT ON DATABASE $DB TO $TENANT_ROLE,$CONTROL_ROLE;

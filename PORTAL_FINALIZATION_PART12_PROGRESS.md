@@ -82,4 +82,38 @@
 - Local machine has no installed WSL distribution or `psql`; the disposable PostgreSQL E2E could not run locally. No VPS runner/credentials are exposed via the available tools. This is an execution limitation, not evidence that the feature passes or a reason to stop software work.
 - Production database/service/configuration, DNS, signing secrets and physical phone were untouched. Production cutover **NOT performed**.
 
-Latest code checkpoint: `0770275` (branch pushed; documentation update pending in this checkpoint commit).
+Latest code checkpoint before Continuation №2: `8460c71` (branch pushed).
+
+## CONTINUATION №2 — local checkpoint before A slice commit (2026-09-30)
+
+### DONE NOW (not a claim that A or Part 12 is complete)
+
+- Added additive Stage 10 `portal_access_invites` SQLite/PostgreSQL schemas. Invite token hash is stored; raw token is returned only once on initial create. Rows are tenant-scoped, PostgreSQL FORCE RLS protected, and terminal/history rows cannot be deleted or have identity fields rewritten.
+- Added create/list/revoke/approve/reject and anonymous POST accept flow. Accept creates an inactive user; explicit approval activates through existing serialized active-seat enforcement. Tokens are company-prefixed, hashed at rest, expiry checked, replay-safe by request ID, and PIN is accepted only in POST body.
+- Added shared Android/Web invite controls for create, existing/new employee binding, safe one-time copy/share, accept, pending list, approve, revoke and empty states. The raw token is held only in the one-time display sheet and is not persisted in app state.
+- Added company access summary and existing-count display; enabled/suspended company check for authenticated mutations and invite acceptance. Existing owner company editor now exposes fee, demo dates, company/service state and seat limit; PORTAL limit remains unchangeable/unlimited. Server-side seat check and concurrency behavior remain in the existing save_user/save_company implementation.
+- Added separate company and Platform Owner audit views with filters/pagination and safe summaries; lifecycle writes create audit entries without token/PIN data.
+- Added Stage 10 to the disposable PostgreSQL Documents integration migration set and the isolated Stage 7 staging migration list. No PostgreSQL/VPS run occurred in this checkpoint.
+- No roadmap status was promoted. Items 10–12/15 remain 🟡 pending Web Playwright role flow, migration/PostgreSQL rehearsal, and remaining setting policy review.
+
+### TESTS RUN NOW
+
+- `python -m unittest test_production -q` from `server/`: **30 passed, 0 failed**.
+- `python -m unittest test_portal_tenancy -q` from `server/`: **15 passed, 0 failed**, including limit, owner override, suspension and concurrent last-seat cases.
+- Targeted invite lifecycle/role/scope/expiry/suspension tests are included above; hash-at-rest, no-token audit, consumed/revoked, owner explicit scope and login after approval passed.
+- `node --test android_src/tests/ui.test.cjs android_src/tests/native-shell.test.cjs`: **9 passed, 1 skipped, 0 failed**; browser Playwright test skipped locally because Playwright is not installed.
+- `node --check` for app/production/UI tests, `python -m compileall -q server`, and `git diff --check`: passed.
+- PostgreSQL Stage 10 migration, actual web browser role flow, Android Gradle compile and all latest-SHA CI are still pending.
+
+### NEXT
+
+- Review and commit this A slice; push the feature branch and wait for Server/Web/Android UI/staging build checks. Fix any failures.
+- Complete outstanding A parity/gates (company module-toggle policy if a supported model exists, owner/company audit browser checks, real Stage 10 PostgreSQL migration/invitation RLS rehearsal); update statuses only after evidence.
+- Then continue B Client 360/tariff and product/production flows; C receivables/profitability/radar/reminders plus settlement role-flow; D Documents cross-client PostgreSQL run/UI/share/file contracts. Do not stop after CI.
+- Before final completion, inspect/fetch and only then decide whether assistant infrastructure commit `1066c77` is safe to cherry-pick; do not duplicate its files.
+
+### NOT DONE / EVIDENCE LIMITS
+
+- A–D are not complete. No disposable PostgreSQL E2E, Web Playwright, full regression, Android CI at a new SHA, or VPS cleanup proof has run in this checkpoint.
+- Local Playwright/psql/VPS execution remains unavailable; continue software work and use configured CI/test runners if provided.
+- Production DB/service, DNS, signing secrets, and physical phone were untouched; production cutover **NOT performed**.

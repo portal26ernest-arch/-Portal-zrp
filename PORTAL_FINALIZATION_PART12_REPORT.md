@@ -101,6 +101,32 @@ Only roadmap item 52 changed, after its workbook and HTTP/Documents integration 
 
 **Production cutover was NOT performed.** This checkpoint does not mark Part 12 complete. Continue from `PORTAL_FINALIZATION_PART12_PROGRESS.md` and update this report only from verified evidence.
 
+## Continuation №2 checkpoint — secure access/Audit slice
+
+This is an in-progress local checkpoint based on `8460c71`; it does not claim A–D or Part 12 completion. No release or production action was taken.
+
+### DONE NOW
+
+- Added Stage 10 tenant-scoped invitation persistence and hash-only one-time token handling. Users are created inactive and require explicit approval. Expired/revoked/consumed token paths fail closed; PIN is sent only in the POST body. The login/PIN is never embedded in a URL.
+- Added API and shared client flows for invite creation, existing/new employee selection, one-time safe copy/share, accept, list, approve and revoke. Added company active-seat summary and Platform Owner company fee/demo/status/limit editing; active-seat enforcement and concurrency lock use the existing server path.
+- Added separate filtered/paginated company and owner audit views. Audit summaries omit credentials, raw tokens and arbitrary request payloads.
+- Included the new PostgreSQL schema in disposable integration setup and the isolated Stage 7 migration list. This schema has FORCE RLS and append-only identity/status transition guards.
+
+### TESTS RUN NOW
+
+- `python -m unittest test_production -q` — **30 passed, 0 failed**.
+- `python -m unittest test_portal_tenancy -q` — **15 passed, 0 failed**.
+- `node --test android_src/tests/ui.test.cjs android_src/tests/native-shell.test.cjs` — **9 passed, 1 skipped, 0 failed** (Playwright absent locally).
+- `node --check` (`app.js`, `production.js`, `ui.test.cjs`), `python -m compileall -q server`, `git diff --check` — passed.
+- No disposable PostgreSQL/VPS test or cleanup ran. Android Gradle and GitHub CI for this new code remain pending.
+
+### NOT DONE / NEXT
+
+- This slice still needs commit/push and current-SHA CI. A’s browser role matrix and Stage 10 PostgreSQL RLS rehearsal have not run; the company-module toggle model was not found in the current schema and must be checked during continuation.
+- Blocks B, C and D have not yet been implemented in this continuation. Do not promote roadmap statuses until their tests and E2E evidence exist.
+- Parts 1–11 and previous Part 12 evidence remain tied to the SHAs and reports where they were tested; this section does not restate those runs as new.
+- Production cutover **NOT performed**.
+
 ## Continuation №1 update — checkpoint `0770275`
 
 This section supersedes the earlier report's “current HEAD” for the continuation work; earlier CI/APK evidence above remains attached only to the SHA where it ran.

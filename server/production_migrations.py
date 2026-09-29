@@ -20,6 +20,7 @@ def migrate(conn, company_id, dialect=None):
         migrate_retention(r)
         migrate_payroll_settlement(r)
         migrate_invoice_revisions(r)
+        migrate_access_invites(r)
         return
     # Current catalog baseline, not a reconstruction or recalculation of history.
     for operation in r.catalog('operations'):
@@ -39,6 +40,45 @@ def migrate(conn, company_id, dialect=None):
     migrate_retention(r)
     migrate_payroll_settlement(r)
     migrate_invoice_revisions(r)
+    migrate_access_invites(r)
+
+def migrate_access_invites(r):
+    """Version 10 adds the hashed-token invitation table; login secrets are never stored here."""
+    if r.dialect=='sqlite':
+        r.sql(f'''CREATE TABLE IF NOT EXISTS portal_access_invites (
+            company_id INTEGER NOT NULL DEFAULT {r.company_id} CHECK(company_id={r.company_id}),
+            id TEXT NOT NULL CHECK(length(id) BETWEEN 1 AND 128),
+            token_hash TEXT NOT NULL CHECK(length(token_hash)=64),
+            created_by INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            status TEXT NOT NULL CHECK(status IN ('pending','accepted','approved','revoked','expired','rejected')),
+            role TEXT NOT NULL CHECK(role IN ('admin','director','manager','packer','shift','accountant')),
+            username TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            employee_id INTEGER,
+            request_id TEXT NOT NULL,
+            user_id INTEGER,
+            accepted_at TEXT,
+            decided_at TEXT,
+            decided_by INTEGER,
+            PRIMARY KEY(company_id,id), UNIQUE(company_id,token_hash), UNIQUE(company_id,request_id)
+        )''')
+        r.sql('CREATE INDEX IF NOT EXISTS portal_access_invites_status ON portal_access_invites(company_id,status,created_at)')
+        r.sql('''CREATE TRIGGER IF NOT EXISTS portal_access_invites_no_delete BEFORE DELETE ON portal_access_invites
+                 BEGIN SELECT RAISE(ABORT,'История приглашений неизменяема'); END''')
+        r.sql('''CREATE TRIGGER IF NOT EXISTS portal_access_invites_guard_update BEFORE UPDATE ON portal_access_invites
+                 WHEN NEW.company_id!=OLD.company_id OR NEW.id!=OLD.id OR NEW.token_hash!=OLD.token_hash
+                   OR NEW.created_by!=OLD.created_by OR NEW.created_at!=OLD.created_at OR NEW.expires_at!=OLD.expires_at
+                   OR NEW.role!=OLD.role OR NEW.username!=OLD.username OR NEW.display_name!=OLD.display_name
+                   OR NEW.employee_id IS NOT OLD.employee_id OR NEW.request_id!=OLD.request_id
+                   OR NOT ((OLD.status='pending' AND NEW.status IN ('accepted','revoked','expired'))
+                       OR (OLD.status='accepted' AND NEW.status IN ('approved','rejected','revoked')))
+                 BEGIN SELECT RAISE(ABORT,'Недопустимое изменение приглашения'); END''')
+    elif not r.has_table('portal_access_invites'):
+        raise RuntimeError('Примените PostgreSQL-миграцию приглашений оператором')
+    if not r.sql('SELECT 1 FROM portal_production_migrations WHERE company_id=? AND version=10',(r.company_id,)).fetchone():
+        r.sql('INSERT INTO portal_production_migrations(company_id,version,applied_at) VALUES(?,10,?)',(r.company_id,utcnow()))
 
 def migrate_activity(r):
     """Version 4 augments the existing session table; no old session is falsified."""

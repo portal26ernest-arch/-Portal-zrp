@@ -21,7 +21,8 @@ from unittest.mock import patch
 
 MIGRATIONS=('postgresql_core_stage4b.sql','postgresql_stage3.sql','postgresql_runtime.sql',
  'postgresql_rls_context.sql','postgresql_stage5_chat_retention.sql','postgresql_stage6_payroll_settlement.sql',
- 'postgresql_stage4c.sql','postgresql_stage8_documents_excel.sql','postgresql_stage9_invoice_revisions.sql')
+ 'postgresql_stage4c.sql','postgresql_stage8_documents_excel.sql','postgresql_stage9_invoice_revisions.sql',
+ 'postgresql_stage10_access_invites.sql')
 
 _WEB_E2E=os.environ.get('PORTAL_WEB_PG_E2E')=='1'
 _DOCS_E2E=os.environ.get('PORTAL_DOCUMENTS_PG_INTEGRATION')=='1'
@@ -55,6 +56,7 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
             # Verify reapplication without modifying earlier migration history.
             cls.migration('postgresql_stage8_documents_excel.sql')
             cls.migration('postgresql_stage9_invoice_revisions.sql')
+            cls.migration('postgresql_stage10_access_invites.sql')
             with psycopg.connect('dbname='+cls.database+' user=postgres host=/var/run/postgresql',autocommit=True) as admin:
                 tenant=sql.Identifier(cls.roles['tenant']);control=sql.Identifier(cls.roles['control'])
                 for role in (tenant,control):
@@ -68,6 +70,7 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
                 for table in tables:admin.execute(sql.SQL('GRANT SELECT,INSERT,UPDATE,DELETE ON {} TO {}').format(sql.Identifier(table),tenant))
                 for table in ('portal_documents','portal_excel_imports'):
                     admin.execute(sql.SQL('GRANT SELECT,INSERT,UPDATE ON {} TO {}').format(sql.Identifier(table),tenant))
+                admin.execute(sql.SQL('GRANT SELECT,INSERT,UPDATE ON portal_access_invites TO {}').format(tenant))
                 admin.execute(sql.SQL('GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO {}').format(tenant))
                 admin.execute(sql.SQL('GRANT EXECUTE ON FUNCTION portal_bind_company(BIGINT,TEXT) TO {}').format(tenant))
                 for table in ('companies','platform_owners','platform_sessions','platform_audit'):

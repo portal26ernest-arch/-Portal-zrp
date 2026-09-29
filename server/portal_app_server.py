@@ -775,6 +775,31 @@ class Handler(BaseHTTPRequestHandler):
         self.tenant_request = False
         path = urlparse(self.path).path
         readonly_preview=path=='/api/v3/excel-import-preview'
+        if path == '/api/access-invites/accept' and method == 'POST':
+            # The invitation token is the only bearer value accepted here. PIN is
+            # read from the bounded POST body and is never accepted from a URL.
+            body=parse_body(self)
+            if set(body)!={'token','pin'}:
+                raise ValueError('Ожидаются только token и PIN')
+            import re
+            token=body.get('token')
+            match=re.match(r'^([1-9][0-9]{0,17})\.',token) if isinstance(token,str) else None
+            if not match: raise PermissionError('Приглашение недействительно')
+            company_id=int(match.group(1))
+            selected=self.headers.get('X-Portal-Company')
+            if selected is not None and selected!=str(company_id):
+                raise PermissionError('Компания приглашения не совпадает с выбранной')
+            company=tenants.get_company(DB_PATH,company_id)
+            if not tenants.available(company): raise PermissionError('Компания недоступна')
+            with tenants.company_scope(company_id),db() as conn:
+                repo=Repository(conn,company_id)
+                if not repo.ready() or not repo.has_table('portal_access_invites') or not conn.execute('SELECT 1 FROM portal_production_migrations WHERE company_id=? AND version=10',(company_id,)).fetchone():
+                    raise PermissionError('Приглашение недействительно')
+                repo.lock()
+                import access_invites
+                result=access_invites.accept(conn,repo,token,body.get('pin'))
+                conn.commit()
+            return self.send_json({'ok':True,'data':result})
         if path == "/api/platform/login" and method == "POST":
             body = parse_body(self)
             with tenants.control(DB_PATH) as conn:
@@ -848,6 +873,8 @@ class Handler(BaseHTTPRequestHandler):
                 query = parse_qs(urlparse(self.path).query)
                 if "company_id" in query and query["company_id"] != [str(company_id)]:
                     raise PermissionError("Доступ к другой компании запрещён")
+                if not tenants.available(tenants.get_company(DB_PATH,company_id)):
+                    raise PermissionError('Компания недоступна')
             if path.startswith("/api/platform/"):
                 return self.platform_route(method, path, identity)
             if path == "/api/me" and method == "GET":
@@ -894,6 +921,70 @@ class Handler(BaseHTTPRequestHandler):
             if action=='meta' and method=='GET':
                 return self.send_json(dict(ok=True,ready=bool(repo.ready()),permissions=sorted(business_rights.effective(repo,self.request_user)) if repo.ready() else [],catalog=business_rights.public_catalog(),heartbeat_seconds=activity.configuration(repo)[0] if repo.ready() else None))
             if not repo.ready(): raise ValueError('Этап 3 ещё не подключён оператором к этой компании')
+            if action=='company-access' and method=='GET':
+                service=Production(repo,self.request_user)
+                if not ({'users.manage','company.settings'}&service.permissions):raise PermissionError('Недостаточно прав для настроек компании')
+                company=tenants.get_company(DB_PATH,repo.company_id)
+                active=conn.execute('SELECT COUNT(*) FROM app_users WHERE active=1').fetchone()[0]
+                return self.send_json({'ok':True,'data':{'active_users':active,'user_limit':company['user_limit'],'unlimited':company['user_limit'] is None}})
+            if action=='invitations' and (not repo.has_table('portal_access_invites') or not conn.execute('SELECT 1 FROM portal_production_migrations WHERE company_id=? AND version=10',(repo.company_id,)).fetchone()):
+                raise ValueError('Безопасные приглашения ещё не подключены оператором к этой компании')
+            if action=='invitations':
+                import access_invites
+                service=Production(repo,self.request_user)
+                service.need('users.manage')
+                if method=='GET':
+                    query=parse_qs(urlparse(self.path).query)
+                    page=int(query.get('page',['1'])[0]);limit=int(query.get('limit',['50'])[0]);status=query.get('status',['all'])[0]
+                    return self.send_json({'ok':True,'data':access_invites.list_invites(conn,repo.company_id,page,limit,status)})
+                if method!='POST': raise ValueError('Метод приглашений не поддерживается')
+                body=parse_body(self); action_type=body.get('action')
+                repo.lock()
+                if action_type=='create':
+                    role=body.get('role','packer')
+                    if role not in business_rights.ROLE_NAMES or business_rights.defaults(role)-service.permissions:
+                        raise PermissionError('Нельзя пригласить сотрудника с более широкими правами')
+                    result=access_invites.create(conn,repo,self.request_user,body,repo.company_id)
+                elif action_type in ('approve','revoke','reject'):
+                    identity=body.get('invite_id')
+                    if not isinstance(identity,str) or len(identity)>128: raise ValueError('Некорректное приглашение')
+                    if action_type=='approve': conn.commit()
+                    result=access_invites.decide(conn,repo,self.request_user,identity,action_type)
+                else: raise ValueError('Неизвестное действие приглашения')
+                conn.commit()
+                return self.send_json({'ok':True,'data':result})
+            if action=='audit' and method=='GET':
+                service=Production(repo,self.request_user)
+                service.need('users.manage')
+                query=parse_qs(urlparse(self.path).query)
+                def number(key,default,minimum,maximum):
+                    try:value=int(query.get(key,[str(default)])[0])
+                    except (TypeError,ValueError):raise ValueError('Некорректный фильтр аудита')
+                    if not minimum<=value<=maximum:raise ValueError('Некорректный фильтр аудита')
+                    return value
+                page=number('page',1,1,10000);limit=number('limit',50,1,100)
+                actor=query.get('actor_id',[''])[0];event=query.get('action',[''])[0];entity=query.get('entity_id',[''])[0]
+                start=query.get('from',[''])[0];end=query.get('to',[''])[0]
+                import re,json
+                if actor and not actor.isdecimal():raise ValueError('Некорректный фильтр пользователя')
+                for value in (start,end):
+                    if value and not re.fullmatch(r'\d{4}-\d{2}-\d{2}',value):raise ValueError('Дата аудита должна быть YYYY-MM-DD')
+                if start and end and start>end:raise ValueError('Начальная дата позже конечной')
+                users={str(u['id']):u.get('display_name','') for u in repo.catalog('users')}
+                rows=conn.execute("SELECT id,payload,created_at FROM portal_production WHERE company_id=? AND kind='audit' ORDER BY created_at DESC,id DESC",(repo.company_id,)).fetchall()
+                items=[]
+                labels={'access_invite.created':'Создано приглашение','access_invite.accepted':'Принят запрос доступа','access_invite.approved':'Подтверждён доступ','access_invite.revoked':'Приглашение отозвано','access_invite.rejected':'Запрос отклонён','access_invite.expired':'Приглашение истекло'}
+                for row in rows:
+                    payload=json.loads(row['payload']);at=row['created_at'][:10];actor_id=payload.get('actor_id')
+                    if actor and str(actor_id)!=actor:continue
+                    if event and payload.get('event')!=event:continue
+                    if entity and str(payload.get('entity_id'))!=entity:continue
+                    if start and at<start or end and at>end:continue
+                    items.append({'id':row['id'],'at':row['created_at'],'actor_id':actor_id,'actor_name':users.get(str(actor_id),'Система/получатель' if actor_id is None else 'Сотрудник'),
+                        'action':payload.get('event','event'),'entity_id':payload.get('entity_id'),
+                        'summary':labels.get(payload.get('event'),'Изменение в системе')})
+                offset=(page-1)*limit
+                return self.send_json({'ok':True,'data':{'items':items[offset:offset+limit],'page':page,'limit':limit,'total':len(items)}})
             if action in excel_import.IMPORT_ACTIONS:
                 if not repo.has_table('portal_excel_imports'):raise ValueError('Сначала примените миграцию Documents/Excel')
                 service=Production(repo,self.request_user)
@@ -977,10 +1068,26 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"ok":True,"id":tenants.save_company(DB_PATH, identity["id"], parse_body(self), cid)})
         if path == "/api/platform/audit" and method == "GET":
             query = parse_qs(urlparse(self.path).query)
-            after = int(query.get("after_id", ["0"])[0])
+            def audit_int(key,default,minimum,maximum):
+                try:value=int(query.get(key,[str(default)])[0])
+                except (TypeError,ValueError):raise ValueError('Некорректный фильтр аудита')
+                if not minimum<=value<=maximum:raise ValueError('Некорректный фильтр аудита')
+                return value
+            page=audit_int('page',1,1,10000);limit=audit_int('limit',50,1,100)
+            conditions=[];args=[]
+            if query.get('company_id',[''])[0]:conditions.append('company_id=?');args.append(audit_int('company_id',1,1,10**18))
+            if query.get('actor_id',[''])[0]:conditions.append('actor_id=?');args.append(audit_int('actor_id',1,1,10**18))
+            if query.get('event',[''])[0]:conditions.append('event=?');args.append(query['event'][0][:80])
+            start=query.get('from',[''])[0];end=query.get('to',[''])[0]
+            import re
+            if any(v and not re.fullmatch(r'\d{4}-\d{2}-\d{2}',v) for v in (start,end)) or start and end and start>end:raise ValueError('Некорректный диапазон дат аудита')
+            if start:conditions.append('substr(created_at,1,10)>=?');args.append(start)
+            if end:conditions.append('substr(created_at,1,10)<=?');args.append(end)
+            where=(' WHERE '+' AND '.join(conditions)) if conditions else ''
             with tenants.control(DB_PATH) as conn:
-                rows = [dict(r) for r in conn.execute("SELECT * FROM platform_audit WHERE id>? ORDER BY id LIMIT 200", (after,))]
-            return self.send_json({"ok":True,"rows":rows})
+                total=conn.execute('SELECT COUNT(*) FROM platform_audit'+where,tuple(args)).fetchone()[0]
+                rows = [dict(r) for r in conn.execute("SELECT * FROM platform_audit"+where+" ORDER BY id DESC LIMIT ? OFFSET ?",tuple(args+[limit,(page-1)*limit]))]
+            return self.send_json({"ok":True,"rows":rows,"page":page,"limit":limit,"total":total})
         return self.error_json("Маршрут не найден", 404)
 
     def tenant_route(self, method):

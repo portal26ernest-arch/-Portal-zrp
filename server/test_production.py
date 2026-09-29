@@ -10,6 +10,7 @@ import uuid
 import zipfile
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
+from unittest.mock import patch
 import test_portal_app_server as legacy
 import test_portal_tenancy as isolation
 from production_repository import Repository
@@ -77,6 +78,82 @@ class ProductionTest(unittest.TestCase):
         rows=self.get('marketplace-news?source=ozon&limit=10')['data']
         self.assertEqual([row['title'] for row in rows],['A'])
         self.post('marketplace-news',dict(source='ozon',title='employee write'),status=400)
+
+    def test_secure_invite_lifecycle_hashes_token_is_idempotent_and_scoped(self):
+        body={'action':'create','role':'packer','username':'invited-one','display_name':'Invited One','request_id':'invite-create-once'}
+        created=self.request('/api/v3/invitations',self.admin,body,method='POST')['data']
+        token=created['token'];identity=created['invite']['id']
+        self.assertTrue(token.startswith('1.'))
+        replay=self.request('/api/v3/invitations',self.admin,body,method='POST')['data']
+        self.assertEqual(replay['invite']['id'],identity);self.assertIsNone(replay['token']);self.assertTrue(replay['replay'])
+        with portal.tenants.company_scope(1),portal.db() as conn:
+            digest=hashlib.sha256(token.encode()).hexdigest()
+            stored=conn.execute('SELECT token_hash,status FROM portal_access_invites WHERE id=?',(identity,)).fetchone()
+            self.assertEqual((stored['token_hash'],stored['status']),(digest,'pending'))
+            audit=' '.join(row['payload'] for row in conn.execute("SELECT payload FROM portal_production WHERE kind='audit'"))
+            self.assertNotIn(token,audit)
+        worker=self.role_token('packer')
+        self.request('/api/v3/invitations',worker,status=403)
+        self.request('/api/access-invites/accept',body={'token':token,'pin':'6789'},method='POST',extra_headers={'X-Portal-Company':'2'},status=403)
+        accepted=self.request('/api/access-invites/accept',body={'token':token,'pin':'6789'},method='POST')['data']
+        self.assertEqual(accepted['status'],'pending_approval')
+        repeated=self.request('/api/access-invites/accept',body={'token':token,'pin':'9999'},method='POST')['data']
+        self.assertEqual(repeated['status'],'pending_approval')
+        pending=self.request('/api/v3/invitations?status=accepted',self.admin)['data']['items']
+        self.assertEqual([row['id'] for row in pending],[identity])
+        self.request('/api/v3/invitations',self.admin,{'action':'approve','invite_id':identity},method='POST')
+        self.request('/api/login',body={'company_id':1,'username':'invited-one','pin':'6789'})
+        self.request('/api/access-invites/accept',body={'token':token,'pin':'6789'},method='POST',status=403)
+        audit=self.request('/api/v3/audit?limit=10',self.admin)['data']['items']
+        invite_events=[row for row in audit if row['action'].startswith('access_invite.')]
+        self.assertGreaterEqual(len(invite_events),3)
+        self.assertTrue(all('summary' in row and 'token' not in str(row).lower() for row in invite_events))
+        self.request('/api/v3/audit',self.worker,status=403)
+        self.request('/api/v3/audit?company_id=2',self.admin,status=403)
+        with portal.tenants.company_scope(1),portal.db() as conn:
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM app_users WHERE username=?',('invited-one',)).fetchone()[0],1)
+            self.assertEqual(conn.execute('SELECT status FROM portal_access_invites WHERE id=?',(identity,)).fetchone()[0],'approved')
+
+    def test_invite_revoke_and_role_capability_denials(self):
+        manager=self.role_token('manager')
+        body={'action':'create','role':'packer','username':'manager-invite','display_name':'Candidate','request_id':'manager-invite'}
+        self.request('/api/v3/invitations',manager,body,method='POST',status=403)
+        director=self.role_token('director')
+        body['username']='director-invite';body['request_id']='director-invite'
+        self.request('/api/v3/invitations',director,body,method='POST')
+        self.request('/api/v3/invitations',director,body,method='POST',extra_headers={'X-Portal-Company':'2'},status=403)
+        body['username']='owner-invite';body['request_id']='owner-invite'
+        self.request('/api/v3/invitations',self.owner,body,method='POST',status=403)
+        self.request('/api/v3/invitations',self.owner,body,method='POST',extra_headers={'X-Portal-Company':'1'})
+        body['request_id']='invite-revoke'
+        created=self.request('/api/v3/invitations',self.admin,body,method='POST')['data']
+        self.request('/api/v3/invitations',self.admin,{'action':'revoke','invite_id':created['invite']['id']},method='POST')
+        self.request('/api/access-invites/accept',body={'token':created['token'],'pin':'6789'},method='POST',status=403)
+
+    def test_company_access_summary_is_capability_and_owner_scope_checked(self):
+        self.assertTrue(self.get('company-access')['data']['unlimited'])
+        self.assertEqual(self.get('company-access')['data']['active_users'],2)
+        self.get('company-access',self.role_token('manager'),status=403)
+        self.assertIsInstance(self.get('company-access',self.role_token('director'))['data']['active_users'],int)
+        self.request('/api/v3/company-access',self.owner,status=403)
+        self.request('/api/v3/company-access',self.owner,extra_headers={'X-Portal-Company':'1'})
+
+    def test_invitation_expiry_and_suspended_company_fail_closed(self):
+        body={'action':'create','role':'packer','username':'expiry-candidate','display_name':'Candidate','request_id':'expiry-invite'}
+        created=self.request('/api/v3/invitations',self.admin,body,method='POST')['data']
+        class ExpiredClock(datetime):
+            @classmethod
+            def now(cls,tz=None):return datetime.now(tz)+timedelta(days=8)
+        with patch('access_invites.datetime',ExpiredClock):
+            expired=self.request('/api/access-invites/accept',body={'token':created['token'],'pin':'6789'},method='POST')['data']
+        self.assertEqual(expired['status'],'expired')
+        with portal.tenants.control(portal.DB_PATH) as registry:
+            registry.execute("UPDATE companies SET service_status='suspended' WHERE id=1")
+        try:
+            self.request('/api/access-invites/accept',body={'token':created['token'],'pin':'6789'},method='POST',status=403)
+            self.request('/api/v3/invitations',self.admin,status=401)
+        finally:
+            with portal.tenants.control(portal.DB_PATH) as registry:registry.execute("UPDATE companies SET service_status='active' WHERE id=1")
 
     def test_task_work_assignment_remaining_and_completion(self):
         b=self.batch();t=self.task(b)

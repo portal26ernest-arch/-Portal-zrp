@@ -112,6 +112,11 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
       else if(stage3&&url==='/api/v3/work'&&method==='POST')data.data={id:'work-free',salary:300,without_task:true};
       else if(stage3&&url==='/api/v3/presence')data.data=[{user_id:1,online:mock.presenceOnline,last_activity_at:new Date().toISOString(),active_sessions:mock.presenceOnline?1:0}];
       else if(stage3&&url==='/api/v3/activity')data.data=[{event:'login',result:'success',user_id:1,client_type:'Android',at:'2026-09-25T09:12:00'}];
+      else if(stage3&&url==='/api/v3/invitations'&&method==='POST')data.data={invite:{id:'invite-1',status:'pending'},token:'1.abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_',replay:false};
+      else if(stage3&&url.startsWith('/api/v3/invitations'))data.data={items:[],page:1,limit:50,total:0};
+      else if(url==='/api/access-invites/accept')data.data={status:'pending_approval'};
+      else if(stage3&&url==='/api/v3/company-access')data.data={active_users:1,user_limit:null,unlimited:true};
+      else if(stage3&&url.startsWith('/api/v3/audit'))data.data={items:[],page:1,limit:50,total:0};
       else if(stage3&&url==='/api/v3/permissions')data.data=[{id:1,display_name:'Тестовый пользователь',role:'admin',permissions:['work.write']}];
       if(url==='/api/ping')data.setup_required=false;
       else if(url.endsWith('/login'))Object.assign(data,{token:'fixture-token',user});
@@ -119,7 +124,7 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
       else if(url==='/api/company')data.company={id:1,name:'PORTAL'};
       else if(url.startsWith('/api/dashboard'))data.data={quantity:103,salary:206,revenue:515,debt:100,profit:300};
       else if(url==='/api/platform/companies')data.companies=[{id:1,name:'PORTAL',status:'active'},{id:2,name:'Вторая компания',status:'active'}];
-      else if(url==='/api/platform/audit')data.rows=[];
+      else if(url.startsWith('/api/platform/audit'))Object.assign(data,{rows:[],page:1,limit:50,total:0});
       else if(url.endsWith('/operations'))Object.assign(data,{client,operations:[{id:1,name:'Упаковка',employee_rate:2,client_rate:5,active:1}]});
       else if(url==='/api/work')data.work={salary:8,warnings:[]};
       else if(url==='/api/work/mine')data.rows=[];

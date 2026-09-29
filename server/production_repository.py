@@ -77,7 +77,7 @@ class Repository:
             'entry_type','employee_id','payroll_period_id','amount','request_id',
             'actor_kind','reason','reason_sha256'
         ) if key in details}
-        self.insert('audit',dict(actor_id=user['id'],event=event,entity_id=str(entity_id),**allowed))
+        self.insert('audit',dict(actor_id=(user or {}).get('id'),event=event,entity_id=str(entity_id),**allowed))
 
     def sync_payroll_employees(self):
         """Assign surrogate payroll IDs; never derive a financial key from Telegram."""

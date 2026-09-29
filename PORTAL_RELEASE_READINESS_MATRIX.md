@@ -5,9 +5,9 @@ Statuses reflect the current roadmap and prior verified reports. `✅` means evi
 | Roadmap item | Feature | Status | Evidence commit/test | Remaining blocker | Owner action required |
 |---:|---|:---:|---|---|:---:|
 | 2 | Server and PostgreSQL tenant isolation | ✅ | Part 8 report; Part 10/11 real PostgreSQL E2E | Continue release regression | No |
-| 10–11 | Invitations and access requests | 🟡 | Roadmap records table/foundation only | Full invite/approve/revoke UI/API flow and tests | No |
-| 12 | Company settings and user limits | 🟡 | `server/test_portal_tenancy.py` company limit/override cases | Complete user-facing settings and Web role matrix | No |
-| 15 | Administrative audit UI | 🟡 | `server/portal_tenancy.py`; `server/test_portal_tenancy.py` append-only/owner audit tests | Company audit filters/pagination and Web UI | No |
+| 10–11 | Invitations and access requests | 🟡 | Continuation №2 local `test_production` 30/30; Stage 10 hash-only schema; shared UI/API added | Commit/push CI, Web role-flow and disposable PostgreSQL RLS rehearsal | No |
+| 12 | Company settings and user limits | 🟡 | `test_portal_tenancy` 15/15; serialized seat and concurrency tests; owner UI and active-count API added | Verify owner/director UI in Playwright; confirm module-toggle support/model | No |
+| 15 | Administrative audit UI | 🟡 | Continuation №2 filtered company/owner audit API and UI; local `test_production` 30/30 | Web role-flow + PostgreSQL audit/RLS integration | No |
 | 17 | Client 360 | 🟡 | Current roadmap; client/finance APIs | Complete editable blocks and unified client view | No |
 | 19 | Effective-date tariff history | 🟡 | Current tariff API and roadmap evidence | Complete history UI/conflict coverage | No |
 | 28 | Batch plan/fact economics | 🟡 | Batch/economy API in `server/production_service.py` | Verify complete plan/fact inputs and UI | No |
@@ -38,4 +38,4 @@ Statuses reflect the current roadmap and prior verified reports. `✅` means evi
 
 See `PORTAL_FINAL_EXTERNAL_BLOCKERS.md` for only external/provider actions. The Part 12 final report will replace this checkpoint matrix with the final evidence and test run IDs when work completes.
 
-Continuation №1 code checkpoints: `490be25` and `0770275`. No roadmap item was promoted on these changes: the PostgreSQL cross-session case has not run, and payroll settlement UI has only local source/contract verification so far.
+Continuation №1 code checkpoints: `490be25` and `0770275`. Continuation №2 access/audit changes are currently local and uncommitted in the working tree; no roadmap item was promoted. PostgreSQL cross-session Documents and Stage 10 migration have not run, and payroll settlement UI still needs role-flow/database coverage.
