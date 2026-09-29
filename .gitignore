@@ -30,3 +30,11 @@ node_modules/
 *.apk
 *.apk.sha256
 *.patch
+
+# Android signing secrets / private key material
+*.p12
+*.pfx
+*.jks
+*.keystore
+production-signing/
+production-signing-backup/
