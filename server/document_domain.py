@@ -198,6 +198,8 @@ class Documents:
             item['revision']=previous.get('revision',1)+1
         if not self.visible(item):raise PermissionError('Документ недоступен')
         semantic={k:v for k,v in item.items() if k not in ('id','created_at','storage_key','fingerprint','request_id')}
+        if source_kind=='generated' and document_type in ('invoice_xlsx','invoice_pdf','payroll_slip_xlsx','payroll_slip_pdf'):
+            semantic.pop('created_by',None);semantic.pop('actor_kind',None)
         item['fingerprint']=hashlib.sha256(json.dumps(semantic,sort_keys=True,ensure_ascii=False).encode()).hexdigest()
         receipt_key='document:'+hashlib.sha256(item['request_id'].encode()).hexdigest()
         receipt=self.r.get('requests',receipt_key,False)

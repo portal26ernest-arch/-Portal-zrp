@@ -5,6 +5,7 @@ import base64
 from document_domain import Documents, decode_file, XLSX_MIME
 from report_xlsx import payroll_xlsx
 from portal_excel_workbook import deterministic_zip
+from financial_xlsx import invoice_xlsx, payroll_slip_xlsx
 
 DOCUMENT_ACTIONS={'documents','document-file','document-metadata','document-upload','document-archive','document-generate'}
 TEMPLATE_ACTIONS={'document-template','document-template-blank','document-template-info'}
@@ -44,44 +45,53 @@ def route(service,storage,action,method,values,company=None):
     if operation=='upload':return docs.register(decode_file(values),values)
     if operation!='generate': raise ValueError('Неизвестное действие с документом')
     service.need('documents.manage')
-    if values.get('document_type')=='invoice_pdf':
+    if values.get('document_type') in ('invoice_pdf','invoice_xlsx'):
         service.need('invoices.read')
-        invoice=service.entity('invoices',values.get('invoice_id'))
+        invoice=service.invoice_current(values.get('invoice_id'))
         from excel_template import catalog, SHEETS
         catalogs=catalog(service,company)
         company_sheet,_,clients_sheet,_=SHEETS.keys()
         client=next((row for row in catalogs[clients_sheet] if row['id']==invoice['client_id']),None)
         if client is None: raise PermissionError('Клиент недоступен')
         company_profile=catalogs[company_sheet][0]
-        operations={o['id']:o['name'] for o in service.r.catalog('operations')}
-        work_by_id={w['id']:w for w in service.r.list('works')}
-        invoice=dict(invoice,lines=[dict(line,operation_id=work_by_id.get(line.get('work_id'),{}).get('operation_id'),
-            operation_name=work_by_id.get(line.get('work_id'),{}).get('operation_name')) for line in invoice.get('lines',[])])
+        invoice=dict(invoice,lines=[dict(line) for line in invoice.get('snapshot',{}).get('lines',invoice.get('lines',[]))])
         if not invoice['lines'] or any(line.get('operation_name') is None or
             any(line.get(key) is None for key in ('quantity','client_rate','amount')) for line in invoice['lines']):
             raise ValueError('Для счёта отсутствуют подтверждённые строки операции')
-        operations.update({line.get('operation_id'):line.get('operation_name') for line in invoice['lines'] if line.get('operation_id')})
-        from pdf_documents import invoice_pdf
-        payload=invoice_pdf(company_profile,client,invoice,operations)
+        operations={line.get('operation_id'):line.get('operation_name') for line in invoice['lines'] if line.get('operation_id')}
+        if values.get('document_type')=='invoice_xlsx':
+            payload=deterministic_zip(invoice_xlsx(company_profile,client,invoice));extension='.xlsx';mime=XLSX_MIME
+        else:
+            from pdf_documents import invoice_pdf
+            payload=invoice_pdf(company_profile,client,invoice,operations);extension='.pdf';mime='application/pdf'
         identity=str(invoice['id'])
-        body=dict(values,document_type='invoice_pdf',category='invoice',invoice_id=identity,
+        body=dict(values,document_type=values['document_type'],category='invoice',invoice_id=identity,
             client_id=invoice['client_id'],title=f"Счёт на оплату · {client.get('name','Клиент')}",
-            original_filename=f'PORTAL_invoice_{identity[:24]}.pdf',mime_type='application/pdf',
-            metadata={'notes':'Invoice snapshot '+identity})
+            original_filename=f'PORTAL_invoice_{identity[:24]}{extension}',mime_type=mime,
+            metadata={'notes':'Invoice snapshot '+identity,'snapshot_sha256':hashlib.sha256(json.dumps(invoice.get('snapshot',invoice),ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()).hexdigest()})
         return docs.register(payload,body,'generated')
-    if values.get('document_type')=='payroll_slip_pdf':
+    if values.get('document_type') in ('payroll_slip_pdf','payroll_slip_xlsx'):
         service.need('payroll.all');service.need('payroll.settlement.read')
         period=service.closed_payroll_period(values.get('payroll_period_id'))
         employee_id=service.payroll_employee_id(values)
-        employee=next((row for row in service.settlement_employees(period) if row['employee_id']==employee_id),None)
+        employee=next((dict(row,employee_id=employee_id) for row in period['snapshot']['employees']
+            if row.get('employee_id') is not None and service.r.payroll_employee(row['employee_id'],legacy=True)['employee_id']==employee_id),None)
         if not employee: raise ValueError('Сотрудник отсутствует в закрытом снимке расчётного периода')
-        summary=service.settlement_summary(period,service.r.payroll_settlements(period['id'],employee_id),employee_id)['employees'][0]
-        from pdf_documents import payroll_slip_pdf
-        payload=payroll_slip_pdf(company or {},period,employee,summary,service.clock()[:10])
-        body=dict(values,document_type='payroll_slip_pdf',category='payroll',employee_id=employee_id,
+        # Payslips are issued from the immutable close snapshot; later settlements cannot rewrite history.
+        summary={'balance':employee['salary'],'accrued':employee['salary'],'paid':0,'adjustment':0}
+        if values['document_type']=='payroll_slip_xlsx':
+            summary=dict(summary,balance=employee['salary'])
+            issue_date=str(period.get('closed_at') or period['period_end'])[:10]
+            payload=deterministic_zip(payroll_slip_xlsx(company or {},period,employee,summary,issue_date));extension='.xlsx';mime=XLSX_MIME
+        else:
+            from pdf_documents import payroll_slip_pdf
+            payload=payroll_slip_pdf(company or {},period,employee,dict(summary,balance=employee['salary']),str(period.get('closed_at') or period['period_end'])[:10]);extension='.pdf';mime='application/pdf'
+        snapshot_raw=json.dumps(period['snapshot'],ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()
+        body=dict(values,document_type=values['document_type'],category='payroll',employee_id=employee_id,
             payroll_period_id=period['id'],title=f"Расчётный лист · {employee['display_name']}",
-            original_filename=f'PORTAL_payroll_slip_{period["period_start"]}_{employee_id}.pdf',
-            mime_type='application/pdf',metadata={'period_start':period['period_start'],'period_end':period['period_end']})
+            original_filename=f'PORTAL_payroll_slip_{period["period_start"]}_{employee_id}{extension}',
+            mime_type=mime,metadata={'period_start':period['period_start'],'period_end':period['period_end'],
+                'snapshot_sha256':hashlib.sha256(snapshot_raw).hexdigest()})
         return docs.register(payload,body,'generated')
     if values.get('document_type') not in ('payroll','payroll_xlsx'):
         raise ValueError('Для генерации доступен PDF счёта или расчётного листа из закрытого периода')

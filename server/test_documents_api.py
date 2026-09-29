@@ -138,6 +138,64 @@ class DocumentAPITest(unittest.TestCase):
             row=conn.execute('SELECT status,document_type FROM portal_documents WHERE id=?',(doc['id'],)).fetchone()
             self.assertEqual(tuple(row),('ready','invoice_pdf'))
 
+    def test_invoice_editing_revision_permissions_and_payment_lock(self):
+        work=self.work();invoice=self.post('invoices',dict(work_ids=[work['id']]))['data']
+        self.assertEqual((invoice['state'],invoice['revision']),('finalized',1))
+        before_works=self.get('works')['data']
+        renderer=SimpleNamespace(invoice_pdf=lambda *args: PDF)
+        with patch.dict(sys.modules,{'pdf_documents':renderer}):
+            old_document=self.post('document-generate',dict(document_type='invoice_pdf',invoice_id=invoice['id']))['data']
+        manager=self.role_token('manager')
+        self.post('invoices',dict(workflow='send_to_editing',invoice_id=invoice['id']),manager,status=403)
+        self.post('invoices',dict(workflow='send_to_editing',invoice_id=invoice['id']),self.other_admin,status=400)
+        self.request('/api/v3/invoices',self.admin,dict(workflow='send_to_editing',invoice_id=invoice['id'],request_id=str(uuid.uuid4())),extra_headers={'X-Portal-Company':str(self.other)},status=403)
+        editing=self.post('invoices',dict(workflow='send_to_editing',invoice_id=invoice['id']))['data']
+        self.assertEqual(editing['state'],'editing')
+        repeated=self.post('invoices',dict(workflow='send_to_editing',invoice_id=invoice['id']))['data']
+        self.assertEqual((repeated['state'],repeated['revision']),('editing',editing['revision']))
+        with portal.db() as conn:conn.execute('INSERT INTO manager_client_assignments(telegram_id,client_id,active,company_id) VALUES(101,1,1,1)')
+        original_line=invoice['lines'][0]
+        updated=self.post('invoices',dict(workflow='save_revision',invoice_id=invoice['id'],lines=[dict(work_id=work['id'],quantity=1,client_rate=original_line['client_rate']//2)],due_at='2026-10-01T00:00:00'),manager)['data']
+        self.assertEqual((updated['state'],updated['revision']),('finalized',2))
+        self.assertEqual(updated['history'][0]['revision'],1)
+        self.assertNotEqual(updated['amount'],invoice['amount'])
+        self.assertEqual((updated['lines'][0]['quantity'],updated['lines'][0]['client_rate']),(1,original_line['client_rate']//2))
+        self.post('invoices',dict(workflow='save_revision',invoice_id=invoice['id'],work_ids=[work['id']]),manager,status=400)
+        with patch.dict(sys.modules,{'pdf_documents':renderer}):
+            new_document=self.post('document-generate',dict(document_type='invoice_pdf',invoice_id=invoice['id']))['data']
+        self.assertNotEqual(old_document['id'],new_document['id'])
+        self.assertEqual(self.get('document-metadata?id='+old_document['id'])['data']['status'],'ready')
+        self.assertEqual(self.get('works')['data'],before_works)
+        work2=self.work();work3=self.work()
+        invoice2=self.post('invoices',dict(work_ids=[work2['id'],work3['id']]))['data']
+        self.post('payments',dict(invoice_id=invoice2['id'],amount=str(invoice2['amount']/100)))
+        self.post('invoices',dict(workflow='send_to_editing',invoice_id=invoice2['id']))
+        self.post('invoices',dict(workflow='save_revision',invoice_id=invoice2['id'],work_ids=[work2['id']]),status=400)
+
+    def test_invoice_xlsx_is_valid_printable_and_idempotent(self):
+        from io import BytesIO
+        from openpyxl import load_workbook
+        with portal.db() as conn:
+            requisites=('ООО Портал','7700000000','770001001','ОГРН 1000000000000','Москва','40702810000000000001','Банк','044525000','30101810000000000002')
+            conn.execute('INSERT OR REPLACE INTO portal_company_requisites(company_id,id,legal_name,inn,kpp,ogrn,legal_address,settlement_account,bank_name,bik,correspondent_account,updated_at) VALUES(1,1,?,?,?,?,?,?,?,?,?,?)',requisites+('2026-09-29',))
+            conn.execute('INSERT OR REPLACE INTO portal_client_requisites(company_id,client_id,legal_name,inn,kpp,ogrn,legal_address,settlement_account,bank_name,bik,correspondent_account,updated_at) VALUES(1,1,?,?,?,?,?,?,?,?,?,?)',('ООО Клиент','7700000001','770001002','ОГРН 1000000000001','Москва','40702810000000000003','Банк клиента','044525001','30101810000000000004','2026-09-29'))
+        work=self.work();invoice=self.post('invoices',dict(work_ids=[work['id']]))['data']
+        doc=self.post('document-generate',dict(document_type='invoice_xlsx',invoice_id=invoice['id']))['data']
+        repeated=self.post('document-generate',dict(document_type='invoice_xlsx',invoice_id=invoice['id']))['data']
+        self.post('document-generate',dict(document_type='invoice_xlsx',invoice_id=invoice['id']),self.other_admin,status=400)
+        self.assertEqual(doc['id'],repeated['id']);self.assertEqual(doc['category'],'invoice')
+        self.assertEqual(doc['revision'],1);self.assertEqual(doc['mime_type'],'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        data=base64.b64decode(self.get('document-file?id='+doc['id'])['data']['file_b64'])
+        book=load_workbook(BytesIO(data),data_only=False);sheet=book.active
+        self.assertEqual(sheet['A1'].value,'Счёт на оплату')
+        self.assertTrue(any(sheet.cell(row,1).value=='Операция' for row in range(1,sheet.max_row+1)))
+        self.assertTrue(any([sheet.cell(row,col).value for col in range(1,5)]==['Операция','Количество','Цена','Сумма'] for row in range(1,sheet.max_row+1)))
+        self.assertTrue(any(sheet.cell(row,1).value=='Исполнитель' for row in range(1,sheet.max_row+1)))
+        self.assertTrue(any(sheet.cell(row,1).value=='Клиент' for row in range(1,sheet.max_row+1)))
+        self.assertEqual(str(sheet.page_setup.paperSize),sheet.PAPERSIZE_A4)
+        self.assertTrue(sheet.sheet_properties.pageSetUpPr.fitToPage)
+        self.assertTrue(any(cell.data_type=='f' for row in sheet.iter_rows() for cell in row))
+
     def test_payroll_slip_uses_closed_snapshot_permissions_scope_and_immutable_facts(self):
         work=self.work();today=datetime.utcnow().date()
         if today.day>15:start=today.replace(day=1).isoformat();end=today.replace(day=15).isoformat()
@@ -159,6 +217,21 @@ class DocumentAPITest(unittest.TestCase):
             doc=self.post('document-generate',dict(document_type='payroll_slip_pdf',payroll_period_id=period['id'],employee_id=payroll_employee))['data']
             self.post('document-generate',dict(document_type='payroll_slip_pdf',payroll_period_id=period['id'],employee_id=payroll_employee),self.worker,status=403)
             self.post('document-generate',dict(document_type='payroll_slip_pdf',payroll_period_id=period['id'],employee_id=payroll_employee),self.other_admin,status=400)
+        xlsx=self.post('document-generate',dict(document_type='payroll_slip_xlsx',payroll_period_id=period['id'],employee_id=payroll_employee))['data']
+        xlsx_repeat=self.post('document-generate',dict(document_type='payroll_slip_xlsx',payroll_period_id=period['id'],employee_id=payroll_employee))['data']
+        self.post('document-generate',dict(document_type='payroll_slip_xlsx',payroll_period_id=period['id'],employee_id=payroll_employee),self.worker,status=403)
+        self.post('document-generate',dict(document_type='payroll_slip_xlsx',payroll_period_id=period['id'],employee_id=payroll_employee),self.other_admin,status=400)
+        from io import BytesIO
+        from openpyxl import load_workbook
+        slip=load_workbook(BytesIO(base64.b64decode(self.get('document-file?id='+xlsx['id'])['data']['file_b64'])),data_only=False).active
+        self.assertEqual(xlsx['category'],'payroll');self.assertEqual(xlsx['employee_id'],payroll_employee)
+        self.assertEqual(xlsx['id'],xlsx_repeat['id']);self.assertEqual(xlsx['payroll_period_id'],period['id'])
+        self.assertEqual(xlsx['revision'],1);self.assertEqual(xlsx['mime_type'],'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        labels=[slip.cell(row,1).value for row in range(1,slip.max_row+1)]
+        signatures=['Управляющий компанией','Управляющий подразделением','Сотрудник']
+        self.assertEqual([x for x in labels if x in signatures],signatures)
+        self.assertFalse(any(v in ('Клиент','Операция') for row in slip.iter_rows() for v in (cell.value for cell in row)))
+        self.assertEqual(slip.cell(1,1).value,'Расчётный лист');self.assertEqual(str(slip.page_setup.paperSize),slip.PAPERSIZE_A4)
         self.assertEqual(doc['document_type'],'payroll_slip_pdf')
         self.assertEqual(doc['employee_id'],payroll_employee)
         self.assertEqual(doc['payroll_period_id'],period['id'])

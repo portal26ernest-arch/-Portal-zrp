@@ -70,3 +70,17 @@ test('PDF generation and ready document sharing are live capability gated action
   assert.match(source,/shareBase64FileAsync/);
   assert.match(source,/row\.status !== 'ready'/);
 });
+
+test('Invoice revisions and XLSX documents are capability gated and tied to the existing workflow',()=>{
+  const production=fs.readFileSync(path.join(assets,'production.js'),'utf8');
+  for(const label of ['XLSX счёта','Отправить на редактирование','Редактировать счёт','Зафиксирован','На редактировании'])assert.ok(production.includes(label),label);
+  assert.match(production,/workflow:'send_to_editing'/);
+  assert.match(production,/workflow:'save_revision'/);
+  assert.match(production,/document_type:'invoice_xlsx'/);
+  assert.match(production,/document_type:'payroll_slip_xlsx'/);
+  assert.match(production,/S\.me\.role==='manager'&&i\.state==='editing'/);
+  assert.match(production,/data-revision-quantity/);
+  assert.match(production,/data-revision-rate/);
+  assert.match(production,/client_rate:Math\.round\(Number\(row\.querySelector\('[^']+'\)\.value\)\*100\)/);
+  assert.match(production,/\['admin','director'\]\.includes\(S\.me\.role\).*Отправить на редактирование/);
+});
