@@ -35,6 +35,8 @@ jobs:
             ops.test_offsite_backup \
             ops.test_release_audits \
             ops.test_release_gate \
+            ops.test_legacy_money_reconcile \
+            ops.test_rollback_rehearsal \
             ops.test_https_endpoint_preflight \
             ops.test_render_nginx_config -v
 
