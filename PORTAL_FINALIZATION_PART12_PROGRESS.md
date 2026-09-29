@@ -130,7 +130,7 @@ Latest code checkpoint before Continuation №2: `8460c71` (branch pushed).
 - Fixed the Playwright failure seen on `9bf3769`: the Client 360 Stage 3 fixture now grants the capabilities required to render the client card.
 - Added company receivables aging API with integer-kopeck totals, partial payment handling, company-local due-date boundaries, aging buckets, client totals, client filter, and bounded pagination. Added shared-client aging view with client/bucket filters. Test covers boundaries, partial payments, cents reconciliation, pagination, and access denial.
 - Added browser role-flow coverage for one-time invite token display, absence of PIN/token in request URL, and manager denial without `users.manage`.
-- Commits pushed: `26e595d` receivables aging API/UI; `b6b4092` invite UI role-flow test. Current SHA: `b6b4092b0c867ecebbbc7b299be7e0fe8bb0cac6`.
+- Commits pushed: `26e595d` receivables aging API/UI; `b6b4092` invite UI role-flow test; `a4b6052` docs checkpoint. Last tested code SHA: `b6b4092b0c867ecebbbc7b299be7e0fe8bb0cac6`; current clean branch SHA: `a4b6052` (docs-only after test run).
 
 ### TESTS AT THIS CHECKPOINT
 

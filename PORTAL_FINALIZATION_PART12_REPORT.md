@@ -168,7 +168,7 @@ No roadmap statuses changed on this continuation checkpoint. Item 38 stays 🟡 
 
 **Security boundary:** Production DB/service/configuration, domain/DNS, signing secrets and physical phone were untouched. Production import/cutover **NOT performed**. This is an in-progress checkpoint, not final readiness or completion.
 
-## Continuation №2 delta — SHA `b6b4092`
+## Continuation №2 delta — tested code SHA `b6b4092`; current docs checkpoint `a4b6052`
 
 Commits after the prior checkpoint: `0d477bf` tariff history query/view, `9bf3769` partial Client 360/tariff view, `26e595d` receivables aging API/UI, `b6b4092` invitation UI role-flow coverage. The `9bf3769` Android UI failure was caused by a Client 360 test fixture lacking the required client capabilities; the fixture now grants them and the browser suite passes.
 
