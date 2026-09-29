@@ -61,28 +61,28 @@
 47. ⏳ Автоматические проверки/напоминания по невыставленным работам и неоплатам по расписанию.
 48. ✅ Общий payroll Excel в новом APK/VPS-контуре: сводка, сотрудники и детализация.
 49. ✅ Excel-расчётные листы по каждому сотруднику формируются отдельными листами.
-50. 🟡 A4 PDF-расчётный лист сотрудника реализован локально на основе закрытого payroll snapshot; фактическая генерация требует ReportLab/Unicode font в окружении.
-51. 🟡 Локальные PDF-генераторы invoice и payroll slip регистрируют scoped документы; renderer smoke пропущен без установленной зависимости.
+50. 🟡 Серверный A4 PDF-расчётный лист строится только из закрытого payroll snapshot и регистрируется как scoped Document; реальный renderer smoke с ReportLab 5.0.1/Unicode font не прошёл в локальном окружении.
+51. 🟡 PDF «Счёт на оплату» использует существующие invoice/client/company data и строки работ, а invoice/payroll routes регистрируют scoped Documents; PostgreSQL E2E test добавлен, но локально не исполнен, реальный renderer gate открыт.
 52. 🟡 Экспорт «Сводка / Детализация» реализован; отдельный лист фактических выплат ещё требуется.
 
 ## D. Документы и Excel-импорт/экспорт
 
-53. 🟡 Backend Documents Part 1: девять типов, метаданные, загрузка/скачивание и архив; проверен в изолированной PostgreSQL. Подключение нового API к интерфейсу и развёртывание ещё впереди.
-54. 🟡 Новые файлы хранятся отдельно от метаданных через company-scoped локальный storage adapter; PostgreSQL хранит JSONB и ссылки. Legacy payroll остаётся доступен; PDF генераторы добавлены локально в Part 3, реальный renderer требует build-environment проверки.
-55. 🟡 API группирует документы фильтрами компании/клиента/сотрудника/типа/даты; отображение папок в интерфейсе ещё не реализовано.
-56. 🟡 Backend: поиск, пагинация, фильтры, права, ревизии и архив с сохранением истории проверены. UI и применение новой миграции на рабочем контуре ещё впереди.
+53. 🟡 Documents backend (список, метаданные, upload/download/archive, генерация PDF) подключён к Android UI; полноценный Desktop/Web UI и production rollout не проверены.
+54. 🟡 Blob и document metadata разделены, есть company-scoped storage и PostgreSQL/RLS слой; PDF генераторы локальны, а PDF-specific PostgreSQL E2E ожидает изолированный PG прогон.
+55. 🟡 Поиск, пагинация и фильтры компании/клиента/сотрудника/типа/даты есть в Documents API и Android списке; Desktop/Web папки и UI не реализованы.
+56. 🟡 Права, ревизии, архив с сохранением истории и Android Documents UI покрыты server/UI tests; применение на production-контуре и Desktop/Web ещё впереди.
 57. ✅ Стандартный Excel-шаблон PORTAL v1.0: четыре русских листа, blank/prefill API для директора и выбранной компании Platform Owner; openpyxl round trip и изоляция проверены.
-58. ⏳ «Скачать/получить шаблон» в Android и Desktop/Web.
-59. ⏳ Сохранить шаблон непосредственно на устройство.
-60. 🟡 Android Share Sheet для ready документа, Excel-шаблона и import result реализован локально; Desktop/Web и Java compile не проверены.
-61. 🟡 Необязательные email/тема/текст передаются в системный Android chooser; SMTP/API отправка не добавлена.
-62. ⏳ «Загрузить заполненный шаблон» с телефона и Desktop/Web.
-63. 🟡 Preview API возвращает diff и пять классификаций строк без записей в БД; подтверждение подписано и ограничено по времени. Экран подтверждения ещё впереди.
+58. 🟡 Blank/prefill шаблоны скачиваются через Documents API и Android UI; Desktop/Web ещё не реализован.
+59. 🟡 Android bridge сохраняет поддерживаемые файлы в Downloads через system picker/MediaStore; source/UI tests есть, Java compile и проверка на устройстве открыты.
+60. 🟡 Android Share Sheet для ready документов, Excel-шаблонов и import result использует FileProvider `content://`, MIME allowlist и chooser; Desktop/Web и локальный Java compile не проверены.
+61. 🟡 Email/тема/текст передаются в системный Android intent; отправка остаётся под контролем выбранного приложения, SMTP/API отправка не добавлена.
+62. 🟡 Android WebView XLSX chooser, проверка файла и upload preview реализованы и покрыты UI/source tests; Desktop/Web сценарий не реализован.
+63. 🟡 Android preview показывает diff и пять классификаций; явный confirmation sheet требуется перед apply. Desktop/Web экран не реализован.
 64. ✅ Backend-валидация Excel: версия/листы/колонки, типы/роли/деньги/даты, ссылки, конфликты тарифов и лимиты ZIP/XML/строк проверены.
 65. ✅ Backend: дубли, неоднозначные identity, unique-конфликты и идемпотентный повтор import_id/checksum проверены, включая реальную PostgreSQL.
 66. ✅ Backend: явный apply к выбранной компании, атомарный rollback, неизменяемый результат и отчёт в Documents проверены в SQLite и одноразовой PostgreSQL. Production rollout не выполнялся.
-67. 🟡 Генерация payroll XLSX как файла из нового сервера реализована; счета и PDF ещё требуют генераторов.
-68. ⏳ Общая синхронизация документов между Android и ПК без ручной пересылки.
+67. 🟡 Payroll XLSX export и invoice/payroll PDF routes реализованы; реальный PDF renderer и PDF PostgreSQL E2E gates открыты.
+68. ⏳ Общая синхронизация документов между Android и ПК без ручной пересылки; Desktop/Web клиент ещё не реализован.
 
 ## E. Внутренние коммуникации
 
@@ -154,6 +154,14 @@
 - 🟡 Android Share Sheet для ready Documents/Excel шаблонов/безопасного import result добавлен локально: FileProvider `content://`, внутренний cache, MIME allowlist, read grant и chooser. Source contract tests прошли; staging Java compile не завершился.
 - 🟡 PDF «Счёт на оплату» и краткий PDF «Расчётный лист» реализованы локально из invoice/closed-payroll snapshots и scoped Documents API; invoice/payroll route tests проверяют права, tenant scope и неизменность фактов с тестовым renderer. Реальный A4 smoke пропущен без ReportLab/Unicode font; PostgreSQL PDF end-to-end остаётся открытым.
 - ⏳ Part 3 production/Android release gates открыты. Тестовый итог и ограничения см. `PORTAL_DOCUMENTS_EXCEL_PART3_REPORT.md`.
+
+## G3. Documents + Excel Part 4 — проверки и сверка статусов (29.09.2026)
+
+- 🟡 До Part 4 уже существовали Android blank/prefill template download и сохранение, XLSX picker/upload/preview/явный apply/result, Share Sheet/email intent, invoice/payroll PDF routes и Documents registration. Part 4 не дублировал эти функции.
+- 🟡 Ошибка запуска Android file chooser теперь завершает ожидающий WebView callback значением `null`; source contract test проверяет и успешный, и отменённый/ошибочный возврат. Реальный Android device flow и Java compile локально недоступны.
+- 🟡 Добавлены runnable PDF route smoke с реальными изолированными test API records и PostgreSQL PDF generated-Documents integration test. Оба требуют исполнения в среде с pinned renderer/изолированным PostgreSQL соответственно.
+- ⏳ Production rollout, Desktop/Web client/sync, постоянные домен/HTTPS и Android signing остаются отдельными незакрытыми воротами.
+- Точные команды и ограничения см. `PORTAL_DOCUMENTS_EXCEL_PART4_REPORT.md`.
 
 ## H. WMS TalAnt, ТСД и сканирование
 

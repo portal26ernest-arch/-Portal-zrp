@@ -10,6 +10,8 @@ assert.match(main,/onWindowFocusChanged/);
 assert.match(main,/saveBase64FileAsync/);
 assert.match(main,/onShowFileChooser/);
 assert.match(main,/FileChooserParams\.parseResult/);
+assert.match(main,/filePathCallback\.onReceiveValue\(result\)/);
+assert.match(main,/filePathCallback\.onReceiveValue\(null\)/);
 assert.match(main,/image\/jpeg/);
 assert.match(main,/chat-file.*4 \* 1024 \* 1024/);
 assert.match(main,/MediaStore\.Downloads\.EXTERNAL_CONTENT_URI/);

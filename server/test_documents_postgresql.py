@@ -171,6 +171,62 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.assertNotIn(doc['id'],[d['id'] for d in self.get('documents',self.tokens[1])['data']])
         self.assertEqual(self.get('document-metadata?id='+doc['id'],self.tokens[2])['data']['company_id'],2)
 
+    def test_generated_invoice_and_payroll_documents_are_company_scoped_and_financially_read_only(self):
+        from datetime import date,timedelta
+        from production_repository import Repository
+        from unittest.mock import patch
+        pdf=b'%PDF-1.4\nDisposable PostgreSQL PDF route fixture\n%%EOF\n'
+        work=self.post('work',dict(client_id=1,operation_id=1,quantity=2),self.tokens[1])['data']
+        invoice=self.post('invoices',dict(work_ids=[work['id']]),self.tokens[1])['data']
+        def fake_invoice(*args):return pdf
+        def fake_payroll(*args):return pdf
+        work_before=self.get('works',self.tokens[1])['data']
+        invoice_before=self.get('invoices',self.tokens[1])['data']
+        with patch.dict('sys.modules',{'pdf_documents':type('FakePdfRenderer',(),{'invoice_pdf':staticmethod(fake_invoice),'payroll_slip_pdf':staticmethod(fake_payroll)})()}):
+            invoice_doc=self.post('document-generate',dict(document_type='invoice_pdf',invoice_id=invoice['id']),self.tokens[1])['data']
+            invoice_doc_retry=self.post('document-generate',dict(document_type='invoice_pdf',invoice_id=invoice['id']),self.tokens[1])['data']
+            self.assertNotEqual(invoice_doc['id'],invoice_doc_retry['id'])
+            self.assertEqual(base64.b64decode(self.get('document-file?id='+invoice_doc['id'],self.tokens[1])['data']['file_b64']),pdf)
+            for document_id in (invoice_doc['id'],invoice_doc_retry['id']):
+                self.get('document-file?id='+document_id,self.tokens[2],status=400)
+                self.get('document-metadata?id='+document_id,self.tokens[2],status=400)
+
+            today=date.today()
+            if today.day>15:
+                start=today.replace(day=1);end=today.replace(day=15)
+            else:
+                previous=today.replace(day=1)-timedelta(days=1)
+                start=previous.replace(day=16);end=previous
+            historical=dict(work,id='pg-pdf-'+work['id'],completed_at=end.isoformat()+'T12:00:00.000000',created_at=end.isoformat()+'T12:00:00.000000')
+            with self.portal.tenants.company_scope(1),self.portal.db() as conn:
+                Repository(conn,1).insert('works',{k:v for k,v in historical.items() if k not in {'id','company_id'}},historical['id'])
+                conn.commit()
+            period=self.post('payroll-periods',dict(period_start=start.isoformat(),period_end=end.isoformat()),self.tokens[1])['data']
+            employee_id=period['snapshot']['employees'][0]['employee_id']
+            with self.portal.tenants.company_scope(1),self.portal.db() as conn:
+                repo=Repository(conn,1);employee_id=repo.payroll_employee(employee_id,legacy=True)['employee_id']
+                snapshot_before=repo.get('payroll_periods',period['id'])['snapshot']
+                settlements_before=repo.payroll_settlements(period['id'],employee_id)
+            payroll_body=dict(document_type='payroll_slip_pdf',payroll_period_id=period['id'],employee_id=employee_id)
+            payroll_doc=self.post('document-generate',payroll_body,self.tokens[1])['data']
+            payroll_retry=self.post('document-generate',payroll_body,self.tokens[1])['data']
+            self.assertEqual(base64.b64decode(self.get('document-file?id='+payroll_doc['id'],self.tokens[1])['data']['file_b64']),pdf)
+            for document_id in (payroll_doc['id'],payroll_retry['id']):
+                self.get('document-file?id='+document_id,self.tokens[2],status=400)
+                self.get('document-metadata?id='+document_id,self.tokens[2],status=400)
+        with self.portal.tenants.company_scope(1),self.portal.db() as conn:
+            repo=Repository(conn,1)
+            self.assertEqual(repo.get('payroll_periods',period['id'])['snapshot'],snapshot_before)
+            self.assertEqual(repo.payroll_settlements(period['id'],employee_id),settlements_before)
+            rows=conn.execute("SELECT document_type,category,company_id,invoice_id,client_id,employee_id,payroll_period_id,metadata,storage_key FROM portal_documents WHERE id IN (?,?,?,?) ORDER BY document_type",(invoice_doc['id'],invoice_doc_retry['id'],payroll_doc['id'],payroll_retry['id'])).fetchall()
+            self.assertEqual(len(rows),4)
+            self.assertEqual({row['company_id'] for row in rows},{1})
+            self.assertTrue(all(row['metadata'] and row['storage_key'] for row in rows))
+            self.assertEqual(sum(row['document_type']=='invoice_pdf' and row['invoice_id']==invoice['id'] and row['client_id']==invoice['client_id'] for row in rows),2)
+            self.assertEqual(sum(row['document_type']=='payroll_slip_pdf' and row['employee_id']==employee_id and row['payroll_period_id']==period['id'] for row in rows),2)
+        self.assertEqual(self.get('works',self.tokens[1])['data'],work_before)
+        self.assertEqual(self.get('invoices',self.tokens[1])['data'],invoice_before)
+
     def test_pg_preview_apply_retry_failure_rollback_and_job_immutability(self):
         from excel_template import workbook
         from excel_apply import _apply_row

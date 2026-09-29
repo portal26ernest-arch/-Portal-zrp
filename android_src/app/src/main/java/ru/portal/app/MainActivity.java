@@ -81,8 +81,9 @@ public class MainActivity extends Activity {
                     startActivityForResult(intent, FILE_CHOOSER_REQUEST);
                     return true;
                 } catch (Exception ignored) {
+                    if (filePathCallback != null) filePathCallback.onReceiveValue(null);
                     filePathCallback = null;
-                    return false;
+                    return true;
                 }
             }
         });
