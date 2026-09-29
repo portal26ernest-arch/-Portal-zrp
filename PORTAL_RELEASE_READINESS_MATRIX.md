@@ -5,17 +5,17 @@ Statuses reflect the current roadmap and prior verified reports. `✅` means evi
 | Roadmap item | Feature | Status | Evidence commit/test | Remaining blocker | Owner action required |
 |---:|---|:---:|---|---|:---:|
 | 2 | Server and PostgreSQL tenant isolation | ✅ | Part 8 report; Part 10/11 real PostgreSQL E2E | Continue release regression | No |
-| 10–11 | Invitations and access requests | 🟡 | `0006547`; local `test_production` 30/30; Server #42, Web #15, Android UI #21 green; Stage 10 hash-only schema | Web role-flow and disposable PostgreSQL RLS rehearsal | No |
+| 10–11 | Invitations and access requests | 🟡 | `0006547`, `b6b4092`; server lifecycle tests; Playwright 19/19 includes one-time token and manager denial; Android UI #26 green | Full accept/approve/revoke role matrix and disposable PostgreSQL RLS rehearsal | No |
 | 12 | Company settings and user limits | 🟡 | `0006547`; `test_portal_tenancy` 15/15; owner UI, active-count API, server seat/concurrency tests; Server #42/Web #15 green | Verify owner/director UI in Playwright; confirm module-toggle support/model | No |
-| 15 | Administrative audit UI | 🟡 | `0006547`; filtered company/owner audit views; local `test_production` 30/30; Server #42/Web #15 green | Web role-flow + PostgreSQL audit/RLS integration | No |
-| 17 | Client 360 | 🟡 | Current roadmap; client/finance APIs | Complete editable blocks and unified client view | No |
-| 19 | Effective-date tariff history | 🟡 | Current tariff API and roadmap evidence | Complete history UI/conflict coverage | No |
+| 15 | Administrative audit UI | 🟡 | `0006547`; filtered company/owner audit views; full server discovery at `b6b4092` | Owner audit filter/entity coverage and PostgreSQL audit/RLS integration | No |
+| 17 | Client 360 | 🟡 | `9bf3769`; Playwright Client 360 fixture; permission-aware source-backed detail view | Complete editable blocks, documents drilldown and API role/E2E checks | No |
+| 19 | Effective-date tariff history | 🟡 | `0d477bf`, `9bf3769`; history service test/shared UI; Server #45 and Web #19 green | Overlap/conflict and historical-work proofs; write role matrix | No |
 | 28 | Batch plan/fact economics | 🟡 | Batch/economy API in `server/production_service.py` | Verify complete plan/fact inputs and UI | No |
 | 32 | Managed FBS/FBO/returns | 🟡 | Shipment/batch API exists | Complete workflow states, assignment, return and idempotent UI | No |
 | 33 | Name normalization/history | 🟡 | Roadmap only | Alias/rename history migration and tests | No |
 | 35 | Product catalog UI | 🟡 | Catalog API baseline | Complete CRUD/archive/search and associations | No |
 | 38 | Payroll accrued/paid/balance | 🟡 | `server/test_payroll_settlement.py`; UI contract `documents-excel.test.cjs` (17 Node UI tests pass) | Shared-client settlement UI added in `0770275`; requires browser/role-flow and disposable PostgreSQL validation | No |
-| 42 | Receivables aging/overdue | 🟡 | Invoice/payment API; today attention check in production service | Aging buckets, client totals, filters and tests | No |
+| 42 | Receivables aging/overdue | 🟡 | `26e595d`; cents-based aging boundary/partial-payment/pagination test and browser filters; Server #45/Web #19 green | Disposable PostgreSQL integration and broader role/filter proof | No |
 | 43 | Profitability | 🟡 | Finance/economy API in production service | Validate unified client/batch/company calculations and UI | No |
 | 44–45 | PORTAL Сегодня/financial radar | 🟡 | `today()` in production service | Complete required source-backed metrics and honest empty states | No |
 | 46 | Productivity | 🟡 | Work records and analytics API | Unit/hour/quality period comparisons where source data exists | No |

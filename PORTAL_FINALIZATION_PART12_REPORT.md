@@ -167,3 +167,33 @@ No roadmap statuses changed on this continuation checkpoint. Item 38 stays 🟡 
 - Use an available isolated disposable PostgreSQL runner for the new cross-session E2E and migration/rollback tests; no production DB/service may be touched.
 
 **Security boundary:** Production DB/service/configuration, domain/DNS, signing secrets and physical phone were untouched. Production import/cutover **NOT performed**. This is an in-progress checkpoint, not final readiness or completion.
+
+## Continuation №2 delta — SHA `b6b4092`
+
+Commits after the prior checkpoint: `0d477bf` tariff history query/view, `9bf3769` partial Client 360/tariff view, `26e595d` receivables aging API/UI, `b6b4092` invitation UI role-flow coverage. The `9bf3769` Android UI failure was caused by a Client 360 test fixture lacking the required client capabilities; the fixture now grants them and the browser suite passes.
+
+### DONE NOW
+
+- Receivables aging returns server-calculated integer-kopeck outstanding/overdue totals, aging buckets, per-client totals and paged invoice details; partial payments are counted once. Shared UI supports client and bucket filters.
+- Tariff history is queryable and displayed as current/historical versions, with a warning that new rates do not recalculate prior work. Client 360 has permission-aware source-backed sections and an honest unavailable economics state.
+- Browser coverage checks one-time invite token display, verifies PIN is not submitted in a URL, and confirms a manager without `users.manage` cannot reach invite controls/API.
+
+### TESTS AT THIS CHECKPOINT
+
+- Full server discovery: **212 passed, 20 skipped, 0 failed**. Skips need opt-in isolated PostgreSQL/VPS infrastructure; no DB resources were created in this run.
+- Receivables aging boundary/partial-payment/cents/pagination test: **1/1 passed**.
+- Playwright `ui.test.cjs`: **19 passed, 0 skipped, 0 failed**. UI + Web Share suite at `26e595d`: **21 passed**.
+- JS syntax and `git diff --check`: passed.
+- GitHub `26e595d`: Server #45, Web #19, Android UI #25 and APK build #39 all success. GitHub `b6b4092`: Android UI #26 and APK build #40 success. `b6b4092` changed only UI tests, so no Server workflow ran; local full server suite passed at that SHA.
+- Staging metadata remains **3.5-dev-staging / versionCode 35**. APK SHA was not downloaded or recalculated in this continuation.
+- Real Part 12 disposable PostgreSQL E2E and cleanup proof: **not run**; the existing Documents two-session E2E remains unexecuted.
+
+### NOT DONE / NEXT
+
+- A: full invite accept/approve/revoke and owner-selection role matrix; owner-audit filters and PostgreSQL RLS rehearsal; confirm settings/module-toggle support in the current data model.
+- B: complete editable Client 360, tariff conflict and historical-work proofs, product CRUD/archive/search, aliases/rename history, batch plan/fact, idempotent FBS/FBO/returns.
+- C: canonical profitability, dashboard/productivity source audit, reminder scheduler and broader payroll settlement role/integration tests.
+- D: full Documents filters/history/grouping parity and actual disposable PostgreSQL two-session create/list/download/archive/cross-company denial run; rerun Android file contracts and Excel regression at final SHA.
+- Roadmap counts unchanged: **72 ✅ / 34 🟡 / 8 ⏳ / 12 🔌**. No status was promoted from these local or mocked UI tests.
+
+**Production cutover NOT performed.** Production DB/service/configuration, DNS, financial operations, signing secrets and physical device were untouched.

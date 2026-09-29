@@ -122,3 +122,33 @@ Latest code checkpoint before Continuation №2: `8460c71` (branch pushed).
 - A–D are not complete. No disposable PostgreSQL E2E, Web Playwright role flow, full regression, or VPS cleanup proof has run in this checkpoint.
 - Local Playwright/psql/VPS execution remains unavailable; continue software work and use configured CI/test runners if provided.
 - Production DB/service, DNS, signing secrets, and physical phone were untouched; production cutover **NOT performed**.
+
+## NIGHT AUTOPILOT CONTINUATION №2 — checkpoint `b6b4092` (2026-09-30)
+
+### DONE NOW
+
+- Fixed the Playwright failure seen on `9bf3769`: the Client 360 Stage 3 fixture now grants the capabilities required to render the client card.
+- Added company receivables aging API with integer-kopeck totals, partial payment handling, company-local due-date boundaries, aging buckets, client totals, client filter, and bounded pagination. Added shared-client aging view with client/bucket filters. Test covers boundaries, partial payments, cents reconciliation, pagination, and access denial.
+- Added browser role-flow coverage for one-time invite token display, absence of PIN/token in request URL, and manager denial without `users.manage`.
+- Commits pushed: `26e595d` receivables aging API/UI; `b6b4092` invite UI role-flow test. Current SHA: `b6b4092b0c867ecebbbc7b299be7e0fe8bb0cac6`.
+
+### TESTS AT THIS CHECKPOINT
+
+- `python -m unittest discover -s server -p 'test_*.py' -q`: **212 passed, 20 skipped, 0 failures**. Skips include opt-in isolated PostgreSQL/VPS runs; no DB/role was created by this local run.
+- Receivables boundary/partial-payment/cents/pagination unit test: **1 passed**.
+- `node --test android_src/tests/ui.test.cjs`: **19 passed, 0 skipped, 0 failed** using local Playwright/Chromium.
+- `node --test android_src/tests/web-share.test.cjs android_src/tests/ui.test.cjs`: **21 passed** at `26e595d`.
+- JS syntax checks and `git diff --check`: passed.
+- GitHub `26e595d`: Server #45, Web #19, Android UI #25, APK build #39 all success. GitHub `b6b4092`: Android UI #26 and APK build #40 success. Server source was unchanged by `b6b4092`; full server discovery passed locally at that SHA.
+- No new disposable PostgreSQL E2E or cleanup rehearsal. Documents independent-session E2E and Stage 10 RLS tests remain unexecuted opt-in tests.
+
+### ROADMAP / NEXT
+
+- Numbered roadmap counts remain **72 ✅ / 34 🟡 / 8 ⏳ / 12 🔌**; no items were promoted from code or mocked browser tests alone.
+- A remains partial: full invite accept/approve/revoke role matrix, owner-audit coverage, settings/module policy review, and PostgreSQL RLS rehearsal.
+- B remains partial: editable Client 360, tariff conflict/history proof, product CRUD, rename history, batches/plan-fact economics, and internal returns/FBS/FBO workflow.
+- C remains partial: canonical profitability, director radar/productivity, reminders, and payroll settlement role/integration tests.
+- D remains partial: Documents parity and actual disposable PostgreSQL two-session create/list/download/archive/cross-company denial E2E; Android contract and Excel regression need final-SHA rerun.
+- Exact next: continue C source-backed metrics/reminder framework and D Documents parity/E2E setup, then B workflow/catalog, followed by A approval/settings/audit matrix. Run targeted and broad tests after each block, inspect migrations, push logical commits and verify CI.
+
+**Not done:** A–D are not complete. PostgreSQL/VPS E2E and cleanup proof are missing. Production DB/service, domain/DNS, financial operations, signing secrets, physical device and production cutover remain untouched. Production cutover **NOT performed**.
