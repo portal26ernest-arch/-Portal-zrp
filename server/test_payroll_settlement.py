@@ -1,12 +1,15 @@
 """Payroll settlement ledger tests against isolated temporary SQLite tenants."""
 import copy
+import base64
 import hashlib
 import http.client
+import io
 import json
 import sqlite3
 import threading
 import unittest
 import uuid
+import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
@@ -15,6 +18,8 @@ import test_portal_app_server as legacy
 import test_portal_tenancy as isolation
 from production_migrations import migrate
 from production_repository import Repository
+from production_service import Production
+from openpyxl import load_workbook
 
 portal=legacy.portal
 
@@ -75,6 +80,31 @@ class PayrollSettlementTest(unittest.TestCase):
         self.assertEqual(stored['snapshot'],snapshot)
         self.post('payroll-settlements',dict(payroll_period_id=period['id'],employee_id=self.employee_id,
             entry_type='payout',amount='.01',reason='Переплата'),status=400)
+
+    def test_payroll_xlsx_document_includes_settlement_sheet_and_payment_date(self):
+        period=self.closed_period()
+        self.settlement(period,amount='2.50')
+        recorded=self.get('payroll-settlements?payroll_period_id='+period['id'])['data']
+        self.assertEqual(recorded['totals']['paid'],250)
+        with portal.db() as conn:
+            repo=Repository(conn,1)
+            stored=repo.payroll_settlements(period['id'])
+            current=next(row for row in repo.list('payroll_periods') if row['id']==period['id'])
+            self.assertEqual(Production(repo,{'id':1,'role':'admin','company_id':1}).settlement_summary(current,stored)['totals']['paid'],250)
+        document=self.post('documents',dict(document_type='payroll',period_start=period['period_start'],
+                                            period_end=period['period_end']))['data']
+        filedata=self.get('document-file?id='+document['id'])['data']
+        payload=base64.b64decode(filedata['file_b64'])
+        with zipfile.ZipFile(io.BytesIO(payload)):
+            workbook=load_workbook(io.BytesIO(payload),data_only=True)
+        self.assertEqual(workbook.sheetnames[:4],['Сводка','Выплаты','Сотрудники','Детализация'])
+        sheet=workbook['Выплаты']
+        self.assertEqual(sheet.cell(1,4).value,'Выплаты, ₽')
+        self.assertTrue(sheet.cell(2,1).value)
+        self.assertEqual(sheet.cell(2,4).value,2.5)
+        self.assertEqual(sheet.cell(2,5).value,1.5)
+        self.assertTrue(sheet.cell(2,6).value)
+        self.assertEqual(sheet.cell(3,4).value,2.5)
 
     def test_adjustment_and_reversal_are_append_only(self):
         period=self.closed_period()

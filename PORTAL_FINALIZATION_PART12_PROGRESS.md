@@ -9,6 +9,7 @@
 - Confirmed payroll append-only settlement ledger and cent-based storage already exist with `server/test_payroll_settlement.py`; invitation UI, payments sheet, complete audit UI, multiple roadmap features and Windows installer are not yet proven complete.
 - Selected 3.5 staging metadata because repository release metadata was still 3.4/34. Added Part 12 branch to Server/Web/Android build push triggers without changing security permissions or production release triggers.
 - Extended the staging APK artifact contents with version metadata, changelog, checksum and a report generated only after workflow validations pass.
+- Added payroll XLSX «Выплаты» sheet from append-only settlement entries and integrated it through the active Documents generation route; item 52 moved to ✅ after unit and HTTP integration tests passed.
 - Added a production cutover runbook, external blockers list, and this checkpoint. No production action was performed.
 
 ## NEXT
@@ -21,10 +22,15 @@
 
 ## TESTS
 
-- Not yet run in Part 12. Existing baseline evidence is documented in Parts 8–11 and release 3.4 reports.
+- `python -m unittest discover -s server -p 'test_*.py' -v`: 203 tests, 0 failures, 19 skipped (isolated PostgreSQL/VPS or ReportLab runtime gates unavailable locally). This run preceded the final payroll export edit.
+- `python -m unittest test_report_xlsx -v`: 2/2 passed.
+- `python -m unittest test_payroll_settlement.PayrollSettlementTest.test_payroll_xlsx_document_includes_settlement_sheet_and_payment_date -v`: 1/1 passed after wiring active Documents route.
+- `node android_src/tests/build-security.test.cjs`, employee-create-mode, native-shell, legacy-boundary, documents-chat checks: all passed.
+- Full compile/syntax/diff checks are to be rerun after remaining implementation.
 - Local shell lacks `dotnet`; no Windows installer build attempted.
 
 ## BLOCKERS
 
 - External actions listed in `PORTAL_FINAL_EXTERNAL_BLOCKERS.md`.
 - Production cutover is explicitly not performed.
+- GitHub Web checks #11 passed. GitHub Android UI #18, APK build #29, and Server isolation #39 were still in progress at the last status check; refresh after latest commit.

@@ -63,7 +63,7 @@
 49. ✅ Excel-расчётные листы по каждому сотруднику формируются отдельными листами.
 50. ✅ Серверный A4 PDF-расчётный лист строится только из закрытого payroll snapshot и регистрируется как scoped Document; реальный ReportLab 5.0.1 + Unicode font smoke и PostgreSQL/RLS gate пройдены на изолированном VPS.
 51. ✅ PDF «Счёт на оплату» использует существующие invoice/client/company data и строки работ; реальный renderer, повторная детерминированная генерация, scoped Documents и PostgreSQL/RLS E2E подтверждены на изолированном VPS.
-52. 🟡 Экспорт «Сводка / Детализация» реализован; отдельный лист фактических выплат ещё требуется.
+52. ✅ Общий payroll XLSX содержит отдельный лист «Выплаты» с сотрудником, периодом, начислено/выплачено/остатком, датами выплат и итогами. Проверены renderer и полный HTTP → Documents → settlement ledger → XLSX поток тестами `test_report_xlsx.py` и `test_payroll_settlement.py`.
 
 ## D. Документы и Excel-импорт/экспорт
 
@@ -241,3 +241,4 @@
 - Part 12 implementation is in progress. No additional roadmap item is marked complete by this bootstrap checkpoint. Existing Parts 8–11 evidence remains authoritative for their verified items.
 - Production cutover, DB mutation, DNS changes, production service/config changes, and real financial operations were not performed.
 - Windows installer is not yet implemented; local `dotnet` is unavailable. See `PORTAL_FINALIZATION_PART12_PROGRESS.md` for remaining work and `PORTAL_FINAL_EXTERNAL_BLOCKERS.md` for provider/owner actions.
+- Roadmap item 52 is closed on this branch after targeted HTTP/Documents/XLSX integration and workbook tests; payroll ledger facts are read from append-only settlement events and are not written into the closed snapshot.

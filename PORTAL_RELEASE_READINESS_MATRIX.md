@@ -20,7 +20,7 @@ Statuses reflect the current roadmap and prior verified reports. `✅` means evi
 | 44–45 | PORTAL Сегодня/financial radar | 🟡 | `today()` in production service | Complete required source-backed metrics and honest empty states | No |
 | 46 | Productivity | 🟡 | Work records and analytics API | Unit/hour/quality period comparisons where source data exists | No |
 | 47 | Scheduled reminders | ⏳ | No scheduler framework evidenced | Implement idempotent company-scoped jobs and tests | No |
-| 52 | Payroll XLSX payments sheet | 🟡 | `server/financial_xlsx.py`; settlement API/tests | Add payment sheet with totals and dates | No |
+| 52 | Payroll XLSX payments sheet | ✅ | `server/test_report_xlsx.py`; `PayrollSettlementTest.test_payroll_xlsx_document_includes_settlement_sheet_and_payment_date` | None for the tested generation flow | No |
 | 53,55–56,68 | Documents UI and cross-client sync | 🟡 | Parts 8/10/11; `PORTAL_PART11_WEB_TEMPLATE_DOWNLOAD_REPORT.md` | Cross-client create/list/download/archive E2E across sessions | No |
 | 59–63 | Android/Web save/share/email | 🟡 | Android source contracts and Part 11 browser tests | Complete Web Share browser matrix; device check remains manual | Yes (device check only) |
 | 77–79 | Marketplace news ingestion | 🟡 | Part 5 trusted boundary and read API | No proven public official source; scheduler/operator framework incomplete | Yes (source only if available) |

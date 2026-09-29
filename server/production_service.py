@@ -538,7 +538,8 @@ class Production:
         period=next((p for p in self.r.list('payroll_periods') if p['period_start']==start and p['period_end']==end and p['status']=='closed'),None)
         if not period:raise ValueError('Сначала закройте расчётный период')
         snapshot=period['snapshot'];snapshot_raw=json.dumps(snapshot,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode('utf-8')
-        payload=payroll_xlsx(snapshot);title=text(b.get('title') or f'Расчётный период {start} — {end}','Название документа')
+        settlements=self.settlement_summary(period,self.r.payroll_settlements(period['id']))
+        payload=payroll_xlsx(snapshot,settlements);title=text(b.get('title') or f'Расчётный период {start} — {end}','Название документа')
         filename=f'PORTAL_payroll_{start}_{end}.xlsx'
         return self.r.insert('documents',dict(document_type='payroll',title=title,
             period_id=period['id'],period_start=start,period_end=end,status='ready',

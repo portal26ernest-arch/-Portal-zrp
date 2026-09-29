@@ -100,7 +100,8 @@ def route(service,storage,action,method,values,company=None):
     period=next((p for p in service.r.list('payroll_periods') if p['period_start']==start and p['period_end']==end and p['status']=='closed'),None)
     if not period:raise ValueError('Сначала закройте расчётный период')
     snapshot_raw=json.dumps(period['snapshot'],ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()
-    payload=deterministic_zip(payroll_xlsx(period['snapshot']))
+    settlements=service.settlement_summary(period,service.r.payroll_settlements(period['id']))
+    payload=deterministic_zip(payroll_xlsx(period['snapshot'],settlements))
     body=dict(values,document_type='payroll_xlsx',category='payroll',payroll_period_id=period['id'],
               title=values.get('title') or f'Расчётный период {start} — {end}',original_filename=f'PORTAL_payroll_{start}_{end}.xlsx',
               mime_type=XLSX_MIME,metadata=dict(period_start=start,period_end=end,snapshot_sha256=hashlib.sha256(snapshot_raw).hexdigest()))

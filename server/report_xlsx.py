@@ -50,7 +50,7 @@ def _styles():
 </styleSheet>'''
 
 def _rub(cents): return (int(cents or 0)/100,1)
-def payroll_xlsx(snapshot):
+def payroll_xlsx(snapshot, settlement=None):
     used=set();sheets=[]
     summary=[
         [('PORTAL · расчётный период',2)],
@@ -60,6 +60,25 @@ def payroll_xlsx(snapshot):
         ['Записей работ',snapshot['work_rows']],
     ]
     sheets.append((_safe_sheet('Сводка',used),summary))
+    # Settlement facts are an append-only ledger associated with a closed period.
+    # Keep them on a separate sheet so recording a payment never rewrites the
+    # immutable accrual snapshot or its existing employee/detail sheets.
+    settlement=settlement or {}
+    period=f"{snapshot['period_start']} — {snapshot['period_end']}"
+    payout_rows=[[('Сотрудник',2),('Период',2),('Начислено, ₽',2),('Выплаты, ₽',2),
+                  ('Остаток, ₽',2),('Даты выплат',2)]]
+    payment_dates={}
+    for entry in settlement.get('entries',[]):
+        if entry.get('effect')=='payment' and entry.get('amount',0)>0:
+            payment_dates.setdefault(entry['employee_id'],[]).append(str(entry.get('occurred_at',''))[:10])
+    for employee in settlement.get('employees',[]):
+        payout_rows.append([employee['display_name'],period,_rub(employee.get('accrued',0)),
+                            _rub(employee.get('paid',0)),_rub(employee.get('balance',0)),
+                            ', '.join(payment_dates.get(employee['employee_id'],[]))])
+    totals=settlement.get('totals',{})
+    payout_rows.append([('Итого',2),period,_rub(totals.get('accrued',0)),_rub(totals.get('paid',0)),
+                        _rub(totals.get('balance',0)),''])
+    sheets.append((_safe_sheet('Выплаты',used),payout_rows))
     employees=[[('Сотрудник',2),('Количество',2),('Начислено, ₽',2),('Записей',2)]]
     for row in snapshot.get('employees',[]):
         employees.append([row['display_name'],row['quantity'],_rub(row['salary']),row['work_rows']])
