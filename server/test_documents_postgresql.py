@@ -216,9 +216,8 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.get('document-file?id='+invoice_doc['id'],self.tokens[2],status=400)
         self.assertEqual(self.get('works',self.tokens[1])['data'],work_before);self.assertEqual(self.get('invoices',self.tokens[1])['data'],invoice_before)
 
-        today=date.today()
-        if today.day>15:start=today.replace(day=1);end=today.replace(day=15)
-        else:previous=today.replace(day=1)-timedelta(days=1);start=previous.replace(day=16);end=previous
+        anchor=date.today()-timedelta(days=180)
+        start=anchor.replace(day=1);end=anchor.replace(day=15)
         historical=dict(work,id='pg-real-pdf-'+work['id'],completed_at=end.isoformat()+'T12:00:00.000000',created_at=end.isoformat()+'T12:00:00.000000')
         with self.portal.tenants.company_scope(1),self.portal.db() as conn:
             Repository(conn,1).insert('works',{k:v for k,v in historical.items() if k not in {'id','company_id'}},historical['id']);conn.commit()
