@@ -52,3 +52,12 @@ This track is isolated from Codex Part 12 A–D implementation.
 - `deploy/systemd/portal.env.example` pins the API to `127.0.0.1:8765` and deliberately leaves production PostgreSQL enablement false.
 - The nginx template now uses `__PORTAL_LOOPBACK_PORT__` instead of a stale hard-coded port, preventing proxy/application port drift.
 - Real database DSNs remain outside Git in the protected server environment file.
+
+
+## Safe nginx renderer
+
+- `ops/render_nginx_config.py` validates a real FQDN and non-privileged loopback port before rendering nginx.
+- Schemes, credentials, paths, inline ports and invalid hostnames are rejected.
+- Rendering fails if PORTAL placeholders remain or if the final upstream is not `127.0.0.1`.
+- Output includes a deterministic SHA-256 for operator review.
+- The renderer writes only configuration; it does not install/reload nginx or alter DNS/TLS.
