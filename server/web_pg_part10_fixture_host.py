@@ -96,8 +96,9 @@ try:
         row for row in case.get("invoices", cls.tokens[1])["data"]
         if str(row["id"]) == str(invoice["id"]))
     company_b_invoices = case.get("invoices", cls.tokens[2])["data"]
-    documents = case.get(
+    document_data = case.get(
         "documents?status=all&include_archived=true", cls.tokens[1])["data"]
+    documents = document_data.get("items", []) if isinstance(document_data, dict) else document_data
     invoice_xlsx = [
         row for row in documents
         if row.get("document_type") == "invoice_xlsx"
