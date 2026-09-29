@@ -56,7 +56,7 @@ class PdfDocumentsTest(unittest.TestCase):
             self.assertIn(b'%%EOF',payroll_bytes[-2048:])
             self.assertIn(b'/MediaBox',payroll_bytes)
             from reportlab.pdfbase import pdfmetrics
-            self.assertIn('\u0420',pdfmetrics.getFont('PortalUnicode').face.charToGlyph)
+            self.assertIn(ord('\u0420'),pdfmetrics.getFont('PortalUnicode').face.charToGlyph)
             self.assertEqual(payroll_doc['document_type'],'payroll_slip_pdf')
             payroll_title,payroll_rows=captured[-1]
             labels=[label for label,_ in payroll_rows]
