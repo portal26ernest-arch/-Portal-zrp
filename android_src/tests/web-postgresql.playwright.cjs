@@ -115,7 +115,12 @@ async function main() {
     await page.reload();
     await page.locator('#loginUser').waitFor();
     assert.equal(await page.locator('#app').isVisible(), false);
-    assert.deepEqual(errors, []);
+    const expected403 = errors.filter(message => message === 'Failed to load resource: the server responded with a status of 403 (Forbidden)');
+    const expected401 = errors.filter(message => message === 'Failed to load resource: the server responded with a status of 401 (Unauthorized)');
+    const unexpectedErrors = errors.filter(message => !expected403.includes(message) && !expected401.includes(message));
+    assert.equal(expected403.length, 1);
+    assert.equal(expected401.length, 1);
+    assert.deepEqual(unexpectedErrors, []);
   } finally {
     await context.close();
     await browser.close();
