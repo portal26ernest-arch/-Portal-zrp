@@ -67,22 +67,22 @@
 
 ## D. Документы и Excel-импорт/экспорт
 
-53. 🟡 Documents backend (список, метаданные, upload/download/archive, генерация PDF) подключён к Android UI; полноценный Desktop/Web UI и production rollout не проверены.
+53. 🟡 Общий Documents API подключён к Android/Web UI; в Web реализованы список, фильтры, поиск, пагинация, скачивание, архивирование и PDF-действия. Production rollout ещё не проверен.
 54. 🟡 Blob и document metadata разделены, есть company-scoped storage и PostgreSQL/RLS слой; PDF генераторы локальны, а PDF-specific PostgreSQL E2E ожидает изолированный PG прогон.
-55. 🟡 Поиск, пагинация и фильтры компании/клиента/сотрудника/типа/даты есть в Documents API и Android списке; Desktop/Web папки и UI не реализованы.
-56. 🟡 Права, ревизии, архив с сохранением истории и Android Documents UI покрыты server/UI tests; применение на production-контуре и Desktop/Web ещё впереди.
+55. 🟡 Filters/paging Documents API и общий Web list/search UI реализованы; серверные regression-тесты фильтрации проходят, полная browser-матрица остаётся для staging.
+56. 🟡 Общий Web-экран Documents и серверные права/archive покрыты backend-тестами и browser smoke; production deployment ещё не проверен.
 57. ✅ Стандартный Excel-шаблон PORTAL v1.0: четыре русских листа, blank/prefill API для директора и выбранной компании Platform Owner; openpyxl round trip и изоляция проверены.
-58. 🟡 Blank/prefill шаблоны скачиваются через Documents API и Android UI; Desktop/Web ещё не реализован.
+58. 🟡 В Web доступны blank/prefilled шаблоны; browser adapter проверяет MIME/размер и скачивание, а end-to-end проверка фактического файла остаётся staging-gate.
 59. 🟡 Android bridge сохраняет поддерживаемые файлы в Downloads через system picker/MediaStore; source/UI tests есть, Java compile и проверка на устройстве открыты.
-60. 🟡 Android Share Sheet для ready документов, Excel-шаблонов и import result использует FileProvider `content://`, MIME allowlist и chooser; Desktop/Web и локальный Java compile не проверены.
+60. 🟡 Web Share API с безопасным download fallback реализован; фактическое поведение Share в целевых браузерах ещё нужно проверить.
 61. 🟡 Email/тема/текст передаются в системный Android intent; отправка остаётся под контролем выбранного приложения, SMTP/API отправка не добавлена.
-62. 🟡 Android WebView XLSX chooser, проверка файла и upload preview реализованы и покрыты UI/source tests; Desktop/Web сценарий не реализован.
-63. 🟡 Android preview показывает diff и пять классификаций; явный confirmation sheet требуется перед apply. Desktop/Web экран не реализован.
+62. 🟡 Web Excel chooser использует обычный file input; Chromium smoke подтверждает контрол, полный upload/preview/apply round-trip ожидает staging.
+63. 🟡 Общий Android/Web Excel UI содержит chooser, preview/classifications, явное подтверждение apply и download/share результата; browser smoke проходит, полный XLSX round-trip ожидает staging.
 64. ✅ Backend-валидация Excel: версия/листы/колонки, типы/роли/деньги/даты, ссылки, конфликты тарифов и лимиты ZIP/XML/строк проверены.
 65. ✅ Backend: дубли, неоднозначные identity, unique-конфликты и идемпотентный повтор import_id/checksum проверены, включая реальную PostgreSQL.
 66. ✅ Backend: явный apply к выбранной компании, атомарный rollback, неизменяемый результат и отчёт в Documents проверены в SQLite и одноразовой PostgreSQL. Production rollout не выполнялся.
 67. 🟡 Payroll XLSX export и invoice/payroll PDF routes реализованы; реальный PDF renderer и PDF PostgreSQL E2E gates открыты.
-68. ⏳ Общая синхронизация документов между Android и ПК без ручной пересылки; Desktop/Web клиент ещё не реализован.
+68. 🟡 Общий Documents API и Web-скачивание доступны; полный cross-client sync workflow и production-проверка остаются открытыми.
 
 ## E. Внутренние коммуникации
 
@@ -112,11 +112,11 @@
 81. ✅ Полноэкранный immersive-режим Android с восстановлением после возврата фокуса.
 82. ✅ Встроенная проверка, безопасная загрузка, checksum/package/version/signer validation и системный Android Installer реализованы; Node контрактные тесты проходят. Отдельный gate: проверить разрешение неизвестных приложений и реальную установку/обновление на устройстве.
 83. 🟡 Release workflow проверяет подпись и pin сертификата, APK package/version metadata и соответствие manifest артефакту. Постоянного signing key и доказательства update поверх установленной production APK пока нет.
-84. ⏳ Полноценный Desktop/Web-клиент на едином API/PostgreSQL.
+84. 🟡 Первый функциональный Web-клиент на общем UI/API реализован; остаются PostgreSQL staging и E2E-проверка прикладных сценариев.
 85. ⏳ Windows installer/обновление Desktop-клиента.
-86. ⏳ Единый UX и права между Android и Desktop/Web.
+86. 🟡 Core UI и permission model общие для Android/Web; полная platform parity и browser-поведение требуют дополнительной staging-проверки.
 87. ✅ Десятичная нумерация сборок 3.0 → 3.1 → … → 3.9 → 4.0.
-88. ✅ GitHub CI: серверные тесты, Android UI и сборка APK.
+88. ✅ GitHub CI: серверные тесты, Android UI и сборка APK, отдельные Web/Playwright checks.
 
 ## G. VPS, база, безопасность и миграция
 

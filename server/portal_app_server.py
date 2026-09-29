@@ -749,6 +749,10 @@ class Handler(BaseHTTPRequestHandler):
         return getattr(self, "request_user", None) or user_from_token(self.token())
 
     def do_GET(self):
+        web_path = urlparse(self.path).path
+        if web_path == "/web" or web_path.startswith("/web/"):
+            from web_static import serve
+            return serve(self)
         try: self.route("GET")
         except PermissionError as e: self.error_json(e,403)
         except ValueError as e: self.error_json(e,400)

@@ -1,0 +1,127 @@
+/* Browser-only adapter for the shared PORTAL UI. Android keeps its native bridge. */
+(function () {
+  if (window.PortalNative || !/^https?:$/.test(location.protocol)) return;
+
+  const MAX_BYTES = 20 * 1024 * 1024;
+  const MAX_BASE64 = Math.ceil(MAX_BYTES * 4 / 3) + 8;
+  const FILE_TYPES = new Map([
+    ['application/pdf', ['.pdf']],
+    ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', ['.xlsx']],
+    ['application/json', ['.json']],
+    ['image/jpeg', ['.jpg', '.jpeg']],
+    ['image/png', ['.png']],
+    ['image/webp', ['.webp']],
+    ['text/plain', ['.txt']]
+  ]);
+
+  const result = (id, obj) => window.PortalBridgeResult(String(id), JSON.stringify(obj));
+  const fail = (id, error, network = false) => result(id, {ok:false, httpStatus:0, network, error});
+  const safeName = value => {
+    const name = String(value || 'download').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').slice(0, 120);
+    return name && name !== '.' && name !== '..' ? name : 'download';
+  };
+  const validFile = (name, mime) => {
+    const extensions = FILE_TYPES.get(String(mime || ''));
+    const lower = String(name || '').toLowerCase();
+    return !!extensions && extensions.some(ext => lower.endsWith(ext));
+  };
+  const decode = value => {
+    const b64 = String(value || '');
+    if (!b64 || b64.length > MAX_BASE64) throw new Error('Файл превышает допустимый размер');
+    const raw = atob(b64);
+    if (!raw.length || raw.length > MAX_BYTES) throw new Error('Файл превышает допустимый размер');
+    const bytes = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+    return bytes;
+  };
+  const apiTarget = value => {
+    if (typeof value !== 'string' || !value.startsWith('/api/') || value.startsWith('//') || value.includes('\\') || value.includes('#')) return null;
+    const rawPath = value.split('?', 1)[0];
+    if (rawPath.includes('%') || rawPath.includes('//')) return null;
+    try {
+      const url = new URL(value, location.origin);
+      if (url.origin !== location.origin || !url.pathname.startsWith('/api/') || url.username || url.password) return null;
+      return url.pathname + url.search;
+    } catch {
+      return null;
+    }
+  };
+  const download = (filename, mime, b64) => {
+    if (!validFile(filename, mime)) throw new Error('Тип файла не разрешён для скачивания');
+    const bytes = decode(b64);
+    const objectUrl = URL.createObjectURL(new Blob([bytes], {type:mime}));
+    const anchor = document.createElement('a');
+    anchor.href = objectUrl;
+    anchor.download = safeName(filename);
+    anchor.rel = 'noopener';
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    return {ok:true, location:'загрузки браузера'};
+  };
+
+  window.PortalNative = {
+    getServerUrl: () => location.origin,
+    setServerUrl: () => false,
+    checkUpdates: id => result(id, {ok:true, configured:false, web:true}),
+    requestAsync: async (id, method, path, body, token, company) => {
+      const verb = String(method || 'GET').toUpperCase();
+      const target = apiTarget(path);
+      if (!target || !['GET','POST'].includes(verb)) return fail(id, 'Недопустимый API-запрос');
+      if (company && !/^[1-9]\d{0,9}$/.test(String(company))) return fail(id, 'Недопустимый контекст компании');
+      if (token && (typeof token !== 'string' || token.length > 8192 || /[\r\n]/.test(token))) return fail(id, 'Недопустимая сессия');
+      if (body && (typeof body !== 'string' || body.length > 24 * 1024 * 1024 || verb !== 'POST')) return fail(id, 'Недопустимые данные запроса');
+      try {
+        const headers = {Accept:'application/json'};
+        if (token) headers.Authorization = 'Bearer ' + token;
+        if (company) headers['X-Portal-Company'] = String(company);
+        if (body) headers['Content-Type'] = 'application/json';
+        const response = await fetch(target, {
+          method:verb,
+          headers,
+          body:body || undefined,
+          credentials:'same-origin',
+          cache:'no-store',
+          redirect:'error'
+        });
+        let data;
+        try { data = await response.json(); }
+        catch { data = {ok:false, error:'Некорректный ответ сервера'}; }
+        if (!data || typeof data !== 'object' || Array.isArray(data)) data = {ok:false, error:'Некорректный ответ сервера'};
+        result(id, {...data, ok:response.ok && data.ok !== false, httpStatus:response.status, data});
+      } catch {
+        fail(id, 'Нет соединения с сервером', true);
+      }
+    },
+    requestForCompany: () => JSON.stringify({ok:false, httpStatus:0, error:'Используйте requestAsync'}),
+    saveBase64FileAsync: (id, name, mime, b64) => {
+      try { result(id, download(name, mime, b64)); }
+      catch (error) { result(id, {ok:false, error:error.message}); }
+    },
+    shareBase64FileAsync: (id, name, mime, b64, recipient, subject, message) => {
+      try {
+        if (!validFile(name, mime)) throw new Error('Тип файла не разрешён для отправки');
+        const bytes = decode(b64);
+        if (typeof navigator.share === 'function' && typeof navigator.canShare === 'function' && typeof File === 'function') {
+          const file = new File([bytes], safeName(name), {type:mime});
+          if (navigator.canShare({files:[file]})) {
+            const payload = {files:[file]};
+            if (subject) payload.title = String(subject).slice(0, 200);
+            if (message) payload.text = String(message).slice(0, 2000);
+            navigator.share(payload)
+              .then(() => result(id, {ok:true, shared:true}))
+              .catch(error => result(id, {ok:false, cancelled:error && error.name === 'AbortError', error:error && error.name === 'AbortError' ? 'Отправка отменена' : 'Не удалось открыть системное меню отправки'}));
+            return;
+          }
+        }
+        result(id, download(name, mime, b64));
+      } catch (error) {
+        result(id, {ok:false, error:error.message});
+      }
+    }
+  };
+
+  document.documentElement.classList.add('web-client');
+  window.__PORTAL_WEB__ = true;
+})();

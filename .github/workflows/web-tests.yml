@@ -1,0 +1,37 @@
+name: PORTAL Web checks
+
+on:
+  push:
+    branches: ["main", "codex-desktop-web-part7"]
+    paths:
+      - "server/**"
+      - "android_src/app/src/main/assets/**"
+      - "android_src/tests/web-*.cjs"
+      - ".github/workflows/web-tests.yml"
+  pull_request:
+    paths:
+      - "server/**"
+      - "android_src/app/src/main/assets/**"
+      - "android_src/tests/web-*.cjs"
+      - ".github/workflows/web-tests.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -r server/requirements-test.txt
+      - run: npm install --no-save playwright@1.62.1
+      - run: npx playwright install --with-deps chromium
+      - run: python -m unittest server.test_web_static server.test_portal_app_server -v
+      - run: node --test android_src/tests/web-adapter.test.cjs android_src/tests/web-smoke.playwright.cjs
