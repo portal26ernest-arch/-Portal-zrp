@@ -248,6 +248,23 @@ test('browser UI regression',async t=>{
       await page.waitForFunction(()=>mock.calls.some(c=>c.url.includes('/api/v3/receivables?')&&c.url.includes('client_id=1')));
       assert.deepEqual(errors,[]);await page.close();
     });
+    await t.test('admin invite flow displays one-time token only after create; manager cannot open users',async()=>{
+      const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);
+      await page.evaluate(()=>mock.stage3Permissions=['users.manage']);await login(page);
+      await page.evaluate(()=>go('users'));await page.locator('[data-action=createAccessInvite]').click();
+      await page.locator('#inviteName').fill('Новый сотрудник');await page.locator('#inviteUsername').fill('new-staff');
+      await page.locator('#accessInviteForm [type=submit]').click();await page.waitForSelector('#oneTimeInviteToken');
+      const token=await page.locator('#oneTimeInviteToken').inputValue();assert.ok(token.length>=40);
+      const calls=await page.evaluate(()=>mock.calls);const create=calls.find(c=>c.method==='POST'&&c.url==='/api/v3/invitations');
+      assert.equal(create.body.action,'create');assert.equal(Object.hasOwn(create.body,'pin'),false);
+      assert.equal(calls.some(c=>c.url.includes(encodeURIComponent(token))||c.url.includes('pin=')),false);
+      await page.close();
+      const manager=await fixture(browser,'manager',{width:390,height:844},true);await manager.page.evaluate(()=>mock.stage3Permissions=['work.write','tasks.read','finance.read','invoices.read','payroll.own']);await login(manager.page);
+      await manager.page.evaluate(()=>go('users'));await manager.page.waitForTimeout(100);
+      assert.equal(await manager.page.locator('[data-action=createAccessInvite]').count(),0);
+      assert.equal((await manager.page.evaluate(()=>mock.calls)).some(c=>c.url.startsWith('/api/v3/invitations')),false);
+      assert.deepEqual(manager.errors,[]);await manager.page.close();
+    });
     await t.test('manager records personal work; expired write session returns to login',async()=>{
       const {page,errors}=await fixture(browser);await login(page);await page.evaluate(()=>go('work'));
       await page.locator('#wClient').selectOption('1');await page.waitForFunction(()=>!document.querySelector('#wOp').disabled);
