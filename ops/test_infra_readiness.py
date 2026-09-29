@@ -6,6 +6,10 @@ import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
+import contextlib
+import io
+import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -53,6 +57,8 @@ class InfraReadinessTest(unittest.TestCase):
             self.assertFalse(old.exists())
             self.assertTrue(keep.exists())
             self.assertTrue(unrelated.exists())
+            with self.assertRaises(ValueError):
+                backup.prune_old(root, "../", 14, {keep})
 
     def test_restore_database_guard(self):
         good = restore.safe_db_name("portal_test_restore_abc123")
@@ -60,6 +66,19 @@ class InfraReadinessTest(unittest.TestCase):
         for bad in ("portal", "production", "portal_test_restore_x;drop", "portal_test_restore_X"):
             with self.assertRaises(ValueError):
                 restore.safe_db_name(bad)
+
+    def test_restore_validation_output_is_not_written_to_stdout(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); dump = root / "source.dump"; sql = root / "check.sql"
+            dump.write_bytes(b"dump"); sql.write_text("SELECT 'private payload';", encoding="utf-8")
+            argv = ["restore", "--dump", str(dump), "--validation-sql", str(sql)]
+            output = io.StringIO()
+            def fake_run(args, *, capture=False):
+                return __import__("subprocess").CompletedProcess(args, 0, "private payload" if capture else "", "")
+            with patch.object(sys, "argv", argv), patch.object(restore, "run", side_effect=fake_run), contextlib.redirect_stdout(output):
+                self.assertEqual(restore.main(), 0)
+            self.assertNotIn("private payload", output.getvalue())
+            self.assertNotIn("validation_output_tail", output.getvalue())
 
     def test_nginx_template_keeps_api_loopback_and_https(self):
         text = (ROOT / "deploy/nginx/portal.conf.template").read_text(encoding="utf-8")

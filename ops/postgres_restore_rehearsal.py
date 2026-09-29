@@ -49,7 +49,6 @@ def main() -> int:
 
     db = safe_db_name(PREFIX + secrets.token_hex(6))
     created = False
-    validation_output = ""
     try:
         run([args.createdb, db])
         created = True
@@ -58,13 +57,13 @@ def main() -> int:
             sql = Path(args.validation_sql).expanduser().resolve()
             if not sql.is_file():
                 raise SystemExit("validation SQL not found")
-            cp = run([args.psql, "--set", "ON_ERROR_STOP=1", "--dbname", db, "--file", str(sql)], capture=True)
-            validation_output = cp.stdout[-4000:]
+            # Do not print SQL result rows: the validation file may accidentally
+            # return company data. Success/failure is sufficient evidence here.
+            run([args.psql, "--set", "ON_ERROR_STOP=1", "--dbname", db, "--file", str(sql)], capture=True)
         print(json.dumps({
             "database": db,
             "restored": True,
             "validation_ran": bool(args.validation_sql),
-            "validation_output_tail": validation_output,
             "cleanup_planned": not args.keep_for_debug,
         }, ensure_ascii=False))
         return 0
