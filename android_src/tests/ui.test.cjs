@@ -86,7 +86,7 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
     localStorage.clear();
     const user={id:1,username:role,display_name:'Тестовый пользователь',role,company_id:1,telegram_id:role==='platform_owner'?null:101};
     const client={id:1,name:'Клиент',active:1};
-    window.mock={calls:[],offline:false,rejectWrite:false,hold:false,held:[],update:{ok:true,configured:false},timer:null,stage3Today:null,stage3Permissions:null,presenceOnline:true,saved:null,previewMode:'ok',applyMode:'ok'};
+    window.mock={calls:[],offline:false,rejectWrite:false,hold:false,held:[],update:{ok:true,configured:false},timer:null,stage3Today:null,stage3Permissions:null,presenceOnline:true,saved:null,previewMode:'ok',applyMode:'ok',payrollPaid:2000};
     const respond=(id,data)=>setTimeout(()=>window.PortalBridgeResult(id,JSON.stringify(data)),0);
     window.PortalNative={getServerUrl:()=> 'http://127.0.0.1:8765',getAppMetadata:()=>JSON.stringify(metadata),checkUpdates:id=>respond(id,mock.update),saveBase64FileAsync(id,filename,mime,file_b64){mock.saved={filename,mime,file_b64};respond(id,{ok:true,location:'Downloads/PORTAL/'+filename});},requestAsync(id,method,url,payload,token,company){
       mock.calls.push({method,url,body:payload?JSON.parse(payload):null,token,company});
@@ -111,6 +111,9 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
       else if(stage3&&url==='/api/v3/documents')data.data=[];
       else if(stage3&&url==='/api/v3/finance')data.data={clients:[]};
       else if(stage3&&url.startsWith('/api/v3/receivables'))data.data={as_of:'2026-09-30',money_unit:'kopeck',outstanding:12500,overdue:4000,total:2,page:1,limit:50,buckets:{current:{count:1,amount:8500},days_1_7:{count:1,amount:4000},days_8_30:{count:0,amount:0},days_31_60:{count:0,amount:0},days_61_plus:{count:0,amount:0},undated:{count:0,amount:0}},clients:[{client_id:1,name:'Клиент',outstanding:12500}],items:[{invoice_id:1,client_id:1,amount:8500,paid:0,outstanding:8500,due_at:'2026-09-30',overdue_days:0,bucket:'current'},{invoice_id:2,client_id:1,amount:6000,paid:2000,outstanding:4000,due_at:'2026-09-29',overdue_days:1,bucket:'days_1_7'}]};
+      else if(stage3&&url==='/api/v3/payroll-periods')data.data=[{id:'period-1',period_start:'2026-09-01',period_end:'2026-09-15',closed_at:'2026-09-16',snapshot:{total_quantity:10,total_salary:10000,employees:[{employee_id:1,display_name:'Тестовый сотрудник',salary:10000}]}}];
+      else if(stage3&&url.startsWith('/api/v3/payroll-settlements?'))data.data={period_id:'period-1',period_start:'2026-09-01',period_end:'2026-09-15',status:'закрыт',money_unit:'kopeck',employees:[{employee_id:1,display_name:'Тестовый сотрудник',accrued:10000,adjustment:0,paid:mock.payrollPaid,balance:10000-mock.payrollPaid}],totals:{accrued:10000,adjustment:0,paid:mock.payrollPaid,balance:10000-mock.payrollPaid},entries:[{id:'payment-1',employee_id:1,entry_type:'payout',effect:'payment',amount:2000,occurred_at:'2026-09-20',reason:'Первая выплата',reference:'Платёж 1'}]};
+      else if(stage3&&url==='/api/v3/payroll-settlements'&&method==='POST'){mock.payrollPaid+=Math.round(Number(JSON.parse(payload).amount)*100);data.data={id:'payment-2',entry_type:'payout'};}
       else if(stage3&&url==='/api/v3/catalog')data.data={clients:[{id:1,name:'Клиент'}],operations:[{id:1,client_id:1,name:'Упаковка'}],users:[]};
       else if(stage3&&url==='/api/v3/works')data.data=[{id:'work-free',client_id:1,client_name:'Клиент',operation_name:'Упаковка',quantity:3,salary:300,completed_at:'2026-09-25T09:20:00',without_task:true,batch_id:null}];
       else if(stage3&&url==='/api/v3/work'&&method==='POST')data.data={id:'work-free',salary:300,without_task:true};
@@ -250,6 +253,23 @@ test('browser UI regression',async t=>{
       await page.locator('#receivablesClient').selectOption('1');
       await page.waitForFunction(()=>mock.calls.some(c=>c.url.includes('/api/v3/receivables?')&&c.url.includes('client_id=1')));
       assert.deepEqual(errors,[]);await page.close();
+    });
+    await t.test('payroll settlement role flow records a payment and refreshes append-only balance',async()=>{
+      const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);
+      await page.evaluate(()=>mock.stage3Permissions=['payroll.all','payroll.settlement.read','payroll.settlement.payout']);await login(page);
+      await page.evaluate(()=>go('payrollPeriods'));await page.locator('[data-action=payrollSettlement]').click();await page.waitForSelector('#sheetContent');
+      assert.match(await page.locator('#sheetContent').innerText(),/Выплачено 20 ₽/);assert.match(await page.locator('#sheetContent').innerText(),/Остаток 80 ₽/);
+      await page.locator('[data-action=payrollAddPayment]').click();await page.locator('#payrollPaymentAmount').fill('10');
+      await page.locator('#payrollPaymentForm [type=submit]').click();await page.waitForFunction(()=>document.querySelector('#sheetContent').textContent.includes('Остаток 70 ₽'));
+      const payout=await page.evaluate(()=>mock.calls.find(c=>c.method==='POST'&&c.url==='/api/v3/payroll-settlements'));
+      assert.equal(payout.body.entry_type,'payout');assert.equal(payout.body.amount,'10');assert.equal(payout.body.employee_id,1);assert.equal(payout.body.payroll_period_id,'period-1');
+      assert.match(await page.locator('#sheetContent').innerText(),/Первая выплата/);assert.deepEqual(errors,[]);await page.close();
+      const manager=await fixture(browser,'manager',{width:390,height:844},true);
+      await manager.page.evaluate(()=>mock.stage3Permissions=['payroll.all','payroll.settlement.read']);await login(manager.page);await manager.page.evaluate(()=>go('payrollPeriods'));
+      await manager.page.locator('[data-action=payrollSettlement]').click();await manager.page.waitForSelector('#sheetContent');
+      assert.equal(await manager.page.locator('[data-action=payrollAddPayment]').count(),0);
+      assert.equal((await manager.page.evaluate(()=>mock.calls)).some(c=>c.method==='POST'&&c.url==='/api/v3/payroll-settlements'),false);
+      assert.deepEqual(manager.errors,[]);await manager.page.close();
     });
     await t.test('admin invite flow displays one-time token only after create; manager cannot open users',async()=>{
       const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);
