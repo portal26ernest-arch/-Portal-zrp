@@ -21,15 +21,15 @@ Statuses reflect the current roadmap and prior verified reports. `✅` means evi
 | 46 | Productivity | 🟡 | Work records and analytics API | Unit/hour/quality period comparisons where source data exists | No |
 | 47 | Scheduled reminders | ⏳ | No scheduler framework evidenced | Implement idempotent company-scoped jobs and tests | No |
 | 52 | Payroll XLSX payments sheet | ✅ | `server/test_report_xlsx.py`; `PayrollSettlementTest.test_payroll_xlsx_document_includes_settlement_sheet_and_payment_date` | None for the tested generation flow | No |
-| 53,55–56,68 | Documents UI and cross-client sync | 🟡 | Parts 8/10/11; E2E case added in `490be25` but local PostgreSQL gate skipped | Run two-session same-company create/list/download/archive E2E on disposable PostgreSQL; complete remaining UI parity | No |
+| 53,55–56,68 | Documents UI and cross-client sync | 🟡 | `490be25` same-company two-session E2E test added; `e85078e` shared UI virtual folders/current-vs-archive labels; Web #20 green | Run two-session create/list/download/archive and cross-company denial on disposable PostgreSQL; complete history/revision parity | No |
 | 59–63 | Android/Web save/share/email | 🟡 | Android source contracts; `web-share.test.cjs` 3/3 cancellation/fallback/revoke/allowlist; Web #15 predates this test file | Verify follow-up in Web CI; physical native share/device details remain manual | Yes (device check only) |
 | 77–79 | Marketplace news ingestion | 🟡 | Part 5 trusted boundary and read API | No proven public official source; scheduler/operator framework incomplete | Yes (source only if available) |
 | 80–83 | Android app/update/release | 🟡 | `PORTAL_RELEASE_3_4_CANDIDATE_REPORT.md`, CI run 24 | CI build 3.5; protected prod release secrets/approval; user device check | Yes |
 | 84 | Functional Web client | ✅ | Parts 8,10,11 reports; Part 10 real role matrix | No new functional blocker for verified scenarios | No |
 | 86 | Shared UI and platform parity | 🟡 | Part 10 real Web role matrix and shared-client baseline | Physical Android user check remains manual | Yes (device check only) |
 | 85 | Windows installer/update | ⏳ | No Windows client/toolchain in checkout; `dotnet` unavailable locally | Implement thin client, installer and CI artifact | No |
-| 93 | Off-server backup | 🟡 | Existing PostgreSQL backup/restore rehearsal | Provider-neutral tooling and actual external target verification | Yes (target) |
-| 94–95 | Production domain/HTTPS | ⏳ | Stage 7 report: temporary tunnel only; HTTP-01 TCP/80 issue | Domain/DNS/network and production HTTPS | Yes |
+| 93 | Off-server backup | 🟡 | `05ab65e`, `aa94fa3`; provider-neutral pg_dump/hash/manifest/encryption/retention helper and disposable restore hard guard; ops tests 7/7 | External target/provider configuration and isolated PostgreSQL restore rehearsal | Yes (target) |
+| 94–95 | Production domain/HTTPS | ⏳ | `05ab65e` nginx HTTPS/loopback template; Stage 7 report: temporary tunnel only; HTTP-01 TCP/80 issue | Domain/DNS/network and production certificate rollout | Yes |
 | 96–99 | Final import and production cutover | ⏳ | `PORTAL_PRODUCTION_CUTOVER_RUNBOOK.md` prepared only | Owner approval, freeze, snapshot, reconciliation and controlled cutover | Yes |
 | 100 | Rollback design | ✅ | `PORTAL_MASTER_ROADMAP.md`; Stage 7 rollback rehearsal | Final production rollback rehearsal is gated on cutover approval | Yes |
 | 102 | employee_id compatibility boundary | 🟡 | Legacy-boundary tests and runtime audit still required | Complete runtime audit; retain historical columns | No |
@@ -38,4 +38,4 @@ Statuses reflect the current roadmap and prior verified reports. `✅` means evi
 
 See `PORTAL_FINAL_EXTERNAL_BLOCKERS.md` for only external/provider actions. The Part 12 final report will replace this checkpoint matrix with the final evidence and test run IDs when work completes.
 
-Continuation №1 code checkpoints: `490be25` and `0770275`. Continuation №2 access/audit changes are currently local and uncommitted in the working tree; no roadmap item was promoted. PostgreSQL cross-session Documents and Stage 10 migration have not run, and payroll settlement UI still needs role-flow/database coverage.
+Latest code checkpoint: `aa94fa3`; worktree is clean and branch is pushed. `05ab65e` integrates the parallel infrastructure commit `1066c77`; follow-up `aa94fa3` suppresses arbitrary SQL validation output and rejects unsafe backup filename prefixes. No roadmap status was promoted. No Part 12 disposable PostgreSQL/VPS rehearsal or backup restore was run; existing cross-session Documents E2E is still opt-in and unexecuted.

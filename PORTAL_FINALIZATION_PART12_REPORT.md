@@ -197,3 +197,18 @@ Commits after the prior checkpoint: `0d477bf` tariff history query/view, `9bf376
 - Roadmap counts unchanged: **72 ✅ / 34 🟡 / 8 ⏳ / 12 🔌**. No status was promoted from these local or mocked UI tests.
 
 **Production cutover NOT performed.** Production DB/service/configuration, DNS, financial operations, signing secrets and physical device were untouched.
+
+## Automatic continuation update — current code checkpoint `aa94fa3`
+
+- `e85078e` completes a limited Documents UI parity increment: virtual grouping by available company/client/employee, category, type and month metadata, with current/archive labels. Browser tests verify folders and document states; this is not evidence of cross-client server synchronization.
+- Integrated `1066c77` as `05ab65e`. `aa94fa3` adds two safety corrections: do not print arbitrary SQL validation output during restore rehearsal; reject unsafe backup filename prefixes used for retention pruning.
+- `ops.test_infra_readiness`: **7/7 passed**; `compileall ops`, UI Playwright **19/19**, Documents/Excel/chat/Web Share contracts **12/12**, syntax and diff checks passed.
+- GitHub UI SHA `e85078e`: Web #20, Android UI #27, APK #41 green. Server #45 at `26e595d` remains the latest server workflow; server code did not change in these UI/ops commits. Full server discovery at `b6b4092`: **212 passed, 20 skipped, 0 failed**.
+- PostgreSQL backup/restore rehearsal and Documents cross-session E2E are **not run**; no isolated test DB/role was created. Only ops helper tests used temporary local files/mocked subprocess results. External backup target remains unconfigured; production untouched.
+- Roadmap remains **72 ✅ / 34 🟡 / 8 ⏳ / 12 🔌**; no status promotions.
+
+### Exact NEXT
+
+Continue C source-backed profitability, productivity/radar and disabled-by-default reminders with idempotency/cadence/retry/time tests. Then finish D real disposable PostgreSQL Documents cross-session E2E and Android/Web file parity; continue B product/batch/returns/name-history and A approval/settings/audit role matrix. Follow with disposable PG backup restore, legacy money/identity audits, Windows thin client/news framework, then full final regression and GitHub CI. Do not create a completion or blocked flag until the corresponding condition is true.
+
+A–D and Part 12 are **not complete**. No production cutover was performed.

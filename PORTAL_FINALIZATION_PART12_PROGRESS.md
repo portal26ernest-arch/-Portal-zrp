@@ -152,3 +152,31 @@ Latest code checkpoint before Continuation №2: `8460c71` (branch pushed).
 - Exact next: continue C source-backed metrics/reminder framework and D Documents parity/E2E setup, then B workflow/catalog, followed by A approval/settings/audit matrix. Run targeted and broad tests after each block, inspect migrations, push logical commits and verify CI.
 
 **Not done:** A–D are not complete. PostgreSQL/VPS E2E and cleanup proof are missing. Production DB/service, domain/DNS, financial operations, signing secrets, physical device and production cutover remain untouched. Production cutover **NOT performed**.
+
+## AUTOMATIC CONTINUATION — checkpoint `aa94fa3` (2026-09-30)
+
+### DONE NOW
+
+- Added Documents virtual grouping in the shared UI by category, document type, month, and available client/employee identifiers; cards label current version versus archived record. No new filesystem behavior or tenant scope was added.
+- Integrated assistant branch commit `1066c77` as `05ab65e`: provider-neutral pg_dump custom backup, pg_restore-list verification, SHA-256/manifest, optional age encryption, retention pruning, restore rehearsal restricted to `portal_test_restore_*`, nginx HTTPS reverse proxy template, hardened systemd backup timer and example environment file.
+- Security follow-up `aa94fa3`: restore validation SQL output is no longer printed (it could contain returned business rows); backup prefix must be a simple filename prefix before retention deletion.
+- D/UI and document contract tests passed; infrastructure helper tests passed. Branch is pushed; no conflict with existing ops/deploy files (none existed on prior HEAD).
+
+### TESTS / CI EVIDENCE
+
+- `node --test android_src/tests/ui.test.cjs`: **19 passed, 0 skipped, 0 failed** (includes Documents folders and revision/archive labels).
+- `node --test android_src/tests/documents-excel.test.cjs android_src/tests/documents-chat.test.cjs android_src/tests/web-share.test.cjs`: **12 passed, 0 failed**.
+- `python -m unittest ops.test_infra_readiness -v`: **7 passed, 0 failed**.
+- `python -m compileall -q ops`, relevant JS `node --check`, `git diff --check`: passed.
+- GitHub for tested UI SHA `e85078e`: Web #20, Android UI #27, APK #41 all success. No workflow ran for ops-only follow-up `aa94fa3`; server sources are unchanged since Server #45 success at `26e595d`. Full server discovery at `b6b4092`: **212 passed, 20 skipped, 0 failed**.
+- No actual pg_dump/pg_restore or VPS rehearsal ran: no isolated PostgreSQL runner/credentials were available. No production backup target was configured or touched. The new helper unit tests use temporary files/mocked restore commands only.
+- Roadmap counts remain **72 ✅ / 34 🟡 / 8 ⏳ / 12 🔌**. No item was promoted from these tests.
+
+### NEXT — continue without waiting
+
+1. Block C: implement source-backed profitability/radar and company-scoped productivity tests; add the disabled-by-default reminder/job framework with idempotency, cadence, injected clock and retry state. Re-run payroll settlement role and XLSX tests.
+2. Block D: run the existing real PostgreSQL two-session Documents E2E through an isolated runner when available; finish API metadata/history and UI pagination/filter/error cases, Web Share cancellation/fallback, Android FileProvider/save/share/email contract checks, and Excel regression.
+3. Block B: complete product CRUD/archive/search, stable-ID rename/aliases, batch plan/fact and internal FBS/FBO/returns lifecycle. Block A: complete invite approve/revoke role matrix and audit/settings policy checks.
+4. Then run new disposable PostgreSQL/RLS and backup-restore rehearsals only against `portal_test_*`; inventory legacy REAL money and employee_id/telegram_id boundaries; investigate thin Windows client and news operator scheduler; full final regression and CI.
+
+**NOT DONE:** A–D remain incomplete; no Part 12 disposable PostgreSQL/VPS run or cleanup proof; no owner-visible artifact hash was fetched for latest APK. Worktree is clean at `aa94fa3`. Production DB/service/DNS/financial operations/cutover remain untouched. No completion/blocked flag was created because software work remains.
