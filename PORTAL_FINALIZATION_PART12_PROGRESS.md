@@ -84,7 +84,7 @@
 
 Latest code checkpoint before Continuation №2: `8460c71` (branch pushed).
 
-## CONTINUATION №2 — local checkpoint before A slice commit (2026-09-30)
+## CONTINUATION №2 — checkpoint `0006547` (2026-09-30)
 
 ### DONE NOW (not a claim that A or Part 12 is complete)
 
@@ -94,26 +94,31 @@ Latest code checkpoint before Continuation №2: `8460c71` (branch pushed).
 - Added company access summary and existing-count display; enabled/suspended company check for authenticated mutations and invite acceptance. Existing owner company editor now exposes fee, demo dates, company/service state and seat limit; PORTAL limit remains unchangeable/unlimited. Server-side seat check and concurrency behavior remain in the existing save_user/save_company implementation.
 - Added separate company and Platform Owner audit views with filters/pagination and safe summaries; lifecycle writes create audit entries without token/PIN data.
 - Added Stage 10 to the disposable PostgreSQL Documents integration migration set and the isolated Stage 7 staging migration list. No PostgreSQL/VPS run occurred in this checkpoint.
+- Committed and pushed `00065474fd5b0666810fd4defedfd9a17a374f8b` (`feat: add secure company invitations and audit views`); worktree was clean after commit.
+- At that SHA, GitHub Server #42, Web #15, Android UI #21 and Android build #35 all completed successfully. Staging artifact: `PORTAL_Android_3.5-dev_staging_78a5df419939da5c41e208018f52a809b93bed1a9e29eba4db320317974111ca` (APK SHA-256 is the 64-hex suffix); artifact ZIP digest `35fa5c07b9acb6113254d8b705ed140159246b0db624adaeab82a6654607d8ab`.
+- Added deterministic Web Share contract tests for cancellation (no forced download), unsupported-browser fallback, object URL revocation, and filename/MIME allowlist; included them in Web CI. This follow-up is local and pending its own commit/CI.
 - No roadmap status was promoted. Items 10–12/15 remain 🟡 pending Web Playwright role flow, migration/PostgreSQL rehearsal, and remaining setting policy review.
 
 ### TESTS RUN NOW
 
 - `python -m unittest test_production -q` from `server/`: **30 passed, 0 failed**.
 - `python -m unittest test_portal_tenancy -q` from `server/`: **15 passed, 0 failed**, including limit, owner override, suspension and concurrent last-seat cases.
+- `python -m unittest test_payroll_settlement test_report_xlsx -q`: **27 passed, 0 failed**; settlement role-matrix and payout XLSX tests rerun.
 - Targeted invite lifecycle/role/scope/expiry/suspension tests are included above; hash-at-rest, no-token audit, consumed/revoked, owner explicit scope and login after approval passed.
 - `node --test android_src/tests/ui.test.cjs android_src/tests/native-shell.test.cjs`: **9 passed, 1 skipped, 0 failed**; browser Playwright test skipped locally because Playwright is not installed.
+- `node --test android_src/tests/web-adapter.test.cjs android_src/tests/web-share.test.cjs`: **6 passed, 0 failed**. A run including `web-smoke.playwright.cjs` could not load because local Playwright is absent; Web CI installs Playwright first.
 - `node --check` for app/production/UI tests, `python -m compileall -q server`, and `git diff --check`: passed.
-- PostgreSQL Stage 10 migration, actual web browser role flow, Android Gradle compile and all latest-SHA CI are still pending.
+- PostgreSQL Stage 10 migration and actual web browser role flow remain pending. Android Gradle compile and the four GitHub workflows succeeded at `0006547`; later changes need separate verification.
 
 ### NEXT
 
-- Review and commit this A slice; push the feature branch and wait for Server/Web/Android UI/staging build checks. Fix any failures.
+- Commit/push the Web Share test follow-up and verify Web CI.
 - Complete outstanding A parity/gates (company module-toggle policy if a supported model exists, owner/company audit browser checks, real Stage 10 PostgreSQL migration/invitation RLS rehearsal); update statuses only after evidence.
 - Then continue B Client 360/tariff and product/production flows; C receivables/profitability/radar/reminders plus settlement role-flow; D Documents cross-client PostgreSQL run/UI/share/file contracts. Do not stop after CI.
 - Before final completion, inspect/fetch and only then decide whether assistant infrastructure commit `1066c77` is safe to cherry-pick; do not duplicate its files.
 
 ### NOT DONE / EVIDENCE LIMITS
 
-- A–D are not complete. No disposable PostgreSQL E2E, Web Playwright, full regression, Android CI at a new SHA, or VPS cleanup proof has run in this checkpoint.
+- A–D are not complete. No disposable PostgreSQL E2E, Web Playwright role flow, full regression, or VPS cleanup proof has run in this checkpoint.
 - Local Playwright/psql/VPS execution remains unavailable; continue software work and use configured CI/test runners if provided.
 - Production DB/service, DNS, signing secrets, and physical phone were untouched; production cutover **NOT performed**.

@@ -5,9 +5,9 @@ Statuses reflect the current roadmap and prior verified reports. `✅` means evi
 | Roadmap item | Feature | Status | Evidence commit/test | Remaining blocker | Owner action required |
 |---:|---|:---:|---|---|:---:|
 | 2 | Server and PostgreSQL tenant isolation | ✅ | Part 8 report; Part 10/11 real PostgreSQL E2E | Continue release regression | No |
-| 10–11 | Invitations and access requests | 🟡 | Continuation №2 local `test_production` 30/30; Stage 10 hash-only schema; shared UI/API added | Commit/push CI, Web role-flow and disposable PostgreSQL RLS rehearsal | No |
-| 12 | Company settings and user limits | 🟡 | `test_portal_tenancy` 15/15; serialized seat and concurrency tests; owner UI and active-count API added | Verify owner/director UI in Playwright; confirm module-toggle support/model | No |
-| 15 | Administrative audit UI | 🟡 | Continuation №2 filtered company/owner audit API and UI; local `test_production` 30/30 | Web role-flow + PostgreSQL audit/RLS integration | No |
+| 10–11 | Invitations and access requests | 🟡 | `0006547`; local `test_production` 30/30; Server #42, Web #15, Android UI #21 green; Stage 10 hash-only schema | Web role-flow and disposable PostgreSQL RLS rehearsal | No |
+| 12 | Company settings and user limits | 🟡 | `0006547`; `test_portal_tenancy` 15/15; owner UI, active-count API, server seat/concurrency tests; Server #42/Web #15 green | Verify owner/director UI in Playwright; confirm module-toggle support/model | No |
+| 15 | Administrative audit UI | 🟡 | `0006547`; filtered company/owner audit views; local `test_production` 30/30; Server #42/Web #15 green | Web role-flow + PostgreSQL audit/RLS integration | No |
 | 17 | Client 360 | 🟡 | Current roadmap; client/finance APIs | Complete editable blocks and unified client view | No |
 | 19 | Effective-date tariff history | 🟡 | Current tariff API and roadmap evidence | Complete history UI/conflict coverage | No |
 | 28 | Batch plan/fact economics | 🟡 | Batch/economy API in `server/production_service.py` | Verify complete plan/fact inputs and UI | No |
@@ -22,7 +22,7 @@ Statuses reflect the current roadmap and prior verified reports. `✅` means evi
 | 47 | Scheduled reminders | ⏳ | No scheduler framework evidenced | Implement idempotent company-scoped jobs and tests | No |
 | 52 | Payroll XLSX payments sheet | ✅ | `server/test_report_xlsx.py`; `PayrollSettlementTest.test_payroll_xlsx_document_includes_settlement_sheet_and_payment_date` | None for the tested generation flow | No |
 | 53,55–56,68 | Documents UI and cross-client sync | 🟡 | Parts 8/10/11; E2E case added in `490be25` but local PostgreSQL gate skipped | Run two-session same-company create/list/download/archive E2E on disposable PostgreSQL; complete remaining UI parity | No |
-| 59–63 | Android/Web save/share/email | 🟡 | Android source contracts and Part 11 browser tests | Complete Web Share browser matrix; device check remains manual | Yes (device check only) |
+| 59–63 | Android/Web save/share/email | 🟡 | Android source contracts; `web-share.test.cjs` 3/3 cancellation/fallback/revoke/allowlist; Web #15 predates this test file | Verify follow-up in Web CI; physical native share/device details remain manual | Yes (device check only) |
 | 77–79 | Marketplace news ingestion | 🟡 | Part 5 trusted boundary and read API | No proven public official source; scheduler/operator framework incomplete | Yes (source only if available) |
 | 80–83 | Android app/update/release | 🟡 | `PORTAL_RELEASE_3_4_CANDIDATE_REPORT.md`, CI run 24 | CI build 3.5; protected prod release secrets/approval; user device check | Yes |
 | 84 | Functional Web client | ✅ | Parts 8,10,11 reports; Part 10 real role matrix | No new functional blocker for verified scenarios | No |

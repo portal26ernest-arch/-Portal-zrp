@@ -36,4 +36,4 @@ jobs:
       - run: python -m unittest server.test_web_static server.test_portal_app_server -v
       - run: node --check android_src/tests/web-postgresql-part10.playwright.cjs
       - run: node --check android_src/tests/web-postgresql-part11-template-download.playwright.cjs
-      - run: node --test android_src/tests/web-adapter.test.cjs android_src/tests/web-smoke.playwright.cjs
+      - run: node --test android_src/tests/web-adapter.test.cjs android_src/tests/web-share.test.cjs android_src/tests/web-smoke.playwright.cjs

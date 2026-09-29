@@ -116,7 +116,9 @@ This is an in-progress local checkpoint based on `8460c71`; it does not claim A�
 
 - `python -m unittest test_production -q` — **30 passed, 0 failed**.
 - `python -m unittest test_portal_tenancy -q` — **15 passed, 0 failed**.
+- `python -m unittest test_payroll_settlement test_report_xlsx -q` — **27 passed, 0 failed**.
 - `node --test android_src/tests/ui.test.cjs android_src/tests/native-shell.test.cjs` — **9 passed, 1 skipped, 0 failed** (Playwright absent locally).
+- `node --test android_src/tests/web-adapter.test.cjs android_src/tests/web-share.test.cjs` — **6 passed, 0 failed**. Adding `web-smoke.playwright.cjs` to a local run failed to load because Playwright is not installed locally; CI installs it.
 - `node --check` (`app.js`, `production.js`, `ui.test.cjs`), `python -m compileall -q server`, `git diff --check` — passed.
 - No disposable PostgreSQL/VPS test or cleanup ran. Android Gradle and GitHub CI for this new code remain pending.
 
@@ -126,6 +128,14 @@ This is an in-progress local checkpoint based on `8460c71`; it does not claim A�
 - Blocks B, C and D have not yet been implemented in this continuation. Do not promote roadmap statuses until their tests and E2E evidence exist.
 - Parts 1–11 and previous Part 12 evidence remain tied to the SHAs and reports where they were tested; this section does not restate those runs as new.
 - Production cutover **NOT performed**.
+
+### GitHub results for `0006547`
+
+- Server isolation #42: **success**.
+- Web checks #15: **success**.
+- Android UI #21: **success**.
+- Android staging build #35: **success**; artifact `PORTAL_Android_3.5-dev_staging_78a5df419939da5c41e208018f52a809b93bed1a9e29eba4db320317974111ca`, APK SHA-256 `78a5df419939da5c41e208018f52a809b93bed1a9e29eba4db320317974111ca`, ZIP artifact digest `35fa5c07b9acb6113254d8b705ed140159246b0db624adaeab82a6654607d8ab`.
+- These runs validate `0006547` only. PostgreSQL Stage 10 invitation/RLS and Documents two-session E2E were not run.
 
 ## Continuation №1 update — checkpoint `0770275`
 
