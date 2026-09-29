@@ -19,6 +19,7 @@ def migrate(conn, company_id, dialect=None):
         migrate_activity(r)
         migrate_retention(r)
         migrate_payroll_settlement(r)
+        migrate_invoice_revisions(r)
         return
     # Current catalog baseline, not a reconstruction or recalculation of history.
     for operation in r.catalog('operations'):
@@ -37,6 +38,7 @@ def migrate(conn, company_id, dialect=None):
     migrate_activity(r)
     migrate_retention(r)
     migrate_payroll_settlement(r)
+    migrate_invoice_revisions(r)
 
 def migrate_activity(r):
     """Version 4 augments the existing session table; no old session is falsified."""
@@ -144,6 +146,11 @@ def migrate_payroll_settlement(r):
         r.sql('INSERT INTO portal_production_migrations(company_id,version,applied_at) VALUES(?,6,?)',(r.company_id,utcnow()))
     from documents_schema import migrate_documents
     migrate_documents(r)
+
+def migrate_invoice_revisions(r):
+    """Version 9 marks readiness for the append-only invoice revision workflow."""
+    if r.sql('SELECT 1 FROM portal_production_migrations WHERE company_id=? AND version=9',(r.company_id,)).fetchone():return
+    r.sql('INSERT INTO portal_production_migrations(company_id,version,applied_at) VALUES(?,9,?)',(r.company_id,utcnow()))
 
 
 def validate_payroll_settlement(r):

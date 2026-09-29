@@ -21,7 +21,7 @@ from unittest.mock import patch
 
 MIGRATIONS=('postgresql_core_stage4b.sql','postgresql_stage3.sql','postgresql_runtime.sql',
  'postgresql_rls_context.sql','postgresql_stage5_chat_retention.sql','postgresql_stage6_payroll_settlement.sql',
- 'postgresql_stage4c.sql','postgresql_stage8_documents_excel.sql')
+ 'postgresql_stage4c.sql','postgresql_stage8_documents_excel.sql','postgresql_stage9_invoice_revisions.sql')
 
 _WEB_E2E=os.environ.get('PORTAL_WEB_PG_E2E')=='1'
 _DOCS_E2E=os.environ.get('PORTAL_DOCUMENTS_PG_INTEGRATION')=='1'
@@ -54,6 +54,7 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
             for name in MIGRATIONS:cls.migration(name)
             # Verify reapplication without modifying earlier migration history.
             cls.migration('postgresql_stage8_documents_excel.sql')
+            cls.migration('postgresql_stage9_invoice_revisions.sql')
             with psycopg.connect('dbname='+cls.database+' user=postgres host=/var/run/postgresql',autocommit=True) as admin:
                 tenant=sql.Identifier(cls.roles['tenant']);control=sql.Identifier(cls.roles['control'])
                 for role in (tenant,control):

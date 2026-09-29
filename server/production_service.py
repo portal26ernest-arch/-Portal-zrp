@@ -80,6 +80,23 @@ class Production:
         if 'client_id' in obj: self.client(obj['client_id'])
         return obj
 
+    def invoice_current(self,identity):
+        invoice=self.entity('invoices',identity)
+        revisions=sorted((r for r in self.r.list('invoice_revisions') if r['invoice_id']==invoice['id']),key=lambda r:r['revision'])
+        history=[dict(revision=1,state='finalized',snapshot={k:invoice[k] for k in ('work_ids','lines','amount','due_at')})]
+        history.extend(dict(revision=r['revision'],state=r['state'],snapshot=r['snapshot']) for r in revisions if r['state']=='finalized')
+        if revisions:
+            latest=revisions[-1]
+            historical=history if latest['state']=='editing' else history[:-1]
+            invoice.update(latest['snapshot'],snapshot=latest['snapshot'],state=latest['state'],revision=latest['revision'],history=historical,revision_history=historical)
+        else:invoice.setdefault('state','finalized');invoice.setdefault('revision',1);invoice['history']=[];invoice['revision_history']=history
+        return invoice
+
+    def billed_work_ids(self):
+        billed={wid for item in self.r.list('invoices') for wid in item['work_ids']}
+        billed.update(wid for item in self.r.list('invoice_revisions') for wid in item['snapshot'].get('work_ids',[]))
+        return billed
+
     def operation(self,client_id,identity):
         self.client(client_id,True)
         op=next((o for o in self.r.catalog('operations') if o['id']==identity and o['client_id']==client_id and o['active']),None)
@@ -555,16 +572,75 @@ class Production:
             note=text(b.get('note'),optional=True),created_by=self.u['id']))
 
     def invoice(self,b):
+        workflow=b.get('workflow')
+        if workflow in ('send_to_editing','save_revision'):
+            if not self.r.sql('SELECT 1 FROM portal_production_migrations WHERE company_id=? AND version=9',(self.r.company_id,)).fetchone():
+                raise ValueError('Invoice revision migration 9 must be applied before changing invoice state')
+            self.need('invoices.read')
+            original=self.entity('invoices',b.get('invoice_id'))
+            history=sorted((r for r in self.r.list('invoice_revisions') if r['invoice_id']==original['id']),key=lambda r:r['revision'])
+            current=self.invoice_current(original['id'])
+            invoice=current
+            if self.u.get('role') not in ('admin','director'):
+                if workflow=='send_to_editing':raise PermissionError('Только администратор или директор может отправить счёт на редактирование')
+                if self.u.get('role')!='manager':raise PermissionError('Нет права изменять счёт')
+            payments=[p for p in self.r.list('payments') if p['invoice_id']==invoice['id']]
+            if workflow=='send_to_editing':
+                if invoice.get('state','finalized')=='editing':return invoice
+                if invoice.get('state','finalized')!='finalized':raise ValueError('Недопустимое состояние счёта')
+                snapshot={k:invoice[k] for k in ('work_ids','lines','amount','due_at')}
+                row=self.r.insert('invoice_revisions',dict(invoice_id=invoice['id'],revision=invoice.get('revision',1),state='editing',snapshot=snapshot))
+                return dict(invoice,state='editing',revision=row['revision'])
+            if invoice.get('state')!='editing':raise ValueError('Счёт не находится на редактировании')
+            submitted=b.get('lines')
+            if submitted is None:
+                ids=b.get('work_ids',invoice['work_ids'])
+                if not isinstance(ids,list) or not ids or len(ids)!=len(set(ids)):raise ValueError('Выберите уникальные записи работ')
+                if any(work_id not in invoice['work_ids'] for work_id in ids):raise ValueError('В новую редакцию можно включать только исходные строки счёта')
+                works=[self.entity('works',wid) for wid in ids]
+                if len({w['client_id'] for w in works})!=1 or works[0]['client_id']!=invoice['client_id']:
+                    raise ValueError('Счёт может включать работы только исходного клиента')
+                lines=[dict(work_id=w['id'],operation_id=w['operation_id'],operation_name=w['operation_name'],quantity=w['quantity'],client_rate=w['client_rate'],amount=w['revenue'],batch_id=self.batch_for_work(w)) for w in works]
+            else:
+                if not isinstance(submitted,list) or not submitted:raise ValueError('Добавьте хотя бы одну строку счёта')
+                old_by_work={line['work_id']:line for line in invoice['lines']}
+                lines=[]
+                for item in submitted:
+                    if not isinstance(item,dict) or set(item)!={'work_id','quantity','client_rate'} or item['work_id'] not in old_by_work:
+                        raise ValueError('Новая редакция может содержать только исходные строки счёта')
+                    if any(line['work_id']==item['work_id'] for line in lines):raise ValueError('Строки счёта должны быть уникальными')
+                    quantity=qty(item['quantity']);rate=item['client_rate']
+                    if type(rate) is not int or not 0<=rate<=100_000_000_000:raise ValueError('Цена строки указана неверно')
+                    lines.append(dict(old_by_work[item['work_id']],quantity=quantity,client_rate=rate,amount=quantity*rate))
+                ids=[line['work_id'] for line in lines]
+            amount=sum(line['amount'] for line in lines)
+            old_lines=invoice['lines']
+            financial=lambda rows:[{k:line.get(k) for k in ('work_id','quantity','client_rate','amount')} for line in rows]
+            if payments and (amount!=invoice['amount'] or financial(lines)!=financial(old_lines)):
+                raise ValueError('Нельзя менять сумму или строки счёта с зарегистрированными оплатами')
+            previous=dict(revision=invoice.get('revision',1),**{k:invoice[k] for k in ('work_ids','lines','amount','due_at')})
+            due=stamp(b.get('due_at',invoice.get('due_at')),True)
+            snapshot=dict(work_ids=ids,lines=lines,amount=amount,due_at=due)
+            revision=invoice.get('revision',1)+1
+            self.r.insert('invoice_revisions',dict(invoice_id=invoice['id'],revision=revision,state='finalized',snapshot=snapshot,previous_snapshot=previous,finalized_at=self.clock()))
+            return dict(invoice,**snapshot,revision=revision,state='finalized',history=list(invoice.get('history',[]))+[dict(revision=invoice.get('revision',1),snapshot=previous)],finalized_at=self.clock())
         self.need('invoices.create');ids=b.get('work_ids')
         if not isinstance(ids,list) or not ids or len(ids)!=len(set(ids)): raise ValueError('Выберите уникальные записи работ')
-        billed={wid for i in self.r.list('invoices') for wid in i['work_ids']}
+        billed=self.billed_work_ids()
         works=[self.entity('works',wid) for wid in ids]
         if any(w['id'] in billed for w in works): raise ValueError('Работа уже выставлена клиенту')
         if len({w['client_id'] for w in works})!=1: raise ValueError('Счёт может включать работы одного клиента')
-        return self.r.insert('invoices',dict(client_id=works[0]['client_id'],work_ids=ids,amount=sum(w['revenue'] for w in works),due_at=stamp(b.get('due_at'),True),lines=[dict(work_id=w['id'],quantity=w['quantity'],client_rate=w['client_rate'],amount=w['revenue'],batch_id=self.batch_for_work(w)) for w in works]))
+        lines=[dict(work_id=w['id'],operation_id=w['operation_id'],operation_name=w['operation_name'],quantity=w['quantity'],client_rate=w['client_rate'],amount=w['revenue'],batch_id=self.batch_for_work(w)) for w in works]
+        amount=sum(w['revenue'] for w in works);due=stamp(b.get('due_at'),True)
+        return self.r.insert('invoices',dict(client_id=works[0]['client_id'],work_ids=ids,amount=amount,due_at=due,lines=lines,
+            state='finalized',revision=1,finalized_at=self.clock(),history=[],snapshot=dict(work_ids=ids,lines=lines,amount=amount,due_at=due)))
 
     def payment(self,b):
-        self.need('payments.record');i=self.entity('invoices',b['invoice_id']);amount=cents(b['amount'])
+        self.need('payments.record');i=self.entity('invoices',b['invoice_id'])
+        history=sorted((r for r in self.r.list('invoice_revisions') if r['invoice_id']==i['id']),key=lambda r:r['revision'])
+        if history:i=dict(i,**history[-1]['snapshot'],state=history[-1]['state'])
+        if i.get('state')=='editing':raise ValueError('Счёт на редактировании; приём оплаты временно недоступен')
+        amount=cents(b['amount'])
         paid=sum(p['amount'] for p in self.r.list('payments') if p['invoice_id']==i['id'])
         if not 0<amount<=i['amount']-paid: raise ValueError('Оплата должна быть больше нуля и не больше остатка счёта')
         return self.r.insert('payments',dict(invoice_id=i['id'],client_id=i['client_id'],amount=amount,reference=text(b.get('reference'),optional=True)))
@@ -699,6 +775,13 @@ class Production:
     def invoices(self):
         self.need('invoices.read');rows=self.scoped('invoices');payments=self.scoped('payments')
         for i in rows:
+            revisions=sorted((r for r in self.r.list('invoice_revisions') if r['invoice_id']==i['id']),key=lambda r:r['revision'])
+            if revisions:
+                latest=revisions[-1]
+                i.update(latest['snapshot'],state=latest['state'],revision=latest['revision'],
+                    revision_history=[r.get('previous_snapshot',r['snapshot']) for r in revisions if r['state']=='finalized'])
+            else:
+                i.setdefault('state','finalized');i.setdefault('revision',1);i.setdefault('revision_history',[])
             i['paid']=sum(p['amount'] for p in payments if p['invoice_id']==i['id']);i['remaining']=i['amount']-i['paid']
             i['status']='paid' if not i['remaining'] else 'partial' if i['paid'] else 'unpaid'
         return rows
@@ -740,7 +823,7 @@ class Production:
                 if m['active'] and m['stock_qty']<=m['min_stock']:attention.append(dict(type='material_low',label='Критический остаток материала',name=m['name'],quantity=m['stock_qty']))
         unbilled=[]
         if {'invoices.create','invoices.read','finance.read'} & self.permissions:
-            billed={wid for i in self.scoped('invoices') for wid in i['work_ids']};unbilled=[w for w in works if w['id'] not in billed]
+            billed=self.billed_work_ids();unbilled=[w for w in works if w['id'] not in billed]
             if unbilled:attention.append(dict(type='not_invoiced',label='Выполненная работа не выставлена клиенту',amount=sum(w['revenue'] for w in unbilled),clients=[dict(client_id=cid,amount=sum(w['revenue'] for w in unbilled if w['client_id']==cid),work_ids=[w['id'] for w in unbilled if w['client_id']==cid]) for cid in sorted({w['client_id'] for w in unbilled})]))
         invoices=self.invoices() if 'invoices.read' in self.permissions else []
         for i in invoices:
