@@ -1,0 +1,31 @@
+[Unit]
+Description=PORTAL application API
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=portal
+Group=portal
+WorkingDirectory=/srv/portal/current/server
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/etc/portal/portal.env
+ExecStart=/usr/bin/python3 /srv/portal/current/server/portal_app_server.py
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/var/lib/portal/documents
+
+[Install]
+WantedBy=multi-user.target

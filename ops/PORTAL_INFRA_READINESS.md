@@ -44,3 +44,11 @@ This track is isolated from Codex Part 12 A–D implementation.
 - Can optionally prove that the internal API port (for example 8770) is not reachable publicly.
 - A failed TLS/header/ping/redirect/public-port check returns NO-GO; the tool never changes DNS, proxy, certificate, service or database state.
 - Unit coverage is in `ops/test_https_endpoint_preflight.py`.
+
+
+## PORTAL API service template
+
+- `deploy/systemd/portal-api.service` runs the API as the non-root `portal` user with systemd hardening.
+- `deploy/systemd/portal.env.example` pins the API to `127.0.0.1:8765` and deliberately leaves production PostgreSQL enablement false.
+- The nginx template now uses `__PORTAL_LOOPBACK_PORT__` instead of a stale hard-coded port, preventing proxy/application port drift.
+- Real database DSNs remain outside Git in the protected server environment file.
