@@ -25,6 +25,8 @@
 - `python -m unittest discover -s server -p 'test_*.py' -v`: 203 tests, 0 failures, 19 skipped (isolated PostgreSQL/VPS or ReportLab runtime gates unavailable locally). This run preceded the final payroll export edit.
 - `python -m unittest test_report_xlsx -v`: 2/2 passed.
 - `python -m unittest test_payroll_settlement.PayrollSettlementTest.test_payroll_xlsx_document_includes_settlement_sheet_and_payment_date -v`: 1/1 passed after wiring active Documents route.
+- `python -m unittest test_payroll_settlement test_report_xlsx test_production -v`: 53 tests, 0 failures.
+- `python -m compileall -q server android_src/tools`, JS syntax checks, and `git diff --check`: passed before the latest Android test fixture adjustment.
 - `node android_src/tests/build-security.test.cjs`, employee-create-mode, native-shell, legacy-boundary, documents-chat checks: all passed.
 - Full compile/syntax/diff checks are to be rerun after remaining implementation.
 - Local shell lacks `dotnet`; no Windows installer build attempted.
@@ -33,4 +35,5 @@
 
 - External actions listed in `PORTAL_FINAL_EXTERNAL_BLOCKERS.md`.
 - Production cutover is explicitly not performed.
-- GitHub Web checks #11 passed. GitHub Android UI #18, APK build #29, and Server isolation #39 were still in progress at the last status check; refresh after latest commit.
+- GitHub at `0cec960`: Android build #29, Server #39, and Web #11 succeeded; artifact `PORTAL_Android_3.5-dev_staging` was created (ZIP SHA-256 `9b9ad04e576985b7042ce76353e8e56f39d29e29d097e8bc4cc34885f276eba6`). Android UI #18 failed because its update-manifest fixture hard-coded the old 3.4 URL; the fixture now derives URL/version from release metadata and will be rerun.
+- GitHub at `f963649`: fresh Server #40 and Web #12 runs were started; refresh before final report.
