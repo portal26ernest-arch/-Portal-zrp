@@ -8,6 +8,7 @@ created by this fixture. Normal regression runs skip this isolated live gate.
 """
 import base64
 import hashlib
+import importlib.util
 import json
 import os
 import secrets
@@ -24,6 +25,7 @@ MIGRATIONS=('postgresql_core_stage4b.sql','postgresql_stage3.sql','postgresql_ru
 
 _WEB_E2E=os.environ.get('PORTAL_WEB_PG_E2E')=='1'
 _DOCS_E2E=os.environ.get('PORTAL_DOCUMENTS_PG_INTEGRATION')=='1'
+_REAL_PDF=os.environ.get('PORTAL_DOCUMENTS_PG_REAL_PDF')=='1'
 @unittest.skipUnless(_DOCS_E2E or _WEB_E2E,'requires disposable local PostgreSQL fixture')
 class DocumentsPostgreSQLTest(unittest.TestCase):
     @classmethod
@@ -195,6 +197,49 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
                    PORTAL_WEB_E2E_COMPANY_A='1',PORTAL_WEB_E2E_COMPANY_B='2')
         result=subprocess.run([node,str(script)],cwd=script.parent,env=env,text=True,capture_output=True,timeout=90)
         self.assertEqual(result.returncode,0,'Browser E2E failed: '+result.stdout+'\n'+result.stderr)
+
+    @unittest.skipUnless(_REAL_PDF and importlib.util.find_spec('reportlab'),
+                         'requires ReportLab real PDF PostgreSQL gate')
+    def test_real_pdf_renderer_on_postgresql_documents(self):
+        from datetime import date,timedelta
+        from production_repository import Repository
+        from reportlab.pdfbase import pdfmetrics
+        work=self.post('work',dict(client_id=1,operation_id=1,quantity=2),self.tokens[1])['data']
+        invoice=self.post('invoices',dict(work_ids=[work['id']]),self.tokens[1])['data']
+        work_before=self.get('works',self.tokens[1])['data'];invoice_before=self.get('invoices',self.tokens[1])['data']
+        invoice_body=dict(document_type='invoice_pdf',invoice_id=invoice['id'])
+        invoice_doc=self.post('document-generate',invoice_body,self.tokens[1])['data']
+        self.assertEqual(self.post('document-generate',invoice_body,self.tokens[1])['data']['id'],invoice_doc['id'])
+        invoice_pdf=base64.b64decode(self.get('document-file?id='+invoice_doc['id'],self.tokens[1])['data']['file_b64'])
+        self.assertTrue(invoice_pdf.startswith(b'%PDF-'));self.assertIn(b'%%EOF',invoice_pdf[-2048:]);self.assertIn(b'/MediaBox',invoice_pdf)
+        self.assertEqual(self.get('document-metadata?id='+invoice_doc['id'],self.tokens[1])['data']['company_id'],1)
+        self.get('document-file?id='+invoice_doc['id'],self.tokens[2],status=400)
+        self.assertEqual(self.get('works',self.tokens[1])['data'],work_before);self.assertEqual(self.get('invoices',self.tokens[1])['data'],invoice_before)
+
+        today=date.today()
+        if today.day>15:start=today.replace(day=1);end=today.replace(day=15)
+        else:previous=today.replace(day=1)-timedelta(days=1);start=previous.replace(day=16);end=previous
+        historical=dict(work,id='pg-real-pdf-'+work['id'],completed_at=end.isoformat()+'T12:00:00.000000',created_at=end.isoformat()+'T12:00:00.000000')
+        with self.portal.tenants.company_scope(1),self.portal.db() as conn:
+            Repository(conn,1).insert('works',{k:v for k,v in historical.items() if k not in {'id','company_id'}},historical['id']);conn.commit()
+        works_for_payroll=self.get('works',self.tokens[1])['data']
+        period=self.post('payroll-periods',dict(period_start=start.isoformat(),period_end=end.isoformat()),self.tokens[1])['data']
+        employee_id=period['snapshot']['employees'][0]['employee_id']
+        with self.portal.tenants.company_scope(1),self.portal.db() as conn:
+            repo=Repository(conn,1);employee_id=repo.payroll_employee(employee_id,legacy=True)['employee_id']
+            snapshot_before=repo.get('payroll_periods',period['id'])['snapshot'];settlements_before=repo.payroll_settlements(period['id'],employee_id)
+        payroll_body=dict(document_type='payroll_slip_pdf',payroll_period_id=period['id'],employee_id=employee_id)
+        payroll_doc=self.post('document-generate',payroll_body,self.tokens[1])['data']
+        self.assertEqual(self.post('document-generate',payroll_body,self.tokens[1])['data']['id'],payroll_doc['id'])
+        payroll_pdf=base64.b64decode(self.get('document-file?id='+payroll_doc['id'],self.tokens[1])['data']['file_b64'])
+        self.assertTrue(payroll_pdf.startswith(b'%PDF-'));self.assertIn(b'%%EOF',payroll_pdf[-2048:]);self.assertIn(b'/MediaBox',payroll_pdf)
+        self.assertIn(ord('\u0420'),pdfmetrics.getFont('PortalUnicode').face.charToGlyph)
+        self.get('document-file?id='+payroll_doc['id'],self.tokens[2],status=400)
+        with self.portal.tenants.company_scope(1),self.portal.db() as conn:
+            repo=Repository(conn,1)
+            self.assertEqual(repo.get('payroll_periods',period['id'])['snapshot'],snapshot_before)
+            self.assertEqual(repo.payroll_settlements(period['id'],employee_id),settlements_before)
+        self.assertEqual(self.get('works',self.tokens[1])['data'],works_for_payroll);self.assertEqual(self.get('invoices',self.tokens[1])['data'],invoice_before)
 
     def test_generated_invoice_and_payroll_documents_are_company_scoped_and_financially_read_only(self):
         from datetime import date,timedelta
