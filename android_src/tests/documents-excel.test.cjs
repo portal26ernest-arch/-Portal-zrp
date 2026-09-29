@@ -84,3 +84,16 @@ test('Invoice revisions and XLSX documents are capability gated and tied to the 
   assert.match(production,/client_rate:Math\.round\(Number\(row\.querySelector\('[^']+'\)\.value\)\*100\)/);
   assert.match(production,/\['admin','director'\]\.includes\(S\.me\.role\).*Отправить на редактирование/);
 });
+
+test('Payroll settlement UI reads append-only balances and gates payment/reversal actions',()=>{
+  const production=fs.readFileSync(path.join(assets,'production.js'),'utf8');
+  assert.match(production,/payroll-settlements\?payroll_period_id=/);
+  assert.match(production,/Выплачено/);
+  assert.match(production,/Остаток/);
+  assert.match(production,/allowed\('payroll\.settlement\.read'\).*payrollSettlement/s);
+  assert.match(production,/allowed\('payroll\.settlement\.payout'\).*payrollAddPayment/s);
+  assert.match(production,/entry_type:'payout'/);
+  assert.match(production,/entry_type:'reversal'/);
+  assert.match(production,/Исходная запись сохранится в истории/);
+  assert.match(production,/productionPost\('payroll-settlements'/);
+});
