@@ -130,6 +130,29 @@ class ProductionTest(unittest.TestCase):
         self.request('/api/v3/invitations',self.admin,{'action':'revoke','invite_id':created['invite']['id']},method='POST')
         self.request('/api/access-invites/accept',body={'token':created['token'],'pin':'6789'},method='POST',status=403)
 
+    def test_company_audit_entity_date_filters_pagination_and_safe_summary(self):
+        created=[]
+        for n in ('audit-first','audit-second'):
+            created.append(self.post('invitations',dict(action='create',role='packer',username=n,
+                display_name=n,request_id=n))['data'])
+        first_id=created[0]['invite']['id']
+        filtered=self.get('audit?action=access_invite.created&entity_id='+first_id+
+            '&from=2026-01-01&to=2099-12-31&limit=10')['data']
+        self.assertEqual(filtered['total'],1)
+        row=filtered['items'][0]
+        self.assertEqual((row['action'],row['entity_id']),('access_invite.created',first_id))
+        self.assertEqual(row['actor_id'],1)
+        self.assertEqual(row['summary'],'Создано приглашение')
+        self.assertNotIn('token',json.dumps(row).lower());self.assertNotIn('pin',json.dumps(row).lower())
+        first_page=self.get('audit?action=access_invite.created&from=2026-01-01&to=2099-12-31&page=1&limit=1')['data']
+        second_page=self.get('audit?action=access_invite.created&from=2026-01-01&to=2099-12-31&page=2&limit=1')['data']
+        self.assertGreaterEqual(first_page['total'],2)
+        self.assertEqual((len(first_page['items']),len(second_page['items'])),(1,1))
+        self.assertNotEqual(first_page['items'][0]['id'],second_page['items'][0]['id'])
+        self.assertGreaterEqual(first_page['items'][0]['at'],second_page['items'][0]['at'])
+        self.get('audit?entity_id='+first_id+'&company_id=2',status=403)
+        self.get('audit',self.worker,status=403)
+
     def test_company_access_summary_is_capability_and_owner_scope_checked(self):
         self.assertTrue(self.get('company-access')['data']['unlimited'])
         self.assertEqual(self.get('company-access')['data']['active_users'],2)
