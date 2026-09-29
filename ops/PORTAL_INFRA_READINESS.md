@@ -24,3 +24,12 @@ This track is isolated from Codex Part 12 A–D implementation.
 - Python syntax checks;
 - git diff --check;
 - disposable PostgreSQL rehearsal on VPS only after merge/cherry-pick into the active Part 12 integration branch.
+
+
+## Off-server export transport
+
+- `ops/offsite_backup.py` verifies the manifest, SHA-256 and checksum sidecar before export.
+- Filesystem transport supports a mounted/network/off-server target with atomic copy and post-copy hash verification.
+- Rclone transport uses an externally configured remote and never accepts embedded passwords/tokens/access keys.
+- Real provider credentials and the final off-server destination remain owner/provider deployment inputs; they are not committed.
+- Unit coverage is in `ops/test_offsite_backup.py`.
