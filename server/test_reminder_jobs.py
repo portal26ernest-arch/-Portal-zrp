@@ -1,7 +1,15 @@
 import unittest
+import sqlite3
 from datetime import datetime, timezone
 
-from reminder_jobs import Reminder, ReminderRunner
+from reminder_jobs import Reminder, ReminderRunner, persist_once, source_candidates
+from production_repository import Repository
+
+
+class FixtureRepository:
+    company_id=8
+    def __init__(self,rows):self.rows=rows
+    def list(self,kind):return list(self.rows.get(kind,[]))
 
 
 class ReminderRunnerTests(unittest.TestCase):
@@ -66,6 +74,34 @@ class ReminderRunnerTests(unittest.TestCase):
     def test_candidate_identity_rejects_control_and_secret_like_values(self):
         with self.assertRaises(ValueError):
             Reminder("invoice", "../private-token", "x").key("2026-09-30")
+
+    def test_candidates_use_partial_invoice_balance_local_due_date_and_unbilled_work(self):
+        repo=FixtureRepository({
+            'invoices':[
+                {'id':'late-partial','amount':1000,'due_at':'2026-09-29','work_ids':['billed-work']},
+                {'id':'paid','amount':500,'due_at':'2026-09-28','work_ids':['paid-work']},
+                {'id':'due-today','amount':700,'due_at':'2026-10-01','work_ids':['today-work']},
+                {'id':'due-at-local-day-end','amount':300,'due_at':'2026-09-30T22:30:00+00:00','work_ids':[]},
+            ],
+            'payments':[{'invoice_id':'late-partial','amount':400},{'invoice_id':'paid','amount':500}],
+            'invoice_revisions':[],
+            'works':[{'id':'billed-work'},{'id':'paid-work'},{'id':'today-work'},{'id':'unbilled-work'}],
+        })
+        candidates=source_candidates(repo,datetime(2026,9,30,22,tzinfo=timezone.utc),utc_offset_minutes=180)
+        self.assertEqual([(c.kind,c.entity_id) for c in candidates],[('invoice_overdue','late-partial'),('work_unbilled','unbilled-work')])
+
+    def test_notification_sink_is_atomic_company_scoped_and_idempotent(self):
+        connection=sqlite3.connect(':memory:')
+        try:
+            connection.execute('CREATE TABLE portal_production(company_id INTEGER,kind TEXT,id TEXT,payload TEXT,created_at TEXT,PRIMARY KEY(company_id,kind,id))')
+            repository=Repository(connection,8)
+            reminder=Reminder('invoice_overdue','invoice-1','Просрочена оплата')
+            key=reminder.key('2026-09-30');now=datetime(2026,9,30,tzinfo=timezone.utc)
+            self.assertTrue(persist_once(repository,8,reminder,key,now))
+            self.assertFalse(persist_once(repository,8,reminder,key,now))
+            self.assertEqual(connection.execute("SELECT count(*) FROM portal_production WHERE company_id=8 AND kind='notifications'").fetchone()[0],1)
+            with self.assertRaises(PermissionError):persist_once(repository,9,reminder,key,now)
+        finally:connection.close()
 
 
 if __name__ == "__main__":

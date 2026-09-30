@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 KINDS = {'batches','tasks','works','tariffs','permissions','plans','usage','expenses',
          'invoices','payments','settings','audit','links','requests','shipments',
          'access_events','access_sessions','work_timers','timer_events',
-         'payroll_periods','invoice_revisions','documents','products','chat_messages','chat_pins','chat_attachments'}
+         'payroll_periods','invoice_revisions','documents','products','notifications','chat_messages','chat_pins','chat_attachments'}
 MUTABLE = {'batches','tasks','permissions','settings','access_sessions','work_timers','products'}
 DELETABLE = {'chat_messages','chat_pins','chat_attachments'}
 
@@ -57,6 +57,16 @@ class Repository:
         self.sql('INSERT INTO portal_production(company_id,kind,id,payload,created_at) VALUES(?,?,?,?,?)',
                  (self.company_id,kind,value['id'],json.dumps(value,ensure_ascii=False,sort_keys=True),value['created_at']))
         return value
+
+    def insert_once(self, kind, data, identity):
+        """Atomically append one tenant-scoped immutable row for an idempotency key."""
+        if kind not in KINDS: raise ValueError('Неизвестная сущность')
+        value = dict(data, id=str(identity), company_id=self.company_id)
+        value.setdefault('created_at',utcnow())
+        cursor=self.sql('''INSERT INTO portal_production(company_id,kind,id,payload,created_at)
+                           VALUES(?,?,?,?,?) ON CONFLICT(company_id,kind,id) DO NOTHING''',
+                        (self.company_id,kind,value['id'],json.dumps(value,ensure_ascii=False,sort_keys=True),value['created_at']))
+        return cursor.rowcount==1
 
     def update(self, kind, value):
         if kind not in MUTABLE: raise ValueError('История неизменяема')
