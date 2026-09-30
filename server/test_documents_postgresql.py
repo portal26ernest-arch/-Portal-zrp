@@ -233,6 +233,48 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.assertEqual(next(row for row in refreshed if row['id']==doc['id'])['status'],'archived')
         self.get('document-metadata?id='+doc['id'],first)
 
+    def test_secure_invitation_lifecycle_uses_hash_and_tenant_scope(self):
+        """Stage 10 invitations remain hash-only, one-time and tenant-scoped on PostgreSQL."""
+        body={'action':'create','role':'packer','username':'pg-invite-candidate',
+              'display_name':'PG Invite Candidate','request_id':'pg-invite-once'}
+        created=self.request('/api/v3/invitations',self.admin,body,method='POST')['data']
+        token=created['token'];invite_id=created['invite']['id']
+        self.assertTrue(token.startswith('1.'))
+        replay=self.request('/api/v3/invitations',self.admin,body,method='POST')['data']
+        self.assertEqual(replay['invite']['id'],invite_id)
+        self.assertIsNone(replay['token'])
+        self.assertTrue(replay['replay'])
+
+        with self.portal.tenants.company_scope(1),self.portal.db() as conn:
+            digest=hashlib.sha256(token.encode()).hexdigest()
+            stored=conn.execute('SELECT token_hash,status FROM portal_access_invites WHERE id=?',(invite_id,)).fetchone()
+            self.assertEqual((stored['token_hash'],stored['status']),(digest,'pending'))
+            audit=' '.join(row['payload'] for row in conn.execute("SELECT payload FROM portal_production WHERE kind='audit'"))
+            self.assertNotIn(token,audit)
+
+        # A separately authenticated tenant cannot see this invite, nor can a
+        # forged company header make the first session cross its RLS boundary.
+        company_two=self.request('/api/v3/invitations?status=pending',self.tokens[2])['data']['items']
+        self.assertNotIn(invite_id,[row['id'] for row in company_two])
+        self.request('/api/v3/invitations',self.admin,extra_headers={'X-Portal-Company':'2'},status=403)
+        self.request('/api/access-invites/accept',body={'token':token,'pin':'6789'},method='POST',
+                     extra_headers={'X-Portal-Company':'2'},status=403)
+
+        accepted=self.request('/api/access-invites/accept',body={'token':token,'pin':'6789'},method='POST')['data']
+        self.assertEqual(accepted['status'],'pending_approval')
+        repeated=self.request('/api/access-invites/accept',body={'token':token,'pin':'9999'},method='POST')['data']
+        self.assertEqual(repeated['status'],'pending_approval')
+        self.request('/api/v3/invitations',self.tokens[1],{'action':'approve','invite_id':invite_id},method='POST')
+        self.request('/api/login',body={'company_id':1,'username':'pg-invite-candidate','pin':'6789'})
+        self.request('/api/access-invites/accept',body={'token':token,'pin':'6789'},method='POST',status=403)
+
+        with self.portal.tenants.company_scope(1),self.portal.db() as conn:
+            self.assertEqual(conn.execute('SELECT status FROM portal_access_invites WHERE id=?',(invite_id,)).fetchone()[0],'approved')
+            events=[json.loads(row['payload']) for row in conn.execute(
+                "SELECT payload FROM portal_production WHERE kind='audit' AND payload LIKE '%access_invite.%'")]
+            self.assertGreaterEqual(len(events),3)
+            self.assertTrue(all(token not in json.dumps(event) for event in events))
+
     @unittest.skipUnless(_WEB_E2E,'Web browser gate only')
     def test_real_web_static_login_meta_and_company_scope_in_browser(self):
         """Use Chromium against this fixture's real loopback API; no API routes are mocked."""
