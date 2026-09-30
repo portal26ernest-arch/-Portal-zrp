@@ -676,3 +676,34 @@ Production cutover **NOT performed**.
 - C: remaining source-backed dashboard/profitability/productivity coverage and a trusted system timer that remains disabled for production by default.
 - D: Android native save/share/email visual check is manual; run final disposable PostgreSQL suite on final source SHA and retain cleanup evidence.
 - Exact next: update readiness/progress/report evidence for `166fa35`/`dde82b0`, run `git diff --check`, commit/push the docs checkpoint (triggering a fresh Server CI after #112), then continue B/C source inspection. Never infer the #112 failure cause from incomplete logs. No completion or blocked flag; production cutover **NOT performed**.
+
+## AUTOMATIC CONTINUATION — reminder PostgreSQL operator and invitation UI role proof — 2026-09-30
+
+### DONE NOW
+
+- Starting HEAD was `2d319ddf27f9ae698a97069339b2b5c5b9f060b9`, clean and synced after fetch. Confirmed assistant infrastructure commit `1066c77` is already integrated; did not repeat it.
+- `5c2b711` fixed the disposable PostgreSQL reminder test's settings cleanup and added a test-only diagnostic hook that emits only company ID and exception class, never exception text or tenant data. Web disposable PostgreSQL exposed the application contract bug: enabled-run results lacked `enabled`, which the operator aggregator reads. `06a7e93` adds that explicit boolean and unit assertions; saved reminder settings remain disabled by default and no timer/external sender was enabled.
+- `278fb2e` extends the invitation browser role flow: Director approves/revokes an accepted/pending invitation; Packer receives no invitation list and cannot decide one. This complements existing server/PostgreSQL tenant, role, idempotency, and audit checks.
+- Readiness counts remain **74 ✅ / 33 🟡 / 7 ⏳ / 12 🔌**. No roadmap status was promoted from this incremental operator/UI coverage.
+
+### TESTS / CI
+
+- Reminder/operator tests: **13 passed**; full Server unittest discovery at `06a7e93`: **265 run, 42 skipped, 0 failed**; `ops.test_infra_readiness`: **8/8 passed**; `python -m compileall -q server android_src/tools ops` passed.
+- Browser UI suite after `278fb2e`: **31 passed**; full Node/Android suite: **52 passed, 0 failed, 0 skipped**; `node --check android_src/tests/ui.test.cjs` and `git diff --check` passed.
+- GitHub Web #`36706201547` passed `web` and `documents-postgresql`; disposable PG Server/Web source is `06a7e93`. GitHub Server #`36706201504` passed Python 3.11 and 3.13. At UI-only descendant `278fb2e`, Android UI #`36706427156` and staging APK #`36706426867` succeeded. No Server/Web source changed after `06a7e93`.
+- Staging artifact: `PORTAL_Android_3.5-dev_staging_2e10ad7313b37f130eb493456cf51f453db2aa08b3c252c8d747422f2e60c481` (SHA-256 suffix `2e10ad7313b37f130eb493456cf51f453db2aa08b3c252c8d747422f2e60c481`), version 3.5-dev-staging/versionCode 35. No production DB/service, cutover, DNS, secrets or phone test runner was used.
+- Local `test_documents_postgresql` remains **29 skipped** because no local disposable PostgreSQL is configured; the named GitHub disposable PostgreSQL job is the live evidence above. The first Web gate at `2d319dd` failed; `5c2b711` made it diagnosable and `06a7e93` fixed it, after which the named job passed.
+
+### PREVIOUSLY PROVEN
+
+- Batch plan/fact API in integer minor units, tenant/role denial and missing-plan behavior were already implemented. Web PostgreSQL #`36706201547` passed `test_batch_economy_reconciles_integer_plan_fact_and_tenant_scope`; browser coverage at `278fb2e` retains unavailable-vs-zero behavior and margin/per-unit rendering. Item 28 remains 🟡 because plan-input/source completeness has not been fully accepted.
+- Client 360 requisites, task/document/receivables drilldowns; Documents revision/history UI and PostgreSQL cross-session tests; reminder disabled-by-default cadence/systemd examples; assistant infra work remain as recorded in earlier entries.
+
+### NOT DONE / EXACT NEXT
+
+- A: remaining owner/Director settings and invitation/audit policy matrix and rollout checks.
+- B: item 17 Client 360 still has source-backed editable/linked blocks to finish; item 33 canonical client/employee normalization and alias migration remain partial; item 28 plan-entry/source completeness remains open.
+- C: source-backed company/warehouse profitability, productivity quality/radar comparisons and deployment-owned timer/activation remain open; reminder systemd files are examples only and production dispatch remains disabled.
+- D: complete Android native chooser/save/email visual check remains an owner visual check; run the full disposable PostgreSQL gate again on the eventual final code SHA.
+- Broader remaining work: employee_id/telegram_id runtime-boundary audit, legacy monetary REAL inventory/reconciliation, Windows thin-client/installer, final VPS/release gates. Counts stay **74 ✅ / 33 🟡 / 7 ⏳ / 12 🔌**; no completion/blocked flag. Production cutover **NOT performed**.
+- **Exact NEXT:** inspect remaining Client 360 fields and write capabilities in `android_src/app/src/main/assets/production.js` against `server/production_service.py`; select one missing block only if its values already have a server source, then add scoped API/UI/browser and disposable PostgreSQL coverage. If inspection finds no such source-backed gap, produce a read-only `employee_id`/legacy `telegram_id` runtime-boundary inventory before changing identifiers. Run targeted and full relevant tests, commit and push each logical block.

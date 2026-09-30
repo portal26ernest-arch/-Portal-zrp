@@ -244,3 +244,5 @@
 - Windows installer is not yet implemented; local `dotnet` is unavailable. See `PORTAL_FINALIZATION_PART12_PROGRESS.md` for remaining work and `PORTAL_FINAL_EXTERNAL_BLOCKERS.md` for provider/owner actions.
 - Roadmap item 52 is closed on this branch after targeted HTTP/Documents/XLSX integration and workbook tests; payroll ledger facts are read from append-only settlement events and are not written into the closed snapshot.
 - Part 12 checkpoint `e85928e`: item 32 is ✅ after internal FBS/FBO shipment and return lifecycle, idempotency, audit and role/tenant tests including Web disposable PostgreSQL. Counts: **74 ✅ / 33 🟡 / 7 ⏳ / 12 🔌**. Production cutover remains NOT performed.
+
+- Part 12 automatic continuation checkpoint `278fb2e` / server-Web source `06a7e93`: invitation UI role coverage now verifies Director decisions and Packer denial; reminder operator return contract is fixed and Web disposable PostgreSQL plus Server 3.11/3.13 passed. Android UI and staging APK at `278fb2e` passed. Counts remain **74 ✅ / 33 🟡 / 7 ⏳ / 12 🔌**; no completion status changed. Production cutover **NOT performed**.

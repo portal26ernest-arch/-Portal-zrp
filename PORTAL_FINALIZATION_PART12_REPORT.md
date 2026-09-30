@@ -4,7 +4,7 @@
 
 Дата: 2026-09-30
 Verified Part 11 base: `bc95a942021bb5c43d112f51d2c2e7881059b47a`
-Current implementation HEAD when this checkpoint was prepared: `2b95dffe891d80244487bcc7fef9ce081acdc468`
+Original bootstrap checkpoint implementation HEAD: `2b95dffe891d80244487bcc7fef9ce081acdc468` (superseded by the latest automatic continuation checkpoint below).
 Branch: `codex-finalization-megapack-part12`
 Worktree: `C:\Users\darta\Documents\PORTAL-Finalization-Part12`
 
@@ -585,3 +585,15 @@ Latest tested code at `e08e0d8dbe927cce9b82ab58e4ef4a5c7e9c29a4`; commits `cd22c
 ### EXACT NEXT
 
 - Commit and push this evidence-only checkpoint after a fresh `git diff --check`; that will trigger a new Server run to replace unexplained Server #112. Then inspect `server/production_service.py`'s batch `economy()` plan/fact contract and continue the next source-backed B/C gap with targeted tests and a logical commit. Keep matrix counts **74 ✅ / 33 🟡 / 7 ⏳ / 12 🔌** until evidence justifies change. No autopilot completion/blocked flag; production cutover **NOT performed**.
+
+## Latest automatic continuation checkpoint — 2026-09-30
+
+Implementation is at `278fb2ed66fd41c6a5c6aadf08b79107962a0b15` on `codex-finalization-megapack-part12`; earlier sections below describe previous checkpoints, not the current HEAD. Roadmap counts remain **74 ✅ / 33 🟡 / 7 ⏳ / 12 🔌**.
+
+- Fixed the PostgreSQL reminder operator result contract at `06a7e93`: enabled runs now return their explicit enabled state for aggregation. Also corrected disposable test fixture cleanup and added a secret-safe exception-class diagnostic callback for explicit tests. The scheduler remains opt-in; no timer or external notification channel was enabled.
+- Added Director approval/revocation and Packer denial UI evidence at `278fb2e`; the shared client UI sends no invitation list to the Packer role.
+- Local evidence: Server discovery **265 run / 42 skipped / 0 failed**; reminder/operator **13/13**; infra readiness **8/8**; browser UI **31/31**; all Node/Android tests **52/52**; compileall, relevant JS syntax and diff checks passed. PostgreSQL integration tests are skipped locally because no disposable local PG is configured, not counted as passes.
+- GitHub at `06a7e93`: Server #`36706201504` (Python 3.11/3.13) passed; Web #`36706201547` and its `documents-postgresql` job passed. At UI-only descendant `278fb2e`, Android UI #`36706427156` and APK #`36706426867` passed. The APK is staging `3.5-dev-staging`, versionCode 35, artifact/hash suffix `2e10ad7313b37f130eb493456cf51f453db2aa08b3c252c8d747422f2e60c481`. Server/Web source was unchanged after `06a7e93`.
+- One failed Web PostgreSQL attempt at `2d319dd` is recorded transparently: CI pinpointed the missing `enabled` result field; the later named Web disposable-PG job passed after the fix. No production DB/service, DNS, release/cutover, secrets or phone was used.
+
+**Not done:** Part 12 Definition of Done, remaining A–D acceptance, legacy identity and monetary REAL inventory/reconciliation, Windows installer, final VPS/owner visual gates and any production cutover. No complete/blocked flag is justified. Exact next: inspect Client 360 source-backed fields and write capabilities; add one missing block only if a canonical server source exists, with tenant/role/API/browser/disposable-PG coverage. If none is missing, inventory remaining `employee_id`/legacy `telegram_id` runtime boundaries without changing keys. See the latest progress section for the full next sequence.
