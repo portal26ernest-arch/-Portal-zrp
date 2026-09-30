@@ -50,7 +50,7 @@ class DocumentAPITest(unittest.TestCase):
     def test_document_history_returns_visible_revision_chain_and_denies_foreign_company(self):
         first=self.upload(request_id='document-history-v1')
         second=self.upload(request_id='document-history-v2',previous_id=first['id'],title='Отчёт · версия 2')
-        self.get('document-history?id='+first['id'],self.role_token('packer'),status=403)
+        self.get('document-history?id='+first['id'],self.worker,status=403)
         versions=self.get('document-history?id='+first['id'])['data']
         self.assertEqual([item['id'] for item in versions],[first['id'],second['id']])
         self.assertEqual([item['revision'] for item in versions],[1,2])
