@@ -790,3 +790,11 @@ The shared Client 360 profile now links authorized users to the existing operati
 Item 17 remains 🟡 pending broader Client 360 linked-profile acceptance. Counts remain 78 ✅ / 30 🟡 / 6 ⏳ / 12 🔌; production cutover not performed.
 
 **Exact NEXT:** validate item 44 Today UI against its existing API result: render monthly work volume and closed-period payroll accrued/paid/balance only when the caller has the corresponding capabilities, with an honest empty state. Add role, browser, service, and disposable PostgreSQL checks only for a confirmed gap; then continue radar/productivity/reminder and remaining Documents coverage.
+
+## Verified Client 360 checkpoint — `4ed5ce8`
+
+Client 360 now provides direct operation management and effective-date tariff creation using the existing handlers and APIs. Saving a tariff returns to the client card; role-gated controls are absent for restricted users. Full shared UI regression passed **35/35** and GitHub Web/disposable PostgreSQL, Android UI, and APK checks all succeeded.
+
+Roadmap item **17** is promoted to ✅. Current counts: **79 ✅ / 29 🟡 / 6 ⏳ / 12 🔌**. Production cutover remains separate and unperformed.
+
+**Exact NEXT:** finish source-backed productivity/consistency and its role-scope evidence without manufacturing quality data.

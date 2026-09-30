@@ -950,3 +950,12 @@ Production cutover **NOT performed**.
 - Item 17 remains 🟡 because its broader client profile and linked-data acceptance is not fully closed. Counts remain **78 ✅ / 30 🟡 / 6 ⏳ / 12 🔌**. No production systems or secrets were used.
 
 **Exact NEXT:** inspect the existing Today service/UI contract against roadmap item 44. The service returns monthly work volume and closed-period payroll totals, but verify whether the shared management dashboard renders both. If absent, add capability-gated metrics and no-closed-period state with service/API/browser/disposable PostgreSQL regressions, without showing payroll fields to roles lacking payroll visibility. Then continue the remaining radar/productivity/reminder software checks; leave external rollout gates open.
+
+## VERIFIED — Client 360 operation/tariff management — `4ed5ce8` — 2026-09-30
+
+- Client 360 now reuses the existing operation-management and historical-tariff flows directly from the client card. Authorized users can open operation CRUD and create a new effective-date tariff for a displayed operation; tariff save returns to the same Client 360 card. No second business-logic path was introduced.
+- Restricted users without `clients.manage` / rate capabilities do not receive the management controls. Existing source sections, linked Documents/receivables, shipment/return history and explicit partial-source warning remain intact.
+- Local shared UI regression: **35/35 passed**. GitHub at `4ed5ce8`: Web **SUCCESS**, disposable PostgreSQL **SUCCESS**, Android UI **SUCCESS**, APK **SUCCESS**.
+- Roadmap item 17 is now ✅. Counts: **79 ✅ / 29 🟡 / 6 ⏳ / 12 🔌**. No production systems or data were changed.
+
+**Exact NEXT:** continue item 46 productivity. Use only existing timed work sources; replace raw IDs in UI where canonical names are available, surface consistency/variability honestly, and prove management vs self-only role scope. Do not invent quality scores when defects are not recorded.
