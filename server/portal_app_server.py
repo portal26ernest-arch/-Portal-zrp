@@ -730,7 +730,7 @@ def company_module_for_route(path):
             'payroll':'payroll','payroll-mine':'payroll','payroll-periods':'payrollPeriods',
             'payroll-settlements':'payrollPeriods',
             'chat':'teamChat','chat-attachments':'teamChat','chat-pins':'teamChat',
-            'clients':'clients','catalogue':'clients','operations':'clients',
+            'clients':'clients','catalogue':'clients','operations':'clients','products':'clients',
             'materials':'materials','usage':'materials',
             'invoices':'invoices','payments':'invoices','receivables':'invoices',
             'users':'users','invitations':'users','company-access':'users','presence':'users','activity':'users','audit':'users',

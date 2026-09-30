@@ -132,13 +132,37 @@ class Production:
     def batch(self,b):
         self.need('batches.receive'); c=self.client(b['client_id'],True)
         identity=str(uuid.uuid4())
+        product_id=b.get('product_id')
+        product=next((item for item in self.r.list('products') if item['id']==str(product_id)
+                      and item['client_id']==c['id'] and item['active']),None) if product_id else None
+        if product_id and not product: raise ValueError('Выберите активный товар этого клиента')
         # Company + UUID is globally unambiguous during file -> central DB migration.
         return self.r.insert('batches',dict(number='PRT-'+self.clock()[:4]+'-'+str(self.r.company_id)+'-'+identity.replace('-',''),
-            client_id=c['id'],client_name=c['name'],product=text(b.get('product'),'Товар'),
+            client_id=c['id'],client_name=c['name'],product_id=product['id'] if product else None,
+            product=product['name'] if product else text(b.get('product'),'Товар'),
             received_at=stamp(b.get('received_at') or self.clock()),quantity=qty(b.get('quantity')),
             article=text(b.get('article'),optional=True),gtin=text(b.get('gtin'),optional=True),
             comment=text(b.get('comment'),optional=True),external_number=text(b.get('external_number'),optional=True),
             due_at=stamp(b.get('due_at'),True),direction=b.get('direction','undecided'),status='received'),identity)
+
+    def product(self,b):
+        action=b.get('action','create')
+        if action=='create':
+            client=self.client(b.get('client_id'),True)
+            name=text(b.get('name'),'Товар')
+            if any(p['client_id']==client['id'] and p['name'].casefold()==name.casefold() and p['active'] for p in self.r.list('products')):
+                raise ValueError('Активный товар с таким названием уже есть у клиента')
+            return self.r.insert('products',dict(client_id=client['id'],name=name,active=True))
+        product=self.entity('products',b.get('product_id'))
+        self.client(product['client_id'],True)
+        if action=='archive': product['active']=False
+        elif action=='update':
+            name=text(b.get('name',product['name']),'Товар')
+            if any(p['id']!=product['id'] and p['client_id']==product['client_id'] and p['name'].casefold()==name.casefold() and p['active'] for p in self.r.list('products')):
+                raise ValueError('Активный товар с таким названием уже есть у клиента')
+            product['name']=name
+        else: raise ValueError('Неизвестное действие товара')
+        return self.r.update('products',product)
 
     def task(self,b):
         self.need('tasks.manage');batch=self.entity('batches',b['batch_id']);op=self.operation(batch['client_id'],b['operation_id'])
@@ -876,9 +900,9 @@ class Production:
 
     def command(self,action,body):
         if 'company_id' in body and (type(body['company_id']) is not int or body['company_id']!=self.r.company_id):raise PermissionError('Компания определяется сессией')
-        methods={'batches':self.batch,'tasks':self.task,'work':self.work,'timers':self.timer,'links':self.link,'tariffs':self.create_tariff,'permissions':self.set_permissions,'usage':self.usage,'expenses':self.expense,'invoices':self.invoice,'payments':self.payment,'settings':self.settings,'shipments':self.ship,'payroll-periods':self.payroll_period,'payroll-settlements':self.payroll_settlement,'chat':self.chat_command,'documents':self.document}
+        methods={'batches':self.batch,'products':self.product,'tasks':self.task,'work':self.work,'timers':self.timer,'links':self.link,'tariffs':self.create_tariff,'permissions':self.set_permissions,'usage':self.usage,'expenses':self.expense,'invoices':self.invoice,'payments':self.payment,'settings':self.settings,'shipments':self.ship,'payroll-periods':self.payroll_period,'payroll-settlements':self.payroll_settlement,'chat':self.chat_command,'documents':self.document}
         if action not in methods: raise ValueError('Действие не поддерживается')
-        authorization={'batches':'batches.receive','tasks':'tasks.manage','work':'work.write','timers':'work.write','links':'work.link','permissions':'users.manage','usage':'materials.use','expenses':'expenses.manage','invoices':'invoices.create','payments':'payments.record','settings':'company.settings','shipments':'batches.receive','payroll-periods':'payroll.close','chat':'chat.write','documents':'documents.manage'}
+        authorization={'batches':'batches.receive','products':'clients.manage','tasks':'tasks.manage','work':'work.write','timers':'work.write','links':'work.link','permissions':'users.manage','usage':'materials.use','expenses':'expenses.manage','invoices':'invoices.create','payments':'payments.record','settings':'company.settings','shipments':'batches.receive','payroll-periods':'payroll.close','chat':'chat.write','documents':'documents.manage'}
         if action in authorization:self.need(authorization[action])
         if action=='payroll-settlements':
             entry_type=body.get('entry_type')
@@ -980,7 +1004,13 @@ class Production:
                 if {'rates.employee','payroll.own'}&self.permissions:item['employee_rate']=t.get('employee_rate')
                 if {'rates.client','finance.read'}&self.permissions:item['client_rate']=t.get('client_rate')
                 operations.append(item)
-            return dict(clients=[c for c in self.r.catalog('clients') if c['active'] and self.visible(c['id'])],operations=operations,users=self.r.catalog('users') if 'tasks.manage' in self.permissions else [])
+            clients=[c for c in self.r.catalog('clients') if c['active'] and self.visible(c['id'])]
+            client_ids={c['id'] for c in clients}
+            products=[p for p in self.r.list('products') if p['active'] and p['client_id'] in client_ids]
+            return dict(clients=clients,operations=operations,products=products,users=self.r.catalog('users') if 'tasks.manage' in self.permissions else [])
+        if action=='products':
+            if not ({'clients.read','clients.manage'}&self.permissions): raise PermissionError('Нет доступа к товарам')
+            return [p for p in self.r.list('products') if self.visible(p['client_id'])]
         if action=='tariff-history':
             if not ({'rates.employee','rates.client','finance.read','payroll.own'}&self.permissions):raise PermissionError('Нет доступа к истории тарифов')
             try:operation_id=int(params.get('operation_id',[''])[0])

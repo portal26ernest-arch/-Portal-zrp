@@ -49,6 +49,23 @@ class ProductionTest(unittest.TestCase):
         self.post('batches',dict(client_id=1,product='X',quantity=1,company_id=self.other),status=403)
         self.get('batches?company_id=2',status=403)
 
+    def test_product_catalog_uses_stable_client_ids_and_preserves_batch_snapshots(self):
+        created=self.post('products',dict(action='create',client_id=1,name='Catalog box'))['data']
+        self.assertEqual((created['client_id'],created['name'],created['active']),(1,'Catalog box',True))
+        batch=self.post('batches',dict(client_id=1,product_id=created['id'],quantity=4))['data']
+        self.assertEqual((batch['product_id'],batch['product']),(created['id'],'Catalog box'))
+        updated=self.post('products',dict(action='update',product_id=created['id'],name='Renamed box'))['data']
+        self.assertEqual(updated['id'],created['id'])
+        self.assertEqual(self.get('catalog')['data']['products'][0]['name'],'Renamed box')
+        self.assertEqual(next(row for row in self.get('batches')['data'] if row['id']==batch['id'])['product'],'Catalog box')
+        manager=self.role_token('manager')
+        self.request('/api/v3/products',manager,body={'request_id':'manager-product-create','action':'create','client_id':1,'name':'Forbidden'},method='POST',status=403)
+        self.request('/api/v3/products',self.other_admin,body={'request_id':'foreign-product','action':'update','product_id':created['id'],'name':'Forged'},method='POST',status=400)
+        archived=self.post('products',dict(action='archive',product_id=created['id']))['data']
+        self.assertFalse(archived['active'])
+        self.assertEqual(self.get('catalog')['data']['products'],[])
+        self.post('batches',dict(client_id=1,product_id=created['id'],quantity=1),status=400)
+
     def test_chat_stickers_absence_validation_idempotency_and_tenant_scope(self):
         for key in ('accepted','in_progress','done','help','important','thanks'):
             item=self.post('chat',dict(subtype='sticker',sticker_key=key))['data']

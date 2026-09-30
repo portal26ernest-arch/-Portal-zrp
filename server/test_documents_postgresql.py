@@ -23,7 +23,7 @@ from unittest.mock import patch
 MIGRATIONS=('postgresql_core_stage4b.sql','postgresql_stage3.sql','postgresql_runtime.sql',
  'postgresql_rls_context.sql','postgresql_stage5_chat_retention.sql','postgresql_stage6_payroll_settlement.sql',
  'postgresql_stage4c.sql','postgresql_stage8_documents_excel.sql','postgresql_stage9_invoice_revisions.sql',
- 'postgresql_stage10_access_invites.sql','postgresql_stage11_company_modules.sql')
+ 'postgresql_stage10_access_invites.sql','postgresql_stage11_company_modules.sql','postgresql_stage12_product_catalog.sql')
 
 _WEB_E2E=os.environ.get('PORTAL_WEB_PG_E2E')=='1'
 _DOCS_E2E=os.environ.get('PORTAL_DOCUMENTS_PG_INTEGRATION')=='1'
@@ -68,6 +68,7 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
             cls.migration('postgresql_stage9_invoice_revisions.sql')
             cls.migration('postgresql_stage10_access_invites.sql')
             cls.migration('postgresql_stage11_company_modules.sql')
+            cls.migration('postgresql_stage12_product_catalog.sql')
             with psycopg.connect(make_conninfo(cls.admin_dsn,dbname=cls.database),autocommit=True) as admin:
                 tenant=sql.Identifier(cls.roles['tenant']);control=sql.Identifier(cls.roles['control'])
                 for role in (tenant,control):
@@ -335,6 +336,19 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.request('/api/work',self.tokens[1],{'client_id':1,'operation_id':1,'quantity':1},method='POST')
         self.request('/api/platform/companies/2',owner,{'module_toggles':{}},method='POST')
         self.assertEqual(self.request('/api/platform/companies/2',owner)['company']['module_toggles'],{})
+
+    def test_postgresql_product_catalog_edits_metadata_but_keeps_batch_snapshot(self):
+        created=self.post('products',dict(action='create',client_id=1,name='PG catalog box'),self.tokens[1])['data']
+        batch=self.post('batches',dict(client_id=1,product_id=created['id'],quantity=3),self.tokens[1])['data']
+        renamed=self.post('products',dict(action='update',product_id=created['id'],name='PG renamed box'),self.tokens[1])['data']
+        self.assertEqual(renamed['id'],created['id'])
+        rows=self.request('/api/v3/products',self.tokens[1])['data']
+        self.assertEqual(next(row for row in rows if row['id']==created['id'])['name'],'PG renamed box')
+        self.assertEqual(next(row for row in self.request('/api/v3/batches',self.tokens[1])['data'] if row['id']==batch['id'])['product'],'PG catalog box')
+        self.request('/api/v3/products',self.tokens[2],body={'action':'update','product_id':created['id'],'name':'Foreign edit'},method='POST',status=400)
+        self.post('products',dict(action='archive',product_id=created['id']),self.tokens[1])
+        self.assertNotIn(created['id'],[row['id'] for row in self.request('/api/v3/products',self.tokens[1])['data'] if row['active']])
+        self.request('/api/v3/batches',self.tokens[1])
 
     def test_postgresql_api_enforces_standard_active_user_limit(self):
         """The standard company limit is enforced by the server, not just the UI."""
