@@ -113,6 +113,7 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
                 with cls.portal.tenants.company_scope(cid),cls.portal.db() as conn:
                     r=Repository(conn,cid)
                     r.sql('INSERT INTO employees(company_id,telegram_id,full_name,username) VALUES(?,101,?,?)',(cid,'Synthetic person '+str(cid),'profile'))
+                    if cid==2:r.sql("INSERT INTO employees(company_id,telegram_id,full_name,username) VALUES(2,103,'Synthetic existing employee','existing-employee')")
                     r.sql('''INSERT INTO app_users(company_id,id,username,display_name,role,telegram_id,active,pin_salt,pin_hash,created_at,updated_at)
                          VALUES(?,1,'admin','Synthetic admin','admin',101,1,?,?,?,?)''',(cid,salt,pin_hash,utcnow(),utcnow()))
                     r.sql('INSERT INTO employees(company_id,telegram_id,full_name,username) VALUES(?,102,?,?)',(cid,'Synthetic packer '+str(cid),'packer'))
@@ -279,6 +280,21 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
                 "SELECT payload FROM portal_production WHERE kind='audit' AND payload LIKE '%access_invite.%'")]
             self.assertGreaterEqual(len(events),3)
             self.assertTrue(all(token not in json.dumps(event) for event in events))
+
+    def test_invitation_links_existing_employee_without_creating_duplicate_employee(self):
+        body={'action':'create','role':'packer','username':'existing-employee-invite',
+              'display_name':'Synthetic existing employee','employee_id':103,'request_id':'existing-employee-invite-once'}
+        created=self.request('/api/v3/invitations',self.tokens[2],body,method='POST')['data']
+        self.assertEqual(created['invite']['employee_id'],103)
+        accepted=self.request('/api/access-invites/accept',body={'token':created['token'],'pin':'6789'},method='POST')['data']
+        self.assertEqual(accepted['status'],'pending_approval')
+        self.request('/api/v3/invitations',self.tokens[2],{'action':'approve','invite_id':created['invite']['id']},method='POST')
+        self.request('/api/login',body={'company_id':2,'username':'existing-employee-invite','pin':'6789'})
+        with self.portal.tenants.company_scope(2),self.portal.db() as conn:
+            users=conn.execute('SELECT telegram_id,active FROM app_users WHERE username=?',('existing-employee-invite',)).fetchone()
+            employees=conn.execute("SELECT COUNT(*) FROM employees WHERE company_id=2 AND telegram_id=103").fetchone()[0]
+            self.assertEqual(tuple(users),(103,1))
+            self.assertEqual(employees,1)
 
     def test_platform_owner_audit_is_separate_filtered_and_role_gated(self):
         pin=secrets.token_urlsafe(24)
