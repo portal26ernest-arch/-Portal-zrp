@@ -818,7 +818,7 @@ Production cutover **NOT performed**.
 
 ### Current source and CI
 
-- HEAD after implementation/test push: `35db147` (`test: bound linked money check to synthetic work`), branch push succeeded. `git diff --check` and `python -m compileall -q server ops` pass.
+- Tested source SHA: `35db147` (`test: bound linked money check to synthetic work`); final documentation-only checkpoint is `5e9ff09`, pushed and clean. `git diff --check` and `python -m compileall -q server ops` pass.
 - Web run `36722642388` at this SHA passed `web` and `documents-postgresql`. The isolated PG suite ran **31 tests, 2 gated skips**, including `test_linked_legacy_and_canonical_money_reconcile_on_postgresql`; cleanup explicitly verified `db=0 roles=0 temp=0`.
 - Server run `36722642200` passed Python 3.11 and 3.13: **277 tests per runtime, 43 skipped, 0 failures**.
 - Local full Server discovery before the final optional-filter unit addition: **276 run, 44 skipped, 0 failures**. Current migration/money targeted tests: **15/15**; audit + infra readiness: **16/16**; identity scanner `--fail-on-p0`: P0 **0**. Compileall and diff checks pass.
@@ -832,3 +832,8 @@ Production cutover **NOT performed**.
 - No production DB, service, DNS, cutover, secrets or real financial records were touched.
 
 **Exact NEXT:** inspect the synthetic PostgreSQL suite's earlier work-producing tests and isolate the origin of duplicate canonical legacy links. If caused by fixture/order or an application double-write, correct that software defect with a strict unfiltered PG regression; if they are valid multiple records, define an explicit no-data-loss reconciliation policy and cover it. Do not weaken duplicate detection. Then continue software items 85 (Windows thin client/installer) and 77 (safe marketplace-news scheduler), and final regression/release gates. No complete/blocked flag; Part 12 remains open.
+
+### End-of-turn checkpoint
+
+- Current HEAD: `5e9ff095f0ce0452f00f60293cff891cf16eea95`; branch `codex-finalization-megapack-part12` is pushed and clean.
+- The `employee_id` focused DoD is met: current audit P0=0 and all 50 P1 bridges remain enumerated/covered; this does not close Part 12. Next work is the duplicate-link origin above, followed by the broader pending software roadmap. No autopilot flag was created.
