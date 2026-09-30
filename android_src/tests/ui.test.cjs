@@ -88,7 +88,7 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
     localStorage.clear();
     const user={id:1,username:role,display_name:'Тестовый пользователь',role,company_id:1,telegram_id:role==='platform_owner'?null:101};
     const client={id:1,name:'Клиент',active:1};
-    window.mock={calls:[],offline:false,rejectWrite:false,hold:false,held:[],update:{ok:true,configured:false},timer:null,stage3Today:null,stage3Batches:null,stage3Permissions:null,clientNameHistory:[],clientRequisites:{legal_name:'ООО Тест',inn:'TEST-INN-001'},tariffHistory:[],presenceOnline:true,saved:null,previewMode:'ok',applyMode:'ok',payrollPaid:2000,invites:[],products:[]};
+    window.mock={calls:[],offline:false,rejectWrite:false,hold:false,held:[],update:{ok:true,configured:false},timer:null,stage3Today:null,stage3Batches:null,stage3Permissions:null,stage3Invoices:null,clientNameHistory:[],clientRequisites:{legal_name:'ООО Тест',inn:'TEST-INN-001'},tariffHistory:[],presenceOnline:true,saved:null,previewMode:'ok',applyMode:'ok',payrollPaid:2000,invites:[],products:[]};
     const respond=(id,data)=>setTimeout(()=>window.PortalBridgeResult(id,JSON.stringify(data)),0);
     window.PortalNative={getServerUrl:()=> 'http://127.0.0.1:8765',getAppMetadata:()=>JSON.stringify(metadata),checkUpdates:id=>respond(id,mock.update),saveBase64FileAsync(id,filename,mime,file_b64){mock.saved={filename,mime,file_b64};respond(id,{ok:true,location:'Downloads/PORTAL/'+filename});},requestAsync(id,method,url,payload,token,company){
       mock.calls.push({method,url,body:payload?JSON.parse(payload):null,token,company});
@@ -111,7 +111,7 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
       else if(stage3&&url==='/api/v3/timers'&&method==='POST'){const b=JSON.parse(payload);mock.timer={id:'timer-1',task_id:'task-1',user_id:1,started_at:'2026-09-25T09:12:00',pauses:[],status:({start:'running',pause:'paused',resume:'running',finish:'completed'})[b.event]};data.data=mock.timer;}
       else if(stage3&&url==='/api/v3/batches')data.data=mock.stage3Batches||[{id:'batch-1',number:'PRT-2026-000001',client_id:1,client_name:'Клиент',product:'Коробка',received_at:'2026-09-24',quantity:10,done:2,remaining:8,stage:'in_progress',operations:[{operation:'Упаковка',done:2,planned:10}],ready:false}];
       else if(stage3&&url.startsWith('/api/v3/economy?'))data.data={plan:{salary:null,revenue:null,materials:null,other:null,profit:null,volume:null},fact:{salary:0,revenue:0,materials:0,other:0,profit:0,volume:0},deviation:{salary:null,revenue:null,materials:null,other:null,profit:null,volume:null},finished_units:0};
-      else if(stage3&&url==='/api/v3/invoices')data.data=[];
+      else if(stage3&&url==='/api/v3/invoices')data.data=mock.stage3Invoices||[];
       else if(stage3&&url==='/api/v3/documents')data.data=[{id:'doc-client',title:'Документ клиента',client_id:1,document_type:'invoice_pdf',status:'ready'}];
       else if(stage3&&url==='/api/v3/finance')data.data={clients:[]};
       else if(stage3&&url.startsWith('/api/v3/receivables'))data.data={as_of:'2026-09-30',money_unit:'kopeck',outstanding:12500,overdue:4000,total:2,page:1,limit:50,buckets:{current:{count:1,amount:8500},days_1_7:{count:1,amount:4000},days_8_30:{count:0,amount:0},days_31_60:{count:0,amount:0},days_61_plus:{count:0,amount:0},undated:{count:0,amount:0}},clients:[{client_id:1,name:'Клиент',outstanding:12500}],items:[{invoice_id:1,client_id:1,amount:8500,paid:0,outstanding:8500,due_at:'2026-09-30',overdue_days:0,bucket:'current'},{invoice_id:2,client_id:1,amount:6000,paid:2000,outstanding:4000,due_at:'2026-09-29',overdue_days:1,bucket:'days_1_7'}]};
@@ -425,7 +425,7 @@ test('browser UI regression',async t=>{
     });
     await t.test('client product catalog supports stable-ID create, rename and archive',async()=>{
       const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);await page.evaluate(()=>mock.stage3Permissions=['work.write','tasks.read','tasks.manage','batches.receive','finance.read','invoices.read','invoices.create','users.manage','clients.read','clients.manage','documents.read','access.history.read','payroll.own']);await login(page);
-      await page.evaluate(async()=>{mock.clientNameOverride='Борискин';mock.clientNameHistory=[{client_id:1,old_name:'Старое название',new_name:'Новое <имя>',occurred_at:'2026-09-30T10:00:00'}];mock.tariffHistory=[{operation_id:1,effective_from:'2026-01-01T00:00:00',employee_rate:200,client_rate:500},{operation_id:1,effective_from:'2099-01-01T00:00:00',employee_rate:300,client_rate:700}];await go('clients');});await page.waitForSelector('#clientSearch');
+      await page.evaluate(async()=>{mock.clientNameOverride='Борискин';mock.stage3Invoices=[{id:1,client_id:1,remaining:12500}];mock.clientNameHistory=[{client_id:1,old_name:'Старое название',new_name:'Новое <имя>',occurred_at:'2026-09-30T10:00:00'}];mock.tariffHistory=[{operation_id:1,effective_from:'2026-01-01T00:00:00',employee_rate:200,client_rate:500},{operation_id:1,effective_from:'2099-01-01T00:00:00',employee_rate:300,client_rate:700}];await go('clients');});await page.waitForSelector('#clientSearch');
       await page.locator('#clientSearch').fill('Старое название');assert.equal(await page.locator('#content [data-action=openClient]').isVisible(),true);
       await page.locator('#clientSearch').fill('Борисенко');assert.equal(await page.locator('#content [data-action=openClient]').isVisible(),true);
       assert.match(await page.locator('#content').innerText(),/Ранее: Старое название/);
@@ -459,12 +459,17 @@ test('browser UI regression',async t=>{
       await page.locator('[data-action=openClientDocuments]').click();
       await page.waitForFunction(()=>mock.calls.some(c=>c.url.startsWith('/api/v3/documents?')&&c.url.includes('client_id=1')));
       assert.equal(await page.locator('#docClient').inputValue(),'1');
+      await page.evaluate(()=>actions.openClient({dataset:{id:'1'}}));await page.waitForSelector('[data-action=openClientReceivables]');
+      await page.locator('[data-action=openClientReceivables]').last().click();
+      await page.waitForFunction(()=>mock.calls.some(c=>c.url.startsWith('/api/v3/receivables?')&&c.url.includes('client_id=1')));
+      assert.equal(await page.locator('#receivablesClient').inputValue(),'1');
       assert.deepEqual(errors,[]);await page.close();
       const restricted=await fixture(browser,'manager',{width:390,height:844},true);
       await restricted.page.evaluate(()=>mock.stage3Permissions=['clients.read']);await login(restricted.page);await restricted.page.evaluate(()=>go('clients'));
       await restricted.page.waitForSelector('#clientSearch');await restricted.page.locator('#content [data-action=openClient]').click();
       await restricted.page.waitForFunction(()=>document.querySelector('#sheetContent')?.textContent.includes('Реквизиты и контакты'));
       assert.equal(await restricted.page.locator('[data-action=editClientRequisites]').count(),0);
+      assert.equal(await restricted.page.evaluate(()=>actions.openClientReceivables({dataset:{id:'1'}}).then(()=>false).catch(error=>error.message==='Недостаточно прав для просмотра дебиторки')),true);
       assert.deepEqual(restricted.errors,[]);await restricted.page.close();
     });
     await t.test('batch economics labels an absent plan as unavailable',async()=>{
