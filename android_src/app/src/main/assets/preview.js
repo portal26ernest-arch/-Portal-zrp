@@ -10,6 +10,12 @@
   const liveDocuments=screens.documents;
   const previewBadge='<span class="badge preview">Preview</span>';
   const managementRoles=new Set(['director','admin','platform_owner']);
+  const knownClientAliases=new Map([
+    ['борискин',['Борисенко']],['варданян',['Вартанян']],['вдовина',['Вдовин']],
+    ['шульгина',['Шульгинова']],['элегантика',['Эленгатика']],['карягин',['Корягин','Коорягин']],
+    ['чотчаева',['Чотчаев']]
+  ]);
+  const clientNameKey=value=>String(value||'').normalize('NFKC').trim().toLocaleLowerCase('ru-RU');
   const quick=(page,iconName,title,meta='')=>can(page)?`<button class="quick-action" data-action="go" data-page="${page}"><span class="quick-icon">${icon(iconName)}</span><span><b>${esc(title)}</b>${meta?`<small>${esc(meta)}</small>`:''}</span>${icon('chevron')}</button>`:'';
   const previewCard=(title,text)=>`<article class="preview-card"><div class="row between"><b>${esc(title)}</b>${previewBadge}</div><p class="meta">${esc(text)}</p></article>`;
   function attentionHtml(rows){
@@ -158,7 +164,8 @@
         const rows=[...list.querySelectorAll('.item')].filter(row=>row.querySelector('[data-action="openClient"]'));
         for(const row of rows){
           const id=Number(row.querySelector('[data-action="openClient"]').dataset.id),client=S.clients?.find(item=>item.id===id);
-          const names=[client?.name,...(aliases.get(id)||[])].filter(Boolean);
+          const known=knownClientAliases.get(clientNameKey(client?.name))||[];
+          const names=[client?.name,...(aliases.get(id)||[]),...known].filter(Boolean);
           row.dataset.clientSearch=names.join(' ').toLocaleLowerCase();
           const prior=[...new Set((aliases.get(id)||[]).filter(name=>name&&name!==client?.name))];
           if(prior.length)row.insertAdjacentHTML('beforeend',`<p class="meta">Ранее: ${prior.map(name=>esc(name)).join(' · ')}</p>`);

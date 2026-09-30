@@ -148,7 +148,7 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
       else if(url==='/api/materials')data.materials=[];
       else if(url==='/api/invoices')data.invoices=[];
       else if(url==='/api/users')Object.assign(data,{users:[user],employees:[{telegram_id:101,full_name:'Сотрудник'}],roles:{admin:'Администратор',manager:'Менеджер',packer:'Сотрудник'}});
-      else if(url.endsWith('/clients'))data.clients=[client];
+      else if(url.endsWith('/clients'))data.clients=[{...client,name:mock.clientNameOverride||client.name}];
       else if(url==='/api/clients/1')Object.assign(data,{client,stats:{},requisites:{}});
       if(mock.hold&&url.startsWith('/api/dashboard'))mock.held.push(()=>respond(id,data));else respond(id,data);
     }};
@@ -402,8 +402,9 @@ test('browser UI regression',async t=>{
     });
     await t.test('client product catalog supports stable-ID create, rename and archive',async()=>{
       const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);await page.evaluate(()=>mock.stage3Permissions=['work.write','tasks.read','tasks.manage','batches.receive','finance.read','invoices.read','invoices.create','users.manage','clients.read','clients.manage','access.history.read','payroll.own']);await login(page);
-      await page.evaluate(async()=>{mock.clientNameHistory=[{client_id:1,old_name:'Старое название',new_name:'Новое <имя>',occurred_at:'2026-09-30T10:00:00'}];mock.tariffHistory=[{operation_id:1,effective_from:'2026-01-01T00:00:00',employee_rate:200,client_rate:500},{operation_id:1,effective_from:'2099-01-01T00:00:00',employee_rate:300,client_rate:700}];await go('clients');});await page.waitForSelector('#clientSearch');
+      await page.evaluate(async()=>{mock.clientNameOverride='Борискин';mock.clientNameHistory=[{client_id:1,old_name:'Старое название',new_name:'Новое <имя>',occurred_at:'2026-09-30T10:00:00'}];mock.tariffHistory=[{operation_id:1,effective_from:'2026-01-01T00:00:00',employee_rate:200,client_rate:500},{operation_id:1,effective_from:'2099-01-01T00:00:00',employee_rate:300,client_rate:700}];await go('clients');});await page.waitForSelector('#clientSearch');
       await page.locator('#clientSearch').fill('Старое название');assert.equal(await page.locator('#content [data-action=openClient]').isVisible(),true);
+      await page.locator('#clientSearch').fill('Борисенко');assert.equal(await page.locator('#content [data-action=openClient]').isVisible(),true);
       assert.match(await page.locator('#content').innerText(),/Ранее: Старое название/);
       await page.locator('#clientSearch').fill('несуществующий клиент');assert.equal(await page.locator('#content [data-action=openClient]').isVisible(),false);
       assert.equal(await page.locator('#content .empty').filter({hasText:'Клиенты по этому запросу не найдены'}).isVisible(),true);
