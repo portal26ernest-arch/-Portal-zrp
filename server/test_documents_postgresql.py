@@ -377,6 +377,33 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
             self.assertGreaterEqual(len(events),3)
             self.assertTrue(all(token not in json.dumps(event) for event in events))
 
+    def test_invitation_revocation_and_expiry_fail_closed_on_postgresql(self):
+        revoked=self.request('/api/v3/invitations',self.admin,{
+            'action':'create','role':'packer','username':'pg-revoked-candidate',
+            'display_name':'PG Revoked Candidate','request_id':'pg-revoke-once'},method='POST')['data']
+        invite_id=revoked['invite']['id'];token=revoked['token']
+        self.request('/api/v3/invitations',self.admin,
+                     {'action':'revoke','invite_id':invite_id},method='POST')
+        self.request('/api/access-invites/accept',body={'token':token,'pin':'6789'},
+                     method='POST',status=403)
+
+        expired=self.request('/api/v3/invitations',self.admin,{
+            'action':'create','role':'packer','username':'pg-expired-candidate',
+            'display_name':'PG Expired Candidate','request_id':'pg-expiry-once'},method='POST')['data']
+        class ExpiredClock(datetime):
+            @classmethod
+            def now(cls,tz=None):return datetime.now(tz)+timedelta(days=8)
+        with patch('access_invites.datetime',ExpiredClock):
+            outcome=self.request('/api/access-invites/accept',
+                                 body={'token':expired['token'],'pin':'6789'},method='POST')['data']
+        self.assertEqual(outcome['status'],'expired')
+        with self.portal.tenants.company_scope(1),self.portal.db() as conn:
+            self.assertEqual(conn.execute('SELECT status FROM portal_access_invites WHERE company_id=1 AND id=?',(invite_id,)).fetchone()[0],'revoked')
+            self.assertEqual(conn.execute('SELECT status FROM portal_access_invites WHERE company_id=1 AND id=?',(expired['invite']['id'],)).fetchone()[0],'expired')
+            events=[json.loads(row['payload']) for row in conn.execute(
+                "SELECT payload FROM portal_production WHERE kind='audit' AND payload LIKE '%access_invite.%'")]
+            self.assertTrue(all(token not in json.dumps(event) and expired['token'] not in json.dumps(event) for event in events))
+
     def test_invitation_links_existing_employee_without_creating_duplicate_employee(self):
         body={'action':'create','role':'packer','username':'existing-employee-invite',
               'display_name':'Synthetic existing employee','employee_id':103,'request_id':'existing-employee-invite-once'}
