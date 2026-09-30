@@ -465,3 +465,31 @@ Production cutover **NOT performed**.
 - D: finish Documents history/filter parity; same-company cross-session PostgreSQL E2E was proven in earlier Web CI and must not be misreported as a new run in this checkpoint.
 - Continue then through legacy employee_id/telegram_id and REAL-money inventory/reconciliation, marketplace-news disabled operator framework, backup restore rehearsal and final docs/release gates. Windows installer and production cutover remain open.
 - Next exact action: inspect and close an additional B/C gap with targeted tests; then commit/push and poll workflows. After that, refresh final readiness reports with exact tests/CI, leaving a clean checkpoint. No completion/blocked flag; no production cutover.
+
+## AUTOMATIC CONTINUATION — director settings access and save flow — 2026-09-30
+
+### DONE NOW
+
+- Starting HEAD `d8e2cbd` was clean and synced with origin. Added a shared Settings entry to the existing company control screen, shown only when the authenticated capability list includes `company.settings`; the existing server remains the tenant authority and receives no client-forged company ID.
+- Browser flow now proves a Director with `company.settings` can open the screen, read the existing schedule values, save a changed value, and submits without a `company_id`; a Manager without the capability does not see the entry.
+- Server role/scope test proves Director GET/POST succeeds, Manager GET/POST is denied, and forged `X-Portal-Company` is denied.
+- Commits pushed: `ae9f83f` capability-gated company settings entry; `50a9e3e` browser save-flow coverage; `2a0ab8f` server role/scope coverage. Worktree clean and branch synced at `2a0ab8f570de3a79ce6513df334ed284c1384b42`.
+- Roadmap item 12 remains 🟡: only existing schedule/presence settings were surfaced; this does not complete every company setting or its production rollout. Overall counts remain **73 ✅ / 34 🟡 / 7 ⏳ / 12 🔌**.
+
+### TESTS / CI
+
+- `node --test android_src/tests/ui.test.cjs`: **27 passed, 0 skipped, 0 failed** after the settings save-flow assertion.
+- `node --test android_src/tests/*.test.cjs`: **48 passed, 0 skipped, 0 failed** at the settings UI code checkpoint.
+- `python -m unittest test_production.ProductionTest.test_control_schedule_and_uninvoiced_separate_from_debt -v`: **1 passed**; `python -m compileall -q .` from `server/`: passed.
+- Full `python -m unittest discover -s server -p 'test_*.py' -q` on current server code: **246 passed, 33 skipped, 0 failed**. Skips are opt-in external/PDF gates; local run created no PostgreSQL DB/role.
+- `python -m unittest ops.test_infra_readiness -q`: **7 passed**; `python -m compileall -q server ops android_src/tools`, relevant `node --check`, and `git diff --check`: passed.
+- GitHub Server run `36667262958` and Web run `36667263031` at `2a0ab8f`: success. Android UI run `36667166698` and APK build run `36667166789` at `50a9e3e`: success. APK artifact: `PORTAL_Android_3.5-dev_staging_d34c2d8fd3714ffa6deae9ae6cec26e46879937d6d5b09bfe7e30d330301fdd4`; APK SHA-256 is the suffix `d34c2d8fd3714ffa6deae9ae6cec26e46879937d6d5b09bfe7e30d330301fdd4`; build remains 3.5-dev-staging/versionCode 35.
+- Disposable PostgreSQL feature evidence remains the successful `4f62ba7` Web run `36666482298` for source-backed profitability reconciliation, and earlier named Stage 10/12/Document runs in the matrix. No new PostgreSQL resources were created locally in this continuation; production DB/service and DNS untouched.
+
+### NOT DONE / EXACT NEXT
+
+- A remains partial: complete remaining invitation/audit role policy matrix and broader director settings; Platform Owner module toggles stay owner-only.
+- B remains partial: Client 360 editable blocks, client normalization/alias coverage, full batch economics inputs and generic FBS/FBO workflow completion.
+- C remains partial: full unified client/batch/company profitability UI, period comparisons and trusted timer/company cadence enablement for reminders; keep production scheduler disabled.
+- D remains partial: existing same-company independent-session PostgreSQL success stands; continue Documents history/filter parity and final Android/Web file contracts.
+- After software gaps, finish employee_id/telegram_id runtime-boundary audit, legacy money-field cents inventory/reconciliation, marketplace news operator framework, backup restore rehearsal, Windows installer, and final release evidence. No autopilot flag: software work remains. Production cutover **NOT performed**.
