@@ -10,6 +10,6 @@ This list contains owner/provider actions that cannot be established or authoriz
 | Supply an official, stable, publicly accessible Ozon/Wildberries news feed or API, if one is available | Repository/configuration contains no proven official public feed; private auth and scraping are out of scope. | Yes (only if a source exists) |
 | Supply official TalAnt API documentation, sandbox, and authorized credentials | TalAnt integration is an external API boundary and excluded from Part 12 implementation without provider access. | Yes |
 | Select/provision an approved off-server backup provider and credentials | No configured secondary target is evidenced in the repository; a generic backup mechanism cannot prove an external copy exists. | Yes |
-| Provide a Windows code-signing certificate if a trusted production installer is required | No Windows signing identity or Windows installer toolchain is evidenced in this checkout. | Yes, for signed distribution |
+| Provide a Windows code-signing certificate / trusted publication target if signed production distribution is required | The WPF/WebView2 thin client and per-user installer pipeline are implemented and Windows CI is green, but no publisher signing identity or approved production download endpoint is configured. | Yes, for signed/trusted distribution |
 
 Production cutover has **not** been performed.
