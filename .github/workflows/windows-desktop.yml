@@ -1,0 +1,63 @@
+name: PORTAL Windows Desktop build
+
+on:
+  push:
+    branches: ["main", "codex-finalization-megapack-part12"]
+    paths:
+      - "desktop_windows/**"
+      - "ops/install_portal_desktop.ps1"
+      - "ops/test_portal_desktop_installer.ps1"
+      - "ops/PORTAL_WINDOWS_DESKTOP.md"
+      - ".github/workflows/windows-desktop.yml"
+  pull_request:
+    paths:
+      - "desktop_windows/**"
+      - "ops/install_portal_desktop.ps1"
+      - "ops/test_portal_desktop_installer.ps1"
+      - "ops/PORTAL_WINDOWS_DESKTOP.md"
+      - ".github/workflows/windows-desktop.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  windows-desktop:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Validate installer PowerShell syntax
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path "ops/install_portal_desktop.ps1"), [ref]$tokens, [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Error $_ }; exit 1 }
+      - name: Publish self-contained Windows client
+        run: dotnet publish desktop_windows/Portal.Desktop.csproj --configuration Release --runtime win-x64 --self-contained true -p:Version=3.5.0 -p:InformationalVersion=3.5.0-ci -o artifacts/desktop
+      - name: Package and checksum CI artifact
+        shell: pwsh
+        run: |
+          $package = "PORTAL-Desktop-win-x64-3.5.0.zip"
+          Compress-Archive -Path "artifacts/desktop/*" -DestinationPath $package
+          $hash = (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -LiteralPath "$package.sha256" -Value "$hash  $package" -NoNewline
+      - name: Exercise installer safety contracts
+        shell: pwsh
+        run: .\ops\test_portal_desktop_installer.ps1 -InstallerPath .\ops\install_portal_desktop.ps1
+      - name: Install packaged app into disposable per-user profile
+        shell: pwsh
+        run: .\ops\install_portal_desktop.ps1 -PackagePath .\PORTAL-Desktop-win-x64-3.5.0.zip -Version 3.5.0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PORTAL-Desktop-win-x64-3.5.0
+          path: |
+            PORTAL-Desktop-win-x64-3.5.0.zip
+            PORTAL-Desktop-win-x64-3.5.0.zip.sha256
+          if-no-files-found: error
+          retention-days: 14
