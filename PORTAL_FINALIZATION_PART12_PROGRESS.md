@@ -647,3 +647,32 @@ Production cutover **NOT performed**.
 - C: finish unified profitability/source coverage and reminder cadence configuration/operator execution; production reminder timer remains disabled.
 - D: complete document revision/history UI parity and run the cross-session PostgreSQL E2E on the eventual final tested source SHA.
 - Exact next implementation: inspect the shared Documents revision/history screen and add browser assertions for revision ordering, current/archived labels, and denied history access; run targeted UI/server tests, then commit and push. Continue A–D after this test block; do not stop at this checkpoint. No completion/blocked flag. Production cutover **NOT performed**.
+
+## AUTOMATIC CONTINUATION — settings/owner audit PostgreSQL evidence — 2026-09-30
+
+### DONE NOW
+
+- Starting HEAD was `ad487710768b577d1f711e81e72730eedc7d8c75`, clean and synced with origin. The new settings role checks initially posted without the API's standard `request_id`; commit `166fa35` now uses the shared helper and explicit ids for denied POSTs.
+- `dde82b0` expands Platform Owner audit PostgreSQL coverage: same-day company/actor/event filters, one-row pagination across two pages, distinct rows, and existing role denial/secret exclusion.
+- Current Documents implementation already had the previously requested history UI coverage: browser checks verify revision order, archived/current labels, read-only history visibility, and denial before an unauthorized history API call. The real PostgreSQL class also exercises cross-session revision/archive behavior.
+- Readiness counts remain **74 ✅ / 33 🟡 / 7 ⏳ / 12 🔌**. No status was promoted by test-only evidence.
+
+### TESTS / CI
+
+- `166fa35`: full `test_production` **45 passed**; `test_documents_postgresql` **26 skipped locally** because no disposable PG is installed; `py_compile` and diff check passed. Web #`36688493231` (run 97) passed `web` and `documents-postgresql`; Server #`36688493277` (run 111) passed Python 3.11 and 3.13.
+- `dde82b0`: `test_portal_tenancy` **16 passed**; `test_documents_postgresql` **26 skipped locally**; compile and diff check passed; browser UI **29/29 passed**. Web #`36688962524` (run 98), including disposable PostgreSQL, passed.
+- Server #`36688962707` (run 112) failed at the generic HTTP regression step; anonymous job logs expose only exit code 1. The same complete local discovery on the source passed **259 tests, 39 skipped, 0 failed**. Prior Server #111 at `166fa35` passed. Do not describe #112 as green; the next pushed Server-triggering checkpoint must re-run it and inspect any available detail.
+- No production DB/service, secrets, signing material, or phone was used.
+
+### PREVIOUSLY PROVEN
+
+- Reminder cadence is tenant-persisted and disabled by default from `fcbc3ba`; the runner consumes the configured setting and does not start a production timer or external messaging.
+- Documents same-company two-session create/list/metadata/download/archive and company-B denial remain proven only at the earlier named Web PostgreSQL run in the readiness matrix; the Web run at #98 newly covers settings/audit and history fixtures, not a claim of exact disposable-resource counters.
+
+### NOT DONE / EXACT NEXT
+
+- A: remaining owner/subscription and user-limit override controls, plus full UI role checks for invites/settings/audit.
+- B: complete Client 360 facts, canonical alias-history matching, and planned-versus-actual economics role/UI coverage.
+- C: remaining source-backed dashboard/profitability/productivity coverage and a trusted system timer that remains disabled for production by default.
+- D: Android native save/share/email visual check is manual; run final disposable PostgreSQL suite on final source SHA and retain cleanup evidence.
+- Exact next: update readiness/progress/report evidence for `166fa35`/`dde82b0`, run `git diff --check`, commit/push the docs checkpoint (triggering a fresh Server CI after #112), then continue B/C source inspection. Never infer the #112 failure cause from incomplete logs. No completion or blocked flag; production cutover **NOT performed**.

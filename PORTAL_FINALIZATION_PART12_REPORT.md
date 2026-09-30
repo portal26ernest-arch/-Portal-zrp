@@ -550,3 +550,38 @@ Latest tested code at `e08e0d8dbe927cce9b82ab58e4ef4a5c7e9c29a4`; commits `cd22c
 
 - A–D still have software work remaining: owner/director settings/audit coverage; Client 360/batch/normalization cases; unified source-backed profitability and persistent reminder cadence; document history/revision parity and final disposable PostgreSQL run.
 - Next code task: add focused shared UI regression for document history revision ordering and permission-aware access, then continue remaining blocks. Employee-ID/legacy Telegram-ID runtime audit, REAL-money inventory, news operator framework, backup restore rehearsal, Windows thin client, and final integrated regression remain. No autopilot flag and no production cutover.
+
+## AUTOMATIC CONTINUATION REPORT — settings and owner audit role evidence — 2026-09-30
+
+### DONE NOW
+
+- `166fa35` corrects test request construction for same-company director settings; it includes explicit idempotency identifiers in the role-denial HTTP assertions.
+- `dde82b0` verifies Platform Owner audit filters for company, actor, event, date and pagination against disposable PostgreSQL. The same request also asserts company-user and packer denial and excludes the synthetic PIN from the response.
+- Confirmed that shared Documents UI and PostgreSQL tests already cover revision order, archived/current labels, read-only history, unauthorized-access denial, same-company cross-session visibility and archive consistency. This was existing code/test evidence, not new implementation in this turn.
+
+### PREVIOUSLY PROVEN
+
+- At `166fa35`, Server #111 and Web #97 were green. Web #97 included successful `documents-postgresql`; reminder settings default-off/cadence tests ran in that disposable job.
+- At `dde82b0`, Web #98 / run `36688962524` passed, including the new disposable PostgreSQL owner-audit filters and existing Documents history tests.
+- Staging remains 3.5-dev-staging/versionCode 35. No production resources were touched.
+
+### TESTS
+
+- Local `test_production`: **45 passed**; local `test_portal_tenancy`: **16 passed**; full server discovery at `dde82b0`: **259 passed, 39 skipped, 0 failed**; browser UI: **29 passed, 0 failed**.
+- Local `test_documents_postgresql`: **26 skipped** because this Windows environment has no disposable PostgreSQL service. The actual disposable PG evidence is Web #98.
+- `py_compile` and `git diff --check` passed before documentation edits; the docs checkpoint must rerun the diff check.
+- Server #112 / run `36688962707` at `dde82b0` failed in the generic HTTP regression step. Public annotations disclose no failing case and logs require sign-in; therefore it remains an unexplained CI failure, not a pass. Full local default discovery passed, and prior Server #111 passed. The next Server-triggering commit must rerun CI; diagnose any repeat using returned diagnostics before claiming green.
+
+### NOT DONE
+
+- A–D remain partially open, including owner override/settings UI, remaining alias and batch-economics functionality, further source-backed profitability/radar/productivity, trusted disabled-by-default timer implementation, and final integrated disposable PostgreSQL evidence at the eventual final SHA.
+- Physical Android chooser/save/email check and production rollout are not verified here.
+- Final all-workflow GitHub matrix and complete Part 12 regression are not yet done.
+
+### EXTERNAL BLOCKER / MANUAL OWNER CHECK
+
+- No current external blocker preventing software work. Do not run production release/cutover. Native device chooser check remains a manual owner check only; it is not a reason to stop the software work.
+
+### EXACT NEXT
+
+- Commit and push this evidence-only checkpoint after a fresh `git diff --check`; that will trigger a new Server run to replace unexplained Server #112. Then inspect `server/production_service.py`'s batch `economy()` plan/fact contract and continue the next source-backed B/C gap with targeted tests and a logical commit. Keep matrix counts **74 ✅ / 33 🟡 / 7 ⏳ / 12 🔌** until evidence justifies change. No autopilot completion/blocked flag; production cutover **NOT performed**.
