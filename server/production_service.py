@@ -746,8 +746,11 @@ class Production:
         if target['role']=='admin' and 'users.manage' not in desired:
             if not any(u['active'] and u['id']!=target['id'] and u['role']=='admin' and 'users.manage' in rights.effective(self.r,u) for u in users.values()): raise ValueError('Нельзя лишить прав последнего администратора')
         defaults=rights.defaults(target['role']);old['overrides']={k:k in desired for k in rights.CODES if (k in defaults)!=(k in desired)}
-        if self.r.get('permissions',old['id'],False): return self.r.update('permissions',old)
-        return self.r.insert('permissions',old,old['id'])
+        changed=sorted(before^desired)
+        if self.r.get('permissions',old['id'],False): result=self.r.update('permissions',old)
+        else: result=self.r.insert('permissions',old,old['id'])
+        if changed:self.r.audit(self.u,'user.permissions.updated',target['id'],fields=changed)
+        return result
 
     def settings(self,b=None):
         current=self.r.get('settings','control',False) or dict(monday_time='10:00',wednesday_time='10:00',utc_offset_minutes=180,
@@ -771,7 +774,13 @@ class Production:
             raise ValueError('Интервал активности должен быть 15–300 с, таймаут — не меньше двух интервалов и до 3600 с')
         current['presence_heartbeat_seconds']=heartbeat
         current['presence_timeout_seconds']=timeout
-        return self.r.update('settings',current) if current.get('id') else self.r.insert('settings',current,'control')
+        previous=self.r.get('settings','control',False) or dict(monday_time='10:00',wednesday_time='10:00',utc_offset_minutes=180,
+            presence_heartbeat_seconds=60,presence_timeout_seconds=180)
+        changed=sorted(key for key in ('monday_time','wednesday_time','utc_offset_minutes','presence_heartbeat_seconds','presence_timeout_seconds')
+            if current.get(key)!=previous.get(key))
+        result=self.r.update('settings',current) if current.get('id') else self.r.insert('settings',current,'control')
+        if changed:self.r.audit(self.u,'company.settings.updated','control',fields=changed)
+        return result
 
     def scoped(self,kind): return [x for x in self.r.list(kind) if 'client_id' not in x or self.visible(x['client_id'])]
 

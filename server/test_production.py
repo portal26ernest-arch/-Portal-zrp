@@ -263,6 +263,26 @@ class ProductionTest(unittest.TestCase):
         self.get('audit?entity_id='+first_id+'&company_id=2',status=403)
         self.get('audit',self.worker,status=403)
 
+    def test_company_settings_and_capability_changes_are_audited_without_values(self):
+        self.post('settings',dict(monday_time='11:30',utc_offset_minutes=240))
+        self.post('permissions',dict(user_id=self.worker_id,permissions={'work.write':False}))
+        settings=self.get('audit?action=company.settings.updated')['data']['items']
+        capabilities=self.get('audit?action=user.permissions.updated')['data']['items']
+        self.assertEqual((settings[0]['entity_id'],settings[0]['summary']),
+                         ('control','Изменены настройки компании'))
+        self.assertEqual((capabilities[0]['entity_id'],capabilities[0]['summary']),
+                         (str(self.worker_id),'Изменены права сотрудника'))
+        with portal.tenants.company_scope(1),portal.db() as conn:
+            rows=[json.loads(row['payload']) for row in conn.execute(
+                "SELECT payload FROM portal_production WHERE company_id=1 AND kind='audit'")]
+        events={row['event']:row for row in rows if row.get('event') in
+                ('company.settings.updated','user.permissions.updated')}
+        self.assertEqual(events['company.settings.updated']['fields'],['monday_time','utc_offset_minutes'])
+        self.assertEqual(events['user.permissions.updated']['fields'],['work.write'])
+        serialized=json.dumps(events,ensure_ascii=False)
+        for value in ('11:30','240','true'):
+            self.assertNotIn(value,serialized)
+
     def test_company_access_summary_is_capability_and_owner_scope_checked(self):
         self.assertTrue(self.get('company-access')['data']['unlimited'])
         self.assertEqual(self.get('company-access')['data']['active_users'],2)

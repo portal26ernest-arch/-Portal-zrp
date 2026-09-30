@@ -257,6 +257,26 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.assertNotIn('PG-INN-CANARY',json.dumps(audits,ensure_ascii=False))
         self.assertNotIn('PG-ACCOUNT-CANARY',json.dumps(audits,ensure_ascii=False))
 
+    def test_company_settings_and_permission_changes_are_audited_without_values(self):
+        self.post('settings',{'monday_time':'11:30','utc_offset_minutes':240},self.admin)
+        self.post('permissions',{'user_id':2,'permissions':{'work.write':False}},self.admin)
+        settings=self.get('audit?action=company.settings.updated',self.admin)['data']['items']
+        capabilities=self.get('audit?action=user.permissions.updated',self.admin)['data']['items']
+        self.assertEqual(settings[0]['summary'],'Изменены настройки компании')
+        self.assertEqual(capabilities[0]['summary'],'Изменены права сотрудника')
+        self.assertEqual((settings[0]['entity_id'],capabilities[0]['entity_id']),('control','2'))
+        self.assertEqual(self.get('audit?action=company.settings.updated',self.tokens[2])['data']['total'],0)
+        with self.portal.tenants.company_scope(1),self.portal.db() as conn:
+            from production_repository import Repository
+            rows=Repository(conn,1).list('audit')
+        events={row['event']:row for row in rows if row.get('event') in
+                ('company.settings.updated','user.permissions.updated')}
+        self.assertEqual(events['company.settings.updated']['fields'],['monday_time','utc_offset_minutes'])
+        self.assertEqual(events['user.permissions.updated']['fields'],['work.write'])
+        serialized=json.dumps(events,ensure_ascii=False)
+        for value in ('11:30','240','Synthetic packer 1','true'):
+            self.assertNotIn(value,serialized)
+
     def test_dashboard_finance_and_receivables_use_company_scoped_postgresql_facts(self):
         work=self.post('work',dict(client_id=1,operation_id=1,quantity=2,request_id='pg-dashboard-work'),
                        self.tokens['company_1_packer'])['data']

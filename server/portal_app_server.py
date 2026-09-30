@@ -1018,7 +1018,7 @@ class Handler(BaseHTTPRequestHandler):
                 users={str(u['id']):u.get('display_name','') for u in repo.catalog('users')}
                 rows=conn.execute("SELECT id,payload,created_at FROM portal_production WHERE company_id=? AND kind='audit' ORDER BY created_at DESC,id DESC",(repo.company_id,)).fetchall()
                 items=[]
-                labels={'access_invite.created':'Создано приглашение','access_invite.accepted':'Принят запрос доступа','access_invite.approved':'Подтверждён доступ','access_invite.revoked':'Приглашение отозвано','access_invite.rejected':'Запрос отклонён','access_invite.expired':'Приглашение истекло','client.requisites.updated':'Обновлены реквизиты клиента'}
+                labels={'access_invite.created':'Создано приглашение','access_invite.accepted':'Принят запрос доступа','access_invite.approved':'Подтверждён доступ','access_invite.revoked':'Приглашение отозвано','access_invite.rejected':'Запрос отклонён','access_invite.expired':'Приглашение истекло','client.requisites.updated':'Обновлены реквизиты клиента','user.permissions.updated':'Изменены права сотрудника','company.settings.updated':'Изменены настройки компании'}
                 for row in rows:
                     payload=json.loads(row['payload']);at=row['created_at'][:10];actor_id=payload.get('actor_id')
                     if actor and str(actor_id)!=actor:continue
