@@ -437,8 +437,8 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         invite_id=created['invite']['id']
         self.request('/api/access-invites/accept',body={'token':created['token'],'pin':'6789'},method='POST')
 
-        # Packer cannot inspect or decide access requests, even with a forged
-        # company header. A same-company director can approve the request.
+        # Packer cannot inspect or decide access requests. A same-company
+        # director can approve the request, but a forged company header cannot.
         self.request('/api/v3/invitations?status=accepted',self.tokens['company_1_packer'],status=403)
         for action in ('approve','revoke'):
             self.request('/api/v3/invitations',self.tokens['company_1_packer'],
@@ -451,9 +451,9 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
                      {'action':'approve','invite_id':invite_id},method='POST',status=400)
 
         approved=self.request('/api/v3/invitations',director,
-                              {'action':'approve','invite_id':invite_id},method='POST')['data']['invite']
+                              {'action':'approve','invite_id':invite_id},method='POST')['data']
         replay=self.request('/api/v3/invitations',director,
-                            {'action':'approve','invite_id':invite_id},method='POST')['data']['invite']
+                            {'action':'approve','invite_id':invite_id},method='POST')['data']
         self.assertEqual((approved['status'],replay['status']),('approved','approved'))
         events=self.request('/api/v3/audit?action=access_invite.approved&entity_id='+invite_id,
                             director)['data']['items']

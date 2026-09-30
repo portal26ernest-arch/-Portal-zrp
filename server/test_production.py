@@ -230,8 +230,14 @@ class ProductionTest(unittest.TestCase):
         self.request('/api/v3/invitations',manager,body,method='POST',status=403)
         director=self.role_token('director')
         body['username']='director-invite';body['request_id']='director-invite'
-        self.request('/api/v3/invitations',director,body,method='POST')
+        director_invite=self.request('/api/v3/invitations',director,body,method='POST')['data']
         self.request('/api/v3/invitations',director,body,method='POST',extra_headers={'X-Portal-Company':'2'},status=403)
+        director_invite_id=director_invite['invite']['id']
+        self.request('/api/v3/invitations',manager,{'action':'revoke','invite_id':director_invite_id},method='POST',status=403)
+        revoked=self.request('/api/v3/invitations',director,{'action':'revoke','invite_id':director_invite_id},method='POST')['data']
+        revoke_replay=self.request('/api/v3/invitations',director,{'action':'revoke','invite_id':director_invite_id},method='POST')['data']
+        self.assertEqual((revoked['status'],revoke_replay['status']),('revoked','revoked'))
+        self.request('/api/access-invites/accept',body={'token':director_invite['token'],'pin':'6789'},method='POST',status=403)
         body['username']='owner-invite';body['request_id']='owner-invite'
         self.request('/api/v3/invitations',self.owner,body,method='POST',status=403)
         self.request('/api/v3/invitations',self.owner,body,method='POST',extra_headers={'X-Portal-Company':'1'})
