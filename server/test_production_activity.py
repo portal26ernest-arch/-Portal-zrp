@@ -10,6 +10,13 @@ import production_activity as activity
 
 portal=base.portal
 
+def leaf_values(value):
+    if isinstance(value,dict):
+        for item in value.values():yield from leaf_values(item)
+    elif isinstance(value,(list,tuple)):
+        for item in value:yield from leaf_values(item)
+    else:yield value
+
 class ActivityTest(unittest.TestCase):
     setUp=base.ProductionTest.setUp
     tearDown=base.ProductionTest.tearDown
@@ -28,15 +35,17 @@ class ActivityTest(unittest.TestCase):
         self.assertEqual(rows[0]['result'],'success')
         self.assertEqual(rows[0]['client_type'],'PC-Web')
         self.assertNotIn('wrong-secret-canary',json.dumps(rows))
-        self.assertNotIn('1234',json.dumps(rows))
         self.assertNotIn(token,json.dumps(rows))
         self.get('activity',self.worker,status=403)
         self.post('permissions',{'user_id':self.worker_id,'permissions':{'access.history.read':True}})
         self.assertEqual(len(self.get('activity',self.worker)['data']),2)
-        self.assertNotIn('5678',json.dumps(rows))
+        self.assertNotIn('5678',list(leaf_values(rows)))
         with portal.tenants.company_scope(1),portal.db() as conn:
-            ledger=' '.join(row[0] for row in conn.execute("SELECT payload FROM portal_production WHERE kind IN ('access_events','access_sessions')"))
-        for secret in ('wrong-secret-canary','1234',token):self.assertNotIn(secret,ledger)
+            ledger=[json.loads(row[0]) for row in conn.execute("SELECT payload FROM portal_production WHERE kind IN ('access_events','access_sessions')")]
+        values=list(leaf_values(ledger))
+        for secret in ('wrong-secret-canary','1234','5678',token):self.assertNotIn(secret,values)
+        sensitive={'pin','password','token','authorization','cookie','secret'}
+        self.assertFalse(any(sensitive.intersection(map(str.lower,event)) for event in ledger))
 
     def test_presence_heartbeat_timeout_logout_and_multiple_sessions(self):
         first=self.request('/api/login',body={'username':'worker','pin':'1234'})['token']
