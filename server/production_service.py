@@ -894,6 +894,9 @@ class Production:
         invoices=self.invoices() if 'invoices.read' in self.permissions else []
         for i in invoices:
             if i['due_at'] and i['remaining'] and i['due_at']<self.clock():attention.append(dict(type='payment_late',label='Просрочена оплата',invoice_id=i['id'],amount=i['remaining']))
+        if {'invoices.read','finance.read'} & self.permissions:
+            notices=sorted(self.r.list('notifications'),key=lambda item:(item.get('occurred_at',''),item.get('id','')),reverse=True)[:20]
+            attention.extend(dict(type='reminder',label=item['title'],entity_id=item['entity_id'],notification_id=item['id']) for item in notices)
         check='monday' if now.weekday()==0 and now.strftime('%H:%M')>=settings['monday_time'] else 'wednesday' if now.weekday()==2 and now.strftime('%H:%M')>=settings['wednesday_time'] else None
         if check and invoices:attention.append(dict(type='control_'+check,label='Контроль счетов и оплат',paid=sum(i['status']=='paid' for i in invoices),partial=sum(i['status']=='partial' for i in invoices),unpaid=sum(i['status']=='unpaid' for i in invoices),not_invoiced=len(unbilled)))
         result=dict(date=day,mode='management' if manager else 'worker',own_quantity=sum(w['quantity'] for w in mine),attention=attention,tasks=self.task_rows() if 'tasks.read' in self.permissions else [])

@@ -369,6 +369,8 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
             key=reminder.key(now.date().isoformat())
             self.assertTrue(persist_once(repository,1,reminder,key,now))
             conn.commit()
+        attention=self.request('/api/v3/today',self.tokens[1])['data']['attention']
+        self.assertTrue(any(item.get('notification_id')==key and item['label']=='Просрочена оплата по счёту' for item in attention))
         with self.portal.tenants.company_scope(1),self.portal.db() as conn:
             self.assertFalse(persist_once(Repository(conn,1),1,reminder,key,now))
         with self.portal.tenants.company_scope(2),self.portal.db() as conn:

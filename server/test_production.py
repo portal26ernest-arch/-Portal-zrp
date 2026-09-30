@@ -283,6 +283,18 @@ class ProductionTest(unittest.TestCase):
         self.assertEqual(economy['fact']['volume'],0)
         self.assertEqual(economy['fact']['profit'],0)
 
+    def test_persisted_reminder_appears_only_in_authorized_company_attention(self):
+        from production_repository import Repository
+        with portal.tenants.company_scope(1),portal.db() as conn:
+            Repository(conn,1).insert_once('notifications',dict(event='reminder',reminder_kind='invoice_overdue',
+                entity_id='invoice-1',title='Просрочена оплата по счёту',idempotency_key='reminder:invoice_overdue:invoice-1:2026-09-30',
+                occurred_at='2026-09-30T12:00:00+00:00'),'reminder:invoice_overdue:invoice-1:2026-09-30')
+            conn.commit()
+        today=self.get('today')['data']
+        self.assertTrue(any(item.get('type')=='reminder' and item.get('entity_id')=='invoice-1' for item in today['attention']))
+        worker_today=self.get('today',self.worker)['data']
+        self.assertFalse(any(item.get('type')=='reminder' for item in worker_today['attention']))
+
     def test_company_overhead_is_not_charged_to_random_client(self):
         self.work()
         before=self.get('finance')['data'];base=before['clients'][0]['profit']
