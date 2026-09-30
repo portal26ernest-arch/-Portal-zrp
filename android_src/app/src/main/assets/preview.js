@@ -148,6 +148,31 @@
 
   screens.clients=async()=>{
     await liveClients();
+    if(S.stage3&&allowed('clients.read')){
+      const content=$('content'),list=content?.querySelector('.list');
+      if(list){
+        let history=[];
+        try{history=await productionGet('client-name-history');}catch{}
+        const aliases=new Map();
+        for(const row of history){const values=aliases.get(row.client_id)||[];values.push(row.old_name,row.new_name);aliases.set(row.client_id,values);}
+        const rows=[...list.querySelectorAll('.item')].filter(row=>row.querySelector('[data-action="openClient"]'));
+        for(const row of rows){
+          const id=Number(row.querySelector('[data-action="openClient"]').dataset.id),client=S.clients?.find(item=>item.id===id);
+          const names=[client?.name,...(aliases.get(id)||[])].filter(Boolean);
+          row.dataset.clientSearch=names.join(' ').toLocaleLowerCase();
+          const prior=[...new Set((aliases.get(id)||[]).filter(name=>name&&name!==client?.name))];
+          if(prior.length)row.insertAdjacentHTML('beforeend',`<p class="meta">Ранее: ${prior.map(name=>esc(name)).join(' · ')}</p>`);
+        }
+        const search=document.createElement('label');search.className='field';search.innerHTML='<span>Клиент или прежнее название</span><input id="clientSearch" type="search" maxlength="200" autocomplete="off">';
+        list.before(search);
+        const empty=document.createElement('p');empty.className='empty';empty.textContent='Клиенты по этому запросу не найдены';empty.hidden=true;list.after(empty);
+        search.querySelector('input').addEventListener('input',()=>{
+          const query=search.querySelector('input').value.trim().toLocaleLowerCase();let visible=0;
+          for(const row of rows){const match=!query||row.dataset.clientSearch.includes(query);row.hidden=!match;if(match)visible++;}
+          empty.hidden=visible>0;
+        });
+      }
+    }
     $('content')?.insertAdjacentHTML('beforeend',`<section class="preview-extension"><div class="section-label"><h2>Client 360°</h2>${previewBadge}</div><div class="mini-actions">
       ${btn('Реквизиты и контакты','previewFeature','data-title="Client 360° · Реквизиты" data-text="ИНН, КПП, БИК, расчётный и корреспондентский счёт, контактное лицо, телефон и email."','secondary')}
       ${btn('Документы','previewFeature','data-title="Client 360° · Документы" data-text="Счета, отчёты и документы клиента с фильтрами и историей."','secondary')}

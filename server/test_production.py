@@ -85,6 +85,8 @@ class ProductionTest(unittest.TestCase):
         self.assertEqual([(row['old_name'],row['new_name']) for row in history],[(original,'Canonical client rename')])
         self.assertIn('client.renamed',[row['event'] for row in audit])
         self.assertEqual(self.get('client-name-history?client_id=1')['data'],history)
+        self.assertEqual(self.get('client-name-history')['data'],history)
+        self.assertEqual(self.get('client-name-history',self.other_admin)['data'],[])
         self.assertEqual(self.get('client-name-history?client_id=1',self.other_admin)['data'],[])
 
     def test_today_dashboard_has_company_date_volume_finance_and_open_invoice_counts(self):

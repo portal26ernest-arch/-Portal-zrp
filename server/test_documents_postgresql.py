@@ -272,6 +272,19 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.assertEqual(current[before['id']]['salary'],400)
         self.assertEqual((after['salary'],after['employee_rate']),(600,300))
 
+    def test_client_rename_history_aliases_are_company_scoped_on_postgresql(self):
+        work=self.post('work',dict(client_id=1,operation_id=1,quantity=1,request_id='pg-client-alias-work'),
+                       self.tokens['company_1_packer'])['data']
+        self.request('/api/admin/clients/1',self.admin,{'name':'Synthetic canonical client'},method='POST')
+        history=self.get('client-name-history',self.admin)['data']
+        self.assertEqual([(row['old_name'],row['new_name']) for row in history],
+                         [('Synthetic client','Synthetic canonical client')])
+        saved_work=next(row for row in self.get('works',self.tokens['company_1_packer'])['data'] if row['id']==work['id'])
+        self.assertEqual(saved_work['client_name'],'Synthetic client')
+        self.assertEqual(self.get('client-name-history',self.tokens[2])['data'],[])
+        self.request('/api/v3/client-name-history',self.admin,status=403,
+                     extra_headers={'X-Portal-Company':'2'})
+
     def test_secure_invitation_lifecycle_uses_hash_and_tenant_scope(self):
         """Stage 10 invitations remain hash-only, one-time and tenant-scoped on PostgreSQL."""
         body={'action':'create','role':'packer','username':'pg-invite-candidate',
