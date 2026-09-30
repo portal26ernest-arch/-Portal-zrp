@@ -88,7 +88,7 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
     localStorage.clear();
     const user={id:1,username:role,display_name:'Тестовый пользователь',role,company_id:1,telegram_id:role==='platform_owner'?null:101};
     const client={id:1,name:'Клиент',active:1};
-    window.mock={calls:[],offline:false,rejectWrite:false,hold:false,held:[],update:{ok:true,configured:false},timer:null,stage3Today:null,stage3Permissions:null,presenceOnline:true,saved:null,previewMode:'ok',applyMode:'ok',payrollPaid:2000,invites:[],products:[]};
+    window.mock={calls:[],offline:false,rejectWrite:false,hold:false,held:[],update:{ok:true,configured:false},timer:null,stage3Today:null,stage3Batches:null,stage3Permissions:null,presenceOnline:true,saved:null,previewMode:'ok',applyMode:'ok',payrollPaid:2000,invites:[],products:[]};
     const respond=(id,data)=>setTimeout(()=>window.PortalBridgeResult(id,JSON.stringify(data)),0);
     window.PortalNative={getServerUrl:()=> 'http://127.0.0.1:8765',getAppMetadata:()=>JSON.stringify(metadata),checkUpdates:id=>respond(id,mock.update),saveBase64FileAsync(id,filename,mime,file_b64){mock.saved={filename,mime,file_b64};respond(id,{ok:true,location:'Downloads/PORTAL/'+filename});},requestAsync(id,method,url,payload,token,company){
       mock.calls.push({method,url,body:payload?JSON.parse(payload):null,token,company});
@@ -108,7 +108,7 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
       else if(stage3&&url==='/api/v3/tasks')data.data=[{id:'task-1',batch_id:'batch-1',client_name:'Клиент',product:'Коробка',batch_number:'PRT-2026-000001',operation_name:'Упаковка',quantity:10,done:2,remaining:8,status:'in_progress',assignees:[1]}];
       else if(stage3&&url==='/api/v3/timers'&&method==='GET')data.data=mock.timer&&['running','paused'].includes(mock.timer.status)?[mock.timer]:[];
       else if(stage3&&url==='/api/v3/timers'&&method==='POST'){const b=JSON.parse(payload);mock.timer={id:'timer-1',task_id:'task-1',user_id:1,started_at:'2026-09-25T09:12:00',pauses:[],status:({start:'running',pause:'paused',resume:'running',finish:'completed'})[b.event]};data.data=mock.timer;}
-      else if(stage3&&url==='/api/v3/batches')data.data=[{id:'batch-1',number:'PRT-2026-000001',client_id:1,client_name:'Клиент',product:'Коробка',received_at:'2026-09-24',quantity:10,done:2,remaining:8,stage:'in_progress',operations:[{operation:'Упаковка',done:2,planned:10}],ready:false}];
+      else if(stage3&&url==='/api/v3/batches')data.data=mock.stage3Batches||[{id:'batch-1',number:'PRT-2026-000001',client_id:1,client_name:'Клиент',product:'Коробка',received_at:'2026-09-24',quantity:10,done:2,remaining:8,stage:'in_progress',operations:[{operation:'Упаковка',done:2,planned:10}],ready:false}];
       else if(stage3&&url.startsWith('/api/v3/economy?'))data.data={plan:{salary:null,revenue:null,materials:null,other:null,profit:null,volume:null},fact:{salary:0,revenue:0,materials:0,other:0,profit:0,volume:0},deviation:{salary:null,revenue:null,materials:null,other:null,profit:null,volume:null},finished_units:0};
       else if(stage3&&url==='/api/v3/invoices')data.data=[];
       else if(stage3&&url==='/api/v3/documents')data.data=[];
@@ -389,6 +389,20 @@ test('browser UI regression',async t=>{
       await page.waitForSelector('[data-action=batchEconomy]');await page.locator('[data-action=batchEconomy]').click();await page.waitForSelector('#sheetContent');
       assert.match(await page.locator('#sheetContent').innerText(),/Недоступно/);
       assert.deepEqual(errors,[]);await page.close();
+    });
+    await t.test('shipped batch return flow is visible, permission aware and submits quantity/result',async()=>{
+      const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);
+      await page.evaluate(()=>{mock.stage3Batches=[{id:'batch-return',number:'PRT-RETURN',client_id:1,client_name:'Клиент',product:'Коробка',received_at:'2026-09-24',quantity:10,done:10,remaining:0,stage:'partially_returned',returned_quantity:2,returnable_quantity:8,ready:true}];});
+      await login(page);await page.evaluate(()=>go('batches'));await page.waitForSelector('[data-action=returnBatch]');
+      assert.match(await page.locator('#content').innerText(),/Частично возвращена/);
+      await page.locator('[data-action=returnBatch]').click();await page.locator('#returnQuantity').fill('3');await page.selectOption('#returnCondition','damaged');await page.locator('#returnComment').fill('Повреждение');await page.locator('#returnForm [type=submit]').click();
+      await page.waitForFunction(()=>mock.calls.some(c=>c.method==='POST'&&c.url==='/api/v3/returns'));
+      const saved=await page.evaluate(()=>mock.calls.find(c=>c.method==='POST'&&c.url==='/api/v3/returns'));
+      assert.deepEqual({batch_id:saved.body.batch_id,quantity:saved.body.quantity,condition:saved.body.condition,comment:saved.body.comment},{batch_id:'batch-return',quantity:3,condition:'damaged',comment:'Повреждение'});
+      assert.deepEqual(errors,[]);await page.close();
+      const worker=await fixture(browser,'packer',{width:390,height:844},true);await login(worker.page);await worker.page.evaluate(()=>go('batches'));
+      await worker.page.waitForFunction(()=>S.page==='batches'&&!document.querySelector('.loading'));
+      assert.equal(await worker.page.locator('[data-action=returnBatch]').count(),0);assert.deepEqual(worker.errors,[]);await worker.page.close();
     });
     await t.test('Stage 3 timer, presence, activity and system information',async()=>{
       const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);

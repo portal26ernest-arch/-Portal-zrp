@@ -219,6 +219,29 @@ class ProductionTest(unittest.TestCase):
         self.assertEqual(after['batch_id'],b['id'])
         self.post('links',dict(work_id=w['id'],batch_id=b['id']),status=400)
 
+    def test_internal_return_workflow_is_idempotent_scoped_and_does_not_post_work(self):
+        batch=self.post('batches',dict(client_id=1,product='Коробка',quantity=4))['data']
+        task=self.post('tasks',dict(batch_id=batch['id'],operation_id=1,quantity=4,assignees=[self.worker_id]))['data']
+        work=self.post('work',dict(task_id=task['id'],quantity=4),self.worker)['data']
+        before_work=len(self.get('works')['data'])
+        self.post('shipments',dict(batch_id=batch['id'],direction='FBS'))
+        body=dict(batch_id=batch['id'],quantity=1,condition='damaged',comment='Упаковка повреждена',request_id='return-part-1')
+        first=self.post('returns',body)['data']
+        replay=self.post('returns',body)['data']
+        self.assertEqual(first['id'],replay['id'])
+        self.assertEqual((first['returned_quantity'],first['returnable_quantity']),(1,3))
+        current=next(row for row in self.get('batches')['data'] if row['id']==batch['id'])
+        self.assertEqual((current['stage'],current['returned_quantity'],current['returnable_quantity']),('partially_returned',1,3))
+        self.post('returns',dict(batch_id=batch['id'],quantity=4,condition='unknown'),status=400)
+        final=self.post('returns',dict(batch_id=batch['id'],quantity=3,condition='resalable'))['data']
+        self.assertEqual((final['returned_quantity'],final['returnable_quantity']),(4,0))
+        current=next(row for row in self.get('batches')['data'] if row['id']==batch['id'])
+        self.assertEqual(current['stage'],'returned')
+        self.post('returns',dict(batch_id=batch['id'],quantity=1),status=400)
+        self.assertEqual(len(self.get('works')['data']),before_work)
+        self.assertEqual(len([row for row in self.get('shipments')['data'] if row.get('type')=='return']),2)
+        self.post('returns',dict(batch_id=batch['id'],quantity=1),self.worker,status=403)
+
     def test_tariff_history_salary_revenue_and_future_dates(self):
         w=self.work();invoice=self.post('invoices',dict(work_ids=[w['id']]))['data']
         self.post('tariffs',dict(client_id=1,operation_id=1,employee_rate=3,client_rate=8))

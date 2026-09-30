@@ -350,6 +350,26 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.assertNotIn(created['id'],[row['id'] for row in self.request('/api/v3/products',self.tokens[1])['data'] if row['active']])
         self.request('/api/v3/batches',self.tokens[1])
 
+    def test_postgresql_internal_return_lifecycle_is_idempotent_and_does_not_repost_work(self):
+        batch=self.post('batches',dict(client_id=1,product='Return fixture',quantity=4),self.tokens[1])['data']
+        task=self.post('tasks',dict(batch_id=batch['id'],operation_id=1,quantity=4,
+                                   assignees=[2]),self.tokens[1])['data']
+        work=self.post('work',dict(task_id=task['id'],quantity=4),self.tokens['company_1_packer'])['data']
+        before=len(self.request('/api/v3/works',self.tokens[1])['data'])
+        self.post('shipments',dict(batch_id=batch['id'],direction='FBO'),self.tokens[1])
+        body=dict(batch_id=batch['id'],quantity=2,condition='damaged',request_id='pg-return-once')
+        first=self.post('returns',body,self.tokens[1])['data']
+        retry=self.post('returns',body,self.tokens[1])['data']
+        self.assertEqual(first['id'],retry['id'])
+        self.assertEqual((first['returned_quantity'],first['returnable_quantity']),(2,2))
+        self.request('/api/v3/returns',self.tokens[2],body=body,method='POST',status=400)
+        current=next(row for row in self.request('/api/v3/batches',self.tokens[1])['data'] if row['id']==batch['id'])
+        self.assertEqual((current['stage'],current['returned_quantity'],current['returnable_quantity']),('partially_returned',2,2))
+        self.assertEqual(len(self.request('/api/v3/works',self.tokens[1])['data']),before)
+        rows=self.request('/api/v3/shipments',self.tokens[1])['data']
+        self.assertEqual(len([row for row in rows if row.get('type')=='return' and row['batch_id']==batch['id']]),1)
+        self.request('/api/v3/returns',self.tokens['company_1_packer'],body=dict(batch_id=batch['id'],quantity=1),method='POST',status=403)
+
     def test_postgresql_reminder_candidates_and_notification_sink_are_scoped_and_idempotent(self):
         from datetime import datetime, timedelta, timezone
         from production_repository import Repository

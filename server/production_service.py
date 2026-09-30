@@ -746,21 +746,47 @@ class Production:
     def progress(self,batch):
         tasks=[t for t in self.r.list('tasks') if t['batch_id']==batch['id']]
         works=[w for w in self.r.list('works') if self.batch_for_work(w)==batch['id']]
+        shipment=next((item for item in self.r.list('shipments') if item['batch_id']==batch['id'] and item.get('type')!='return'),None)
+        returned=sum(item.get('quantity',0) for item in self.r.list('shipments') if item['batch_id']==batch['id'] and item.get('type')=='return')
         done_by={t['id']:sum(w['quantity'] for w in works if w.get('task_id')==t['id']) for t in tasks}
         # Different operations are NOT summed as finished physical units.
         done=min(done_by.values()) if tasks else 0
         ready=bool(tasks) and all(done_by[t['id']]>=t['quantity'] for t in tasks)
         return dict(batch,done=done,remaining=max(0,batch['quantity']-done),ready=ready,
-                    stage='shipped' if batch['status']=='shipped' else 'ready' if ready else 'in_progress' if works else 'received',
+                    stage='returned' if batch['status']=='returned' else 'partially_returned' if batch['status']=='partially_returned' else 'shipped' if batch['status']=='shipped' else 'ready' if ready else 'in_progress' if works else 'received',
                     operations=[dict(operation=t['operation_name'],done=done_by[t['id']],planned=t['quantity']) for t in tasks],
-                    performers=sorted({w['user_id'] for w in works}))
+                    performers=sorted({w['user_id'] for w in works}),returned_quantity=returned,
+                    returnable_quantity=max(0,(shipment or {}).get('quantity',0)-returned))
 
     def ship(self,b):
         self.need('batches.receive');batch=self.entity('batches',b['batch_id'])
-        if batch['status']=='shipped' or not self.progress(batch)['ready']: raise ValueError('Партия ещё не готова или уже отгружена')
+        if batch['status'] in ('shipped','partially_returned','returned') or not self.progress(batch)['ready']: raise ValueError('Партия ещё не готова или уже отгружена')
         if b.get('direction') not in ('FBO','FBS','shipment'): raise ValueError('Выберите направление отгрузки')
         batch.update(status='shipped',direction=b['direction']);self.r.update('batches',batch)
         return self.r.insert('shipments',dict(batch_id=batch['id'],client_id=batch['client_id'],direction=b['direction'],quantity=batch['quantity']))
+
+    def return_batch(self,b):
+        self.need('batches.receive')
+        batch=self.entity('batches',b['batch_id'])
+        if batch['status'] not in ('shipped','partially_returned'):
+            raise ValueError('Возврат разрешён только для отгруженной партии')
+        quantity=qty(b.get('quantity'))
+        condition=b.get('condition','unknown')
+        if condition not in ('resalable','damaged','unknown'):
+            raise ValueError('Укажите состояние возвращённого товара')
+        shipment=next((item for item in self.r.list('shipments') if item['batch_id']==batch['id'] and item.get('type')!='return'),None)
+        if shipment is None:raise ValueError('Исходная отгрузка не найдена')
+        returned=sum(item.get('quantity',0) for item in self.r.list('shipments')
+                     if item['batch_id']==batch['id'] and item.get('type')=='return')
+        remaining=shipment['quantity']-returned
+        if quantity>remaining:raise ValueError('Возвращаемое количество превышает остаток отгрузки')
+        item=self.r.insert('shipments',dict(type='return',batch_id=batch['id'],client_id=batch['client_id'],
+            direction=shipment['direction'],quantity=quantity,condition=condition,
+            comment=text(b.get('comment'),optional=True),recorded_by=self.u['id']))
+        new_returned=returned+quantity
+        batch['status']='returned' if new_returned==shipment['quantity'] else 'partially_returned'
+        self.r.update('batches',batch)
+        return dict(item,returned_quantity=new_returned,returnable_quantity=shipment['quantity']-new_returned)
 
     def economy(self,batch_id):
         self.need('finance.read');batch=self.entity('batches',batch_id)
@@ -911,9 +937,9 @@ class Production:
 
     def command(self,action,body):
         if 'company_id' in body and (type(body['company_id']) is not int or body['company_id']!=self.r.company_id):raise PermissionError('Компания определяется сессией')
-        methods={'batches':self.batch,'products':self.product,'tasks':self.task,'work':self.work,'timers':self.timer,'links':self.link,'tariffs':self.create_tariff,'permissions':self.set_permissions,'usage':self.usage,'expenses':self.expense,'invoices':self.invoice,'payments':self.payment,'settings':self.settings,'shipments':self.ship,'payroll-periods':self.payroll_period,'payroll-settlements':self.payroll_settlement,'chat':self.chat_command,'documents':self.document}
+        methods={'batches':self.batch,'products':self.product,'tasks':self.task,'work':self.work,'timers':self.timer,'links':self.link,'tariffs':self.create_tariff,'permissions':self.set_permissions,'usage':self.usage,'expenses':self.expense,'invoices':self.invoice,'payments':self.payment,'settings':self.settings,'shipments':self.ship,'returns':self.return_batch,'payroll-periods':self.payroll_period,'payroll-settlements':self.payroll_settlement,'chat':self.chat_command,'documents':self.document}
         if action not in methods: raise ValueError('Действие не поддерживается')
-        authorization={'batches':'batches.receive','products':'clients.manage','tasks':'tasks.manage','work':'work.write','timers':'work.write','links':'work.link','permissions':'users.manage','usage':'materials.use','expenses':'expenses.manage','invoices':'invoices.create','payments':'payments.record','settings':'company.settings','shipments':'batches.receive','payroll-periods':'payroll.close','chat':'chat.write','documents':'documents.manage'}
+        authorization={'batches':'batches.receive','products':'clients.manage','tasks':'tasks.manage','work':'work.write','timers':'work.write','links':'work.link','permissions':'users.manage','usage':'materials.use','expenses':'expenses.manage','invoices':'invoices.create','payments':'payments.record','settings':'company.settings','shipments':'batches.receive','returns':'batches.receive','payroll-periods':'payroll.close','chat':'chat.write','documents':'documents.manage'}
         if action in authorization:self.need(authorization[action])
         if action=='payroll-settlements':
             entry_type=body.get('entry_type')
@@ -969,6 +995,8 @@ class Production:
         if action=='batches':
             if not ({'tasks.read','batches.receive','work.write'}&self.permissions):raise PermissionError('Нет доступа к партиям')
             return [self.progress(b) for b in self.scoped('batches')]
+        if action=='shipments':
+            self.need('batches.receive');return self.scoped('shipments')
         if action=='works':
             if not {'work.write','payroll.own','work.link','finance.read','analytics.read','payroll.all','invoices.create'} & self.permissions:raise PermissionError('Нет доступа к выработке')
             return self.works()
