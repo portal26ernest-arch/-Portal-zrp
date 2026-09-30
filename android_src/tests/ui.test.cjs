@@ -367,6 +367,21 @@ test('browser UI regression',async t=>{
       assert.equal((await manager.page.evaluate(()=>mock.calls)).some(c=>c.url.startsWith('/api/v3/invitations')),false);
       assert.deepEqual(manager.errors,[]);await manager.page.close();
     });
+    await t.test('invitee submits one-time code and private PIN only in the accept request body',async()=>{
+      const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);
+      await page.locator('[data-action=acceptInvite]').click();await page.waitForSelector('#acceptInviteForm');
+      const token='1.synthetic-invitation-code';const pin='9876';
+      await page.locator('#acceptInviteToken').fill(token);await page.locator('#acceptInvitePin').fill(pin);
+      await page.locator('#acceptInviteForm [type=submit]').click();
+      await page.waitForFunction(()=>mock.calls.some(c=>c.method==='POST'&&c.url==='/api/access-invites/accept'));
+      const request=await page.evaluate(()=>mock.calls.find(c=>c.method==='POST'&&c.url==='/api/access-invites/accept'));
+      assert.deepEqual(request.body,{token,pin});
+      assert.equal(new URL(request.url,'https://portal.example').search,'');
+      assert.doesNotMatch(page.url(),/9876|synthetic-invitation-code/);
+      await page.waitForFunction(()=>document.querySelector('#toast').textContent.includes('Запрос отправлен'));
+      assert.equal(await page.locator('#acceptInviteForm').count(),0);
+      assert.deepEqual(errors,[]);await page.close();
+    });
     await t.test('director approves access requests and packer cannot decide invitations',async()=>{
       const {page,errors}=await fixture(browser,'director',{width:390,height:844},true);
       await page.evaluate(()=>{mock.stage3Permissions=['users.manage'];mock.invites=[
