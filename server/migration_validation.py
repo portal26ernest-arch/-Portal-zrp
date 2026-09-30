@@ -166,8 +166,14 @@ def reconcile_linked_work_money(legacy_conn, ledger_conn, company_id,
         if selected_work_ids is not None and str(work_id) not in selected_work_ids:
             continue
         cost = usage.get('cost')
-        if work_id is None or type(cost) is not int:
+        source = usage.get('source')
+        if work_id is None or type(cost) is not int or source not in ('norm', 'additional_actual'):
             raise ValidationError('Invalid canonical usage money field')
+        # The legacy direct_cost column is the original work-time projection.
+        # Later additional_actual entries remain append-only ledger facts and
+        # intentionally do not rewrite that legacy snapshot.
+        if source != 'norm':
+            continue
         key = str(work_id)
         usage_by_work[key] = usage_by_work.get(key, 0) + cost
     legacy_to_canonical = {'rate': 'employee_rate', 'salary': 'salary',

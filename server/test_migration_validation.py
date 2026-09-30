@@ -124,9 +124,13 @@ class MigrationValidationTest(unittest.TestCase):
                         salary=250, revenue=500)
             conn.execute('INSERT INTO portal_production VALUES (?,?,?,?,?)',
                          (1, 'works', work['id'], json.dumps(work), '2026-09-30'))
-            usage = dict(id='usage-88', company_id=1, work_id=work['id'], cost=375)
+            usage = dict(id='usage-88', company_id=1, work_id=work['id'], cost=375, source='norm')
             conn.execute('INSERT INTO portal_production VALUES (?,?,?,?,?)',
                          (1, 'usage', usage['id'], json.dumps(usage), '2026-09-30'))
+            additional = dict(id='additional-usage-88', company_id=1,
+                              work_id=work['id'], cost=237, source='additional_actual')
+            conn.execute('INSERT INTO portal_production VALUES (?,?,?,?,?)',
+                         (1, 'usage', additional['id'], json.dumps(additional), '2026-09-30'))
             self.assertEqual(reconcile_linked_work_money(conn, conn, 1),
                              {'matched_work_count': 1,
                               'unlinked_legacy_work_count': 1,
