@@ -350,6 +350,37 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.assertEqual((foreign['today_quantity'],foreign['today_finance']['revenue'],foreign['open_invoice_count']),
                          (0,0,0))
 
+    def test_receivables_aging_partial_payment_filter_and_role_scope_on_postgresql(self):
+        baseline=self.get('receivables?client_id=1&page=1&limit=100',self.admin)['data']
+        foreign_before=self.get('receivables?page=1&limit=100',self.tokens[2])['data']
+        as_of=datetime.fromisoformat(baseline['as_of']).date()
+        work=self.post('work',dict(client_id=1,operation_id=1,quantity=2,request_id='pg-aging-work'),
+                       self.tokens['company_1_packer'])['data']
+        invoice=self.post('invoices',dict(work_ids=[work['id']],due_at=(as_of-timedelta(days=1)).isoformat(),
+            request_id='pg-aging-invoice'),self.admin)['data']
+        self.post('payments',dict(invoice_id=invoice['id'],amount='3.25',reference='pg-aging-partial',
+            request_id='pg-aging-payment'),self.admin)
+
+        filtered=self.get('receivables?client_id=1&page=1&limit=100',self.admin)['data']
+        row=next(item for item in filtered['items'] if item['invoice_id']==invoice['id'])
+        self.assertEqual((row['amount'],row['paid'],row['outstanding'],row['overdue_days'],row['bucket']),
+                         (1000,325,675,1,'days_1_7'))
+        self.assertEqual(filtered['money_unit'],'kopeck')
+        self.assertEqual(filtered['as_of'],baseline['as_of'])
+        self.assertGreaterEqual(filtered['outstanding']-baseline['outstanding'],675)
+        self.assertGreaterEqual(filtered['overdue']-baseline['overdue'],675)
+        self.assertGreaterEqual(filtered['buckets']['days_1_7']['amount']-baseline['buckets']['days_1_7']['amount'],675)
+        self.assertTrue(all(item['client_id']==1 for item in filtered['items']))
+
+        page=self.get('receivables?client_id=1&page=1&limit=1',self.admin)['data']
+        self.assertLessEqual(len(page['items']),1)
+        self.assertEqual(page['limit'],1)
+        self.assertGreaterEqual(page['total'],1)
+        self.get('receivables',self.tokens['company_1_packer'],status=403)
+        foreign_after=self.get('receivables?page=1&limit=100',self.tokens[2])['data']
+        self.assertEqual((foreign_after['outstanding'],foreign_after['overdue'],foreign_after['total']),
+                         (foreign_before['outstanding'],foreign_before['overdue'],foreign_before['total']))
+
     def test_batch_economy_reconciles_integer_plan_fact_and_tenant_scope(self):
         batch=self.post('batches',dict(client_id=1,product='PG economics fixture',quantity=2))['data']
         task=self.post('tasks',dict(batch_id=batch['id'],operation_id=1,quantity=2,
