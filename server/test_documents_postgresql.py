@@ -286,6 +286,13 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         serialized=json.dumps(events,ensure_ascii=False)
         for value in ('11:30','240','Synthetic packer 1','true'):
             self.assertNotIn(value,serialized)
+        director=self.tokens['same_company_second_session']
+        self.request('/api/v3/settings',director,{'reminder_enabled':True,'reminder_cadence':'daily'},method='POST')
+        self.assertEqual(self.get('settings',self.admin)['data']['reminder_cadence'],'daily')
+        self.request('/api/v3/settings',self.tokens['company_1_packer'],status=403)
+        self.request('/api/v3/settings',self.tokens['company_1_packer'],{'reminder_enabled':True},method='POST',status=403)
+        self.request('/api/v3/settings',director,{'reminder_cadence':'weekly'},method='POST',status=403,
+                     extra_headers={'X-Portal-Company':'2'})
 
     def test_dashboard_finance_and_receivables_use_company_scoped_postgresql_facts(self):
         work=self.post('work',dict(client_id=1,operation_id=1,quantity=2,request_id='pg-dashboard-work'),
