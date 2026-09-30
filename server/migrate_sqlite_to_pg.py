@@ -11,6 +11,7 @@ from contextlib import ExitStack, closing
 from pathlib import Path
 
 from migration_import import (ValidationError, open_copy, prepared_source,
+                              employee_identity_preflight, verify_employee_identity_backfill,
                               summary, transfer, transfer_control,
                               identity_maxima, sync_identity_sequences)
 from migration_context import bind_company
@@ -43,9 +44,10 @@ def run(tenant_specs, platform_path=None, apply=False, dsn=None):
         report = {'status': 'DRY_RUN', 'company_count': len(tenants), 'companies': []}
         for cid, source in tenants:
             columns = prepared_source(source, cid)
+            identity = employee_identity_preflight(source, columns)
             facts = summary(source, columns, cid)
             report['companies'].append({'company_id': cid, 'counts': facts['counts'],
-                                        'money': facts['money']})
+                                        'money': facts['money'],'employee_identity':identity})
         if not apply:
             return report
         if not dsn:
@@ -68,6 +70,11 @@ def run(tenant_specs, platform_path=None, apply=False, dsn=None):
                 for cid, _source in tenants:
                     bind_company(target, cid)
                     migrate_payroll_settlement(Repository(target, cid, dialect='postgresql'))
+                    mapped=verify_employee_identity_backfill(target,cid)
+                    before=next(x for x in report['companies'] if x['company_id']==cid)
+                    if mapped!=before['employee_identity']['employee_cards']:
+                        raise ValidationError('Employee identity backfill count mismatch')
+                    before['employee_identity']['backfilled_employee_ids']=mapped
                 report['identity_sequences_checked'] = sync_identity_sequences(
                     target, identity_maxima(tenants, control))
         report['status'] = 'IMPORTED_AND_VERIFIED'

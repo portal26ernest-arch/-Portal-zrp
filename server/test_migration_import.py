@@ -66,6 +66,23 @@ class MigrationImportTest(unittest.TestCase):
         with self.assertRaises(sqlite3.OperationalError):
             source.execute("UPDATE work_log SET salary=0")
 
+    def test_identity_preflight_reports_orphan_without_personal_values(self):
+        from migration_import import employee_identity_preflight
+        source=open_copy(self.copy);self.addCleanup(source.close)
+        report=employee_identity_preflight(source,prepared_source(source,1))
+        self.assertEqual(report['employee_cards'],1)
+        self.assertEqual(report['reference_rows']['work_log'],1)
+        with closing(sqlite3.connect(self.copy)) as conn:
+            conn.execute('UPDATE work_log SET telegram_id=999 WHERE id=1')
+            conn.commit()
+        with self.assertRaisesRegex(ValidationError,'work_log=1') as caught:
+            run([(1,str(self.copy))])
+        self.assertNotIn('999',str(caught.exception))
+        target=self.target()
+        with self.assertRaisesRegex(ValidationError,'work_log=1'):
+            transfer(source,target,1,'sqlite')
+        self.assertEqual(target.execute('SELECT COUNT(*) FROM employees').fetchone()[0],0)
+
     def test_dry_run_and_failed_source_preflight(self):
         result = run([(1, str(self.copy))])
         self.assertEqual(result['status'], 'DRY_RUN')

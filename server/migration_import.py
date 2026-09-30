@@ -29,6 +29,9 @@ IMPORT_ORDER = ('employees', 'app_users', 'app_sessions', 'portal_clients',
                 'production_job_progress', 'audit_log',
                 'portal_production_migrations', 'portal_production',
                 'payroll_employee_identities','payroll_settlement_entries')
+EMPLOYEE_REFERENCE_TABLES = ('app_users','work_log','payroll_payments',
+                             'payroll_transactions','manager_client_assignments',
+                             'production_job_progress')
 MONEY = {
     'payroll_settlement_entries': ('amount_minor',),
     'work_log': ('salary', 'revenue', 'direct_cost'),
@@ -140,6 +143,38 @@ def prepared_source(conn, company_id):
     return columns
 
 
+def employee_identity_preflight(conn, columns):
+    """Read-only legacy crosswalk; return counts only, never personal identifiers."""
+    employee_rows=[row[0] for row in conn.execute('SELECT telegram_id FROM employees')]
+    if any(type(value) is not int for value in employee_rows):
+        raise ValidationError('Unmapped employee cards: employees')
+    known=set(employee_rows)
+    if len(known)!=len(employee_rows):
+        raise ValidationError('Ambiguous employee cards: employees')
+    references={};unresolved={}
+    for table in EMPLOYEE_REFERENCE_TABLES:
+        if table not in columns or 'telegram_id' not in columns[table]:continue
+        values=[row[0] for row in conn.execute('SELECT telegram_id FROM '+ident(table))]
+        references[table]=len(values)
+        missing=sum(value not in known and (value is not None or table!='app_users') for value in values)
+        if missing:unresolved[table]=missing
+    if unresolved:
+        names=', '.join(f'{table}={count}' for table,count in sorted(unresolved.items()))
+        raise ValidationError('Unmapped legacy employee references: '+names)
+    return {'employee_cards':len(known),'reference_rows':references,'unresolved_rows':0}
+
+
+def verify_employee_identity_backfill(target, company_id):
+    """Require one company-scoped canonical ID for every imported employee."""
+    row=target.execute('''SELECT count(*),count(i.employee_id)
+        FROM employees e LEFT JOIN payroll_employee_identities i
+          ON i.company_id=e.company_id AND i.legacy_employee_id=e.telegram_id
+        WHERE e.company_id=%s''',(company_id,)).fetchone()
+    if row is None or row[0]!=row[1]:
+        raise ValidationError('Employee identity backfill incomplete')
+    return int(row[1])
+
+
 def _canon(value):
     if isinstance(value, bytes): return {'sha256': hashlib.sha256(value).hexdigest()}
     if type(value) in (int, float, Decimal): return str(Decimal(str(value)).normalize())
@@ -245,6 +280,7 @@ def target_columns(target, table, dialect):
 def transfer(source, target, company_id, dialect='postgresql'):
     """Call inside one target transaction. A mismatch raises and rolls it back."""
     columns = prepared_source(source, company_id)
+    identity = employee_identity_preflight(source, columns)
     expected = summary(source, columns, company_id)
     mark = '%s' if dialect == 'postgresql' else '?'
     if dialect == 'postgresql':
@@ -272,7 +308,8 @@ def transfer(source, target, company_id, dialect='postgresql'):
                         if key.startswith(table + '.') or (table == 'portal_production' and key.startswith('ledger/'))}
         if actual_money != source_money:
             raise ValidationError('Migration FAILED: money mismatch in ' + table)
-    return {'company_id': company_id, 'counts': expected['counts'], 'money': expected['money']}
+    return {'company_id': company_id, 'counts': expected['counts'], 'money': expected['money'],
+            'employee_identity': identity}
 
 
 def transfer_control(source, target, dialect='postgresql'):

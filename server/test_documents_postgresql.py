@@ -252,6 +252,7 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
 
     def test_employee_identity_api_contract_is_canonical_and_company_scoped(self):
         from production_repository import Repository
+        from migration_import import verify_employee_identity_backfill
 
         employee_a=self.request('/api/me',self.tokens[1])['user']
         employee_b=self.request('/api/me',self.tokens[2])['user']
@@ -273,9 +274,31 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
 
         with self.portal.tenants.company_scope(1),self.portal.db() as conn:
             repository=Repository(conn,1)
+            self.assertGreaterEqual(verify_employee_identity_backfill(conn,1),1)
             self.assertEqual(repository.legacy_identity_for_employee(employee_a['employee_id']),101)
             with self.assertRaises(ValueError):
                 repository.legacy_identity_for_employee(employee_b['employee_id'])
+
+        # Current HTTP contracts reject the retained legacy field even when
+        # it names a valid employee inside this company.
+        legacy_get=self.request('/api/v3/payroll-settlements?telegram_id=101',self.admin,status=400)
+        self.assertIn('employee_id',legacy_get['error'])
+        legacy_post=self.request('/api/v3/payroll-settlements',self.admin,{
+            'entry_type':'payout','payroll_period_id':'missing',
+            'telegram_id':101,'amount':'1.00','reason':'Synthetic',
+            'request_id':'pg-reject-legacy-employee'},status=400)
+        self.assertIn('employee_id',legacy_post['error'])
+
+    def test_employee_identity_rls_rejects_direct_cross_company_access(self):
+        # Exercise the restricted PostgreSQL role, not only API permissions.
+        with self.portal.tenants.company_scope(1),self.portal.db() as conn:
+            enabled,forced=conn.execute("SELECT relrowsecurity,relforcerowsecurity FROM pg_class WHERE oid='payroll_employee_identities'::regclass").fetchone()
+            self.assertTrue(enabled and forced)
+            self.assertEqual(conn.execute('SELECT count(*) FROM payroll_employee_identities WHERE company_id=2').fetchone()[0],0)
+            self.assertEqual(conn.execute('UPDATE payroll_employee_identities SET legacy_employee_id=legacy_employee_id WHERE company_id=2').rowcount,0)
+        with self.portal.tenants.company_scope(1),self.portal.db() as conn:
+            with self.assertRaises(Exception):
+                conn.execute('INSERT INTO payroll_employee_identities(company_id,legacy_employee_id) VALUES(2,999)')
 
     def test_client_requisites_are_shared_scoped_and_audit_omits_field_values(self):
         body={'client_id':1,'legal_name':'Synthetic requisites','inn':'PG-INN-CANARY',
