@@ -914,3 +914,11 @@ Production cutover **NOT performed**.
 - Item 17 remains 🟡: broader profile editing acceptance is still unspecified/incomplete. Roadmap counts remain **76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌**. Current SHA CI is pending.
 
 **Exact NEXT:** commit/push this shared UI partial-source state and regression, then verify current-SHA Android UI/build, Web, Server and disposable PostgreSQL checks. If green, continue item 43 profitability by inspecting existing canonical source facts and reconciliation coverage; do not invent/allocate absent amounts or promote item 17/43 without full evidence. No autopilot flag; production cutover remains unperformed.
+
+## AUTOMATIC CONTINUATION — monthly profitability source breakdown — 2026-09-30
+
+- Item 43 review found the API already supplies monthly revenue, payroll, materials, client-attributed expenses, company overhead and profit, but the financial radar displayed only profit and optional overhead. The UI now exposes every existing component, keeps shared overhead separate from client-attributed costs, sorts months newest-first, and states when no confirmed monthly facts exist. No cost allocation or financial source was invented.
+- Browser regression uses synthetic amounts and deliberately reversed month order to check component labels and newest-first rendering. Local validation: focused UI **35/35**, full Android/Web Node+Playwright **56/56**, finance service tests **2/2**, `ops.test_infra_readiness` **8/8**, JS syntax and diff checks passed. The opt-in PostgreSQL profitability reconciliation test skipped locally because no disposable DB is configured.
+- Roadmap item 43 remains 🟡 pending remaining source/role acceptance and current-SHA CI; counts remain **76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌**. No production systems touched.
+
+**Exact NEXT:** commit/push monthly profitability UI coverage and evidence; verify current-SHA Android UI/APK and Web disposable PostgreSQL (plus all triggered gates) and cleanup. Then continue next source-backed gap in priority order—payroll role/PostgreSQL coverage or Documents cross-session parity—without claiming the production-dependent items complete.

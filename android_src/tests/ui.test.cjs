@@ -88,7 +88,7 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
     localStorage.clear();
     const user={id:1,username:role,display_name:'Тестовый пользователь',role,company_id:1,employee_id:role==='platform_owner'?null:101};
     const client={id:1,name:'Клиент',active:1};
-    window.mock={calls:[],offline:false,rejectWrite:false,failUrls:[],hold:false,held:[],update:{ok:true,configured:false},timer:null,stage3Today:null,stage3Batches:null,stage3Shipments:null,stage3Tasks:null,stage3Economy:null,stage3Permissions:null,stage3Invoices:null,stage3Users:null,clientNameHistory:[],clientRequisites:{legal_name:'ООО Тест',inn:'TEST-INN-001'},tariffHistory:[],presenceOnline:true,saved:null,previewMode:'ok',applyMode:'ok',payrollPaid:2000,invites:[],products:[]};
+    window.mock={calls:[],offline:false,rejectWrite:false,failUrls:[],hold:false,held:[],update:{ok:true,configured:false},timer:null,stage3Today:null,stage3Batches:null,stage3Shipments:null,stage3Tasks:null,stage3Economy:null,stage3Finance:null,stage3Permissions:null,stage3Invoices:null,stage3Users:null,clientNameHistory:[],clientRequisites:{legal_name:'ООО Тест',inn:'TEST-INN-001'},tariffHistory:[],presenceOnline:true,saved:null,previewMode:'ok',applyMode:'ok',payrollPaid:2000,invites:[],products:[]};
     const respond=(id,data)=>setTimeout(()=>window.PortalBridgeResult(id,JSON.stringify(data)),0);
     window.PortalNative={getServerUrl:()=> 'http://127.0.0.1:8765',getAppMetadata:()=>JSON.stringify(metadata),checkUpdates:id=>respond(id,mock.update),saveBase64FileAsync(id,filename,mime,file_b64){mock.saved={filename,mime,file_b64};respond(id,{ok:true,location:'Downloads/PORTAL/'+filename});},requestAsync(id,method,url,payload,token,company){
       mock.calls.push({method,url,body:payload?JSON.parse(payload):null,token,company});
@@ -115,7 +115,7 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
       else if(stage3&&url.startsWith('/api/v3/economy?'))data.data=mock.stage3Economy||{plan:{salary:null,revenue:null,materials:null,other:null,profit:null,volume:null},fact:{salary:0,revenue:0,materials:0,other:0,profit:0,volume:0},deviation:{salary:null,revenue:null,materials:null,other:null,profit:null,volume:null},margin_bps:{plan:null,fact:null,deviation:null},finished_units:0,cost_per_unit:null,profit_per_unit:null};
       else if(stage3&&url==='/api/v3/invoices')data.data=mock.stage3Invoices||[];
       else if(stage3&&url==='/api/v3/documents')data.data=[{id:'doc-client',title:'Документ клиента',client_id:1,document_type:'invoice_pdf',status:'ready'}];
-      else if(stage3&&url==='/api/v3/finance')data.data={clients:[]};
+      else if(stage3&&url==='/api/v3/finance')data.data=mock.stage3Finance||{clients:[],months:{},client_profit:0,company_overhead:0,net_profit:0};
       else if(stage3&&url.startsWith('/api/v3/receivables'))data.data={as_of:'2026-09-30',money_unit:'kopeck',outstanding:12500,overdue:4000,total:2,page:1,limit:50,buckets:{current:{count:1,amount:8500},days_1_7:{count:1,amount:4000},days_8_30:{count:0,amount:0},days_31_60:{count:0,amount:0},days_61_plus:{count:0,amount:0},undated:{count:0,amount:0}},clients:[{client_id:1,name:'Клиент',outstanding:12500}],items:[{invoice_id:1,client_id:1,amount:8500,paid:0,outstanding:8500,due_at:'2026-09-30',overdue_days:0,bucket:'current'},{invoice_id:2,client_id:1,amount:6000,paid:2000,outstanding:4000,due_at:'2026-09-29',overdue_days:1,bucket:'days_1_7'}]};
       else if(stage3&&url==='/api/v3/payroll-periods')data.data=[{id:'period-1',period_start:'2026-09-01',period_end:'2026-09-15',closed_at:'2026-09-16',snapshot:{total_quantity:10,total_salary:10000,employees:[{employee_id:1,display_name:'Тестовый сотрудник',salary:10000}]}}];
       else if(stage3&&url.startsWith('/api/v3/payroll-settlements?'))data.data={period_id:'period-1',period_start:'2026-09-01',period_end:'2026-09-15',status:'закрыт',money_unit:'kopeck',employees:[{employee_id:1,display_name:'Тестовый сотрудник',accrued:10000,adjustment:0,paid:mock.payrollPaid,balance:10000-mock.payrollPaid}],totals:{accrued:10000,adjustment:0,paid:mock.payrollPaid,balance:10000-mock.payrollPaid},entries:[{id:'payment-1',employee_id:1,entry_type:'payout',effect:'payment',amount:2000,occurred_at:'2026-09-20',reason:'Первая выплата',reference:'Платёж 1'}]};
@@ -579,6 +579,14 @@ test('browser UI regression',async t=>{
       const rendered=await page.locator('#sheetContent').innerText();
       assert.match(rendered,/Карточка загружена частично/);assert.match(rendered,/Не удалось загрузить: Отгрузки и возвраты/);
       assert.match(rendered,/Реквизиты и контакты/);assert.deepEqual(errors,[]);await page.close();
+    });
+    await t.test('finance radar shows source-backed monthly profitability components newest first',async()=>{
+      const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);
+      await page.evaluate(()=>{mock.stage3Permissions=['finance.read'];mock.stage3Finance={clients:[],months:{'2026-08':{revenue:8000,salary:3000,materials:1000,other:500,overhead:2000,profit:1500},'2026-09':{revenue:10000,salary:4000,materials:1200,other:700,overhead:2500,profit:1600}},client_profit:3100,company_overhead:4500,net_profit:-1400};});
+      await login(page);await page.evaluate(()=>go('radar'));await page.waitForSelector('#content h2');
+      const rendered=await page.locator('#content').innerText();
+      for(const label of ['Прибыль клиентов','Общие расходы','Чистая прибыль','Динамика по месяцам','ФОТ','Материалы','Расходы по клиентам','Прибыль'])assert.ok(rendered.includes(label),`missing ${label}`);
+      assert.ok(rendered.indexOf('2026-09')<rendered.indexOf('2026-08'));assert.deepEqual(errors,[]);await page.close();
     });
     await t.test('batch economics shows basis-point margins and per-unit profit without inventing zero',async()=>{
       const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);

@@ -756,3 +756,11 @@ Inspection found that the shared Client 360 profile silently treated failed allo
 Local validation: focused Client 360 UI **34/34**, complete Android/Web Node+Playwright suite **55/55**, `ops.test_infra_readiness` **8/8**, JavaScript syntax and diff check passed. This UI-only change added no PostgreSQL/backend behavior; CI at the next SHA is pending. Item 17 remains 🟡 and counts remain **76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌**. Production systems were not touched.
 
 **Exact NEXT:** commit/push this UI and regression change, then verify all relevant current-SHA Android UI/APK, Web/disposable PostgreSQL and Server gates. Continue item 43 by tracing existing profitability source facts and reconciliation; leave unavailable financial facts unavailable and preserve partial roadmap status until evidence is complete.
+
+## Monthly profitability breakdown — 2026-09-30
+
+The finance radar received only monthly profit and optional overhead even though the existing API returned the full monthly components. It now renders revenue, payroll, materials, client-attributed expenses, separate company overhead and profit, newest month first, with an explicit empty state. It intentionally does not allocate company overhead to individual clients.
+
+Validation: focused UI **35/35**, full Android/Web Node+Playwright **56/56**, finance service tests **2/2**, infra readiness **8/8**, syntax and diff checks passed. The disposable PostgreSQL profitability reconciliation test could not run locally and was skipped for absent DB configuration. Item 43 remains 🟡, counts remain **76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌**, and current-SHA CI is pending.
+
+**Exact NEXT:** commit/push this source-backed radar view; check current-SHA Android UI/APK, Web and disposable PostgreSQL gates. Continue with the remaining payroll role/E2E or Documents PostgreSQL parity gaps; preserve clear source/tenant boundaries and do not mark incomplete/production-gated roadmap rows complete.
