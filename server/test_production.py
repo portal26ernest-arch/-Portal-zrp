@@ -574,6 +574,18 @@ class ProductionTest(unittest.TestCase):
         self.get('receivables?client_id=9999',status=403)
         self.get('receivables',self.worker,status=403)
 
+    def test_receivables_aging_ignores_unlinked_legacy_invoice_rows(self):
+        with portal.tenants.company_scope(1),portal.db() as conn:
+            repo=Repository(conn,1)
+            repo.insert('invoices',dict(amount=900,due_at='2020-01-01',work_ids=[],lines=[]),
+                        'unlinked-legacy-aging-invoice')
+            conn.commit()
+            admin_user=next(item for item in repo.catalog('users') if item['id']==self.admin_id)
+            report=Production(repo,admin_user,clock=lambda:'2026-09-30T12:00:00').receivables(
+                {'page':['1'],'limit':['100']})
+        self.assertEqual((report['total'],report['outstanding'],report['overdue']), (0,0,0))
+        self.assertEqual(report['items'],[])
+
     def test_receivable_timezone_offset_uses_company_local_due_date(self):
         with portal.tenants.company_scope(1),portal.db() as conn:
             repo=Repository(conn,1)

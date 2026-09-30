@@ -356,9 +356,11 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
             repo=Repository(conn,1)
             admin_user=next(user for user in repo.catalog('users') if user['id']==1)
             try:
-                self.production.Production(repo,admin_user).receivables({'client_id':['1'],'page':['1'],'limit':['100']})
+                direct=self.production.Production(repo,admin_user).receivables(
+                    {'client_id':['1'],'page':['1'],'limit':['100']})
             except Exception as exc:
                 raise AssertionError(f'direct receivables failed: {type(exc).__name__}: {exc}') from exc
+            self.assertTrue(all(row.get('client_id')==1 for row in direct['items']))
         baseline=self.get('receivables?client_id=1&page=1&limit=100',self.admin)['data']
         foreign_before=self.get('receivables?page=1&limit=100',self.tokens[2])['data']
         as_of=datetime.fromisoformat(baseline['as_of']).date()

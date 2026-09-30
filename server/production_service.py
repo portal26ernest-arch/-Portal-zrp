@@ -956,7 +956,13 @@ class Production:
         clients={};items=[];overdue_total=0;outstanding_total=0
         for invoice in self.invoices():
             remaining=invoice['remaining']
-            if remaining<=0 or (client_filter is not None and invoice['client_id']!=client_filter):continue
+            # Legacy/non-client invoice rows can remain in the shared invoice
+            # ledger (for example imported documents without a client link).
+            # Aging is a client receivables report, so do not invent a client
+            # association for those rows or let them break the whole report.
+            invoice_client_id=invoice.get('client_id')
+            if remaining<=0 or invoice_client_id is None:continue
+            if client_filter is not None and invoice_client_id!=client_filter:continue
             due_text=invoice.get('due_at');overdue=0
             if not due_text:bucket='undated'
             else:
@@ -964,10 +970,10 @@ class Production:
                 except (TypeError,ValueError):raise ValueError('В счёте сохранена некорректная дата оплаты')
                 overdue=max(0,(local_today-due_date).days)
                 bucket='current' if overdue==0 else 'days_1_7' if overdue<=7 else 'days_8_30' if overdue<=30 else 'days_31_60' if overdue<=60 else 'days_61_plus'
-            item=dict(invoice_id=invoice['id'],client_id=invoice['client_id'],amount=invoice['amount'],paid=invoice['paid'],outstanding=remaining,due_at=due_text,overdue_days=overdue,bucket=bucket,status=invoice['status'])
+            item=dict(invoice_id=invoice['id'],client_id=invoice_client_id,amount=invoice['amount'],paid=invoice['paid'],outstanding=remaining,due_at=due_text,overdue_days=overdue,bucket=bucket,status=invoice['status'])
             items.append(item);outstanding_total+=remaining;buckets[bucket]['count']+=1;buckets[bucket]['amount']+=remaining
             if overdue:overdue_total+=remaining
-            total=clients.setdefault(invoice['client_id'],dict(client_id=invoice['client_id'],name=invoice.get('client_name') or next((c['name'] for c in self.r.catalog('clients') if c['id']==invoice['client_id']),''),outstanding=0,overdue=0,invoice_count=0))
+            total=clients.setdefault(invoice_client_id,dict(client_id=invoice_client_id,name=invoice.get('client_name') or next((c['name'] for c in self.r.catalog('clients') if c['id']==invoice_client_id),''),outstanding=0,overdue=0,invoice_count=0))
             total['outstanding']+=remaining;total['invoice_count']+=1
             if overdue:total['overdue']+=remaining
         items.sort(key=lambda row:(row['due_at'] or '9999-12-31',row['invoice_id']))

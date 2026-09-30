@@ -61,3 +61,10 @@ Exact NEXT: add a safe operator-run cadence/last-run/retry record and determinis
 ## Latest code continuation — `e85928e` (2026-09-30)
 
 Managed internal shipment/return workflows now cover assigned task work, FBS/FBO shipment, partial/full returns with condition/result, role/company authorization, audit, and idempotent completion. At this SHA, Server #93 passed both Python 3.11 and 3.13; Web #76 and its disposable PostgreSQL job, Android UI #49, and APK #63 passed. Local Server discovery was **249 passed, 34 skipped, 0 failed**; Node was **49/49**, focused Playwright UI **28/28**, and ops infra **7/7**. The local PostgreSQL fixture skipped for absent disposable DSN; CI runs it in isolated `portal_test_*` resources and cleanup is asserted by fixture teardown. Item 32 is ✅; counts are **74 ✅ / 33 🟡 / 7 ⏳ / 12 🔌**. No production cutover.
+
+## Automatic continuation evidence — 2026-09-30 (`23bd46f` baseline; receivables fix awaiting CI)
+
+- Client 360 shipment/return timeline is implemented and covered by the tests/CI listed in the progress checkpoint. Item 17 remains 🟡 for broader editable/profile acceptance.
+- Web disposable PostgreSQL at `23bd46f` failed when an unlinked legacy invoice reached the aging report; teardown passed (`db=0 roles=0 temp=0`). Fix is locally validated and preserves fail-closed tenant boundaries; do not promote item 42 until the corrected PG job passes.
+- Current local Server discovery: 294 tests, 46 skipped, 0 failed; `ops.test_infra_readiness`: 8/8. Corrected source is not yet in CI.
+- Counts remain **75 ✅ / 33 🟡 / 6 ⏳ / 12 🔌**. Exact next: push the receivables correction and confirm Web disposable PostgreSQL plus Server Python 3.11/3.13; after that resume A's remaining Owner/Director permission matrix and other open software items.
