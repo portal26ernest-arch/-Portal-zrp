@@ -681,7 +681,7 @@ test('browser UI regression',async t=>{
     });
     await t.test('Stage 3 timer, presence, activity and system information',async()=>{
       const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);
-      await page.evaluate(()=>mock.stage3Permissions=['work.write','tasks.read','tasks.manage','batches.receive','finance.read','invoices.read','invoices.create','users.manage','clients.read','clients.manage','access.history.read','payroll.own']);
+      await page.evaluate(()=>mock.stage3Permissions=['work.write','tasks.read','tasks.manage','batches.receive','finance.read','invoices.read','invoices.create','users.manage','clients.read','clients.manage','access.history.read','payroll.own','payroll.settlement.read']);
       await login(page);
       assert.match(await page.locator('#content').innerText(),/PORTAL Сегодня/);
       assert.match(await page.locator('#content').innerText(),/Финансовый радар/);
@@ -690,11 +690,17 @@ test('browser UI regression',async t=>{
       assert.match(await page.locator('#content').innerText(),/Выручка за месяц/);
       assert.match(await page.locator('#content').innerText(),/Открытые счета: 2/);
       assert.match(await page.locator('#content').innerText(),/Плановая прибыль\s+Недоступна/);
-      assert.match(await page.locator('#content').innerText(),/Выплачено \/ остаток\s+Нет закрытого периода/);
+      assert.match(await page.locator('#content').innerText(),/Закрытый ФОТ\s+Нет закрытого периода/);
       assert.match(await page.locator('#content').innerText(),/Скорость команды\s+5 шт\./);
+      await page.evaluate(()=>{mock.stage3Today={date:'2026-09-25',mode:'management',today_quantity:17,month_quantity:27,tasks:[],closed_month_payroll:{accrued:10000,paid:4000,balance:6000}};void go('dashboard');});
+      await page.waitForFunction(()=>document.querySelector('#content').textContent.includes('Начислено 100')&&!document.querySelector('.loading'));
+      assert.match(await page.locator('#content').innerText(),/Закрытый ФОТ\s+Начислено 100 · Выплачено 40 · Остаток 60/);
+      await page.evaluate(()=>{S.me.permissions=S.me.permissions.filter(p=>p!=='payroll.settlement.read'&&p!=='payroll.all');void go('dashboard');});
+      await page.waitForFunction(()=>document.querySelector('#content').textContent.includes('Работа за месяц')&&!document.querySelector('.loading'));
+      assert.doesNotMatch(await page.locator('#content').innerText(),/Закрытый ФОТ|Начислено 100|Выплачено 40|Остаток 60/);
       await page.evaluate(()=>{mock.stage3Today={date:'2026-09-25',mode:'management',today_quantity:17,ready:1,active_batches:2,in_progress:0,tasks:[],attention:[]};void go('dashboard');});
       await page.waitForFunction(()=>document.querySelector('#content').textContent.includes('PORTAL Сегодня')&&!document.querySelector('.loading'));
-      assert.doesNotMatch(await page.locator('#content').innerText(),/Плановая прибыль|Выручка|Начислено|Выплачено \/ остаток/);
+      assert.doesNotMatch(await page.locator('#content').innerText(),/Плановая прибыль|Выручка|Начислено|Закрытый ФОТ/);
       await page.evaluate(()=>{mock.stage3Today=null;void go('batches');});
       await page.waitForFunction(()=>S.page==='batches'&&document.querySelector('#content').textContent.includes('Связанные задания'));
       assert.match(await page.locator('#content').innerText(),/PRT-2026-000001/);
