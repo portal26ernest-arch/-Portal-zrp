@@ -292,3 +292,30 @@ Production cutover **NOT performed**.
 - Latest artifact: `PORTAL_Android_3.5-dev_staging_a9b54f2b65b44ac806d4d46e995676f34200501a387df52f16bfe505197d928e`; APK SHA-256 `a9b54f2b65b44ac806d4d46e995676f34200501a387df52f16bfe505197d928e`; artifact ZIP digest `sha256:cdae0e6c93bbe0d714c73a4f41e2fd910c7819bb9a75906073a367e00d0b38c8`. Version `3.5-dev-staging`, versionCode 35, build 3.5.
 - Server #49 and Web #26 are green at parent `5df9dc0`; commit `1f3adc5` changes only browser tests. No production target changed.
 - Exact NEXT: continue actual A settings/owner policy enforcement and B catalog/batch/return workflows; finish C reminder persistence/candidates, profitability/productivity; run D independent-session Documents PostgreSQL E2E on a safe disposable runner and prove cleanup. Do not treat mocked browser or prior Parts 8–11 E2E as new Part 12 PostgreSQL evidence.
+
+### Automatic continuation — secure invitation PostgreSQL coverage — 2026-09-30
+
+#### DONE NOW
+
+- Confirmed starting branch was clean at `2c1aad2` and synchronized with origin. Continued in the existing Part 12 worktree.
+- `854520f` adds a real disposable PostgreSQL + HTTP API lifecycle test for Stage 10 invitations: one-time token hash at rest, idempotent create retry without re-displaying the token, company-scoped list, forged company header denial, cross-company accept denial, accept/approval/login, consumed-token denial, and audit redaction.
+- `da28db0` adds an independently authenticated company packer session and verifies that a user without `users.manage` cannot create an invitation.
+- Both commits are pushed. No migration or production resource was changed.
+
+#### TESTS / CI
+
+- Local targeted lifecycle/authorization/expiry suite: `python -m unittest test_production.ProductionTest.test_secure_invite_lifecycle_hashes_token_is_idempotent_and_scoped test_production.ProductionTest.test_invite_revoke_and_role_capability_denials test_production.ProductionTest.test_invitation_expiry_and_suspended_company_fail_closed -v` — **3 passed, 0 failed**.
+- Full `python -m unittest test_production -v` — **32 passed, 0 failed**.
+- Local `python -m unittest test_documents_postgresql -v` — **8 skipped** because this workstation has no `psql`, disposable PostgreSQL admin DSN, or enabled integration gate. No local database or role was created.
+- GitHub Web checks **#33 / 36651996603** at `da28db0`: Web and `documents-postgresql` jobs **success**. The PostgreSQL job ran `test_documents_postgresql` with the ephemeral PostgreSQL 16 service. Its eight tests include six passing API/database tests and two expected gates skipped (real PDF and browser-in-fixture).
+- The preceding PostgreSQL run **#32 / 36651817020** at `854520f` also completed successfully. Fixture cleanup verifies disposable database=0, roles=0 and temp files=0 after each successful run.
+- GitHub Server isolation **#55 / 36651996627** at `da28db0`: Python 3.11 and 3.13 jobs **success**. Web check #33 also validates current SHA. No Android sources changed; staging remains 3.5-dev-staging / versionCode 35 and was not rebuilt for this server-test-only change.
+- `python -m compileall -q server` and `git diff --check` passed. Worktree was clean after the code commits.
+
+#### NOT DONE / EXACT NEXT
+
+- A remains partial: implement/verify allowed company settings and owner module/fee/demo/state/limit policy, owner audit PostgreSQL authorization, and full new/existing employee plus director/owner invitation role matrix. Do not promote roadmap 10–12 or 15 from this one integration test.
+- B remains software work: product catalog lifecycle, stable-ID rename/alias history, batch plan/fact completeness and generic FBS/FBO/returns.
+- C remains software work: persistent reminder candidates/dispatch, source-backed profitability/productivity/radar and payroll settlement PostgreSQL role-flow coverage.
+- D: same-company Documents cross-session create/list/metadata/download/archive and cross-company denial now passed in the disposable PostgreSQL job; remaining Web Share/Android file contract and full shared Documents UI parity stay open.
+- Continue with A settings/owner audit policy and targeted tests, then B/C gaps. Reconcile roadmap only after the larger affected workflows are proven. Current roadmap counts remain **72 ✅ / 34 🟡 / 8 ⏳ / 12 🔌**. No autopilot flag. Production cutover **NOT performed**.

@@ -82,7 +82,7 @@
 65. ✅ Backend: дубли, неоднозначные identity, unique-конфликты и идемпотентный повтор import_id/checksum проверены, включая реальную PostgreSQL.
 66. ✅ Backend: явный apply к выбранной компании, атомарный rollback, неизменяемый результат и отчёт в Documents проверены в SQLite и одноразовой PostgreSQL. Production rollout не выполнялся.
 67. ✅ Payroll XLSX export и invoice/payroll PDF routes реализованы; реальный ReportLab renderer и PDF PostgreSQL E2E с tenant isolation/immutability подтверждены.
-68. 🟡 Общий Documents API и Web-скачивание доступны; полный cross-client sync workflow и production-проверка остаются открытыми.
+68. 🟡 Общий Documents API и Web-скачивание доступны; независимые HTTP-сессии одной компании прошли create/list/metadata/download/archive E2E на disposable PostgreSQL (Part 12 Web #33, cleanup DB/roles/temp=0). Production rollout и оставшаяся UI revision/history parity не проверены.
 
 ## E. Внутренние коммуникации
 

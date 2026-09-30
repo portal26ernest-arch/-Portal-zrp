@@ -288,4 +288,32 @@ Production cutover **NOT performed**.
 
 Continue C source-backed profitability, productivity/radar and disabled-by-default reminders with idempotency/cadence/retry/time tests. Then finish D real disposable PostgreSQL Documents cross-session E2E and Android/Web file parity; continue B product/batch/returns/name-history and A approval/settings/audit role matrix. Follow with disposable PG backup restore, legacy money/identity audits, Windows thin client/news framework, then full final regression and GitHub CI. Do not create a completion or blocked flag until the corresponding condition is true.
 
+## Automatic continuation checkpoint — `da28db0`
+
+### DONE NOW
+
+- `854520f` adds a real PostgreSQL-backed Stage 10 invitation lifecycle/API integration test; `da28db0` adds denial for a separately authenticated packer without `users.manage`.
+- The test proves hash-at-rest and one-time/idempotent behavior; successful accept, approval and login; consumed-token denial; cross-company list/accept isolation; forged company-header rejection; and audit summaries that do not contain the raw token.
+- Both commits are pushed on `codex-finalization-megapack-part12`. No schema change was required.
+
+### TESTS / CI
+
+- Three targeted SQLite/API lifecycle tests: **3 passed**. Full `python -m unittest test_production -v`: **32 passed, 0 failed**.
+- Local PostgreSQL suite invocation: **8 skipped** because no local PostgreSQL client/DSN/integration gate is configured. The real isolated GitHub run is the evidence: Web **#33 / 36651996603** at `da28db0`, with both Web and PostgreSQL jobs successful. The PostgreSQL job ran all eight fixture tests: **6 passed, 2 skipped** (real PDF and in-fixture browser-only gates).
+- GitHub Server **#55 / 36651996627** at `da28db0`: Python 3.11 and 3.13 both successful. The predecessor Web run **#32 / 36651817020** also succeeded at `854520f`.
+- Disposable PostgreSQL fixture cleanup verified DB=0, roles=0, temp=0. The fixture uses loopback-only `postgres` admin in a temporary PostgreSQL 16 service, random `portal_test_*` database and restricted `NOSUPERUSER NOBYPASSRLS` application roles. Production DB/service/configuration were untouched.
+- `python -m compileall -q server`, `git diff --check` passed. No Android code changed; staging remains **3.5-dev-staging / versionCode 35**. The newest previously built artifact is unchanged and is not rebuilt for this backend test-only continuation.
+
+### ROADMAP
+
+- Counts remain **72 ✅ / 34 🟡 / 8 ⏳ / 12 🔌**. Items 10–12 and 15 stay 🟡 because remaining owner/settings policy and complete role matrix are not proven. Documents same-company cross-session synchronization and invitation tenant isolation now have current Part 12 disposable PostgreSQL evidence, but broader parity and release/production gates remain open.
+
+### NOT DONE / EXACT NEXT
+
+- A: owner/director settings policy (including explicit module-toggle support review), owner-audit PostgreSQL authorization, and expanded employee/invitation role flows.
+- B: product CRUD/archive/search, stable-ID alias/rename history, batch economics completeness and generic FBS/FBO/returns lifecycle.
+- C: persistent reminder candidate/dispatch path, canonical profitability/productivity/radar and payroll settlement PostgreSQL role coverage.
+- D: complete shared Documents UI parity and Web Share/Android file contracts. The real same-company Documents HTTP/PostgreSQL scenario passed in run #33; do not repeat it as unrun.
+- Exact next: proceed with A owner/director settings and owner audit policy, test server enforcement and UI role matrix, then continue B/C. Full regression, legacy identity/money work and remaining external readiness still follow. Production cutover **NOT performed**; no completion/blocked flag created.
+
 A–D and Part 12 are **not complete**. No production cutover was performed.
