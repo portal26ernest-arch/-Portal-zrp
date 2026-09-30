@@ -288,6 +288,32 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.request('/api/v3/client-name-history',self.admin,status=403,
                      extra_headers={'X-Portal-Company':'2'})
 
+    def test_zz_profitability_reconciles_postgresql_source_facts_without_allocating_overhead(self):
+        before=self.get('finance',self.admin)['data']
+        before_client=next(row for row in before['clients'] if row['client_id']==1)
+        work=self.post('work',dict(client_id=1,operation_id=1,quantity=2,request_id='pg-profitability-work'),
+                       self.tokens['company_1_packer'])['data']
+        with self.portal.tenants.company_scope(1),self.portal.db() as conn:
+            from production_repository import Repository
+            Repository(conn,1).insert('usage',dict(work_id=work['id'],client_id=1,quantity='1',
+                unit_cost=237,cost=237,source='additional_actual'),'pg-profitability-usage')
+            conn.commit()
+        direct=self.post('expenses',dict(client_id=1,category_code='logistics',amount='0.75',note='synthetic direct'),self.admin)['data']
+        overhead=self.post('expenses',dict(category_code='rent',amount='1.25',note='synthetic shared'),self.admin)['data']
+        after=self.get('finance',self.admin)['data']
+        after_client=next(row for row in after['clients'] if row['client_id']==1)
+        direct_cost=work['salary']+237+direct['amount']
+        expected_profit=work['revenue']-direct_cost
+        self.assertEqual((after_client['revenue']-before_client['revenue'],
+                          after_client['salary']-before_client['salary'],
+                          after_client['materials']-before_client['materials'],
+                          after_client['other']-before_client['other'],
+                          after_client['profit']-before_client['profit']),
+                         (work['revenue'],work['salary'],237,direct['amount'],expected_profit))
+        self.assertEqual(after['client_profit']-before['client_profit'],expected_profit)
+        self.assertEqual(after['company_overhead']-before['company_overhead'],overhead['amount'])
+        self.assertEqual(after['net_profit']-before['net_profit'],expected_profit-overhead['amount'])
+
     def test_secure_invitation_lifecycle_uses_hash_and_tenant_scope(self):
         """Stage 10 invitations remain hash-only, one-time and tenant-scoped on PostgreSQL."""
         body={'action':'create','role':'packer','username':'pg-invite-candidate',
