@@ -53,6 +53,8 @@
         <div class="today-kpi"><span>Заданий в работе</span><b>${num(inWorkTasks.size)}</b></div>
         <div class="today-kpi"><span>Готовые партии</span><b>${num(d.ready||0)}</b></div>
         <div class="today-kpi"><span>Активные партии</span><b>${num(d.active_batches||0)}</b></div>
+        ${d.active_jobs!==undefined?`<div class="today-kpi"><span>Открытые задания</span><b>${num(d.active_jobs)}</b></div>`:''}
+        ${d.today_finance?`<div class="today-kpi"><span>Выручка сегодня</span><b>${rub(d.today_finance.revenue)}</b></div><div class="today-kpi"><span>Начислено сегодня</span><b>${rub(d.today_finance.salary)}</b></div>`:''}
       </div></section>`+
       `<section class="dashboard-section attention-zone"><div class="section-label"><h2>Требует внимания</h2><button class="text-link" data-action="go" data-page="notifications">Все события</button></div><div class="attention-stack">${attentionHtml(attention.slice(0,4))}</div></section>`+
       (finance?`<section class="dashboard-section"><div class="section-label"><h2>Финансовый радар</h2><button class="text-link" data-action="go" data-page="radar">Подробнее</button></div><div class="money-grid">
@@ -61,11 +63,14 @@
         <div class="money-card"><span>Материалы</span><strong>${rub(finance.materials)}</strong></div>
         <div class="money-card"><span>Прочие расходы</span><strong>${rub(financeOther)}</strong></div>
         <div class="money-card emphasis"><span>Чистый результат</span><strong>${rub(finance.profit)}</strong><small>${margin==null?'Маржа не определена':'Маржа '+num(margin)+'%'}</small></div>
+        ${d.month_finance?`<div class="money-card"><span>Выручка за месяц</span><strong>${rub(d.month_finance.revenue)}</strong></div><div class="money-card"><span>Начислено за месяц</span><strong>${rub(d.month_finance.salary)}</strong></div>`:''}
+        ${d.closed_month_payroll!==undefined?`<div class="money-card"><span>Выплачено / остаток</span><strong>${d.closed_month_payroll?`${rub(d.closed_month_payroll.paid)} / ${rub(d.closed_month_payroll.balance)}`:'Нет закрытого периода'}</strong></div>`:''}
+        ${d.expected_profit!==undefined?`<div class="money-card"><span>Плановая прибыль</span><strong>${d.expected_profit==null?'Недоступна':rub(d.expected_profit)}</strong></div>`:''}
       </div></section>`:'')+
       `<div class="dashboard-two"><section class="dashboard-section compact-panel"><div class="section-label"><h2>Зарплата</h2><button class="text-link" data-action="go" data-page="payrollPeriods">Открыть</button></div>
         ${payroll&&payrollBounds?`<p class="meta">${esc(payrollBounds[0])} — ${esc(payrollBounds[1])}</p><div class="large-value">${rub(payroll.total_salary||0)}</div><p>Начислено по данным выработки</p><span class="badge preview">Предпросмотр периода</span>`:`<div class="preview-empty">${previewBadge}<p>Сводка расчётного периода появится после подключения данных.</p></div>`}
       </section><section class="dashboard-section compact-panel"><div class="section-label"><h2>Дебиторка</h2><button class="text-link" data-action="go" data-page="invoices">Счета</button></div>
-        ${d.debt!==undefined?`<div class="large-value">${rub(d.debt)}</div><p>Остаток к оплате клиентами</p><span class="badge ${overdue?'amber':'green'}">${overdue?('Просрочено: '+overdue):'Без просрочек'}</span>`:`<div class="preview-empty">${previewBadge}<p>Данные дебиторки пока недоступны.</p></div>`}
+        ${d.debt!==undefined?`<div class="large-value">${rub(d.debt)}</div><p>Остаток к оплате клиентами</p>${d.open_invoice_count!==undefined?`<p>Открытые счета: ${num(d.open_invoice_count)}</p>`:''}<span class="badge ${(d.overdue_invoice_count||overdue)?'amber':'green'}">${d.overdue_invoice_count?`Просрочено: ${num(d.overdue_invoice_count)} · ${rub(d.overdue_debt)}`:overdue?('Просрочено: '+overdue):'Без просрочек'}</span>`:`<div class="preview-empty">${previewBadge}<p>Данные дебиторки пока недоступны.</p></div>`}
       </section></div>`+
       `<section class="dashboard-section"><div class="section-label"><h2>Производство</h2><button class="text-link" data-action="go" data-page="batches">Партии и задания</button></div><div class="production-strip"><div><span>В работе</span><b>${num(inWorkTasks.size)}</b></div><div><span>Готово</span><b>${num(d.ready||0)}</b></div><div><span>Активно партий</span><b>${num(d.active_batches||0)}</b></div></div>${allowed('tasks.read')&&S.productionTasks.length?`<div class="compact-task-list">${taskCards(S.productionTasks.slice(0,3))}</div>`:''}</section>`+
       `<section class="dashboard-section"><div class="section-label"><h2>Быстрые действия</h2><button class="text-link" data-action="go" data-page="sections">Все разделы</button></div><div class="quick-grid">${quickActions}</div></section>`

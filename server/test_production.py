@@ -87,6 +87,40 @@ class ProductionTest(unittest.TestCase):
         self.assertEqual(self.get('client-name-history?client_id=1')['data'],history)
         self.assertEqual(self.get('client-name-history?client_id=1',self.other_admin)['data'],[])
 
+    def test_today_dashboard_has_company_date_volume_finance_and_open_invoice_counts(self):
+        work=self.work()
+        self.post('invoices',dict(work_ids=[work['id']],due_at='2020-01-01'))
+        today=datetime.utcnow().date()
+        closed_payroll=None
+        if today.day>15:
+            start=today.replace(day=1).isoformat();end=today.replace(day=15).isoformat()
+            with portal.tenants.company_scope(1),portal.db() as conn:
+                historical=dict(Repository(conn,1).get('works',work['id']),
+                                completed_at=end+'T12:00:00.000000',created_at=end+'T12:00:00.000000')
+                for key in ('id','company_id'):historical.pop(key,None)
+                Repository(conn,1).insert('works',historical)
+                conn.commit()
+            period=self.post('payroll-periods',dict(period_start=start,period_end=end))['data']
+            legacy_employee=period['snapshot']['employees'][0]['employee_id']
+            with portal.tenants.company_scope(1),portal.db() as conn:
+                employee=Repository(conn,1).payroll_employee(legacy_employee,legacy=True)['employee_id']
+            self.post('payroll-settlements',dict(payroll_period_id=period['id'],employee_id=employee,
+                entry_type='payout',amount='1.00',reason='Dashboard test',request_id='dashboard-paid-once'))
+            closed_payroll=(400,100,300)
+        with portal.tenants.company_scope(1),portal.db() as conn:
+            dashboard_repo=Repository(conn,1)
+            dashboard_user=next(user for user in dashboard_repo.catalog('users') if user['id']==self.admin_id)
+            Production(dashboard_repo,dashboard_user).today()
+        data=self.get('today')['data']
+        self.assertEqual(data['today_quantity'],2)
+        self.assertEqual(data['month_quantity'],4)
+        self.assertEqual(data['today_finance'],dict(revenue=1000,salary=400))
+        self.assertEqual((data['month_finance']['revenue'],data['month_finance']['salary']),(2000,800))
+        self.assertEqual((data['open_invoice_count'],data['overdue_invoice_count'],data['overdue_debt']),(1,1,1000))
+        self.assertIsNone(data['expected_profit'])
+        if closed_payroll is None:self.assertIsNone(data['closed_month_payroll'])
+        else:self.assertEqual((data['closed_month_payroll']['accrued'],data['closed_month_payroll']['paid'],data['closed_month_payroll']['balance']),closed_payroll)
+
     def test_chat_stickers_absence_validation_idempotency_and_tenant_scope(self):
         for key in ('accepted','in_progress','done','help','important','thanks'):
             item=self.post('chat',dict(subtype='sticker',sticker_key=key))['data']
@@ -385,6 +419,21 @@ class ProductionTest(unittest.TestCase):
         self.assertEqual(page['outstanding'],report['outstanding'])
         self.get('receivables?client_id=9999',status=403)
         self.get('receivables',self.worker,status=403)
+
+    def test_receivable_timezone_offset_uses_company_local_due_date(self):
+        with portal.tenants.company_scope(1),portal.db() as conn:
+            repo=Repository(conn,1)
+            repo.insert('settings',dict(utc_offset_minutes=180),'control')
+            repo.insert('invoices',dict(client_id=1,client_name='Client',amount=500,due_at='2026-09-30T23:30:00+03:00',
+                work_ids=[],lines=[],state='finalized'),'offset-due-invoice')
+            conn.commit()
+            user=next(item for item in repo.catalog('users') if item['id']==self.admin_id)
+            service=Production(repo,user,clock=lambda:'2026-09-30T21:30:00')
+            result=service.receivables({'page':['1'],'limit':['50']})
+            dashboard=service.today()
+        self.assertEqual(result['as_of'],'2026-10-01')
+        self.assertEqual((result['items'][0]['overdue_days'],result['items'][0]['bucket']),(1,'days_1_7'))
+        self.assertEqual((dashboard['date'],dashboard['overdue_invoice_count'],dashboard['overdue_debt']),("2026-10-01",1,500))
 
     def test_idempotency_and_transaction_rollback(self):
         body=dict(client_id=1,operation_id=1,quantity=2,request_id='retry-work')

@@ -7,7 +7,7 @@ import hashlib
 import json
 import re
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from production_repository import utcnow
 from report_xlsx import payroll_xlsx
@@ -56,6 +56,15 @@ def stamp(value, optional=False):
         if dt.tzinfo: raise ValueError()
         return dt.isoformat(timespec='microseconds')
     except (ValueError,TypeError): raise ValueError('Дата: ISO 8601, UTC без смещения')
+
+def company_date(value, utc_offset_minutes):
+    """Interpret a stored UTC/date value in the company's configured timezone."""
+    if not isinstance(value,str) or not value:
+        raise ValueError('Некорректная дата')
+    parsed=datetime.fromisoformat(value)
+    if len(value)==10 and parsed.tzinfo is None:return parsed.date()
+    zone=timezone(timedelta(minutes=utc_offset_minutes))
+    return parsed.astimezone(zone).date() if parsed.tzinfo else (parsed+timedelta(minutes=utc_offset_minutes)).date()
 
 class Production:
     def __init__(self, repo, user, clock=utcnow):
@@ -852,7 +861,8 @@ class Production:
             try:client_filter=int(client_filter)
             except (TypeError,ValueError):raise ValueError('Некорректный клиент')
             self.client(client_filter)
-        local_today=(datetime.fromisoformat(self.clock())+timedelta(minutes=self.settings()['utc_offset_minutes'])).date()
+        settings=self.settings()
+        local_today=(datetime.fromisoformat(self.clock())+timedelta(minutes=settings['utc_offset_minutes'])).date()
         buckets={key:dict(count=0,amount=0) for key in ('current','days_1_7','days_8_30','days_31_60','days_61_plus','undated')}
         clients={};items=[];overdue_total=0;outstanding_total=0
         for invoice in self.invoices():
@@ -861,7 +871,7 @@ class Production:
             due_text=invoice.get('due_at');overdue=0
             if not due_text:bucket='undated'
             else:
-                try:due_date=datetime.fromisoformat(due_text).date()
+                try:due_date=company_date(due_text,settings['utc_offset_minutes'])
                 except (TypeError,ValueError):raise ValueError('В счёте сохранена некорректная дата оплаты')
                 overdue=max(0,(local_today-due_date).days)
                 bucket='current' if overdue==0 else 'days_1_7' if overdue<=7 else 'days_8_30' if overdue<=30 else 'days_31_60' if overdue<=60 else 'days_61_plus'
@@ -904,7 +914,10 @@ class Production:
 
     def today(self):
         settings=self.settings();now=datetime.fromisoformat(self.clock())+timedelta(minutes=settings['utc_offset_minutes']);day=now.date().isoformat()
-        works=self.scoped('works');mine=[w for w in works if w['user_id']==self.u['id'] and (datetime.fromisoformat(w['completed_at'])+timedelta(minutes=settings['utc_offset_minutes'])).date().isoformat()==day]
+        works=self.scoped('works');local_dates={w['id']:company_date(w['completed_at'],settings['utc_offset_minutes']) for w in works}
+        today_works=[w for w in works if local_dates[w['id']].isoformat()==day]
+        month_works=[w for w in works if local_dates[w['id']].year==now.year and local_dates[w['id']].month==now.month]
+        mine=[w for w in today_works if w['user_id']==self.u['id']]
         batches=[self.progress(b) for b in self.scoped('batches')];attention=[]
         manager=bool({'tasks.manage','batches.receive','finance.read'} & self.permissions)
         if manager:
@@ -919,20 +932,55 @@ class Production:
             if unbilled:attention.append(dict(type='not_invoiced',label='Выполненная работа не выставлена клиенту',amount=sum(w['revenue'] for w in unbilled),clients=[dict(client_id=cid,amount=sum(w['revenue'] for w in unbilled if w['client_id']==cid),work_ids=[w['id'] for w in unbilled if w['client_id']==cid]) for cid in sorted({w['client_id'] for w in unbilled})]))
         invoices=self.invoices() if 'invoices.read' in self.permissions else []
         for i in invoices:
-            if i['due_at'] and i['remaining'] and i['due_at']<self.clock():attention.append(dict(type='payment_late',label='Просрочена оплата',invoice_id=i['id'],amount=i['remaining']))
+            if i['due_at'] and i['remaining'] and company_date(i['due_at'],settings['utc_offset_minutes']).isoformat()<day:attention.append(dict(type='payment_late',label='Просрочена оплата',invoice_id=i['id'],amount=i['remaining']))
         if {'invoices.read','finance.read'} & self.permissions:
             notices=sorted(self.r.list('notifications'),key=lambda item:(item.get('occurred_at',''),item.get('id','')),reverse=True)[:20]
             attention.extend(dict(type='reminder',label=item['title'],entity_id=item['entity_id'],notification_id=item['id']) for item in notices)
         check='monday' if now.weekday()==0 and now.strftime('%H:%M')>=settings['monday_time'] else 'wednesday' if now.weekday()==2 and now.strftime('%H:%M')>=settings['wednesday_time'] else None
         if check and invoices:attention.append(dict(type='control_'+check,label='Контроль счетов и оплат',paid=sum(i['status']=='paid' for i in invoices),partial=sum(i['status']=='partial' for i in invoices),unpaid=sum(i['status']=='unpaid' for i in invoices),not_invoiced=len(unbilled)))
-        result=dict(date=day,mode='management' if manager else 'worker',own_quantity=sum(w['quantity'] for w in mine),attention=attention,tasks=self.task_rows() if 'tasks.read' in self.permissions else [])
+        tasks=self.task_rows() if 'tasks.read' in self.permissions else []
+        result=dict(date=day,mode='management' if manager else 'worker',own_quantity=sum(w['quantity'] for w in mine),attention=attention,tasks=tasks)
         if 'payroll.own' in self.permissions:result['own_salary']=sum(w['salary'] for w in mine)
-        if manager:result.update(active_batches=sum(b['stage']!='shipped' for b in batches),in_progress=sum(b['stage']=='in_progress' for b in batches),ready=sum(b['ready'] and b['stage']!='shipped' for b in batches),today_quantity=sum(w['quantity'] for w in works if (datetime.fromisoformat(w['completed_at'])+timedelta(minutes=settings['utc_offset_minutes'])).date().isoformat()==day))
+        if manager:
+            result.update(active_batches=sum(b['stage'] not in ('shipped','returned') for b in batches),
+                in_progress=sum(b['stage']=='in_progress' for b in batches),
+                ready=sum(b['ready'] and b['stage'] not in ('shipped','returned') for b in batches),
+                active_jobs=sum(t['remaining']>0 for t in tasks),today_quantity=sum(w['quantity'] for w in today_works),
+                month_quantity=sum(w['quantity'] for w in month_works))
         if 'finance.read' in self.permissions:
             data=self.finance();result['finance']={key:sum(c[key] for c in data['clients']) for key in ('revenue','salary','materials','other')}
             result['finance'].update(company_overhead=data['company_overhead'],profit=data['net_profit'])
-            result['expected_profit']=sum(self.economy(b['id'])['plan']['profit'] for b in batches if b['stage']!='shipped')
+            result['today_finance']=dict(revenue=sum(w['revenue'] for w in today_works),salary=sum(w['salary'] for w in today_works))
+            result['month_finance']=dict(revenue=sum(w['revenue'] for w in month_works),salary=sum(w['salary'] for w in month_works),
+                                         direct_payroll=sum(w['salary'] for w in month_works))
+            plan_profits=[self.economy(b['id'])['plan']['profit'] for b in batches if b['stage'] not in ('shipped','returned')]
+            result['expected_profit']=None if not plan_profits or any(value is None for value in plan_profits) else sum(plan_profits)
+            result['client_profitability_alerts']=sum(client['profit']<0 for client in data['clients'])
+        if {'payroll.all','payroll.settlement.read'} & self.permissions:
+            closed=[period for period in self.r.list('payroll_periods')
+                    if period['status']=='closed' and period['period_start'][:7]==day[:7]
+                    and period['period_end']<=day]
+            settled=None
+            if closed and self.r.has_table('payroll_settlement_entries'):
+                accrued=sum(employee['salary'] for period in closed
+                            for employee in period['snapshot'].get('employees',[]))
+                entries=[entry for period in closed for entry in self.r.payroll_settlements(period['id'])]
+                paid=sum(entry['amount_minor'] for entry in entries if entry['effect']=='payment')
+                adjustments=sum(entry['amount_minor'] for entry in entries if entry['effect']!='payment')
+                settled=dict(period_count=len(closed),accrued=accrued,paid=paid,balance=accrued+adjustments-paid,
+                             money_unit='kopeck',currency='RUB')
+            result['closed_month_payroll']=settled
         if 'invoices.read' in self.permissions:result['debt']=sum(i['remaining'] for i in invoices)
+        if 'invoices.read' in self.permissions:
+            open_invoices=[i for i in invoices if i['remaining']>0]
+            overdue_invoices=[i for i in open_invoices if i.get('due_at') and company_date(i['due_at'],settings['utc_offset_minutes']).isoformat()<day]
+            result['open_invoice_count']=len(open_invoices)
+            result['overdue_invoice_count']=len(overdue_invoices)
+            result['overdue_debt']=sum(i['remaining'] for i in overdue_invoices)
+        if 'analytics.read' in self.permissions:
+            groups=self.analytics()['groups'];timed_units=sum(g['timed_quantity'] for g in groups);seconds=sum(g['seconds'] for g in groups)
+            result['productivity']=dict(units=sum(g['quantity'] for g in groups),timed_units=timed_units,
+                                        units_per_hour=timed_units/(seconds/3600) if seconds>0 else None)
         return result
 
     def command(self,action,body):
