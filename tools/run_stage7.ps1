@@ -123,8 +123,14 @@ $curl = (Get-Command curl.exe -ErrorAction Stop).Source
 $pingJson = ''
 $pingExit = 1
 foreach ($attempt in 1..5) {
-    $pingJson = (& $curl --connect-timeout 8 --max-time 15 -fsS "$publicUrl/api/ping" 2>&1 | Out-String).Trim()
-    $pingExit = $LASTEXITCODE
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $pingJson = (& $curl --connect-timeout 8 --max-time 15 -fsS "$publicUrl/api/ping" 2>&1 | Out-String).Trim()
+        $pingExit = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
     if ($pingExit -eq 0) { break }
     if ($attempt -lt 5) {
         $delay = @(2,4,8,12)[$attempt - 1]
@@ -146,8 +152,14 @@ if (-not $ping.ok -or $ping.setup_required) {
 $setupStatus = ''
 $setupExit = 1
 foreach ($attempt in 1..3) {
-    $setupStatus = (& $curl --connect-timeout 8 --max-time 15 -sS -o NUL -w '%{http_code}' -X POST -H 'Content-Type: application/json' --data '{}' "$publicUrl/api/setup" 2>&1 | Out-String).Trim()
-    $setupExit = $LASTEXITCODE
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $setupStatus = (& $curl --connect-timeout 8 --max-time 15 -sS -o NUL -w '%{http_code}' -X POST -H 'Content-Type: application/json' --data '{}' "$publicUrl/api/setup" 2>&1 | Out-String).Trim()
+        $setupExit = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
     if ($setupExit -eq 0 -and $setupStatus -eq '403') { break }
     if ($attempt -lt 3) { Start-Sleep -Seconds (2 * $attempt) }
 }

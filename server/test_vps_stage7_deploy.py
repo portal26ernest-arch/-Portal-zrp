@@ -86,6 +86,8 @@ class Stage7DeploySafetyTests(unittest.TestCase):
                 self.assertIn(token, RUNNER)
         self.assertNotIn('StrictHostKeyChecking=no', RUNNER)
         self.assertNotIn('--doh-url', RUNNER)
+        self.assertGreaterEqual(RUNNER.count("$ErrorActionPreference = 'Continue'"), 2)
+        self.assertGreaterEqual(RUNNER.count("$ErrorActionPreference = $previousErrorActionPreference"), 2)
 
     def test_explicit_domain_wins_and_sslip_is_default_pilot(self):
         self.assertIn('[string]$Domain', RUNNER)
