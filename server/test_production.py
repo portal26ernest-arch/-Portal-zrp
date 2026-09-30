@@ -264,12 +264,14 @@ class ProductionTest(unittest.TestCase):
     def test_invite_revoke_and_role_capability_denials(self):
         manager=self.role_token('manager')
         body={'action':'create','role':'packer','username':'manager-invite','display_name':'Candidate','request_id':'manager-invite'}
+        self.request('/api/v3/invitations?status=all',manager,status=403)
         self.request('/api/v3/invitations',manager,body,method='POST',status=403)
         director=self.role_token('director')
         body['username']='director-invite';body['request_id']='director-invite'
         director_invite=self.request('/api/v3/invitations',director,body,method='POST')['data']
         self.request('/api/v3/invitations',director,body,method='POST',extra_headers={'X-Portal-Company':'2'},status=403)
         director_invite_id=director_invite['invite']['id']
+        self.request('/api/v3/invitations',manager,{'action':'approve','invite_id':director_invite_id},method='POST',status=403)
         self.request('/api/v3/invitations',manager,{'action':'revoke','invite_id':director_invite_id},method='POST',status=403)
         revoked=self.request('/api/v3/invitations',director,{'action':'revoke','invite_id':director_invite_id},method='POST')['data']
         revoke_replay=self.request('/api/v3/invitations',director,{'action':'revoke','invite_id':director_invite_id},method='POST')['data']
@@ -734,6 +736,7 @@ class ProductionTest(unittest.TestCase):
         self.post('settings',dict(reminder_cadence='hourly'),director,status=400)
         self.get('settings',manager,status=403)
         self.post('settings',dict(monday_time='09:00'),manager,status=403)
+        self.get('audit',manager,status=403)
         self.request('/api/v3/settings',self.admin,extra_headers={'X-Portal-Company':'2'},status=403)
         with portal.db() as conn:
             r=Repository(conn,1);u=next(u for u in r.catalog('users') if u['id']==self.admin_id)
