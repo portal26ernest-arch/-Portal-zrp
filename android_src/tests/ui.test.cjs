@@ -109,6 +109,7 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
       else if(stage3&&url==='/api/v3/timers'&&method==='GET')data.data=mock.timer&&['running','paused'].includes(mock.timer.status)?[mock.timer]:[];
       else if(stage3&&url==='/api/v3/timers'&&method==='POST'){const b=JSON.parse(payload);mock.timer={id:'timer-1',task_id:'task-1',user_id:1,started_at:'2026-09-25T09:12:00',pauses:[],status:({start:'running',pause:'paused',resume:'running',finish:'completed'})[b.event]};data.data=mock.timer;}
       else if(stage3&&url==='/api/v3/batches')data.data=[{id:'batch-1',number:'PRT-2026-000001',client_id:1,client_name:'Клиент',product:'Коробка',received_at:'2026-09-24',quantity:10,done:2,remaining:8,stage:'in_progress',operations:[{operation:'Упаковка',done:2,planned:10}],ready:false}];
+      else if(stage3&&url.startsWith('/api/v3/economy?'))data.data={plan:{salary:null,revenue:null,materials:null,other:null,profit:null,volume:null},fact:{salary:0,revenue:0,materials:0,other:0,profit:0,volume:0},deviation:{salary:null,revenue:null,materials:null,other:null,profit:null,volume:null},finished_units:0};
       else if(stage3&&url==='/api/v3/invoices')data.data=[];
       else if(stage3&&url==='/api/v3/documents')data.data=[];
       else if(stage3&&url==='/api/v3/finance')data.data={clients:[]};
@@ -381,6 +382,12 @@ test('browser UI regression',async t=>{
       await page.locator('[data-action=editCatalogProduct]').click();await page.waitForSelector('#catalogProductForm');await page.locator('#catalogProductName').fill('Коробка новая');await page.locator('#catalogProductForm [type=submit]').click();
       await page.waitForFunction(()=>mock.calls.some(c=>c.method==='POST'&&c.url==='/api/v3/products'&&c.body?.action==='update'));
       await page.locator('[data-action=archiveCatalogProduct]').click();await page.waitForFunction(()=>mock.calls.some(c=>c.method==='POST'&&c.url==='/api/v3/products'&&c.body?.action==='archive'));
+      assert.deepEqual(errors,[]);await page.close();
+    });
+    await t.test('batch economics labels an absent plan as unavailable',async()=>{
+      const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);await login(page);await page.evaluate(()=>go('batches'));
+      await page.waitForSelector('[data-action=batchEconomy]');await page.locator('[data-action=batchEconomy]').click();await page.waitForSelector('#sheetContent');
+      assert.match(await page.locator('#sheetContent').innerText(),/Недоступно/);
       assert.deepEqual(errors,[]);await page.close();
     });
     await t.test('Stage 3 timer, presence, activity and system information',async()=>{

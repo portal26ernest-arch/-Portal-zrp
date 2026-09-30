@@ -274,6 +274,15 @@ class ProductionTest(unittest.TestCase):
         finance=self.get('finance')['data']['clients'][0];self.assertEqual(finance['profit'],-500)
         self.get('finance',self.worker,status=403)
 
+    def test_batch_economy_marks_missing_plan_unavailable_instead_of_zero(self):
+        batch=self.batch()
+        economy=self.get('economy?batch_id='+batch['id'])['data']
+        for key in ('salary','revenue','materials','other','profit','volume'):
+            self.assertIsNone(economy['plan'][key],key)
+            self.assertIsNone(economy['deviation'][key],key)
+        self.assertEqual(economy['fact']['volume'],0)
+        self.assertEqual(economy['fact']['profit'],0)
+
     def test_company_overhead_is_not_charged_to_random_client(self):
         self.work()
         before=self.get('finance')['data'];base=before['clients'][0]['profit']

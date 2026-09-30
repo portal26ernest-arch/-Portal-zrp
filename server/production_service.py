@@ -766,13 +766,21 @@ class Production:
         self.need('finance.read');batch=self.entity('batches',batch_id)
         works=[w for w in self.scoped('works') if self.batch_for_work(w)==batch_id];ids={w['id'] for w in works}
         plans=[p for p in self.scoped('plans') if p['batch_id']==batch_id]
-        plan={k:sum(p[k] for p in plans) for k in ('salary','revenue','materials','other')}
+        # No plan rows means "unavailable", not a confirmed zero-cost/zero-revenue plan.
+        plan={k:(sum(p[k] for p in plans) if plans else None) for k in ('salary','revenue','materials','other')}
         fact=dict(salary=sum(w['salary'] for w in works),revenue=sum(w['revenue'] for w in works),materials=sum(u['cost'] for u in self.scoped('usage') if u['work_id'] in ids),other=sum(e['amount'] for e in self.scoped('expenses') if e['batch_id']==batch_id))
-        for values in (plan,fact):values['profit']=values['revenue']-values['salary']-values['materials']-values['other']
-        plan['volume']=sum(p['quantity'] for p in plans);fact['volume']=sum(w['quantity'] for w in works)
+        fact['profit']=fact['revenue']-fact['salary']-fact['materials']-fact['other']
+        plan['profit']=(plan['revenue']-plan['salary']-plan['materials']-plan['other']) if plans else None
+        plan['volume']=sum(p['quantity'] for p in plans) if plans else None;fact['volume']=sum(w['quantity'] for w in works)
         units=self.progress(batch)['done']
-        return dict(batch_id=batch_id,plan=plan,fact=fact,deviation={k:fact[k]-plan[k] for k in plan},finished_units=units,
-                    cost_per_unit=(fact['salary']+fact['materials']+fact['other'])/units if units else None,profit_per_unit=fact['profit']/units if units else None)
+        deviation={k:(fact[k]-plan[k] if plan[k] is not None else None) for k in plan}
+        def per_unit_kopecks(amount):
+            if not units:return None
+            sign=-1 if amount<0 else 1
+            return sign*((abs(amount)+units//2)//units)
+        return dict(batch_id=batch_id,plan=plan,fact=fact,deviation=deviation,finished_units=units,
+                    cost_per_unit=per_unit_kopecks(fact['salary']+fact['materials']+fact['other']),
+                    profit_per_unit=per_unit_kopecks(fact['profit']))
 
     def finance(self):
         self.need('finance.read');works=self.scoped('works');usage=self.scoped('usage');expenses=self.scoped('expenses')
