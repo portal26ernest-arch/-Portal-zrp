@@ -408,3 +408,28 @@ Production cutover **NOT performed**.
 - C remains partial: source-backed profitability/productivity/radar completeness and reminder candidate persistence/dispatch. The runner primitive is not an enabled production scheduler.
 - D: preserve prior same-company cross-session Documents PostgreSQL success; complete remaining revision/filter UI parity and any Android/Web file/share contract gaps not covered by the new `node --test` pass.
 - Next implementation: build tenant-scoped, source-backed reminder candidate selection and persistence/idempotency integration from overdue invoices and unbilled completed work; add isolated PostgreSQL tests, then continue B and remaining A/D gaps. Do not create autopilot completion/blocked flags. Production cutover **NOT performed**.
+
+## AUTOMATIC CONTINUATION — reminder source/sink — 2026-09-30
+
+### DONE NOW
+
+- Added reminder candidates from tenant-visible overdue invoices (remaining balance after payments, including partial payments) and completed-but-unbilled work. Company-local date handling includes timezone-offset due timestamps.
+- Added an atomic `Repository.insert_once` path and append-only `notifications` records keyed by reminder/cadence. Duplicate retries return `false`; manager finance/invoice roles see persisted reminders in `PORTAL Сегодня`, workers without those capabilities do not.
+- Commits pushed: `cd22c20` candidate collection and tenant insert-once; `2db871e` authorized dashboard visibility; `e08e0d8` simplified the PostgreSQL test to focus on persistence/idempotency/isolation.
+- No timer, operator scheduler, last-run record, or production enablement was added. Item 47 remains ⏳; no roadmap counts changed.
+
+### TESTS / CI
+
+- `python -m unittest test_reminder_jobs -v`: **7 passed, 0 failed**.
+- Combined reminder and dashboard visibility tests: **8 passed, 0 failed**.
+- `python -m unittest test_documents_postgresql -q` locally: **15 skipped**, because no local disposable PostgreSQL is configured; no local DB/role was created.
+- Full local server discovery at `e08e0d8`: **232 passed, 28 skipped, 0 failed**.
+- GitHub Web `36660208411` passed both Web and `documents-postgresql`; PostgreSQL fixture verifies cleanup DB=0, roles=0, temp=0. GitHub Server `36660208403` passed Python 3.11 and 3.13. No Android source changed after its 3.5/35 success at `4e38943`.
+- Two earlier Web PG runs (`36659765933`, `36659903107`) failed while testing the new scenario. Public summaries exposed only exit code 1, so the initial fixture failure's precise cause is unknown. The final scenario isolates atomic ledger insertion and cross-company visibility and passes; no authorization or CI gate was weakened.
+- `python -m compileall -q server ops android_src/tools` and `git diff --check`: passed.
+
+### EXACT NEXT
+
+- Add safe operator-run cadence/last-run/retry records and a deterministic scheduled entry point that stays disabled by default. Prove failure/retry and concurrent duplicate suppression on disposable PostgreSQL.
+- Then continue B tariff conflict/history, canonical client rename/aliases, batch FBS/FBO/returns; A director settings and remaining role matrix; C unified profitability/productivity/radar; and D remaining document parity.
+- Roadmap remains **73 ✅ / 33 🟡 / 8 ⏳ / 12 🔌**. No completion/blocked flag. Production cutover **NOT performed**.
