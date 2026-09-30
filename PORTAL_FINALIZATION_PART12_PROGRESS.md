@@ -837,3 +837,15 @@ Production cutover **NOT performed**.
 
 - The code-tested SHA is `35db147`; following documentation-only commits carry the evidence/NEXT. Branch `codex-finalization-megapack-part12` is pushed and clean at its current tip.
 - The `employee_id` focused DoD is met: current audit P0=0 and all 50 P1 bridges remain enumerated/covered; this does not close Part 12. Next work is the duplicate-link origin above, followed by the broader pending software roadmap. No autopilot flag was created.
+
+## Latest verified continuation — Windows, money and news framework — 2026-09-30
+
+- Latest code source: `4a1629cb4b8aa49f5b49d931f9b23e59771be500`; documentation-only commits `0e89f9b` and `f3c14af` are pushed above it. Branch is clean at `f3c14af` before this append.
+- Web run `36727892853` passed `web` and disposable `documents-postgresql`; PostgreSQL ran **31 tests, 2 expected skips**, including strict unfiltered money reconciliation, with cleanup `db=0 roles=0 temp=0`. Server `36727892708` passed Python 3.11 and 3.13 (**289 tests each, 43 skips**). Windows `36727892734` passed compile/publish/install. Earlier Windows `36726873659` failed on missing XAML entrypoints; `38e93bd` added them, and subsequent Windows runs passed.
+- On current code, local `test_desktop_update test_portal_app_server`: **18/18**; `node --test android_src/tests/*.test.cjs`: **52/52**, including browser UI; `ops.test_infra_readiness`: **8/8**. `compileall`, XAML/project XML parsing, PowerShell installer contracts and `git diff --check` passed.
+- Money synthetic duplicate source was corrected in test fixture clones; strict unfiltered disposable-PG full test now passes. No imported or production facts were inspected/converted. Item 105 remains 🟡 pending an authorized disposable imported SQLite snapshot because deployed affinities and rows are unknown.
+- News runner is disabled by default; it has explicit injected bounded adapters, no fetcher, no verified official public feed and no installed timer. Items 77–79 remain 🟡.
+- Item 85 is 🟡: WPF/WebView2 wrapper, HTTPS/loopback origin boundary, checksum/path-safe current-user installer, CI package and a fail-closed optional manifest API. No signed release or ordinary Windows device verification; update manifest must remain unset until publisher/source policy is trusted.
+- Numbered counts: **75 ✅ / 33 🟡 / 6 ⏳ / 12 🔌**. Production DB/service/DNS/cutover/secrets untouched. No autopilot complete/blocked flag.
+
+**Exact NEXT:** priority A: finish the remaining invitation/access/settings/audit permission matrix called out in `PORTAL_RELEASE_READINESS_MATRIX.md` (Owner/Director permissions and combined audit/UI flow) with cross-company negative tests; then targeted Server/Web/disposable-PostgreSQL tests, commit and push. Continue with next software-completable Client 360 / payroll / receivables and Documents gaps before final regression. Latest source is `4a1629c`; latest docs checkpoint was `f3c14af`. Production cutover NOT performed.
