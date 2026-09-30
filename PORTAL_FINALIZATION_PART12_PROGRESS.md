@@ -708,6 +708,15 @@ Production cutover **NOT performed**.
 - Broader remaining work: employee_id/telegram_id runtime-boundary audit, legacy monetary REAL inventory/reconciliation, Windows thin-client/installer, final VPS/release gates. Counts stay **74 ✅ / 33 🟡 / 7 ⏳ / 12 🔌**; no completion/blocked flag. Production cutover **NOT performed**.
 - **Exact NEXT:** inspect remaining Client 360 fields and write capabilities in `android_src/app/src/main/assets/production.js` against `server/production_service.py`; select one missing block only if its values already have a server source, then add scoped API/UI/browser and disposable PostgreSQL coverage. If inspection finds no such source-backed gap, produce a read-only `employee_id`/legacy `telegram_id` runtime-boundary inventory before changing identifiers. Run targeted and full relevant tests, commit and push each logical block.
 
+## FOCUSED BLOCK CHECKPOINT — canonical employee_id runtime — 2026-09-30
+
+- Current source: `f7ccb72c0ae2556f9caa5765999ac7b4f43c1385`; clean, fetched branch matches origin.
+- Closed roadmap item 102: audit remains P0 external runtime **0**, P0 direct identity **0**, P1 **50** explicitly enumerated and retained behind the adapter/import/schema/history boundaries, P2 **129**. The scanner audit test suite passes **8/8** and `--fail-on-p0` passes.
+- GitHub Web run `36714999102` at `f7ccb72`: Web and `documents-postgresql` succeeded; disposable PostgreSQL ran **30 tests, 2 skipped**, including `test_employee_identity_api_contract_is_canonical_and_company_scoped`; cleanup verified `db=0 roles=0 temp=0`. The Server Python 3.11 job at run `36714999124` passed. Its Python 3.13 job failed one unrelated XLSX invoice idempotency assertion (`request_id уже использован для другого документа`); do not report the overall Server matrix as green.
+- Local regression attempt from the correct `server/` directory ran 110 tests and exposed a separate brittle audit test (`test_company_settings_and_capability_changes_are_audited_without_values`) that checks secret-value substrings against UUIDs. The identity tests/scanner pass; this settings-test failure and the CI XLSX issue remain independent follow-ups. Local PostgreSQL is not installed; disposable PG evidence is the named CI run above.
+- Readiness counts now **75 ✅ / 32 🟡 / 7 ⏳ / 12 🔌**. Production data, schema drops, DNS, cutover, and secrets were not touched.
+- **Exact NEXT:** continue Part 12 at the existing broader NEXT: inspect Client 360 remaining source-backed editable/linked blocks; if none, proceed to money `REAL` inventory/reconciliation, Windows thin client/installer, safe marketplace-news scheduler, and release gates. Separately fix the settings audit test's substring false positive and diagnose/retest invoice XLSX idempotency before asserting Server matrix green. Tests → commit → push each logical block. No Part 12 completion/blocked flag; production cutover **NOT performed**.
+
 ## FOCUSED CONTINUATION — canonical employee_id runtime — 2026-09-30
 
 ### DONE IN THIS BLOCK
@@ -717,7 +726,7 @@ Production cutover **NOT performed**.
 - Routed Excel employee catalog, template, profile updates and creation through the canonical repository/adapter. Shared Web/Android role gates and fixtures now use `employee_id` instead of `telegram_id`.
 - Added a real PostgreSQL/RLS integration test using identical retained legacy IDs in two synthetic companies. It checks distinct canonical IDs, canonical API payloads, no cross-company employee listing, and rejection of the foreign employee ID. The test is in the existing disposable Web PostgreSQL workflow; it has not yet executed locally.
 - Added the assistant-branch read-only identity audit and classifier tests. Current generated `PORTAL_EMPLOYEE_ID_MIGRATION_MAP.md`: P0 external Telegram/Termux runtime **0**, P0 direct runtime identity dependencies **0**, P1 explicit adapter/import/schema/API-boundary references **50**, P2 history/test/fixture references **129**. P1 source lines and named coverage suites are enumerated in the map.
-- Readiness counts remain **74 ✅ / 33 🟡 / 7 ⏳ / 12 🔌**; item 102 remains 🟡 until the disposable PostgreSQL result is known.
+- At the time of the initial push, readiness counts were **74 ✅ / 33 🟡 / 7 ⏳ / 12 🔌**; the PostgreSQL result was still pending. This was superseded by the verified item-102 checkpoint above.
 
 ### TESTS / CHECKS
 
@@ -728,10 +737,9 @@ Production cutover **NOT performed**.
 - `node --test android_src/tests/ui.test.cjs android_src/tests/employee-create-mode.test.cjs android_src/tests/legacy-boundary.test.cjs`: **33 passed, 0 failed**.
 - `node --test android_src/tests/web-adapter.test.cjs android_src/tests/web-share.test.cjs android_src/tests/web-smoke.playwright.cjs android_src/tests/build-security.test.cjs`: **10 passed, 0 failed**.
 - `python -m compileall -q server ops`, JavaScript syntax checks, and `git diff --check`: passed.
-- Local PostgreSQL execution is unavailable (`psql` and Docker commands are absent); the new disposable PG test awaits the branch's Web workflow. This is not reported as a blocker while CI execution is available.
+- Local PostgreSQL execution is unavailable (`psql` and Docker commands are absent); the new disposable PG test awaited the branch's Web workflow at this initial snapshot. Its later result is recorded in the superseding checkpoint above.
 
 ### NEXT
 
-- Commit and push this tested identity block to `origin/codex-finalization-megapack-part12`.
-- Verify the resulting Web `documents-postgresql` job and Server 3.11/3.13 suites. If the new identity test fails, fix and rerun before updating item 102; if it passes, update this report/matrix/roadmap from that SHA's CI evidence and consider closing item 102 with all P1 bridges retained as listed.
+- Initial next at the time: push, verify Web PostgreSQL and Server, then update item 102 from CI evidence. Completed; see the superseding focused checkpoint above.
 - Continue remaining Part12 software tasks; no complete/blocked flag is justified. Production DB/service, DNS, secrets and cutover were not touched.

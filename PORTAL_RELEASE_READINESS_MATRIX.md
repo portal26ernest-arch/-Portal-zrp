@@ -1,6 +1,6 @@
-# PORTAL release readiness matrix — Part 12 checkpoint `278fb2e` (Android UI/APK green; Server/Web/disposable PostgreSQL green at parent `06a7e93`)
+# PORTAL release readiness matrix — Part 12 checkpoint `f7ccb72` (item 102 employee identity PostgreSQL/RLS proof green; Server Python 3.13 has an unrelated XLSX idempotency failure)
 
-Statuses reflect the current roadmap and prior verified reports. `✅` means evidenced completion in the named baseline report/test; it does not mean production cutover is approved. Current numbered counts: **74 ✅ / 33 🟡 / 7 ⏳ / 12 🔌**. Item 47 is 🟡 for the implemented/tested operator runner and persistent disabled-by-default cadence; a trusted system timer and production activation remain open.
+Statuses reflect the current roadmap and prior verified reports. `✅` means evidenced completion in the named baseline report/test; it does not mean production cutover is approved. Current numbered counts: **75 ✅ / 32 🟡 / 7 ⏳ / 12 🔌**. Item 47 is 🟡 for the implemented/tested operator runner and persistent disabled-by-default cadence; a trusted system timer and production activation remain open.
 
 | Roadmap item | Feature | Status | Evidence commit/test | Remaining blocker | Owner action required |
 |---:|---|:---:|---|---|:---:|
@@ -32,7 +32,7 @@ Statuses reflect the current roadmap and prior verified reports. `✅` means evi
 | 94–95 | Production domain/HTTPS | ⏳ | `05ab65e` nginx HTTPS/loopback template; Stage 7 report: temporary tunnel only; HTTP-01 TCP/80 issue | Domain/DNS/network and production certificate rollout | Yes |
 | 96–99 | Final import and production cutover | ⏳ | `PORTAL_PRODUCTION_CUTOVER_RUNBOOK.md` prepared only | Owner approval, freeze, snapshot, reconciliation and controlled cutover | Yes |
 | 100 | Rollback design | ✅ | `PORTAL_MASTER_ROADMAP.md`; Stage 7 rollback rehearsal | Final production rollback rehearsal is gated on cutover approval | Yes |
-| 102 | employee_id compatibility boundary | 🟡 | Read-only audit at current source: P0 external runtime 0, P0 active runtime identity 0; 50 explicit P1 legacy adapter/import/schema references; SQLite/API/UI suites pass | Disposable PostgreSQL/RLS identity test is added but awaits GitHub Web `documents-postgresql` result | No |
+| 102 | employee_id compatibility boundary | ✅ | Read-only audit at `f7ccb72`: P0 external runtime 0, P0 active runtime identity 0; 50 enumerated P1 bridges, retained and covered; Web run `36714999102` `documents-postgresql` passed 30 tests (2 skipped), including duplicate legacy keys across two tenants, canonical payloads and foreign-ID denial; cleanup db=0/roles=0/temp=0 | No item-102 blocker; unrelated Server Python 3.13 invoice-XLSX idempotency failure remains separately recorded | No |
 | 105 | Money normalization | 🟡 | Payroll settlement uses integer minor units; legacy REAL inventory incomplete | Inventory/dual-read reconciliation and disposable PostgreSQL rehearsal | No |
 | 106–117 | TalAnt/WMS integration | 🔌 | No official API/sandbox evidence provided | Official API, sandbox and credentials | Yes |
 

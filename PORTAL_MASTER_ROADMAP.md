@@ -133,7 +133,7 @@
 99. ⏳ Production cutover: реальные записи начинают идти только в VPS.
 100. ✅ Rollback-процедура спроектирована; финальный production rehearsal ещё нужен.
 101. ✅ Опасные runtime-зависимости Telegram/Termux удалены из новой архитектуры.
-102. 🟡 Runtime/API используют employee_id; физические legacy-колонки telegram_id сохранены как P1 adapter/import/schema/history bridges. Текущий audit: P0 external 0, P0 active identity 0, P1 50. SQLite/API/UI тесты проходят; новая disposable PostgreSQL/RLS проверка employee identity ожидает CI.
+102. ✅ Runtime/API contracts используют employee_id; legacy telegram_id остаётся только в явно перечисленных adapter/import/schema/history bridges. Аудит: P0 external 0, P0 active identity 0, P1 50; disposable PostgreSQL/RLS проверка одинаковых legacy keys в двух компаниях прошла в Web run `36714999102` (`documents-postgresql`, 30 tests, 2 skipped, cleanup db=0/roles=0/temp=0). Отдельный Server Python 3.13 сбой invoice XLSX idempotency не относится к employee identity и остаётся в readiness.
 103. ✅ Защита от повторных записей/идемпотентность в критичных сценариях.
 104. ✅ Regression/unit/integration тесты и GitHub gates.
 105. 🟡 Денежные расчёты: новый производственный слой использует cents; legacy REAL-поля ещё требуют дальнейшей нормализации.

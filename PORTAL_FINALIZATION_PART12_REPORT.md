@@ -602,6 +602,17 @@ Implementation is at `278fb2ed66fd41c6a5c6aadf08b79107962a0b15` on `codex-finali
 
 The canonical employee identity block has moved active user, manager-assignment, work and payroll request/response contracts to `employee_id`, with the retained legacy-table/history projection isolated in `server/employee_identity.py`. Excel import/template operations now call that adapter. No schema drop or historical payroll rewrite was made. A negative cross-company identity test was added to the disposable PostgreSQL/RLS suite.
 
-The refreshed read-only audit reports **0 P0 external runtime, 0 P0 direct runtime identity dependencies, 50 explicitly enumerated P1 bridges and 129 P2 historical/test references**. P1 evidence and test coverage are in `PORTAL_EMPLOYEE_ID_MIGRATION_MAP.md`. Local verification: server discovery 268 run / 43 skipped / 0 failed; targeted Excel 21/21; browser/UI 33/33; Web adapter/share/smoke/security 10/10; migration audit 8/8; compile and diff checks passed. PostgreSQL was not available locally, so the new PG/RLS case is pending the disposable Web workflow; item 102 remains yellow until that result is observed. Roadmap counts are unchanged at 74 ✅ / 33 🟡 / 7 ⏳ / 12 🔌.
+### Final evidence for item 102
 
-Exact NEXT: push this block, check Web `documents-postgresql` and Server CI for the pushed SHA, then update readiness and item 102 only from those results. Continue the remaining Part12 software work. No production operation or autopilot flag was performed.
+- At source `f7ccb72c0ae2556f9caa5765999ac7b4f43c1385`, the read-only scanner and its tests report **P0 external runtime 0, P0 direct runtime identity 0, P1 explicit bridges 50, P2 history/test references 129**. P1 bridges remain listed and covered; no destructive legacy-column removal was attempted.
+- Web run `36714999102` passed both `web` and `documents-postgresql`. The disposable PostgreSQL job ran **30 tests, 2 skipped** and verified cleanup `db=0 roles=0 temp=0`. Its employee identity test checks canonical request/response identity and rejects a foreign employee ID where legacy IDs overlap across tenants.
+- Server run `36714999124`: Python 3.11 passed; Python 3.13 failed the unrelated invoice-XLSX idempotency assertion in `test_documents_api`. This does not invalidate the isolated employee identity/RLS evidence but keeps the full Server matrix open.
+- Roadmap/readiness item 102 is now ✅; total counts **75 ✅ / 32 🟡 / 7 ⏳ / 12 🔌**.
+
+### Current exact NEXT
+
+Continue broader Part 12 work from the latest progress checkpoint: inspect remaining Client 360 source-backed editable/linked gaps, then legacy monetary REAL inventory/reconciliation, Windows thin client/installer, safe marketplace-news scheduler framework, and final release gates. Independently repair the brittle substring assertion in the settings-audit test and diagnose the Server Python 3.13 XLSX idempotency mismatch before claiming the full Server matrix green. No Part 12 completion/blocked flag; no production cutover.
+
+At the initial push, the refreshed read-only audit reported **0 P0 external runtime, 0 P0 direct runtime identity dependencies, 50 explicitly enumerated P1 bridges and 129 P2 historical/test references**. The disposable PostgreSQL case was then pending; its later green result and item-102 status are documented in “Final evidence for item 102” above.
+
+Initial exact NEXT (superseded): push, check Web PostgreSQL and Server CI, and update item 102 from results. Continue remaining Part 12 work as set out in the current exact NEXT above; no production operation or autopilot flag was performed.
