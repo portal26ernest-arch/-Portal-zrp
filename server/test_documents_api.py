@@ -227,8 +227,10 @@ class DocumentAPITest(unittest.TestCase):
             doc=self.post('document-generate',dict(document_type='payroll_slip_pdf',payroll_period_id=period['id'],employee_id=payroll_employee))['data']
             self.post('document-generate',dict(document_type='payroll_slip_pdf',payroll_period_id=period['id'],employee_id=payroll_employee),self.worker,status=403)
             self.post('document-generate',dict(document_type='payroll_slip_pdf',payroll_period_id=period['id'],employee_id=payroll_employee),self.other_admin,status=400)
-        xlsx=self.post('document-generate',dict(document_type='payroll_slip_xlsx',payroll_period_id=period['id'],employee_id=payroll_employee))['data']
-        xlsx_repeat=self.post('document-generate',dict(document_type='payroll_slip_xlsx',payroll_period_id=period['id'],employee_id=payroll_employee))['data']
+        xlsx_generation=dict(document_type='payroll_slip_xlsx',payroll_period_id=period['id'],employee_id=payroll_employee,
+                             request_id='payroll-slip-xlsx-idempotent')
+        xlsx=self.post('document-generate',xlsx_generation)['data']
+        xlsx_repeat=self.post('document-generate',xlsx_generation)['data']
         self.post('document-generate',dict(document_type='payroll_slip_xlsx',payroll_period_id=period['id'],employee_id=payroll_employee),self.worker,status=403)
         self.post('document-generate',dict(document_type='payroll_slip_xlsx',payroll_period_id=period['id'],employee_id=payroll_employee),self.other_admin,status=400)
         from io import BytesIO
