@@ -319,3 +319,30 @@ Production cutover **NOT performed**.
 - C remains software work: persistent reminder candidates/dispatch, source-backed profitability/productivity/radar and payroll settlement PostgreSQL role-flow coverage.
 - D: same-company Documents cross-session create/list/metadata/download/archive and cross-company denial now passed in the disposable PostgreSQL job; remaining Web Share/Android file contract and full shared Documents UI parity stay open.
 - Continue with A settings/owner audit policy and targeted tests, then B/C gaps. Reconcile roadmap only after the larger affected workflows are proven. Current roadmap counts remain **72 ✅ / 34 🟡 / 8 ⏳ / 12 🔌**. No autopilot flag. Production cutover **NOT performed**.
+
+### Automatic continuation №2 — A settings/owner audit PostgreSQL proof — 2026-09-30
+
+#### DONE NOW
+
+- Continued from clean, pushed `c12a4f1`; no other worktree was changed.
+- `d31d760` fixes PostgreSQL test helper invocation: `make_conninfo` is called through `type(self)` so Python does not bind the fixture instance as a positional argument.
+- `d853677` adds standard company limit=15 to the synthetic external tenant, verifies over-limit user creation is rejected through HTTP `/api/users`, active count remains unchanged, and forged company scope is denied. It also keeps a PostgreSQL Platform Owner audit test proving owner login event filtering and denial for company admin/packer.
+- GitHub Web #39 validates both added A tests against the isolated PostgreSQL service. No application migration was added and no production resource was used.
+
+#### TESTS / CI
+
+- Local A service/tenancy regression: **4 passed** (`company-access`, 15-seat/override, concurrency last seat, owner audit authorization).
+- Local `python -m unittest test_documents_postgresql -v`: **10 skipped** without local PostgreSQL opt-in; no local database/role was created.
+- GitHub Web **#39 / 36653710143** at code SHA `d853677`: Web and `documents-postgresql` jobs **success**. PostgreSQL fixture: **10 tests, 8 passed, 2 skipped** (real PDF and in-fixture browser gates); cleanup verified **db=0 roles=0 temp=0**.
+- GitHub Server **#61 / 36653710121** at `d853677`: Python 3.11 and 3.13 both **221 tests, 22 skipped, 0 failed**.
+- The earlier Web failures #34–#37 were isolated to the new test code calling the stored `make_conninfo` function through an instance. `d31d760` corrected the binding; Web #38 proved the owner-audit scenario and Web #39 proved both A PostgreSQL scenarios. They did not require application/security changes.
+- `python -m unittest test_production.ProductionTest.test_company_access_summary_is_capability_and_owner_scope_checked test_portal_tenancy.CompanyIsolationTest.test_company_limits_activation_and_individual_override test_portal_tenancy.CompanyIsolationTest.test_concurrent_last_seat_cannot_exceed_company_limit test_portal_tenancy.CompanyIsolationTest.test_owner_explicit_technical_access_is_audited_without_secrets -v`: **4 passed**.
+- `python -m compileall -q .` from `server/` and `git diff --check`: passed. No Android/Node files changed; no APK rebuild.
+
+#### NOT DONE / EXACT NEXT
+
+- A: the existing model has no company module-toggle field/policy, and director company settings UI is not complete. Implement a defined, additive module settings model with server enforcement and role/audit tests; then expand invite coverage for Platform Owner explicit-company and existing-employee paths.
+- B: Client 360 edit/detail completeness, tariff overlap/historical snapshot checks, product lifecycle/aliases, batch economics and generic FBS/FBO/returns remain software work.
+- C: payroll settlement role/E2E, persistent reminder candidates/dispatch, canonical profitability/productivity/radar remain software work.
+- D: real same-company Documents sync passed earlier; complete remaining shared UI revision/filter parity and Web Share/Android contracts.
+- Roadmap remains **72 ✅ / 34 🟡 / 8 ⏳ / 12 🔌**. No status promotion, no completion/blocked flag. Production cutover **NOT performed**.

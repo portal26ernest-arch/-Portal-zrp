@@ -317,3 +317,26 @@ Continue C source-backed profitability, productivity/radar and disabled-by-defau
 - Exact next: proceed with A owner/director settings and owner audit policy, test server enforcement and UI role matrix, then continue B/C. Full regression, legacy identity/money work and remaining external readiness still follow. Production cutover **NOT performed**; no completion/blocked flag created.
 
 A–D and Part 12 are **not complete**. No production cutover was performed.
+
+## Automatic continuation №2 — code SHA `d853677`
+
+### DONE NOW
+
+- PostgreSQL Stage 10 invitation coverage from `854520f`/`da28db0` remains green.
+- `d31d760` corrects a test-only Python method-binding error in the disposable PostgreSQL fixture.
+- `d853677` validates the default 15-active-user limit, server rejection of a new active user at capacity, unchanged active count, and forged company-scope denial. The same isolated suite validates Platform Owner audit login filtering and denies company admin/packer access.
+- No product schema or production configuration was changed in this increment.
+
+### TESTS / CI
+
+- Local targeted A regression: **4 passed**; local PostgreSQL invocation: **10 skipped** because local PostgreSQL is not configured.
+- Web #39 / `36653710143`: Web and disposable PostgreSQL jobs succeeded at `d853677`. PostgreSQL: **10 tests, 8 passed, 2 skipped** (real PDF/browser-only gates); cleanup: **database=0, roles=0, temp=0**.
+- Server #61 / `36653710121`: Python 3.11 and 3.13 each ran **221 tests, 22 skipped, 0 failed**.
+- The failed Web attempts #34–#37 were caused by the newly added test calling `make_conninfo` as a bound instance method. The call now goes through `type(self)` and both owner-audit and active-limit tests pass on Web #39. No authorization or security gate was weakened.
+- `python -m compileall -q .` from `server/` and `git diff --check` passed. Android/Node source did not change; 3.5-dev-staging / versionCode 35 remains unchanged.
+
+### ROADMAP / NEXT
+
+- Counts remain **72 ✅ / 34 🟡 / 8 ⏳ / 12 🔌**. A items 10–12/15 remain 🟡 pending the full role matrix, missing company module-toggle model, director settings UI and production gates.
+- Exact next: define additive module-toggle/settings storage and enforce it server-side; cover director-owned settings plus Platform Owner explicit company selection, then continue B product/client/batch workflows and C payroll/profitability/reminders. D UI/share parity and final Android checks remain after those.
+- Production cutover **NOT performed**. No completion or blocked flag created; software work remains.
