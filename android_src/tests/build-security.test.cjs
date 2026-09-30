@@ -5,6 +5,7 @@ const gradle = fs.readFileSync(path.join(root, 'app', 'build.gradle'), 'utf8');
 const gradleProperties = fs.readFileSync(path.join(root, 'gradle.properties'), 'utf8');
 const manifest = fs.readFileSync(path.join(root, 'app', 'src', 'main', 'AndroidManifest.xml'), 'utf8');
 const releaseWorkflow = fs.readFileSync(path.join(root, '..', '.github', 'workflows', 'android-release.yml'), 'utf8');
+const stagingWorkflow = fs.readFileSync(path.join(root, '..', '.github', 'workflows', 'android-build.yml'), 'utf8');
 
 function must(condition, message) {
   if (!condition) throw new Error(message);
@@ -50,4 +51,10 @@ must(releaseWorkflow.includes('build_update_manifest.py'),
   'Signed release must generate a machine-readable update manifest');
 must(releaseWorkflow.includes('gh release create') && releaseWorkflow.includes('portal-update.json'),
   'Signed release must publish APK, checksum and manifest through GitHub Releases');
+must(!stagingWorkflow.includes('trycloudflare.com'),
+  'Staging workflow must never commit an expiring Quick Tunnel URL');
+must(stagingWorkflow.includes('staging_api_url') && stagingWorkflow.includes('vars.PORTAL_STAGING_API_URL'),
+  'Staging workflow must accept a runtime/Actions-variable HTTPS endpoint');
+must(stagingWorkflow.includes("'https://portal.invalid'"),
+  'Staging workflow must fail disconnected instead of silently using a stale endpoint');
 console.log('Android build security checks: OK');

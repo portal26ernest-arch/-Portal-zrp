@@ -2,6 +2,12 @@ name: Build PORTAL Android APK
 
 on:
   workflow_dispatch:
+    inputs:
+      staging_api_url:
+        description: "Temporary HTTPS staging API URL for this artifact"
+        required: false
+        default: ""
+        type: string
   push:
     branches: [ "main", "portal-next-b003", "codex-documents-excel-part4", "codex-communications-news-part5", "assistant-release-3.4-candidate", "codex-finalization-megapack-part12" ]
     paths:
@@ -18,8 +24,10 @@ jobs:
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-      # Temporary Stage 7 preview endpoint. The app still allows changing the server in Settings.
-      PORTAL_STAGING_API_URL: https://belong-level-deutschland-jurisdiction.trycloudflare.com
+      # Never pin an expiring tunnel in Git. Manual runs may inject the current
+      # HTTPS staging URL; repository variables can provide a stable staging host.
+      # Otherwise the APK starts disconnected and the user selects the server in Settings.
+      PORTAL_STAGING_API_URL: ${{ github.event.inputs.staging_api_url || vars.PORTAL_STAGING_API_URL || 'https://portal.invalid' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
