@@ -288,6 +288,10 @@ test('browser UI regression',async t=>{
       await director.page.waitForFunction(()=>document.querySelector('#content').textContent.includes('Правила сохранены')||document.querySelector('#content').textContent.includes('Понедельник'));
       assert.equal(await director.page.locator('#controlMonday').inputValue(),'10:00');
       assert.equal(await director.page.locator('#controlWednesday').inputValue(),'11:00');
+      await director.page.locator('#controlMonday').fill('09:30');await director.page.locator('#controlForm [type=submit]').click();
+      await director.page.waitForFunction(()=>mock.calls.some(c=>c.method==='POST'&&c.url==='/api/v3/settings'));
+      const saved=await director.page.evaluate(()=>mock.calls.find(c=>c.method==='POST'&&c.url==='/api/v3/settings'));
+      assert.equal(saved.body.monday_time,'09:30');assert.equal(saved.body.utc_offset_minutes,180);assert.equal(Object.hasOwn(saved.body,'company_id'),false);
       assert.deepEqual(director.errors,[]);await director.page.close();
       const manager=await fixture(browser,'manager',{width:390,height:844},true);
       await manager.page.evaluate(()=>mock.stage3Permissions=['work.write','tasks.read']);await login(manager.page);
