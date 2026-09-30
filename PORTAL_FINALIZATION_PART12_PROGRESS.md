@@ -381,3 +381,30 @@ Production cutover **NOT performed**.
 - Continue software tasks: A module-toggle/server policy and director settings UI plus remaining invitation/audit role matrix; B product CRUD, aliases/rename, batch economics and managed internal returns/FBS/FBO; C persistent source-backed reminder candidates, profitability/radar/productivity; D remaining Documents revision/filter parity and Android/Web file/share contracts.
 - Existing same-company Documents cross-session E2E and invitations/seat-limit PostgreSQL proofs are already in prior Web jobs; do not describe them as newly unrun. Backup restore/VPS rehearsal and final Android build remain separate gates.
 - No roadmap status was promoted. No completion/blocked flag created. Production cutover **NOT performed**.
+
+## AUTOMATIC CONTINUATION — product catalog and honest batch plan — 2026-09-30
+
+### DONE NOW
+
+- Started from pushed clean `e6c80e3`; fetched `origin` and confirmed it was current. Added client-scoped product catalog with stable IDs, create/rename/archive/search, capability enforcement, duplicate-active-name guard, product selection for new batches, and immutable product-name snapshots on existing batches.
+- Added additive PostgreSQL Stage 12 to permit only product catalog metadata edits in the shared production ledger immutability trigger. The staging migration list and disposable PostgreSQL fixture include Stage 12; no legacy or production data was backfilled or rewritten.
+- Corrected batch economics: when no plan rows exist, plan and variance are null and the shared UI labels them “Недоступно”; actual values remain source-backed. Per-unit amounts use integer kopecks with deterministic half-up rounding.
+- Commits pushed: `c5e75ec` (`feat: add stable client product catalog`), `4e38943` (`fix: show missing batch plan as unavailable`). Roadmap item 35 moved to ✅ only after service, browser, and disposable PostgreSQL verification; counts are now **73 ✅ / 33 🟡 / 8 ⏳ / 12 🔌**.
+
+### TESTS / CI AT `4e38943cb8e9262e95701081f6ffc3f6ca5a7f5c`
+
+- `python -m unittest discover -s server -p 'test_*.py' -q`: **228 passed, 27 skipped, 0 failed**; opt-in PostgreSQL/PDF gates account for skips.
+- `node --test`: **46 passed, 0 skipped, 0 failed**, including full Playwright UI/browser scenarios, Web Share contracts, Android native file-source contracts, and shared role flows. Focused UI separately passed **25/25**.
+- `python -m unittest ops.test_infra_readiness -v`: **7 passed, 0 failed**.
+- Targeted product catalog and batch economics tests passed; Stage 12 PostgreSQL product test is in the successful Web disposable PostgreSQL job.
+- `python -m compileall -q server ops android_src/tools`, relevant `node --check`, all workflow YAML parsing, and `git diff --check`: passed.
+- GitHub Server `36658950142`, Web `36658950177` (Web and `documents-postgresql`), Android UI `36658950145`, and APK build `36658950150`: all success. Staging remains `3.5-dev-staging`, versionCode 35. Artifact `PORTAL_Android_3.5-dev_staging_7d0a6bf83b17054b9f53697c1fb69e77de90ebefa55c1ca2988a001548efed65`; APK SHA-256 `7d0a6bf83b17054b9f53697c1fb69e77de90ebefa55c1ca2988a001548efed65`; ZIP SHA-256 `f9a644f2b3fccafc88fd4fdf4ee000240390e3894dfd52e215222fe31dea8c67`.
+- No local PostgreSQL server/disposable DSN was available; local opt-in PG fixtures were skipped without creating resources. The remote Stage 12 fixture ran against the workflow disposable PostgreSQL service. No production DB/service, DNS, secrets, or physical device was touched.
+
+### NOT DONE / EXACT NEXT
+
+- A remains partial: complete director settings policy and remaining invitation/access/audit role paths, including fresh PostgreSQL tests where needed.
+- B remains partial: tariff effective-date/conflict/history coverage, stable client rename/alias history, complete batch economics inputs, and generic internal FBS/FBO/returns workflow.
+- C remains partial: source-backed profitability/productivity/radar completeness and reminder candidate persistence/dispatch. The runner primitive is not an enabled production scheduler.
+- D: preserve prior same-company cross-session Documents PostgreSQL success; complete remaining revision/filter UI parity and any Android/Web file/share contract gaps not covered by the new `node --test` pass.
+- Next implementation: build tenant-scoped, source-backed reminder candidate selection and persistence/idempotency integration from overdue invoices and unbilled completed work; add isolated PostgreSQL tests, then continue B and remaining A/D gaps. Do not create autopilot completion/blocked flags. Production cutover **NOT performed**.
