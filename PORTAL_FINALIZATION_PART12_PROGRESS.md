@@ -941,3 +941,12 @@ Production cutover **NOT performed**.
 - Current roadmap counts: **78 ✅ / 30 🟡 / 6 ⏳ / 12 🔌**. Production DB, DNS, release secrets and cutover remain untouched.
 
 **Exact NEXT:** finish item 17 Client 360 by wiring the existing client operation/tariff management path directly from the client card if the existing server capability supports it, with role/UI regression and no duplicate business logic. Then continue only remaining software-completable items; keep domain, physical-device checks, off-server backup target, signed Windows publication, official news sources and production cutover as external owner/provider gates.
+
+## VERIFIED - Client 360 operation and tariff actions - `4ed5ce8` - 2026-09-30
+
+- Client profile now exposes the existing client operation editor only when the catalogue capability is present, and the existing append-only tariff version form only when `rates.employee` or `rates.client` is granted. A tariff created from the profile returns to the same Client 360 card; the restricted-role regression verifies both controls are absent.
+- Local full Android/Web Node+Playwright suite: **56/56 passed**; JavaScript parse checks and `git diff --check` passed.
+- GitHub Web run `36772536623` passed browser/static checks and disposable PostgreSQL. The PG job passed **34 tests / 2 gated skips** and teardown verified `db=0 roles=0 temp=0`. Android UI run `36772536669` and staging APK run `36772536563` passed. Server 3.11/3.13 remained green at unchanged server source SHA `42dd31f`.
+- Item 17 remains 🟡 because its broader client profile and linked-data acceptance is not fully closed. Counts remain **78 ✅ / 30 🟡 / 6 ⏳ / 12 🔌**. No production systems or secrets were used.
+
+**Exact NEXT:** inspect the existing Today service/UI contract against roadmap item 44. The service returns monthly work volume and closed-period payroll totals, but verify whether the shared management dashboard renders both. If absent, add capability-gated metrics and no-closed-period state with service/API/browser/disposable PostgreSQL regressions, without showing payroll fields to roles lacking payroll visibility. Then continue the remaining radar/productivity/reminder software checks; leave external rollout gates open.

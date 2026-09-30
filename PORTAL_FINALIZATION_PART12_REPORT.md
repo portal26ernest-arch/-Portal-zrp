@@ -782,3 +782,11 @@ Roadmap items **38** and **43** are therefore promoted to ✅. Payroll balances 
 Current counts: **78 ✅ / 30 🟡 / 6 ⏳ / 12 🔌**.
 
 **Exact NEXT:** close the remaining source-backed Client 360 operation/tariff management gap, then proceed through the remaining software-completable release items. External gates remain explicitly separate.
+
+## Client 360 operation and tariff entry point - `4ed5ce8`
+
+The shared Client 360 profile now links authorized users to the existing operation editor and append-only tariff-version form, preserving existing capabilities and server validation. A tariff write refreshes the same client card. UI coverage checks the write payload and hides both actions from a client-read-only role. Local Node/Playwright: 56/56; Web/static and disposable PostgreSQL CI passed (34 tests, 2 gated skips, cleanup db=0 roles=0 temp=0); Android UI and APK CI passed. Server 3.11/3.13 remained green on the unchanged server source SHA `42dd31f`.
+
+Item 17 remains 🟡 pending broader Client 360 linked-profile acceptance. Counts remain 78 ✅ / 30 🟡 / 6 ⏳ / 12 🔌; production cutover not performed.
+
+**Exact NEXT:** validate item 44 Today UI against its existing API result: render monthly work volume and closed-period payroll accrued/paid/balance only when the caller has the corresponding capabilities, with an honest empty state. Add role, browser, service, and disposable PostgreSQL checks only for a confirmed gap; then continue radar/productivity/reminder and remaining Documents coverage.
