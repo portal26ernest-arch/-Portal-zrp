@@ -716,10 +716,10 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
                                                 work_ids=[]),invoice_id)
                 conn.commit()
         try:
-            first=run_enabled_companies(now=now,run_prefix='pg-reminder-operator')
+            first=run_enabled_companies(now=now,run_prefix='pg-reminder-operator',application=self.portal)
             self.assertEqual((first['companies_seen'],first['companies_run'],first['failures']), (2,1,0))
             self.assertGreaterEqual(first['sent'],1)
-            retry=run_enabled_companies(now=now,run_prefix='pg-reminder-operator-retry')
+            retry=run_enabled_companies(now=now,run_prefix='pg-reminder-operator-retry',application=self.portal)
             self.assertGreaterEqual(retry['duplicate'],1)
             with self.portal.tenants.company_scope(1),self.portal.db() as conn:
                 notices=Repository(conn,1).list('notifications')

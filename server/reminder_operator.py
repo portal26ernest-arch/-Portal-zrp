@@ -68,9 +68,16 @@ def run_company_jobs(company_ids, *, open_company, company_available, run_job,
     return summary
 
 
-def run_enabled_companies(*, now=None, run_prefix=None):
-    """Enumerate the control registry and process only available PostgreSQL tenants."""
-    import portal_app_server as app
+def run_enabled_companies(*, now=None, run_prefix=None, application=None):
+    """Enumerate the control registry and process only available PostgreSQL tenants.
+
+    `application` is an explicit composition seam for isolated integration tests
+    that load the server module under a fixture-specific module name. Production
+    callers omit it and use the normal process entry point.
+    """
+    app = application
+    if app is None:
+        import portal_app_server as app
     from reminder_jobs import run_configured_company
 
     if app.CONFIG.backend != "postgresql":
