@@ -548,9 +548,14 @@ class ProductionTest(unittest.TestCase):
         before=self.get('finance')['data'];base=before['clients'][0]['profit']
         self.post('expenses',dict(category_code='rent',amount=10,incurred_at=datetime.now().date().isoformat(),note='Склад'))
         data=self.get('finance')['data']
+        from production_service import margin_basis_points
         self.assertEqual(data['clients'][0]['profit'],base)
         self.assertEqual(data['company_overhead'],1000)
         self.assertEqual(data['net_profit'],base-1000)
+        self.assertEqual(data['totals'],{key:sum(row[key] for row in data['clients']) for key in ('revenue','salary','materials','other')})
+        self.assertEqual(data['clients'][0]['margin_bps'],margin_basis_points(data['clients'][0]['profit'],data['clients'][0]['revenue']))
+        self.assertEqual(data['client_margin_bps'],margin_basis_points(data['client_profit'],data['totals']['revenue']))
+        self.assertEqual(data['net_margin_bps'],margin_basis_points(data['net_profit'],data['totals']['revenue']))
         self.assertEqual(self.get('expenses')['data'][0]['category_code'],'rent')
         self.post('expenses',dict(category_code='unknown',amount=1),status=400)
         self.post('expenses',dict(category_code='rent',amount=1),self.worker,status=403)

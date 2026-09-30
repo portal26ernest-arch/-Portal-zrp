@@ -916,7 +916,9 @@ class Production:
             rows=[w for w in works if w['client_id']==c['id']];revenue=sum(w['revenue'] for w in rows)
             salary=sum(w['salary'] for w in rows);material=sum(u['cost'] for u in usage if u['client_id']==c['id']);other=sum(e['amount'] for e in expenses if e.get('client_id')==c['id'])
             profit=revenue-salary-material-other;batches=[b for b in self.scoped('batches') if b['client_id']==c['id']]
-            clients.append(dict(client_id=c['id'],client_name=c['name'],revenue=revenue,salary=salary,materials=material,other=other,profit=profit,margin=profit/revenue if revenue else None,average_batch_profit=sum(self.economy(b['id'])['fact']['profit'] for b in batches)/len(batches) if batches else None))
+            clients.append(dict(client_id=c['id'],client_name=c['name'],revenue=revenue,salary=salary,materials=material,other=other,
+                profit=profit,margin=profit/revenue if revenue else None,margin_bps=margin_basis_points(profit,revenue),
+                average_batch_profit=sum(self.economy(b['id'])['fact']['profit'] for b in batches)/len(batches) if batches else None))
         for w in works:
             month=company_date(w['completed_at'],offset).strftime('%Y-%m');m=months.setdefault(month,dict(revenue=0,salary=0,materials=0,other=0,overhead=0));m['revenue']+=w['revenue'];m['salary']+=w['salary']
         for row in usage:
@@ -927,9 +929,15 @@ class Production:
             else:m['other']+=row['amount']
         for m in months.values():
             m['profit']=m['revenue']-m['salary']-m['materials']-m['other']-m['overhead']
+            m['margin_bps']=margin_basis_points(m['profit'],m['revenue'])
         overhead=sum(e['amount'] for e in expenses if e.get('client_id') is None)
+        total_revenue=sum(c['revenue'] for c in clients)
+        totals={key:sum(c[key] for c in clients) for key in ('revenue','salary','materials','other')}
         client_profit=sum(c['profit'] for c in clients)
-        return dict(clients=clients,months=months,company_overhead=overhead,client_profit=client_profit,net_profit=client_profit-overhead,currency='RUB',money_unit='kopeck')
+        net_profit=client_profit-overhead
+        return dict(clients=clients,months=months,totals=totals,company_overhead=overhead,client_profit=client_profit,
+                    client_margin_bps=margin_basis_points(client_profit,total_revenue),net_profit=net_profit,
+                    net_margin_bps=margin_basis_points(net_profit,total_revenue),currency='RUB',money_unit='kopeck')
 
     def invoices(self):
         self.need('invoices.read');rows=self.scoped('invoices');payments=self.scoped('payments')
