@@ -272,7 +272,7 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.assertEqual(current[before['id']]['salary'],400)
         self.assertEqual((after['salary'],after['employee_rate']),(600,300))
 
-    def test_client_rename_history_aliases_are_company_scoped_on_postgresql(self):
+    def test_z_client_rename_history_aliases_are_company_scoped_on_postgresql(self):
         client_id=self.request('/api/admin/clients',self.admin,{'name':'Synthetic alias client'})['id']
         operation=self.request(f'/api/admin/clients/{client_id}/operations',self.admin,
                                {'name':'Alias test packing','employee_rate':2,'client_rate':5})['id']
