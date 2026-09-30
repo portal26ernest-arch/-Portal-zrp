@@ -694,6 +694,48 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
             self.assertEqual(Repository(conn,2).list('notifications'),[])
             self.assertEqual(Repository(conn,2).list('reminder_job_runs'),[])
 
+    def test_z_postgresql_reminder_operator_visits_only_available_opted_in_tenants(self):
+        from datetime import datetime, timedelta, timezone
+        from production_repository import Repository
+        from reminder_operator import run_enabled_companies
+
+        now=datetime.now(timezone.utc)
+        invoice_id='pg-reminder-operator-overdue'
+        saved_settings={}
+        for company_id in (1,2):
+            with self.portal.tenants.company_scope(company_id),self.portal.db() as conn:
+                repo=Repository(conn,company_id)
+                saved=repo.get('settings','control',False)
+                saved_settings[company_id]=saved
+                settings=dict(saved or {},reminder_enabled=(company_id==1),
+                              reminder_cadence='daily',utc_offset_minutes=0)
+                if saved:repo.update('settings',settings)
+                else:repo.insert('settings',settings,'control')
+                if company_id==1:
+                    repo.insert('invoices',dict(amount=1234,due_at=(now.date()-timedelta(days=2)).isoformat(),
+                                                work_ids=[]),invoice_id)
+                conn.commit()
+        try:
+            first=run_enabled_companies(now=now,run_prefix='pg-reminder-operator')
+            self.assertEqual((first['companies_seen'],first['companies_run'],first['failures']), (2,1,0))
+            self.assertGreaterEqual(first['sent'],1)
+            retry=run_enabled_companies(now=now,run_prefix='pg-reminder-operator-retry')
+            self.assertGreaterEqual(retry['duplicate'],1)
+            with self.portal.tenants.company_scope(1),self.portal.db() as conn:
+                notices=Repository(conn,1).list('notifications')
+                self.assertEqual(sum(row['entity_id']==invoice_id for row in notices),1)
+            with self.portal.tenants.company_scope(2),self.portal.db() as conn:
+                self.assertFalse(any(row['entity_id']==invoice_id for row in Repository(conn,2).list('notifications')))
+        finally:
+            for company_id in (1,2):
+                with self.portal.tenants.company_scope(company_id),self.portal.db() as conn:
+                    repo=Repository(conn,company_id)
+                    saved=saved_settings[company_id]
+                    restore=dict(saved or {},reminder_enabled=False,reminder_cadence='daily',utc_offset_minutes=0)
+                    if saved:repo.update('settings',restore)
+                    else:repo.insert('settings',restore,'control')
+                    conn.commit()
+
     def test_postgresql_api_enforces_standard_active_user_limit(self):
         """The standard company limit is enforced by the server, not just the UI."""
         access=self.request('/api/v3/company-access',self.tokens[2])['data']

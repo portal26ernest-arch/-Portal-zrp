@@ -96,6 +96,24 @@ class InfraReadinessTest(unittest.TestCase):
         self.assertNotIn("PGPASSWORD=", text)
         self.assertNotIn("password=", text.lower())
 
+    def test_reminder_systemd_example_is_hardened_and_not_installed_by_default(self):
+        service_path = ROOT / "ops/systemd/portal-reminder-scheduler.service.example"
+        timer_path = ROOT / "ops/systemd/portal-reminder-scheduler.timer.example"
+        self.assertTrue(service_path.is_file())
+        self.assertTrue(timer_path.is_file())
+        service = service_path.read_text(encoding="utf-8")
+        timer = timer_path.read_text(encoding="utf-8")
+        self.assertIn("ExecStart=/opt/portal/venv/bin/python /opt/portal/current/server/reminder_operator.py", service)
+        self.assertIn("EnvironmentFile=/etc/portal/portal.env", service)
+        self.assertIn("NoNewPrivileges=true", service)
+        self.assertIn("ProtectSystem=strict", service)
+        self.assertIn("RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6", service)
+        self.assertNotIn("PGPASSWORD=", service)
+        self.assertIn("OnCalendar=hourly", timer)
+        self.assertIn("Unit=portal-reminder-scheduler.service", timer)
+        self.assertTrue(service_path.name.endswith(".example"))
+        self.assertTrue(timer_path.name.endswith(".example"))
+
     def test_example_env_has_no_secret_value(self):
         text = (ROOT / "ops/backup.env.example").read_text(encoding="utf-8")
         self.assertNotIn("PGPASSWORD=", text)

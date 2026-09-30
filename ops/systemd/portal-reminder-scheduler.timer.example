@@ -1,0 +1,11 @@
+[Unit]
+Description=PORTAL internal reminder evaluation schedule (disabled until installed/enabled)
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=5m
+Unit=portal-reminder-scheduler.service
+
+[Install]
+WantedBy=timers.target

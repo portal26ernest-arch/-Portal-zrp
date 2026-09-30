@@ -1,0 +1,27 @@
+[Unit]
+Description=PORTAL internal reminder scheduler (operator opted-in companies only)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=portal
+Group=portal
+WorkingDirectory=/opt/portal/current/server
+EnvironmentFile=/etc/portal/portal.env
+ExecStart=/opt/portal/venv/bin/python /opt/portal/current/server/reminder_operator.py
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
