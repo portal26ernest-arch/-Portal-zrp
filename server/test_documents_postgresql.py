@@ -570,7 +570,7 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         restore={key:original.get(key) for key in ('name','status','monthly_price','demo_enabled','demo_start',
                                                     'demo_end','user_limit','service_status','module_toggles')}
         try:
-            start=(datetime.now(timezone.utc).replace(tzinfo=None)+timedelta(days=1)).replace(microsecond=0)
+            start=(datetime.now(timezone.utc).replace(tzinfo=None)-timedelta(days=1)).replace(microsecond=0)
             end=start+timedelta(days=7)
             requested={'monthly_price':123456,'user_limit':16,'demo_enabled':1,
                        'demo_start':start.isoformat(timespec='seconds'),'demo_end':end.isoformat(timespec='seconds'),
