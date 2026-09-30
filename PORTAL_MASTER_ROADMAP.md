@@ -69,7 +69,7 @@
 
 53. 🟡 Общий Documents API подключён к Android/Web UI; в Web реализованы список, фильтры, поиск, пагинация, скачивание, архивирование и PDF-действия. Production rollout ещё не проверен.
 54. ✅ Blob и document metadata разделены, company-scoped storage и FORCE RLS подтверждены; PDF-specific PostgreSQL E2E с реальным renderer прошёл в одноразовой test DB с cleanup.
-55. 🟡 Filters/paging Documents API и общий Web list/search UI реализованы; серверные regression-тесты фильтрации проходят, полная browser-матрица остаётся для staging.
+55. 🟡 Filters/paging Documents API и общий Web list/search UI реализованы; клиентский и employee ID фильтры доступны только ролям с соответствующими capability, Playwright проверяет scope UI, server API поддерживает company-scoped фильтры. Полная production-матрица остаётся открытой.
 56. 🟡 Общий Web-экран Documents и серверные права/archive покрыты backend-тестами и browser smoke; production deployment ещё не проверен.
 57. ✅ Стандартный Excel-шаблон PORTAL v1.0: четыре русских листа, blank/prefill API для директора и выбранной компании Platform Owner; openpyxl round trip и изоляция проверены.
 58. ✅ Web blank/prefilled Excel template download подтверждён реальным Chromium → HTTP API → disposable PostgreSQL E2E: реальные browser downloads, XLSX signature, MIME/filename, SHA-256 совпадение с server payload, разные blank/prefill contents и cross-company HTTP 403.
@@ -82,7 +82,7 @@
 65. ✅ Backend: дубли, неоднозначные identity, unique-конфликты и идемпотентный повтор import_id/checksum проверены, включая реальную PostgreSQL.
 66. ✅ Backend: явный apply к выбранной компании, атомарный rollback, неизменяемый результат и отчёт в Documents проверены в SQLite и одноразовой PostgreSQL. Production rollout не выполнялся.
 67. ✅ Payroll XLSX export и invoice/payroll PDF routes реализованы; реальный ReportLab renderer и PDF PostgreSQL E2E с tenant isolation/immutability подтверждены.
-68. 🟡 Общий Documents API и Web-скачивание доступны; независимые HTTP-сессии одной компании прошли create/list/metadata/download/archive E2E на disposable PostgreSQL (Part 12 Web #33, cleanup DB/roles/temp=0). Production rollout и оставшаяся UI revision/history parity не проверены.
+68. 🟡 Общий Documents API и Web-скачивание доступны; независимые HTTP-сессии одной компании прошли create/list/metadata/download/archive E2E на disposable PostgreSQL (Part 12 Web #33 и #66; cleanup DB/roles/temp=0). Web #66 прогнал 20 PostgreSQL тестов (18 passed, 2 gated skips). Production rollout и revision/history UI parity не закрыты.
 
 ## E. Внутренние коммуникации
 

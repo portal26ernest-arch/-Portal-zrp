@@ -493,3 +493,30 @@ Production cutover **NOT performed**.
 - C remains partial: full unified client/batch/company profitability UI, period comparisons and trusted timer/company cadence enablement for reminders; keep production scheduler disabled.
 - D remains partial: existing same-company independent-session PostgreSQL success stands; continue Documents history/filter parity and final Android/Web file contracts.
 - After software gaps, finish employee_id/telegram_id runtime-boundary audit, legacy money-field cents inventory/reconciliation, marketplace news operator framework, backup restore rehearsal, Windows installer, and final release evidence. No autopilot flag: software work remains. Production cutover **NOT performed**.
+
+## AUTOMATIC CONTINUATION — Documents client/employee filters — 2026-09-30
+
+### DONE NOW
+
+- Added virtual Documents filters for client ID and stable employee ID. Client filtering appears only with `clients.read`/`clients.manage`; employee filtering appears only with `users.manage`/`payroll.all`. Submitted values use the existing tenant-scoped server query; no company selector/header was added.
+- Playwright proves both filters are sent together for an authorized admin and both are absent for a user with only `documents.read`. Added server regression for canonical employee ID filter and foreign-company query denial.
+- Commits: `3223ad0` UI + browser role assertions; `ba9035a` employee filter server regression; `c732067` fixes the payroll XLSX idempotency test to reuse its request ID. Branch clean/pushed at `c7320674f4cd033f4e60ad16a7286cae7a69596a`.
+- No roadmap promotion; counts remain **73 ✅ / 34 🟡 / 7 ⏳ / 12 🔌**.
+
+### TESTS / CI
+
+- `node --test android_src/tests/ui.test.cjs`: **27 passed, 0 skipped, 0 failed**.
+- `node --test android_src/tests/*.test.cjs`: **48 passed, 0 skipped, 0 failed**.
+- `python -m unittest test_documents_api test_portal_documents test_postgresql_documents_schema -q`: **22 passed, 0 failed** on successful repeat; `python -m compileall -q .` from `server/` and `git diff --check`: passed.
+- One preceding Documents-suite attempt had **21 passed/1 failed** because the payroll slip XLSX retry supplied a new request ID; fixed in `c732067`, then the 22-test suite passed. The first Server CI at `ba9035a` caught the same test-only issue; fixed and rerun green.
+- GitHub Web `36668181017` at `ba9035a`: Web and disposable PostgreSQL jobs passed. PostgreSQL fixture ran **20 tests, 18 passed, 2 skipped** (real PDF and in-fixture Chromium gates), and confirmed cleanup `db=0 roles=0 temp=0`. It included independent same-company session Documents create/list/metadata/download/archive and cross-company denial.
+- GitHub Server `36668180785` at `c732067`: Python 3.11 and 3.13 both **247 tests, 32 skipped, 0 failed**. Android UI `36667824748` and APK `36667824984` at `3223ad0` passed; APK artifact `PORTAL_Android_3.5-dev_staging_d9a8def27b9365eda12d419aefcd95f40831d31715e56626577e6391116f57a5`, SHA suffix `d9a8def27b9365eda12d419aefcd95f40831d31715e56626577e6391116f57a5`, version 3.5-dev-staging/versionCode 35.
+- Local Documents PG opt-in tests created no resources. Real PostgreSQL execution used GitHub's disposable test fixture; cleanup assertions passed. No VPS/production DB or service was used.
+
+### NOT DONE / EXACT NEXT
+
+- A: complete remaining invite/audit role policy matrix and broader director settings; current director UI only exposes existing schedule/presence settings.
+- B: finish Client 360 editable blocks, normalization/alias history completeness, full batch economics and managed FBS/FBO lifecycle.
+- C: finish unified source-backed profitability UI and productivity period comparison; persistent reminder cadence/system timer remains absent/disabled.
+- D: document revision/history parity beyond current revision labels, then retain existing cross-session PG E2E and file/share contracts in final regression.
+- Continue employee_id/telegram_id runtime-boundary and legacy monetary REAL inventory/reconciliation, news operator framework, backup restore rehearsal and Windows installer. No autopilot flag; software work remains. Production cutover **NOT performed**.
