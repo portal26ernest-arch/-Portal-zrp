@@ -154,6 +154,8 @@ def next_run_at(now, cadence, utc_offset_minutes=0):
         raise ValueError("Reminder clock must include a timezone")
     if cadence not in {"daily", "weekly"}:
         raise ValueError("Unsupported reminder cadence")
+    if type(utc_offset_minutes) is not int or not -840 <= utc_offset_minutes <= 840:
+        raise ValueError("Invalid reminder UTC offset")
     zone = timezone(timedelta(minutes=utc_offset_minutes))
     local = now.astimezone(zone)
     if cadence == "daily":
@@ -179,6 +181,8 @@ def run_scheduled_company(repository, *, enabled=False, cadence="daily",
     current = now or datetime.now(timezone.utc)
     if not isinstance(current, datetime) or current.tzinfo is None:
         raise ValueError("Reminder clock must include a timezone")
+    if type(enabled) is not bool:
+        raise ValueError("Reminder scheduler enable flag must be explicit")
     if run_id is None:
         run_id = str(uuid.uuid4())
     if not isinstance(run_id, str) or not _KEY_PART.fullmatch(run_id):
@@ -191,10 +195,14 @@ def run_scheduled_company(repository, *, enabled=False, cadence="daily",
     result = {"enabled": False, "sent": 0, "duplicate": 0, "failed": 0}
     candidates = []
     if enabled:
-        candidates = source_candidates(repository, current,
-                                       utc_offset_minutes=utc_offset_minutes)
-        result = runner.run(company_id, candidates,
-                            dispatch_once=repository_dispatcher(repository, occurred_at=current))
+        try:
+            candidates = source_candidates(repository, current,
+                                           utc_offset_minutes=utc_offset_minutes)
+            result = runner.run(company_id, candidates,
+                                dispatch_once=repository_dispatcher(repository, occurred_at=current))
+        except Exception:
+            # Exception messages may contain SQL or tenant data.
+            result = {"enabled": True, "sent": 0, "duplicate": 0, "failed": 1}
     outcome = "disabled" if not enabled else ("retryable" if result["failed"] else "success")
     record = dict(company_id=company_id, run_id=run_id, cadence=cadence,
                   cadence_id=cadence_id, started_at=current.astimezone(timezone.utc).isoformat(),

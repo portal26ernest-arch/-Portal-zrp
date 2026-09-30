@@ -71,6 +71,11 @@ class ReminderRunnerTests(unittest.TestCase):
                 runner.run(company, [], dispatch_once=lambda *_: True)
         with self.assertRaises(ValueError):
             ReminderRunner(utc_offset_minutes=900)
+        connection=sqlite3.connect(':memory:')
+        try:
+            connection.execute('CREATE TABLE portal_production(company_id INTEGER,kind TEXT,id TEXT,payload TEXT,created_at TEXT,PRIMARY KEY(company_id,kind,id))')
+            with self.assertRaises(ValueError):run_scheduled_company(Repository(connection,8),enabled='yes')
+        finally:connection.close()
 
     def test_candidate_identity_rejects_control_and_secret_like_values(self):
         with self.assertRaises(ValueError):
@@ -128,6 +133,31 @@ class ReminderRunnerTests(unittest.TestCase):
         now=datetime(2026,9,30,21,30,tzinfo=timezone.utc)
         self.assertEqual(next_run_at(now,'daily',180),'2026-10-01T21:00:00+00:00')
         self.assertEqual(next_run_at(now,'weekly',180),'2026-10-04T21:00:00+00:00')
+        with self.assertRaises(ValueError):next_run_at(now,'daily',True)
+
+    def test_operator_retry_records_generic_failure_then_success(self):
+        connection=sqlite3.connect(':memory:')
+        try:
+            connection.execute('CREATE TABLE portal_production(company_id INTEGER,kind TEXT,id TEXT,payload TEXT,created_at TEXT,PRIMARY KEY(company_id,kind,id))')
+            repository=Repository(connection,8)
+            repository.insert('works',{'client_id':1},'work-retry')
+            original=repository.insert_once
+            failed_once=[]
+            def flaky(kind,data,identity):
+                if kind=='notifications' and not failed_once:
+                    failed_once.append(True)
+                    raise RuntimeError('private backend detail must not be stored')
+                return original(kind,data,identity)
+            repository.insert_once=flaky
+            now=datetime(2026,9,30,21,tzinfo=timezone.utc)
+            first=run_scheduled_company(repository,enabled=True,now=now,run_id='retry-run-1')
+            second=run_scheduled_company(repository,enabled=True,now=now,run_id='retry-run-2')
+            self.assertEqual(first['outcome'],'retryable')
+            self.assertEqual((second['outcome'],second['sent']),('success',1))
+            records=repository.list('reminder_job_runs')
+            self.assertEqual({row['outcome'] for row in records},{'retryable','success'})
+            self.assertNotIn('private backend detail',str(records))
+        finally:connection.close()
 
 
 if __name__ == "__main__":
