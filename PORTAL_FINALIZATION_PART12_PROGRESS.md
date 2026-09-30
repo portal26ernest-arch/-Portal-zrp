@@ -1012,3 +1012,12 @@ Production cutover **NOT performed**.
 - Roadmap item 28 is now ✅. Numbered counts: **88 ✅ / 20 🟡 / 6 ⏳ / 12 🔌**. No new planning source was invented; production cutover was not performed.
 
 **Exact NEXT:** enumerate the remaining 🟡 roadmap items and classify each as (a) software-completable now, (b) physical-device/manual gate, or (c) external/provider/production gate. Continue only category (a) automatically.
+
+## VERIFIED — Documents UI functional closeout — 2026-10-01
+
+- Roadmap items 53, 55 and 56 had no remaining software defect: Android/Web Documents UI already implements list/search/filter/paging, capability-gated client/employee filters, metadata/download/archive/history/PDF actions, and revision/status presentation. Server filters are company-scoped and cross-company access is denied.
+- Same-company independent-session PostgreSQL E2E and item 68 already prove shared server truth; current shared browser regression covers ordered revisions, archived/current labels and denied history. Native Android chooser/file visual behavior is deliberately left in items 59/63 rather than duplicated as a blocker here.
+- Latest complete evidence remains green: Android UI run **76** at `fa680cd`; Web/disposable PostgreSQL run **154** at `a80d3a3` (**35 tests / 2 skips**, cleanup **db=0 roles=0 temp=0**); Server run **161** (**300 tests / 47 skips / 0 failures** per Python version).
+- Roadmap items 53, 55 and 56 are now ✅. Numbered counts: **91 ✅ / 17 🟡 / 6 ⏳ / 12 🔌**. Production deployment/cutover is tracked separately and was not performed.
+
+**Exact NEXT:** inspect item 33 alias/history completeness as the main remaining software-completable 🟡. Keep item 46 partial until a real defect/quality source exists; treat 59/60/61/63/80/83/85/86/93/105/125 as manual/external gates unless a source-code defect is discovered.

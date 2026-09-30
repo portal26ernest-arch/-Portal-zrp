@@ -67,10 +67,10 @@
 
 ## D. Документы и Excel-импорт/экспорт
 
-53. 🟡 Общий Documents API подключён к Android/Web UI; в Web реализованы список, фильтры, поиск, пагинация, скачивание, архивирование и PDF-действия. Production rollout ещё не проверен.
+53. ✅ Общий Documents API подключён к Android/Web UI: список, фильтры, поиск, пагинация, скачивание, архивирование и PDF-действия покрыты shared UI/backend и disposable PostgreSQL. Production rollout отслеживается отдельно.
 54. ✅ Blob и document metadata разделены, company-scoped storage и FORCE RLS подтверждены; PDF-specific PostgreSQL E2E с реальным renderer прошёл в одноразовой test DB с cleanup.
-55. 🟡 Filters/paging Documents API и общий Web list/search UI реализованы; клиентский и employee ID фильтры доступны только ролям с соответствующими capability, Playwright проверяет scope UI, server API поддерживает company-scoped фильтры. Полная production-матрица остаётся открытой.
-56. 🟡 Общий Web-экран Documents и серверные права/archive покрыты backend-тестами и browser smoke; production deployment ещё не проверен.
+55. ✅ Filters/paging Documents API и общий Web list/search UI: client/employee filters capability-gated, company-scoped на сервере и проверены Playwright/PostgreSQL, включая cross-company denial и paging/search scope.
+56. ✅ Общий Web-экран Documents и серверные права/archive/download/history покрыты backend, shared browser regression и disposable PostgreSQL; deployment/cutover отслеживается отдельными release-пунктами.
 57. ✅ Стандартный Excel-шаблон PORTAL v1.0: четыре русских листа, blank/prefill API для директора и выбранной компании Platform Owner; openpyxl round trip и изоляция проверены.
 58. ✅ Web blank/prefilled Excel template download подтверждён реальным Chromium → HTTP API → disposable PostgreSQL E2E: реальные browser downloads, XLSX signature, MIME/filename, SHA-256 совпадение с server payload, разные blank/prefill contents и cross-company HTTP 403.
 59. 🟡 Android bridge сохраняет поддерживаемые файлы в Downloads через system picker/MediaStore; source/UI tests есть, Java compile и проверка на устройстве открыты.
