@@ -294,6 +294,13 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.assertNotIn(pin,json.dumps(filtered))
         self.request('/api/platform/audit',self.admin,status=403)
         self.request('/api/platform/audit',self.tokens['company_1_packer'],status=403)
+        invite_body={'action':'create','role':'packer','username':'owner-scoped-invite',
+                     'display_name':'Owner Scoped Invite','request_id':'owner-scoped-invite-once'}
+        self.request('/api/v3/invitations',owner,invite_body,method='POST',status=403)
+        selected=self.request('/api/v3/invitations',owner,invite_body,method='POST',
+                              extra_headers={'X-Portal-Company':'2'})['data']
+        self.assertTrue(selected['token'].startswith('2.'))
+        self.assertEqual(selected['invite']['company_id'],2)
 
     def test_postgresql_api_enforces_standard_active_user_limit(self):
         """The standard company limit is enforced by the server, not just the UI."""
