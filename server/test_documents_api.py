@@ -105,6 +105,15 @@ class DocumentAPITest(unittest.TestCase):
         self.get('documents?limit=201',status=400)
         self.get('documents?date_from=bad',status=400)
 
+    def test_document_employee_filter_is_scoped_and_uses_stable_employee_id(self):
+        legacy_employee_id=self.request('/api/me',self.worker)['user']['employee_id']
+        with portal.tenants.company_scope(1),portal.db() as conn:
+            employee_id=Repository(conn,1).payroll_employee(legacy_employee_id,legacy=True)['employee_id']
+        document=self.upload(employee_id=employee_id)
+        self.assertEqual(self.get('documents?employee_id='+str(employee_id))['data']['items'][0]['id'],document['id'])
+        self.assertEqual(self.get('documents?employee_id=999999')['data']['total'],0)
+        self.get('documents?employee_id='+str(employee_id)+'&company_id=2',status=403)
+
     def test_invalid_filename_mime_size_type_and_employee_reference(self):
         for values in ({'original_filename':'../x.pdf'},{'original_filename':'C:x.pdf'},{'original_filename':'x.pdf '},{'original_filename':' x.pdf'},{'mime_type':'text/plain'},
                        {'document_type':'invoice_xlsx'},{'file_b64':'bad!'},{'file_b64':''},{'employee_id':999999}):
