@@ -17,6 +17,8 @@ from urllib.error import HTTPError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
+from employee_identity import sync_employee_mappings
+
 
 @unittest.skipUnless(os.environ.get('PORTAL_PG_INTEGRATION') == '1',
                      'requires isolated PostgreSQL test VPS')
@@ -75,6 +77,10 @@ class PostgreSQLIntegration(unittest.TestCase):
                     (username, 'Synthetic ' + label + ' ' + role, role, telegram_id,
                      salt_text, digest, now, now)).fetchone()[0]
                 user_ids[role + '_username'] = username
+            # Raw fixture insertion is an explicit legacy-schema bridge. Runtime
+            # APIs use canonical employee_id, so materialize the same mapping a
+            # migrated company receives before exercising task/work flows.
+            sync_employee_mappings(cls.tenant, company_id)
             cls.tenant.commit()
             cls.companies[label] = dict(id=company_id, **user_ids)
 
@@ -122,6 +128,7 @@ class PostgreSQLIntegration(unittest.TestCase):
                     username=company[role + '_username'], pin=self.pin))
                 users[label][role] = login['token']
                 self.assertEqual(login['user']['company_id'], company['id'])
+                self.assertIsInstance(login['user'].get('employee_id'), int)
 
         same_name = 'Synthetic client ' + self.slug
         clients = {}
