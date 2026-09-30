@@ -745,7 +745,7 @@ def company_module_for_route(path):
             'tasks':'jobs','batches':'batches','shipments':'batches','returns':'batches',
             'permissions':'permissions','tariffs':'tariffs','finance':'radar','expenses':'expenses',
             'analytics':'analytics','settings':'control','documents':'documents',
-            'document-file':'documents','document-metadata':'documents','document-upload':'documents',
+            'document-file':'documents','document-metadata':'documents','document-history':'documents','document-upload':'documents',
             'document-archive':'documents','document-generate':'documents','document-template':'excelImport',
             'document-template-blank':'excelImport','document-template-info':'excelImport',
             'excel-import-preview':'excelImport','excel-import-apply':'excelImport','excel-import-result':'excelImport',

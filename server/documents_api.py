@@ -7,7 +7,7 @@ from report_xlsx import payroll_xlsx
 from portal_excel_workbook import deterministic_zip
 from financial_xlsx import invoice_xlsx, payroll_slip_xlsx
 
-DOCUMENT_ACTIONS={'documents','document-file','document-metadata','document-upload','document-archive','document-generate'}
+DOCUMENT_ACTIONS={'documents','document-file','document-metadata','document-history','document-upload','document-archive','document-generate'}
 TEMPLATE_ACTIONS={'document-template','document-template-blank','document-template-info'}
 
 def require_import(service):
@@ -35,6 +35,7 @@ def route(service,storage,action,method,values,company=None):
         identity=values.get('id',[None])[0]
         if action=='document-file':return docs.download(identity)
         if action=='document-metadata':return docs.public(docs.get(identity))
+        if action=='document-history':return docs.history(identity)
         raise ValueError('Метод не поддерживается')
     if set(values)-{'request_id','company_id','action','id','document_type','title','original_filename','mime_type',
                     'file_b64','category','client_id','employee_id','invoice_id','payroll_period_id','previous_id',

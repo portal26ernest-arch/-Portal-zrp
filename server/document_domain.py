@@ -135,6 +135,31 @@ class Documents:
             item=self.legacy(old)
         if not self.visible(item):raise PermissionError('Документ недоступен')
         return item
+    def history(self,identity):
+        """Return the visible, tenant-scoped revision chain for one document."""
+        current=self.get(identity)
+        rows=self.r.sql('SELECT '+','.join(COLUMNS)+' FROM portal_documents WHERE company_id=?',(self.r.company_id,)).fetchall()
+        items=[self._row(row) for row in rows]
+        items=[item for item in items if self.visible(item)]
+        by_id={item['id']:item for item in items}
+        if str(identity) not in by_id:
+            return [self.public(current)]
+        children={}
+        for item in items:
+            previous=item.get('previous_id')
+            if previous and previous in by_id:
+                children.setdefault(previous,[]).append(item['id'])
+        related=set();pending=[str(identity)]
+        while pending:
+            item_id=pending.pop()
+            if item_id in related:continue
+            related.add(item_id)
+            item=by_id.get(item_id)
+            if item and item.get('previous_id') in by_id:pending.append(item['previous_id'])
+            pending.extend(children.get(item_id,()))
+        ordered=sorted((by_id[item_id] for item_id in related if item_id in by_id),
+                       key=lambda item:(item.get('revision') or 1,item.get('created_at') or '',item['id']))
+        return [self.public(item) for item in ordered]
     def rows(self,params):
         self.s.need('documents.read');self.ready()
         page=int(params.get('page',['1'])[0]);limit=int(params.get('limit',['50'])[0])
@@ -192,7 +217,9 @@ class Documents:
                     self.s.client(linked['client_id'])
                     if item['client_id'] not in (None,linked['client_id']):raise ValueError('Связь клиента не совпадает')
                     item['client_id']=linked['client_id']
-        if item['previous_id']:
+        if item['previous_id'] is not None:
+            if not isinstance(item['previous_id'],str) or not item['previous_id'] or len(item['previous_id'])>128:
+                raise ValueError('Недопустимый идентификатор предыдущей версии')
             previous=self.get(item['previous_id'])
             if previous['document_type']!=document_type:raise ValueError('Тип предыдущей версии не совпадает')
             item['revision']=previous.get('revision',1)+1

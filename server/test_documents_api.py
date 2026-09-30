@@ -47,6 +47,18 @@ class DocumentAPITest(unittest.TestCase):
             self.assertNotIn('file_b64',raw[0]);self.assertTrue(raw[1].startswith('1/'))
         self.post('documents',dict(action='upload',document_type='report_pdf',original_filename='Other.pdf',mime_type='application/pdf',file_b64=base64.b64encode(PDF).decode(),request_id='doc-1'),status=400)
 
+    def test_document_history_returns_visible_revision_chain_and_denies_foreign_company(self):
+        first=self.upload(request_id='document-history-v1')
+        second=self.upload(request_id='document-history-v2',previous_id=first['id'],title='Отчёт · версия 2')
+        versions=self.get('document-history?id='+first['id'])['data']
+        self.assertEqual([item['id'] for item in versions],[first['id'],second['id']])
+        self.assertEqual([item['revision'] for item in versions],[1,2])
+        self.assertNotIn('storage_key',versions[0]);self.assertNotIn('request_id',versions[0])
+        other=self.upload(self.other_admin,request_id='foreign-document-history')
+        self.get('document-history?id='+other['id'],status=400)
+        self.post('documents',dict(action='archive',id=second['id']))
+        self.assertEqual(self.get('document-history?id='+second['id'])['data'][-1]['status'],'archived')
+
     def test_cross_company_read_download_archive_and_reference(self):
         other=self.upload(self.other_admin)
         self.assertEqual(self.get('documents')['data'],[])

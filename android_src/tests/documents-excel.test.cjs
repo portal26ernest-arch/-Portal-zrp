@@ -10,8 +10,8 @@ const app=fs.readFileSync(path.join(assets,'app.js'),'utf8');
 const core=fs.readFileSync(path.join(assets,'core.js'),'utf8');
 const shell=fs.readFileSync(path.join(__dirname,'../app/src/main/java/ru/portal/app/MainActivity.java'),'utf8');
 
-test('Documents list has scoped API filters, paging, ready-only download and archive states',()=>{
-  for(const value of ['documents?','page: String(state.page)','limit: String(state.limit)','q','document_type','category','date_from','date_to','status','Показать ещё','document-file?id=','document-archive','Документы не найдены','Повторить'])assert.ok(source.includes(value),value);
+test('Documents list has scoped API filters, paging, version history, ready-only download and archive states',()=>{
+  for(const value of ['documents?','page: String(state.page)','limit: String(state.limit)','q','document_type','category','date_from','date_to','status','Показать ещё','document-file?id=','document-history?id=','История версий','document-archive','Документы не найдены','Повторить'])assert.ok(source.includes(value),value);
   assert.match(source,/allowed\('documents\.manage'\)/);
   assert.match(source,/d\.status === 'archived'/);
   assert.match(source,/!archived && d\.status === 'ready'/);

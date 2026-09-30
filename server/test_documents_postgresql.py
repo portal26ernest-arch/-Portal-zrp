@@ -187,9 +187,11 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
     @property
     def admin(self):return self.tokens[1]
 
-    def upload(self,token):
+    def upload(self,token,**values):
         data=b'%PDF-1.4\nSynthetic\n%%EOF\n'
-        return self.post('documents',dict(action='upload',document_type='report_pdf',original_filename='test.pdf',mime_type='application/pdf',file_b64=base64.b64encode(data).decode(),title='Live PG test '+secrets.token_hex(4)),token)['data']
+        body=dict(action='upload',document_type='report_pdf',original_filename='test.pdf',mime_type='application/pdf',file_b64=base64.b64encode(data).decode(),title='Live PG test '+secrets.token_hex(4))
+        body.update(values)
+        return self.post('documents',body,token)['data']
 
     def test_catalog_rls_grants_and_database_reference_guards(self):
         doc=self.upload(self.tokens[1])
@@ -464,6 +466,18 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
             from production_repository import Repository
             audit=[row for row in Repository(conn,1).list('audit') if row.get('entity_id')==first['id']]
         self.assertEqual(len(audit),1)
+
+    def test_postgresql_document_history_is_tenant_scoped_and_archive_consistent(self):
+        first=self.upload(self.tokens[1],request_id='pg-doc-history-v1')
+        second=self.upload(self.tokens[1],previous_id=first['id'],request_id='pg-doc-history-v2')
+        independent_session=self.tokens['same_company_second_session']
+        versions=self.get('document-history?id='+first['id'],independent_session)['data']
+        self.assertEqual([(row['id'],row['revision']) for row in versions],[(first['id'],1),(second['id'],2)])
+        foreign=self.upload(self.tokens[2],request_id='pg-doc-history-foreign')
+        self.get('document-history?id='+foreign['id'],self.tokens[1],status=400)
+        self.post('documents',dict(action='archive',id=second['id']),self.tokens[1])
+        refreshed=self.get('document-history?id='+second['id'],independent_session)['data']
+        self.assertEqual(refreshed[-1]['status'],'archived')
 
     def test_postgresql_reminder_candidates_and_notification_sink_are_scoped_and_idempotent(self):
         from datetime import datetime, timedelta, timezone

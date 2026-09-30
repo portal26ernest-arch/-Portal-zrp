@@ -120,6 +120,7 @@
         <div class="item-actions">
           ${!archived && d.status === 'ready' ? btn('Скачать', 'downloadPortalDocument', `data-id="${h(d.id)}"`, 'secondary') : ''}
           ${!archived && d.status === 'ready' && window.PortalNative?.shareBase64FileAsync ? btn('Поделиться', 'sharePortalDocument', `data-id="${h(d.id)}"`, 'secondary') : ''}
+          ${btn('История версий', 'showPortalDocumentHistory', `data-id="${h(d.id)}"`, 'text')}
           ${!archived && allowed('documents.manage') ? btn('В архив', 'archivePortalDocument', `data-id="${h(d.id)}"`, 'text') : ''}
         </div>
       </article>`;
@@ -224,6 +225,17 @@
     requireDocs();
     const file = await productionGet('document-file?id=' + encodeURIComponent(button.dataset.id));
     await savePayload(file);
+  };
+
+  actions.showPortalDocumentHistory = async button => {
+    requireDocs();
+    const versions = await productionGet('document-history?id=' + encodeURIComponent(button.dataset.id));
+    const selected = String(button.dataset.id);
+    openSheet('История версий документа', `<div class="list">${(versions || []).map(version => {
+      const status = version.status === 'archived' ? 'В архиве' : 'Доступна';
+      const current = String(version.id) === selected ? ' · выбранная версия' : '';
+      return `<article class="item"><b>Версия ${h(version.revision || 1)}</b><p>${h(version.title || version.filename || 'Документ')}</p><p class="meta">${h((version.created_at || '').slice(0, 16).replace('T', ' '))} · ${status}${current}</p></article>`;
+    }).join('') || '<p class="empty">История версий пуста</p>'}</div>`);
   };
 
   actions.sharePortalDocument = async button => {

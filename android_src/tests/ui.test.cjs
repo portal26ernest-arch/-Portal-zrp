@@ -97,6 +97,7 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
       let data={ok:true};
       if(stage3&&url==='/api/v3/meta')Object.assign(data,{ready:true,heartbeat_seconds:60,permissions:mock.stage3Permissions||['work.write','tasks.read','tasks.manage','batches.receive','finance.read','invoices.read','invoices.create','users.manage','access.history.read','payroll.own'],catalog:[{code:'work.write',group:'Работа',label:'Вносить свою выработку',recommended:['Сборщик']},{code:'access.history.read',group:'Сотрудники',label:'Просматривать историю входов сотрудников',recommended:['Управляющий','Администратор']}]});
       else if(stage3&&url.startsWith('/api/v3/documents?'))data.data={items:[{id:'doc-ready',title:'Готовый документ',document_type:'report_xlsx',category:'report',document_date:'2026-09-29',created_at:'2026-09-29T00:00:00Z',size_bytes:2048,status:'ready',revision:1},{id:'doc-archived',title:'Архивный документ',document_type:'report_pdf',category:'report',document_date:'2026-09-28',created_at:'2026-09-28T00:00:00Z',size_bytes:1024,status:'archived',revision:1}],total:2,page:1,limit:50};
+      else if(stage3&&url.startsWith('/api/v3/document-history?'))data.data=[{id:'doc-ready',title:'Готовый документ',created_at:'2026-09-29T00:00:00Z',status:'ready',revision:1},{id:'doc-older',title:'Старая версия',created_at:'2026-09-28T00:00:00Z',status:'archived',revision:2}];
       else if(stage3&&url.startsWith('/api/v3/document-file?id=')){const result=url.includes('result-');data.data=result?{filename:'PORTAL_import_result.json',mime_type:'application/json',file_b64:'e30='}:{filename:'PORTAL_report.xlsx',mime_type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',file_b64:'UEs='};}
       else if(stage3&&url==='/api/v3/document-archive'&&method==='POST')data.data={id:'doc-ready',status:'archived'};
       else if(stage3&&url==='/api/v3/document-template-info')data.data={template_version:'1.0',sheets:['Компания','Сотрудники','Клиенты','Операции_Тарифы']};
@@ -216,6 +217,12 @@ test('browser UI regression',async t=>{
       assert.match(await page.locator('#content').innerText(),/текущая версия/);
       assert.match(await page.locator('#content').innerText(),/архивная запись/);
       assert.equal(await page.locator('[data-action=downloadPortalDocument]').count(),1);
+      await page.locator('[data-action=showPortalDocumentHistory]').first().click();
+      await page.waitForSelector('#sheetContent');
+      assert.equal(await page.locator('#sheetTitle').innerText(),'История версий документа');
+      assert.match(await page.locator('#sheetContent').innerText(),/Старая версия/);
+      assert.ok(await page.evaluate(()=>mock.calls.some(c=>c.url==='/api/v3/document-history?id=doc-ready')));
+      await page.locator('[data-action=closeSheet]').click();
       await page.locator('[data-action=downloadPortalDocument]').click();await page.waitForFunction(()=>mock.saved?.filename==='PORTAL_report.xlsx');
       await page.locator('[data-action=archivePortalDocument]').click();await page.locator('[data-action=confirmSheet]').click();
       await page.waitForFunction(()=>mock.calls.some(c=>c.method==='POST'&&c.url==='/api/v3/document-archive'));
