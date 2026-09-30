@@ -616,3 +616,11 @@ Continue broader Part 12 work from the latest progress checkpoint: inspect remai
 At the initial push, the refreshed read-only audit reported **0 P0 external runtime, 0 P0 direct runtime identity dependencies, 50 explicitly enumerated P1 bridges and 129 P2 historical/test references**. The disposable PostgreSQL case was then pending; its later green result and item-102 status are documented in “Final evidence for item 102” above.
 
 Initial exact NEXT (superseded): push, check Web PostgreSQL and Server CI, and update item 102 from results. Continue remaining Part 12 work as set out in the current exact NEXT above; no production operation or autopilot flag was performed.
+
+## Latest follow-up — stable audit assertion and CI rerun — 2026-09-30
+
+- `05530ec85decac64675fe8593d3b2d7b6cf4531c` replaces a substring search for setting values in serialized audit events with exact allowlisted-key assertions; this avoids UUID/timestamp coincidence while still proving that no setting values are exposed. Its focused local audit test passed.
+- At `05530ec`, Web run `36716682510` passed both `web` and disposable `documents-postgresql`. The PG job ran 30 tests (2 skipped), including the cross-tenant canonical employee-ID test, and verified cleanup `db=0 roles=0 temp=0`.
+- Server run `36716682521` passed Python 3.11 and 3.13, each **268 tests, 42 skipped, 0 failed**. The earlier 3.13 XLSX idempotency assertion at `f7ccb72` did not reproduce; no product idempotency behavior was changed. The earlier failure remains recorded as transient.
+- Latest readiness counts: **75 ✅ / 32 🟡 / 7 ⏳ / 12 🔌**. Item 102 is green; all P1 bridges remain explicit and retained.
+- **Exact NEXT:** inspect Client 360 source-backed editable/linked gaps in `android_src/app/src/main/assets/production.js` versus `server/production_service.py`; then continue REAL-money inventory/reconciliation, Windows thin client/installer, safe marketplace-news scheduler, and final release gates. No completion/blocked flag; no production cutover.
