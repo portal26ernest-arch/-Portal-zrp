@@ -357,8 +357,8 @@ test('browser UI regression',async t=>{
       assert.equal((await manager.page.evaluate(()=>mock.calls)).some(c=>c.url.startsWith('/api/v3/invitations')),false);
       assert.deepEqual(manager.errors,[]);await manager.page.close();
     });
-    await t.test('admin approves pending access requests and revokes unused invitations',async()=>{
-      const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);
+    await t.test('director approves access requests and packer cannot decide invitations',async()=>{
+      const {page,errors}=await fixture(browser,'director',{width:390,height:844},true);
       await page.evaluate(()=>{mock.stage3Permissions=['users.manage'];mock.invites=[
         {id:'access-request-1',status:'accepted',display_name:'Новый запрос',username:'requester',role:'packer',expires_at:'2026-10-07'},
         {id:'invite-pending-1',status:'pending',display_name:'Приглашённый',username:'invitee',role:'manager',expires_at:'2026-10-07'}
@@ -376,6 +376,14 @@ test('browser UI regression',async t=>{
       assert.equal(await page.locator('[data-action=decideAccessInvite][data-id=access-request-1]').count(),0);
       assert.equal(await page.locator('[data-action=decideAccessInvite][data-id=invite-pending-1]').count(),0);
       assert.deepEqual(errors,[]);await page.close();
+      const packer=await fixture(browser,'packer',{width:390,height:844},true);
+      await packer.page.evaluate(()=>{mock.stage3Permissions=['work.write','tasks.read'];mock.invites=[
+        {id:'access-request-foreign-role',status:'accepted',display_name:'Запрос',username:'requester',role:'packer',expires_at:'2026-10-07'}
+      ];});await login(packer.page);await packer.page.evaluate(()=>go('users'));
+      await packer.page.waitForFunction(()=>!document.querySelector('.loading'));
+      assert.equal(await packer.page.locator('[data-action=decideAccessInvite]').count(),0);
+      assert.equal((await packer.page.evaluate(()=>mock.calls)).some(c=>c.url.startsWith('/api/v3/invitations')),false);
+      assert.deepEqual(packer.errors,[]);await packer.page.close();
     });
     await t.test('manager records personal work; expired write session returns to login',async()=>{
       const {page,errors}=await fixture(browser);await login(page);await page.evaluate(()=>go('work'));
