@@ -707,3 +707,31 @@ Production cutover **NOT performed**.
 - D: complete Android native chooser/save/email visual check remains an owner visual check; run the full disposable PostgreSQL gate again on the eventual final code SHA.
 - Broader remaining work: employee_id/telegram_id runtime-boundary audit, legacy monetary REAL inventory/reconciliation, Windows thin-client/installer, final VPS/release gates. Counts stay **74 ✅ / 33 🟡 / 7 ⏳ / 12 🔌**; no completion/blocked flag. Production cutover **NOT performed**.
 - **Exact NEXT:** inspect remaining Client 360 fields and write capabilities in `android_src/app/src/main/assets/production.js` against `server/production_service.py`; select one missing block only if its values already have a server source, then add scoped API/UI/browser and disposable PostgreSQL coverage. If inspection finds no such source-backed gap, produce a read-only `employee_id`/legacy `telegram_id` runtime-boundary inventory before changing identifiers. Run targeted and full relevant tests, commit and push each logical block.
+
+## FOCUSED CONTINUATION — canonical employee_id runtime — 2026-09-30
+
+### DONE IN THIS BLOCK
+
+- Starting repository state was HEAD `fc4495fc9f99cc84675d17d96e5a7e90468901b0`, branch `codex-finalization-megapack-part12`, clean at HEAD before this continuation's local changes; `origin` was fetched and the migration-map source at assistant commit `460e749` was read. The working changes were the in-progress continuation, not unrelated user edits.
+- Added `server/employee_identity.py` as the one runtime compatibility adapter. API/service/UI user, assignment, work and payroll contracts use `employee_id`; old table keys and immutable historical payroll snapshots are translated only at this adapter boundary. Existing columns and facts remain in place.
+- Routed Excel employee catalog, template, profile updates and creation through the canonical repository/adapter. Shared Web/Android role gates and fixtures now use `employee_id` instead of `telegram_id`.
+- Added a real PostgreSQL/RLS integration test using identical retained legacy IDs in two synthetic companies. It checks distinct canonical IDs, canonical API payloads, no cross-company employee listing, and rejection of the foreign employee ID. The test is in the existing disposable Web PostgreSQL workflow; it has not yet executed locally.
+- Added the assistant-branch read-only identity audit and classifier tests. Current generated `PORTAL_EMPLOYEE_ID_MIGRATION_MAP.md`: P0 external Telegram/Termux runtime **0**, P0 direct runtime identity dependencies **0**, P1 explicit adapter/import/schema/API-boundary references **50**, P2 history/test/fixture references **129**. P1 source lines and named coverage suites are enumerated in the map.
+- Readiness counts remain **74 ✅ / 33 🟡 / 7 ⏳ / 12 🔌**; item 102 remains 🟡 until the disposable PostgreSQL result is known.
+
+### TESTS / CHECKS
+
+- `python -m unittest test_portal_app_server test_production test_production_activity test_payroll_settlement test_documents_api -q`: **103 passed, 0 failed**.
+- `python -m unittest test_excel_import test_excel_template -q`: **21 passed, 0 failed**.
+- `python -m unittest discover -s server -p 'test_*.py' -q`: **268 run, 43 skipped, 0 failed**. Skips include opt-in PostgreSQL/VPS gates.
+- `python -m unittest ops.test_employee_identity_migration_audit -q`: **8 passed**; the actual scanner ran with `--fail-on-p0`: P0 **0**.
+- `node --test android_src/tests/ui.test.cjs android_src/tests/employee-create-mode.test.cjs android_src/tests/legacy-boundary.test.cjs`: **33 passed, 0 failed**.
+- `node --test android_src/tests/web-adapter.test.cjs android_src/tests/web-share.test.cjs android_src/tests/web-smoke.playwright.cjs android_src/tests/build-security.test.cjs`: **10 passed, 0 failed**.
+- `python -m compileall -q server ops`, JavaScript syntax checks, and `git diff --check`: passed.
+- Local PostgreSQL execution is unavailable (`psql` and Docker commands are absent); the new disposable PG test awaits the branch's Web workflow. This is not reported as a blocker while CI execution is available.
+
+### NEXT
+
+- Commit and push this tested identity block to `origin/codex-finalization-megapack-part12`.
+- Verify the resulting Web `documents-postgresql` job and Server 3.11/3.13 suites. If the new identity test fails, fix and rerun before updating item 102; if it passes, update this report/matrix/roadmap from that SHA's CI evidence and consider closing item 102 with all P1 bridges retained as listed.
+- Continue remaining Part12 software tasks; no complete/blocked flag is justified. Production DB/service, DNS, secrets and cutover were not touched.

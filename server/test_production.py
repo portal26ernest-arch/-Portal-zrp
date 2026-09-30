@@ -100,6 +100,45 @@ class ProductionTest(unittest.TestCase):
         for secretish in values.values():self.assertNotIn(secretish,serialized)
         self.assertEqual(self.get('audit?action=client.requisites.updated')['data']['total'],1)
 
+    def test_authenticated_runtime_identity_and_catalog_are_canonical_and_company_scoped(self):
+        user=self.request('/api/me',self.worker)['user']
+        self.assertIn('employee_id',user)
+        self.assertNotIn('telegram_id',user)
+        with portal.tenants.company_scope(1),portal.db() as conn:
+            legacy=conn.execute('SELECT telegram_id FROM app_users WHERE id=?',(self.worker_id,)).fetchone()[0]
+            self.assertNotEqual(user['employee_id'],legacy)
+            repository=Repository(conn,1)
+            self.assertEqual(repository.legacy_identity_for_employee(user['employee_id']),legacy)
+            self.assertEqual(repository.employee_identity_for_legacy(legacy),user['employee_id'])
+            catalog_user=next(item for item in repository.catalog('users') if item['id']==self.worker_id)
+            self.assertEqual(catalog_user['employee_id'],user['employee_id'])
+            self.assertNotIn('telegram_id',catalog_user)
+        api_users=self.request('/api/users',self.admin)
+        self.assertTrue(all('telegram_id' not in item for item in api_users['users']))
+        self.assertTrue(all('employee_id' in item for item in api_users['employees']))
+        self.request('/api/users',self.admin,{'username':'legacy-api','display_name':'Legacy API',
+            'pin':'4321','role':'packer','telegram_id':101},status=400)
+        foreign_identity=None
+        with portal.tenants.company_scope(self.other),portal.db() as conn:
+            conn.executemany('INSERT INTO employees(company_id,telegram_id,full_name,username) VALUES(?,?,?,?)',
+                             [(self.other,800+i,'Foreign '+str(i),'foreign-'+str(i)) for i in range(6)])
+            repository=Repository(conn,self.other);repository.sync_payroll_employees();conn.commit()
+            foreign_identity=max(item['employee_id'] for item in repository.employee_catalog())
+        with portal.tenants.company_scope(1),portal.db() as conn:
+            repository=Repository(conn,1)
+            with self.assertRaises(ValueError):repository.legacy_identity_for_employee(foreign_identity)
+            self.assertNotIn('telegram_id',repository.employee_catalog()[0])
+
+    def test_manager_assignment_catalog_uses_canonical_employee_id(self):
+        manager=self.role_token('manager')
+        manager_id=self.request('/api/me',manager)['user']['employee_id']
+        with portal.tenants.company_scope(1),portal.db() as conn:
+            conn.execute('INSERT INTO manager_client_assignments(telegram_id,client_id,active) VALUES(101,1,1)')
+            rows=Repository(conn,1).catalog('assignments')
+        assignment=next(item for item in rows if item['client_id']==1 and item['active'])
+        self.assertEqual(assignment['employee_id'],manager_id)
+        self.assertNotIn('telegram_id',assignment)
+
     def test_client_rename_keeps_stable_id_and_work_snapshot_and_appends_name_history(self):
         with portal.tenants.company_scope(1),portal.db() as conn:
             original=portal.get_client(conn,1)['name']
@@ -137,9 +176,7 @@ class ProductionTest(unittest.TestCase):
                 Repository(conn,1).insert('works',historical)
                 conn.commit()
             period=self.post('payroll-periods',dict(period_start=start,period_end=end))['data']
-            legacy_employee=period['snapshot']['employees'][0]['employee_id']
-            with portal.tenants.company_scope(1),portal.db() as conn:
-                employee=Repository(conn,1).payroll_employee(legacy_employee,legacy=True)['employee_id']
+            employee=period['snapshot']['employees'][0]['employee_id']
             self.post('payroll-settlements',dict(payroll_period_id=period['id'],employee_id=employee,
                 entry_type='payout',amount='1.00',reason='Dashboard test',request_id='dashboard-paid-once'))
             closed_payroll=(400,100,300)

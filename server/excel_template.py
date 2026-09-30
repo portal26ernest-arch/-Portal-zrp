@@ -38,15 +38,13 @@ def catalog(service,company=None):
     requisites={row['client_id']:row for row in table_rows(r,'portal_client_requisites',('client_id',)+REQUISITES+('contact_person',))}
     for row in clients:row.update({k:v for k,v in requisites.get(row['id'],{}).items() if k!='client_id'})
     employees=[];users=r.catalog('users')
-    if r.has_table('payroll_employee_identities'):
-        mapped=r.sql('''SELECT i.employee_id,i.legacy_employee_id,e.full_name,e.username
-            FROM payroll_employee_identities i JOIN employees e ON e.company_id=i.company_id AND e.telegram_id=i.legacy_employee_id
-            WHERE i.company_id=? ORDER BY i.employee_id''',(r.company_id,)).fetchall()
-        for eid,legacy,name,username in mapped:
-            accounts=[u for u in users if u.get('telegram_id')==legacy]
-            employee=dict(employee_ref='employee:'+str(eid),employee_id=eid,full_name=name,profile_username=username or '')
-            if len(accounts)==1:employee.update(user_id=accounts[0]['id'],role=accounts[0]['role'],active=accounts[0]['active'])
-            employees.append(employee)
+    for source in r.employee_catalog():
+        canonical_id=int(source['employee_id'])
+        accounts=[u for u in users if u.get('employee_id')==canonical_id]
+        employee=dict(employee_ref='employee:'+str(canonical_id),employee_id=canonical_id,
+                      full_name=source['full_name'],profile_username=source['username'] or '')
+        if len(accounts)==1:employee.update(user_id=accounts[0]['id'],role=accounts[0]['role'],active=accounts[0]['active'])
+        employees.append(employee)
     operations=[]
     for op in r.catalog('operations'):
         try:tariff=service.tariff(op['id'])

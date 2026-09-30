@@ -7,6 +7,7 @@ from excel_template import REQUISITES,TEMPLATE_VERSION
 from excel_import import canonical,digest,LOG
 from portal_excel_workbook import parse_template
 from production_repository import utcnow
+from employee_identity import create_employee_card,update_employee_card
 
 JOB_COLUMNS=('company_id','import_id','template_version','checksum','actor_id','actor_kind','created_at','status',
              'preview_summary','applied_at','result_counts','error_report','result_document_id')
@@ -64,15 +65,9 @@ def _apply_row(importer,row,refs):
     if sheet=='Сотрудники':
         identity=value['employee_id']
         if identity is None:
-            legacy=r.sql('SELECT MIN(telegram_id) FROM employees WHERE company_id=? AND telegram_id<0',(r.company_id,)).fetchone()[0]
-            legacy=min((legacy or 0)-1,-1)
-            r.sql('INSERT INTO employees(company_id,telegram_id,full_name,username) VALUES(?,?,?,?)',
-                  (r.company_id,legacy,value['full_name'],value['profile_username']))
-            identity=r.sql('INSERT INTO payroll_employee_identities(company_id,legacy_employee_id) VALUES(?,?) RETURNING employee_id',(r.company_id,legacy)).fetchone()[0]
+            identity=create_employee_card(r.conn,r.company_id,value['full_name'],value['profile_username'])
         else:
-            legacy=r.payroll_employee(identity)['legacy_employee_id']
-            r.sql('UPDATE employees SET full_name=?,username=? WHERE company_id=? AND telegram_id=?',
-                  (value['full_name'],value['profile_username'],r.company_id,legacy))
+            update_employee_card(r.conn,r.company_id,identity,value['full_name'],value['profile_username'])
         if value['user_id']:
             old=r.sql('SELECT role,active FROM app_users WHERE company_id=? AND id=?',(r.company_id,value['user_id'])).fetchone()
             if (old[0],old[1])!=(value['role'],value['active']):

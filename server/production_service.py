@@ -3,6 +3,7 @@ No SQLite imports or SQL: the repository is the persistence/legacy boundary.
 """
 import base64
 import calendar
+import copy
 import hashlib
 import json
 import re
@@ -55,7 +56,9 @@ def request_identity(value):
     return value
 
 def employee_id(user):
-    return user.get('employee_id',user.get('telegram_id'))
+    # Runtime identity is supplied by the authenticated, tenant-scoped adapter.
+    # A missing canonical ID fails closed; historical IDs never cross this layer.
+    return user.get('employee_id')
 
 def stamp(value, optional=False):
     if optional and not value: return None
@@ -85,7 +88,7 @@ class Production:
     def visible(self,client_id):
         # Assignment scope is independent of individually granted capabilities.
         if self.u['role']!='manager' or self.u.get('technical_owner'): return True
-        return any(a['client_id']==client_id and a['active'] and a['telegram_id']==employee_id(self.u) for a in self.r.catalog('assignments'))
+        return any(a['client_id']==client_id and a['active'] and a['employee_id']==employee_id(self.u) for a in self.r.catalog('assignments'))
 
     def client(self,identity,active=False):
         c=next((c for c in self.r.catalog('clients') if c['id']==identity and self.visible(identity)),None)
@@ -402,8 +405,22 @@ class Production:
             if not (end<p['period_start'] or start>p['period_end']):
                 raise ValueError('Этот расчётный период уже закрыт или пересекается с закрытым')
         snapshot=self.payroll_snapshot(start,end)
-        return self.r.insert('payroll_periods',dict(period_start=start,period_end=end,status='closed',
-            closed_by=self.u['id'],closed_at=self.clock(),snapshot=snapshot))
+        stored_snapshot=copy.deepcopy(snapshot)
+        for row in stored_snapshot['employees']:
+            identity=row.get('employee_id')
+            row['employee_id']=self.r.legacy_identity_for_employee(identity) if identity is not None else None
+        period=self.r.insert('payroll_periods',dict(period_start=start,period_end=end,status='closed',
+            closed_by=self.u['id'],closed_at=self.clock(),snapshot=stored_snapshot))
+        return self.public_payroll_period(period)
+
+    def public_payroll_period(self,period):
+        """Translate retained snapshot keys to employee_id in API responses only."""
+        result=copy.deepcopy(period)
+        for row in result.get('snapshot',{}).get('employees',[]):
+            legacy=row.get('employee_id')
+            if legacy is not None:
+                row['employee_id']=self.r.payroll_employee(legacy,legacy=True)['employee_id']
+        return result
 
     def payroll_is_closed(self,at):
         day=at[:10]
@@ -411,16 +428,12 @@ class Production:
 
     def payroll_employee_id(self,b,required=True):
         canonical=b.get('employee_id')
-        legacy=b.get('telegram_id')
         def normalized(value):
             if type(value) is int:return value
             if isinstance(value,str) and re.fullmatch(r'-?[0-9]{1,19}',value):return int(value)
             raise ValueError('Некорректный идентификатор сотрудника')
         resolved=self.r.payroll_employee(normalized(canonical))['employee_id'] if canonical is not None else None
-        mapped=self.r.payroll_employee(normalized(legacy),legacy=True)['employee_id'] if legacy is not None else None
-        if resolved is not None and mapped is not None and resolved!=mapped:
-            raise ValueError('Идентификаторы сотрудника не совпадают')
-        value=resolved if resolved is not None else mapped
+        value=resolved
         if value is None and not required:return None
         if value is None:raise ValueError('Укажите сотрудника')
         return value
@@ -513,7 +526,7 @@ class Production:
         period_id=params.get('payroll_period_id',[None])[0]
         if not period_id:raise ValueError('Укажите закрытый расчётный период')
         period=self.closed_payroll_period(period_id)
-        values={key:params[key][0] for key in ('employee_id','telegram_id') if key in params}
+        values={key:params[key][0] for key in ('employee_id',) if key in params}
         employee=self.payroll_employee_id(values,False)
         if employee is not None and employee not in {row['employee_id'] for row in self.settlement_employees(period)}:
             raise ValueError('Сотрудник отсутствует в закрытом снимке расчётного периода')
@@ -1106,7 +1119,7 @@ class Production:
             if entry_type not in ('payout','adjustment','reversal'):
                 raise ValueError('Тип записи: выплата, корректировка или сторно')
             self.need('payroll.settlement.payout' if entry_type=='payout' else 'payroll.settlement.correct')
-            if set(body)-{'company_id','employee_id','telegram_id','payroll_period_id','entry_type',
+            if set(body)-{'company_id','employee_id','payroll_period_id','entry_type',
                           'amount','reason','reference','request_id','reversal_of'}:
                 raise ValueError('Неизвестные параметры расчёта; автора и время определяет сервер')
             if entry_type!='reversal' and body.get('reversal_of') is not None:
@@ -1183,7 +1196,7 @@ class Production:
         if action=='payroll-periods':
             self.need('payroll.all')
             start=params.get('period_start',[None])[0];end=params.get('period_end',[None])[0]
-            return self.payroll_snapshot(start,end) if start or end else self.r.list('payroll_periods')
+            return self.payroll_snapshot(start,end) if start or end else [self.public_payroll_period(row) for row in self.r.list('payroll_periods')]
         if action=='payroll-settlements':return self.payroll_settlement_rows(params)
         if action=='chat':return self.chat_rows(params.get('recipient_user_id',[None])[0])
         if action=='chat-users':

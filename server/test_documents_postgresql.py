@@ -241,6 +241,33 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.assertEqual(next(row for row in refreshed if row['id']==doc['id'])['status'],'archived')
         self.get('document-metadata?id='+doc['id'],first)
 
+    def test_employee_identity_api_contract_is_canonical_and_company_scoped(self):
+        from production_repository import Repository
+
+        employee_a=self.request('/api/me',self.tokens['company_1_packer'])['user']
+        employee_b=self.request('/api/me',self.tokens[2])['user']
+        self.assertIn('employee_id',employee_a)
+        self.assertIn('employee_id',employee_b)
+        self.assertNotIn('telegram_id',employee_a)
+        self.assertNotIn('telegram_id',employee_b)
+        # Both synthetic companies deliberately use the same retained legacy key.
+        self.assertNotEqual(employee_a['employee_id'],employee_b['employee_id'])
+
+        company_a=self.request('/api/users',self.tokens[1])
+        company_b=self.request('/api/users',self.tokens[2])
+        self.assertTrue(all('employee_id' in row and 'telegram_id' not in row
+                            for row in company_a['employees']))
+        self.assertTrue(all('employee_id' in row and 'telegram_id' not in row
+                            for row in company_b['employees']))
+        self.assertNotIn(employee_b['employee_id'],
+                         {row['employee_id'] for row in company_a['employees']})
+
+        with self.portal.tenants.company_scope(1),self.portal.db() as conn:
+            repository=Repository(conn,1)
+            self.assertEqual(repository.legacy_identity_for_employee(employee_a['employee_id']),102)
+            with self.assertRaises(ValueError):
+                repository.legacy_identity_for_employee(employee_b['employee_id'])
+
     def test_client_requisites_are_shared_scoped_and_audit_omits_field_values(self):
         body={'client_id':1,'legal_name':'Synthetic requisites','inn':'PG-INN-CANARY',
               'settlement_account':'PG-ACCOUNT-CANARY','request_id':'pg-client-requisites-once'}

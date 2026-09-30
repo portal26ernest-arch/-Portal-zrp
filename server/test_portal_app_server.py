@@ -166,8 +166,8 @@ class PortalAPITest(unittest.TestCase):
     def test_personal_work_and_payroll_are_isolated(self):
         d=self.request("/api/dashboard",self.worker)["data"]
         self.assertEqual(d,{"period":"current","quantity":3.0,"salary":6.0})
-        self.assertEqual(len(self.request("/api/work/mine?telegram_id=202",self.worker)["rows"]),1)
-        self.assertEqual(self.request("/api/payroll/mine?telegram_id=202",self.worker)["data"]["accrued"],6)
+        self.assertEqual(len(self.request("/api/work/mine",self.worker)["rows"]),1)
+        self.assertEqual(self.request("/api/payroll/mine",self.worker)["data"]["accrued"],6)
         with portal.db() as conn:
             conn.execute("UPDATE app_users SET telegram_id=NULL WHERE id=?",(self.worker_id,))
         self.assertEqual(self.request("/api/dashboard",self.worker)["data"]["quantity"],0)
@@ -192,20 +192,20 @@ class PortalAPITest(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT full_name FROM employees WHERE telegram_id=?",(b,)).fetchone()[0],"Fresh Two")
         with portal.db() as conn:
             before_link=conn.execute("SELECT COUNT(*) FROM employees").fetchone()[0]
-        linked=self.request("/api/users",self.admin,{"username":"linked","display_name":"Existing","pin":"4321","role":"packer","telegram_id":202})["id"]
+        linked=self.request("/api/users",self.admin,{"username":"linked","display_name":"Existing","pin":"4321","role":"packer","employee_id":202})["id"]
         with portal.db() as conn:
             self.assertEqual(conn.execute("SELECT telegram_id FROM app_users WHERE id=?",(linked,)).fetchone()[0],202)
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM employees").fetchone()[0],before_link)
 
     def test_user_lifecycle_revokes_old_sessions(self):
-        uid=self.request("/api/users",self.admin,{"username":"new","pin":"4321","role":"packer","telegram_id":202})["id"]
+        uid=self.request("/api/users",self.admin,{"username":"new","pin":"4321","role":"packer","employee_id":202})["id"]
         token=self.login("new","4321")["token"]
-        self.request(f"/api/users/{uid}",self.admin,{"role":"shift","pin":"9876","telegram_id":101})
+        self.request(f"/api/users/{uid}",self.admin,{"role":"shift","pin":"9876","employee_id":101})
         self.request("/api/me",token,status=401)
         self.login("new","4321",401)
         new=self.login("new","9876")
         self.assertEqual(new["user"]["role"],"shift")
-        self.assertEqual(new["user"]["telegram_id"],101)
+        self.assertEqual(new["user"]["employee_id"],101)
         self.request(f"/api/users/{uid}",self.admin,{"active":0})
         self.request("/api/me",new["token"],status=401)
         self.login("new","9876",401)

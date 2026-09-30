@@ -68,6 +68,7 @@ class ActivityTest(unittest.TestCase):
         at=datetime.now(timezone.utc).replace(tzinfo=None)+timedelta(minutes=1)
         with portal.tenants.company_scope(1),portal.db() as conn:
             repo=Repository(conn,1);user=dict(conn.execute('SELECT * FROM app_users WHERE id=?',(self.worker_id,)).fetchone());user['company_id']=1
+            user['employee_id']=repo.employee_identity_for_user(user)
             clock=[at];service=Production(repo,user,lambda:clock[0].isoformat(timespec='microseconds'))
             timer=service.timer({'event':'start','task_id':task['id']})
             clock[0]+=timedelta(minutes=20);service.timer({'event':'pause','session_id':timer['id']})

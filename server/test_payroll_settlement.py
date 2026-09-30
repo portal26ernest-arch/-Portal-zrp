@@ -33,8 +33,8 @@ class PayrollSettlementTest(unittest.TestCase):
         isolation.CompanyIsolationTest.setUp(self)
         for cid in (1,self.other):
             with portal.tenants.company_scope(cid),portal.db() as conn:migrate(conn,cid)
-        self.legacy_employee_id=self.request('/api/me',self.worker)['user']['employee_id']
         with portal.db() as conn:
+            self.legacy_employee_id=conn.execute('SELECT telegram_id FROM app_users WHERE id=?',(self.worker_id,)).fetchone()[0]
             self.employee_id=Repository(conn,1).payroll_employee(self.legacy_employee_id,legacy=True)['employee_id']
 
     def post(self,action,body,token=None,status=200):
@@ -77,7 +77,10 @@ class PayrollSettlementTest(unittest.TestCase):
         with portal.db() as conn:
             self.assertEqual(conn.execute('SELECT COUNT(*),SUM(amount_minor),typeof(amount_minor) FROM payroll_settlement_entries').fetchone()[:],(2,400,'integer'))
             stored=Repository(conn,1).get('payroll_periods',period['id'])
-        self.assertEqual(stored['snapshot'],snapshot)
+        with portal.db() as conn:
+            legacy_id=Repository(conn,1).legacy_identity_for_employee(self.employee_id)
+        self.assertEqual(stored['snapshot']['employees'][0]['employee_id'],legacy_id)
+        self.assertEqual(snapshot['employees'][0]['employee_id'],self.employee_id)
         self.post('payroll-settlements',dict(payroll_period_id=period['id'],employee_id=self.employee_id,
             entry_type='payout',amount='.01',reason='Переплата'),status=400)
 
@@ -367,11 +370,13 @@ class PayrollSettlementTest(unittest.TestCase):
 
     def test_same_period_employee_request_ids_are_scoped_and_foreign_reversal_is_denied(self):
         period=self.closed_period();body=self.payout_body(period);entry=self.post('payroll-settlements',body)['data']
+        with portal.tenants.company_scope(1),portal.db() as conn:
+            stored_period=Repository(conn,1).get('payroll_periods',period['id'])
         with portal.tenants.company_scope(self.other),portal.db() as conn:
             repo=Repository(conn,self.other)
             other_employee=repo.payroll_employee(self.legacy_employee_id,legacy=True)['employee_id']
             self.assertEqual(other_employee,self.employee_id)
-            data=dict(period)
+            data=dict(stored_period)
             for key in ('id','company_id'):data.pop(key,None)
             repo.insert('payroll_periods',data,period['id'])
         second=self.post('payroll-settlements',body,self.other_admin)['data']
@@ -410,7 +415,7 @@ class PayrollSettlementTest(unittest.TestCase):
     def test_two_accounts_for_one_employee_aggregate_without_changing_snapshot(self):
         period=self.closed_period()
         with portal.db() as conn:
-            repo=Repository(conn,1);data=copy.deepcopy(period)
+            repo=Repository(conn,1);data=copy.deepcopy(repo.get('payroll_periods',period['id']))
             data['snapshot']['employees'].append(dict(data['snapshot']['employees'][0],user_id=999))
             for key in ('id','company_id'):data.pop(key,None)
             combined=repo.insert('payroll_periods',data)

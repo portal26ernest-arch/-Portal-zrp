@@ -7,6 +7,7 @@ import uuid
 from datetime import datetime, timedelta
 
 from production_repository import Repository, utcnow
+from employee_identity import create_invited_account, create_employee_card
 
 TABLE = 'portal_access_invites'
 ROLES = {'admin', 'director', 'manager', 'packer', 'shift', 'accountant'}
@@ -106,18 +107,12 @@ def accept(conn, repo, token, pin):
         return dict(status='expired', invite_id=invite['id'])
     if conn.execute('SELECT 1 FROM app_users WHERE lower(username)=lower(?)', (invite['username'],)).fetchone():
         raise ValueError('Логин уже занят; обратитесь к администратору компании')
-    app=_portal_app()
     employee_id = invite['employee_id']
     if employee_id is None:
-        employee_id = app.create_internal_employee(conn, invite['display_name'], invite['username'])
+        employee_id = create_employee_card(conn,repo.company_id,invite['display_name'],invite['username'])
+    app=_portal_app()
     salt, pin_hash = app.hash_pin(pin)
-    values = (invite['username'], invite['display_name'], invite['role'], employee_id, salt, pin_hash, app.now_text(), app.now_text())
-    if repo.dialect == 'postgresql':
-        user_id = conn.execute('''INSERT INTO app_users(username,display_name,role,telegram_id,active,pin_salt,pin_hash,created_at,updated_at)
-          VALUES(?,?,?,?,0,?,?,?,?) RETURNING id''', values).fetchone()[0]
-    else:
-        user_id = conn.execute('''INSERT INTO app_users(username,display_name,role,telegram_id,active,pin_salt,pin_hash,created_at,updated_at)
-          VALUES(?,?,?,?,0,?,?,?,?)''', values).lastrowid
+    user_id=create_invited_account(conn,repo.dialect,repo.company_id,dict(invite,employee_id=employee_id),salt,pin_hash,app.now_text())
     conn.execute("UPDATE "+TABLE+" SET status='accepted',user_id=?,accepted_at=? WHERE company_id=? AND id=? AND status='pending'",
                  (user_id, utcnow(), repo.company_id, invite['id']))
     repo.audit(None, 'access_invite.accepted', invite['id'], actor_kind='invitee')

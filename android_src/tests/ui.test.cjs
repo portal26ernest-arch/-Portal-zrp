@@ -48,19 +48,19 @@ test('time-based greeting uses local hour boundaries',()=>{
 test('role capabilities and employee linkage',()=>{
   const expected={admin:['work','payroll','clients','materials','invoices','users','jobs','reports','news','wms','notifications'],director:['work','payroll','clients','materials','invoices','users','jobs','reports','news','wms','notifications'],manager:['work','payroll','clients','invoices','jobs','reports','news','wms','notifications'],packer:['work','payroll','jobs','news','wms','notifications'],shift:['work','payroll','clients','materials','jobs','reports','news','wms','notifications'],accountant:['payroll','clients','materials','invoices','jobs','reports','news','notifications']};
   for(const [role,pages] of Object.entries(expected)){
-    for(const m of core.modules)assert.equal(core.can(m.id,{role,telegram_id:101},{id:1}),pages.includes(m.id),role+':'+m.id);
+    for(const m of core.modules)assert.equal(core.can(m.id,{role,employee_id:101},{id:1}),pages.includes(m.id),role+':'+m.id);
     assert.equal(core.can('work',{role}, {id:1}),false);
     assert.equal(core.can('audit',{role},{id:1}),false);
   }
   assert.equal(core.can('dashboard',{role:'platform_owner'},null),false);
   assert.equal(core.can('users',{role:'platform_owner'},{id:2}),true);
-  assert.equal(core.can('work',{role:'platform_owner',telegram_id:101},{id:2}),false);
+  assert.equal(core.can('work',{role:'platform_owner',employee_id:101},{id:2}),false);
   const importPermissions=['imports.manage','users.manage','clients.manage','rates.employee','rates.client','company.settings','documents.manage','documents.read'];
   assert.equal(core.can('excelImport',{role:'admin',permissions:importPermissions},{id:1}),true);
   assert.equal(core.can('excelImport',{role:'admin',permissions:['company.settings']},{id:1}),false);
   assert.equal(core.can('excelImport',{role:'platform_owner',permissions:importPermissions},{id:2}),true);
-  assert.equal(core.can('work',{role:'manager',telegram_id:101},{id:1,module_toggles:{work:false}}),false);
-  assert.equal(core.can('work',{role:'manager',telegram_id:101},{id:1,module_toggles:{work:true}}),true);
+  assert.equal(core.can('work',{role:'manager',employee_id:101},{id:1,module_toggles:{work:false}}),false);
+  assert.equal(core.can('work',{role:'manager',employee_id:101},{id:1,module_toggles:{work:true}}),true);
 });
 test('updates: unconfigured, offline, current, newer and invalid manifests',()=>{
   const manifest={schemaVersion:1,...metadata,publishedAt:metadata.buildDate+'T12:00:00Z',changelog:'Исправления',apkUrl:`https://github.com/portal26ernest-arch/-Portal-zrp/releases/download/portal-android-v${metadata.versionName}/PORTAL_Android_${metadata.versionName}_release.apk`,sha256:'a'.repeat(64)};
@@ -86,7 +86,7 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.addInitScript(({role,metadata,stage3})=>{
     localStorage.clear();
-    const user={id:1,username:role,display_name:'Тестовый пользователь',role,company_id:1,telegram_id:role==='platform_owner'?null:101};
+    const user={id:1,username:role,display_name:'Тестовый пользователь',role,company_id:1,employee_id:role==='platform_owner'?null:101};
     const client={id:1,name:'Клиент',active:1};
     window.mock={calls:[],offline:false,rejectWrite:false,hold:false,held:[],update:{ok:true,configured:false},timer:null,stage3Today:null,stage3Batches:null,stage3Tasks:null,stage3Economy:null,stage3Permissions:null,stage3Invoices:null,clientNameHistory:[],clientRequisites:{legal_name:'ООО Тест',inn:'TEST-INN-001'},tariffHistory:[],presenceOnline:true,saved:null,previewMode:'ok',applyMode:'ok',payrollPaid:2000,invites:[],products:[]};
     const respond=(id,data)=>setTimeout(()=>window.PortalBridgeResult(id,JSON.stringify(data)),0);
@@ -151,7 +151,7 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
       else if(url==='/api/jobs')data.jobs=[];
       else if(url==='/api/materials')data.materials=[];
       else if(url==='/api/invoices')data.invoices=[];
-      else if(url==='/api/users')Object.assign(data,{users:[user],employees:[{telegram_id:101,full_name:'Сотрудник'}],roles:{admin:'Администратор',manager:'Менеджер',packer:'Сотрудник'}});
+      else if(url==='/api/users')Object.assign(data,{users:[user],employees:[{employee_id:101,full_name:'Сотрудник'}],roles:{admin:'Администратор',manager:'Менеджер',packer:'Сотрудник'}});
       else if(url.endsWith('/clients'))data.clients=[{...client,name:mock.clientNameOverride||client.name}];
       else if(url==='/api/clients/1')Object.assign(data,{client,stats:{},requisites:{}});
       if(mock.hold&&url.startsWith('/api/dashboard'))mock.held.push(()=>respond(id,data));else respond(id,data);
@@ -204,7 +204,7 @@ test('browser UI regression',async t=>{
       for(const role of ['admin','director','manager','packer','shift','accountant']){
         const {page,errors}=await fixture(browser,role);await login(page);await page.evaluate(()=>go('sections'));
         const visible=await page.locator('#content [data-page]').evaluateAll(nodes=>nodes.map(n=>n.dataset.page));
-        const expected=Array.from(core.modules).filter(m=>!m.future&&core.can(m.id,{role,telegram_id:101},{id:1})).map(m=>m.id);
+        const expected=Array.from(core.modules).filter(m=>!m.future&&core.can(m.id,{role,employee_id:101},{id:1})).map(m=>m.id);
         assert.deepEqual(visible,expected);
         for(const name of expected){await page.evaluate(name=>go(name),name);assert.doesNotMatch(await page.locator('#content').innerText(),/Не удалось загрузить/);}
         assert.deepEqual(errors,[]);await page.close();

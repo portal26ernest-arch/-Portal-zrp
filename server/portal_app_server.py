@@ -15,6 +15,12 @@ from urllib.parse import urlparse, parse_qs
 import portal_tenancy as tenants
 from production_repository import Repository
 from production_service import Production
+from employee_identity import (account_directory, assigned_client_ids, canonical_settlement_payload,
+    canonical_settlement_query, canonical_user_payload,
+    create_employee_card, create_invited_account, employee_exists, employee_id_for_user,
+    employee_work_summary, insert_unlinked_user, legacy_employee_id, legacy_employee_id_for_user,
+    insert_legacy_work_values, legacy_paid_period, personal_payroll_totals, personal_work_rows, public_user_record,
+    update_legacy_job_progress, write_user_account)
 import production_permissions as business_rights
 from production_migrations import migrate as migrate_production
 import production_activity as activity
@@ -193,14 +199,24 @@ def user_from_token(token):
             SELECT u.* FROM app_sessions s JOIN app_users u ON u.id=s.user_id
             WHERE s.token=? AND s.expires_at>=? AND u.active=1
         """, (token, now_text())).fetchone()
-        return with_employee_id(row) if row and row["role"] in ROLE_LABELS else None
+        return with_employee_id(row,conn,company_id) if row and row["role"] in ROLE_LABELS else None
 
 
-def with_employee_id(row):
+def with_employee_id(row, connection=None, company_id=None):
     if row is None:return None
     data=dict(row)
-    if "employee_id" not in data:data["employee_id"]=data.get("telegram_id")
+    if connection is not None:
+        data['employee_id']=employee_id_for_user(connection,company_id,data)
+    elif 'employee_id' not in data:
+        # Callers without tenant DB context must not invent a canonical identity.
+        data['employee_id']=None
     return data
+
+
+def save_user_from_api(body, user_id=None):
+    """Canonical API boundary; telegram_id is accepted only by the identity adapter."""
+    with db() as conn:body=canonical_user_payload(conn,tenants.COMPANY_ID.get(),body)
+    return save_user(body,user_id)
 
 
 def require_role(user, allowed):
@@ -240,11 +256,7 @@ def period_bounds(kind="current"):
 def manager_allowed_client_ids(conn, user):
     if user["role"] != "manager":
         return None
-    tg = user.get("telegram_id")
-    if not tg:
-        return set()
-    rows = conn.execute("SELECT client_id FROM manager_client_assignments WHERE telegram_id=? AND active=1", (tg,)).fetchall()
-    return {int(r[0]) for r in rows}
+    return assigned_client_ids(conn,tenants.COMPANY_ID.get(),user.get('employee_id'))
 
 
 def get_clients(user, active_only=True):
@@ -295,10 +307,7 @@ def paid_period(conn, worker_id, created):
         last = calendar.monthrange(dt.year, dt.month)[1]
         s = dt.replace(day=16, hour=0, minute=0, second=0)
         e = dt.replace(day=last, hour=23, minute=59, second=59)
-    row = conn.execute("""
-        SELECT 1 FROM payroll_payments WHERE telegram_id=? AND period_start=? AND period_end=? AND status='paid'
-    """, (worker_id, s.strftime("%Y-%m-%d %H:%M:%S"), e.strftime("%Y-%m-%d %H:%M:%S"))).fetchone()
-    return bool(row)
+    return legacy_paid_period(conn,tenants.COMPANY_ID.get(),worker_id,s.strftime("%Y-%m-%d %H:%M:%S"),e.strftime("%Y-%m-%d %H:%M:%S"))
 
 
 def sync_materials(conn, work_id, operation_id, quantity, actor_id):
@@ -335,10 +344,9 @@ def sync_materials(conn, work_id, operation_id, quantity, actor_id):
     return warnings
 
 
-def sync_production(conn, work_id, worker_id, client_name, operation_name, product_name, quantity):
+def sync_production(conn, work_id, employee_id, client_name, operation_name, product_name, quantity):
     if not table_exists(conn, "production_jobs"):
         return
-    remaining = float(quantity)
     jobs = conn.execute("""
         SELECT j.id,j.target_quantity,COALESCE(SUM(p.quantity),0) done
         FROM production_jobs j LEFT JOIN production_job_progress p ON p.job_id=j.id AND p.company_id=j.company_id
@@ -346,38 +354,21 @@ def sync_production(conn, work_id, worker_id, client_name, operation_name, produ
           AND (? IS NULL OR j.product_name IS NULL OR j.product_name='' OR j.product_name=?)
         GROUP BY j.company_id,j.id ORDER BY j.priority DESC, COALESCE(j.due_at,'9999-12-31'),j.id
     """, (client_name, operation_name, product_name, product_name)).fetchall()
-    for j in jobs:
-        if remaining <= 1e-9: break
-        capacity=max(float(j[1])-float(j[2]),0)
-        if capacity<=0: continue
-        add=min(capacity,remaining)
-        if CONFIG.backend == 'postgresql':
-            conn.execute("""
-                INSERT INTO production_job_progress(job_id,work_id,telegram_id,quantity,created_at)
-                VALUES(?,?,?,?,?) ON CONFLICT(company_id,job_id,work_id) DO NOTHING
-            """, (j[0],work_id,worker_id,add,now_text()))
-        else:
-            conn.execute("""
-                INSERT OR IGNORE INTO production_job_progress(job_id,work_id,telegram_id,quantity,created_at)
-                VALUES(?,?,?,?,?)
-            """, (j[0],work_id,worker_id,add,now_text()))
-        conn.execute("UPDATE production_jobs SET status='in_progress',updated_at=? WHERE id=? AND status='open'", (now_text(),j[0]))
-        remaining-=add
-        new_done=float(j[2])+add
-        if new_done+1e-9>=float(j[1]):
-            conn.execute("UPDATE production_jobs SET status='done',completed_at=?,updated_at=? WHERE id=?", (now_text(),now_text(),j[0]))
+    update_legacy_job_progress(conn,CONFIG.backend,tenants.COMPANY_ID.get(),jobs,work_id,employee_id,quantity,now_text(),client_name,operation_name,product_name)
 
 
 def save_work(user, client_id, operation_id, quantity):
     if user["role"] not in {"admin","director","manager","shift","packer"}:
         raise PermissionError("Эта роль не может вносить выработку")
-    worker_id = user.get("telegram_id")
-    if not worker_id:
+    worker_employee_id = user.get("employee_id")
+    if worker_employee_id is None:
         raise ValueError("Пользователь приложения не привязан к сотруднику PORTAL")
     qty = int(quantity)
     if qty <= 0 or qty > 1000000:
         raise ValueError("Количество должно быть от 1 до 1 000 000")
     with db() as conn:
+        worker_id=legacy_employee_id_for_user(conn,tenants.COMPANY_ID.get(),user)
+        if worker_id is None:raise ValueError("Канонический ID не связан с карточкой сотрудника этой компании")
         c = allowed_client(conn, user, client_id)
         if not c or not int(c["active"]):
             raise ValueError("Клиент недоступен")
@@ -390,7 +381,7 @@ def save_work(user, client_id, operation_id, quantity):
         if op["employee_rate"] is None:
             raise ValueError("Для операции не установлена ставка сотрудника")
         created = now_text()
-        if paid_period(conn, worker_id, created):
+        if paid_period(conn, worker_employee_id, created):
             raise ValueError("Текущий расчётный период уже закрыт")
         rate = float(op["employee_rate"])
         client_rate = float(op["client_rate"]) if op["client_rate"] is not None else None
@@ -405,21 +396,17 @@ def save_work(user, client_id, operation_id, quantity):
             SELECT id FROM tariff_versions WHERE client=? AND operation=? AND valid_to IS NULL ORDER BY id DESC LIMIT 1
         """, (c["name"], op["name"])).fetchone() if table_exists(conn,"tariff_versions") else None
         first_name = user["display_name"]
-        cols = columns(conn,"work_log")
         values = {
-            "telegram_id": worker_id, "username": user["username"], "first_name": first_name,
+            "employee_id": worker_employee_id, "username": user["username"], "first_name": first_name,
             "client": c["name"], "operation": op["name"], "quantity": qty, "rate": rate,
             "salary": salary, "created_at": created, "updated_at": None,
             "product_id": product_id, "product_name": product_name, "client_rate": client_rate,
             "revenue": revenue, "unit_direct_cost": unit_direct, "direct_cost": direct,
             "tariff_version_id": tariff[0] if tariff else None, "anomaly_flag": 0,
         }
-        ins_cols=[k for k in values if k in cols]
-        q=",".join("?" for _ in ins_cols)
-        cur=conn.execute(f"INSERT INTO work_log({','.join(ins_cols)}) VALUES({q})", [values[k] for k in ins_cols])
-        wid=cur.lastrowid
+        wid=insert_legacy_work_values(conn,CONFIG.backend,tenants.COMPANY_ID.get(),worker_employee_id,values)
         warnings=sync_materials(conn,wid,int(op["id"]),qty,worker_id)
-        sync_production(conn,wid,worker_id,c["name"],op["name"],product_name,qty)
+        sync_production(conn,wid,worker_employee_id,c["name"],op["name"],product_name,qty)
         if table_exists(conn,"audit_log"):
             conn.execute("INSERT INTO audit_log(actor_id,action,entity_type,entity_id,details,created_at) VALUES(?,?,?,?,?,?)",
                          (worker_id,"android_work_saved","work_log",str(wid),json.dumps({"client":c["name"],"operation":op["name"],"quantity":qty},ensure_ascii=False),created))
@@ -433,16 +420,21 @@ def dashboard(user, period="current"):
         params=[start,end]
         worker_filter=""
         if user["role"]=="packer":
-            worker_filter=" AND telegram_id=?"
-            params.append(user.get("telegram_id"))
+            w=employee_work_summary(conn,tenants.COMPANY_ID.get(),user.get('employee_id'),start,end)
         elif user["role"] == "manager":
-            worker_filter = " AND client IN (SELECT c.name FROM portal_clients c JOIN manager_client_assignments a ON a.client_id=c.id WHERE a.telegram_id=? AND a.active=1)"
-            params.append(user.get("telegram_id"))
-        w=conn.execute(f"""
-            SELECT COALESCE(SUM(quantity),0) qty,COALESCE(SUM(salary),0) salary,
-                   COALESCE(SUM(revenue),0) revenue,COALESCE(SUM(direct_cost),0) direct_cost
-            FROM work_log WHERE created_at BETWEEN ? AND ? {worker_filter}
-        """,params).fetchone()
+            allowed=manager_allowed_client_ids(conn,user) or set()
+            if allowed:
+                worker_filter=" AND client IN (SELECT name FROM portal_clients WHERE id IN ("+','.join('?' for _ in allowed)+"))"
+                params.extend(sorted(allowed))
+            else:
+                worker_filter=' AND 1=0'
+        if user['role']!='packer':
+            row=conn.execute(f"""
+                SELECT COALESCE(SUM(quantity),0) qty,COALESCE(SUM(salary),0) salary,
+                       COALESCE(SUM(revenue),0) revenue,COALESCE(SUM(direct_cost),0) direct_cost
+                FROM work_log WHERE created_at BETWEEN ? AND ? {worker_filter}
+            """,params).fetchone()
+            w=dict(zip(('qty','salary','revenue','direct_cost'),row))
         invoiced=paid=debt=0.0
         if user["role"] in {"admin","director","manager","accountant"} and table_exists(conn,"client_invoices"):
             allowed=manager_allowed_client_ids(conn,user)
@@ -487,37 +479,18 @@ def validate_employee(conn, value):
         employee_id = int(value) if value not in (None, "") else None
     except (ValueError, TypeError):
         raise ValueError("Выберите сотрудника PORTAL")
-    if employee_id is not None:
-        cols = columns(conn, "employees")
-        if "company_id" in cols:
-            found = conn.execute("SELECT 1 FROM employees WHERE company_id=? AND telegram_id=?", (tenants.COMPANY_ID.get(), employee_id)).fetchone()
-        else:
-            found = conn.execute("SELECT 1 FROM employees WHERE telegram_id=?", (employee_id,)).fetchone()
-        if not found:
-            raise ValueError("Сотрудник PORTAL не найден")
+    if employee_id is not None and not employee_exists(conn,tenants.COMPANY_ID.get(),employee_id):
+        raise ValueError("Сотрудник PORTAL не найден")
     return employee_id
 
 
 def create_internal_employee(conn, display_name, username):
-    cols = columns(conn, "employees")
-    company_id = tenants.COMPANY_ID.get()
-    if "company_id" in cols:
-        row = conn.execute("SELECT MIN(telegram_id) FROM employees WHERE company_id=? AND telegram_id<0", (company_id,)).fetchone()
-    else:
-        row = conn.execute("SELECT MIN(telegram_id) FROM employees WHERE telegram_id<0").fetchone()
-    employee_id = min((row[0] or 0) - 1, -1)
-    values = {"telegram_id": employee_id, "full_name": display_name, "username": username, "company_id": company_id}
-    values = {k: v for k, v in values.items() if k in cols}
-    conn.execute("INSERT INTO employees(" + ",".join(values) + ") VALUES(" + ",".join("?" for _ in values) + ")", tuple(values.values()))
-    return employee_id
+    return create_employee_card(conn,tenants.COMPANY_ID.get(),display_name,username)
 
 
 def save_user(body, user_id=None):
-    body=dict(body)
-    if "employee_id" in body:
-        if "telegram_id" in body and body["telegram_id"] != body["employee_id"]:
-            raise ValueError("Конфликт ID сотрудника")
-        body["telegram_id"]=body["employee_id"]
+    with db() as identity_conn:
+        body=canonical_user_payload(identity_conn,tenants.COMPANY_ID.get(),body,allow_legacy_bridge=True)
     if "company_id" in body and body["company_id"] != tenants.COMPANY_ID.get():
         raise PermissionError("Нельзя менять компанию доступа")
     if user_id is not None and user_id <= 0:
@@ -529,8 +502,9 @@ def save_user(body, user_id=None):
         old = conn.execute("SELECT * FROM app_users WHERE id=?", (user_id,)).fetchone() if user_id else None
         if user_id and not old:
             raise ValueError("Доступ не найден")
-        values = dict(old) if old else {"role": "packer", "telegram_id": None, "active": 1}
-        values.update({k: body[k] for k in ("username", "display_name", "role", "telegram_id", "active") if k in body})
+        values = dict(old) if old else {"role": "packer", "employee_id": None, "active": 1}
+        if old:values['employee_id']=employee_id_for_user(conn,tenants.COMPANY_ID.get(),old)
+        values.update({k: body[k] for k in ("username", "display_name", "role", "employee_id", "active") if k in body})
         username = clean_name(values.get("username"), "Логин")
         display = clean_name(values.get("display_name") or username, "Имя")
         role = values["role"]
@@ -542,7 +516,7 @@ def save_user(body, user_id=None):
             count = conn.execute("SELECT COUNT(*) FROM app_users WHERE active=1").fetchone()[0]
             if count >= limit:
                 raise ValueError("Достигнут лимит активных пользователей компании")
-        tg = validate_employee(conn, values["telegram_id"])
+        employee = validate_employee(conn, values.get("employee_id"))
         if conn.execute("SELECT 1 FROM app_users WHERE lower(username)=lower(?) AND id!=?", (username, user_id or 0)).fetchone():
             raise ValueError("Этот логин уже занят")
         if old and old["role"] == "admin" and old["active"] and (role != "admin" or not active):
@@ -555,23 +529,17 @@ def save_user(body, user_id=None):
             salt, digest = hash_pin(pin)
         else:
             salt, digest = old["pin_salt"], old["pin_hash"]
-        create_employee = body.get("create_employee", True if not old and tg is None else False)
+        create_employee = body.get("create_employee", True if not old and employee is None else False)
         if type(create_employee) is not bool:
             raise ValueError("Некорректный режим создания сотрудника")
-        if not old and tg is None:
+        if not old and employee is None:
             if not create_employee:
                 raise ValueError("Для доступа существующего сотрудника выберите его карточку")
-            tg = create_internal_employee(conn, display, username)
-        if role == "packer" and tg is None:
+            employee = create_internal_employee(conn, display, username)
+        if role == "packer" and employee is None:
             raise ValueError("Упаковщик должен иметь собственную карточку сотрудника")
-        if old:
-            conn.execute("UPDATE app_users SET username=?,display_name=?,role=?,telegram_id=?,active=?,pin_salt=?,pin_hash=?,updated_at=? WHERE id=?",
-                         (username, display, role, tg, active, salt, digest, now_text(), user_id))
-            # Old credentials must stop working even after access is re-enabled.
-            conn.execute("DELETE FROM app_sessions WHERE user_id=?", (user_id,))
-        else:
-            user_id = conn.execute("INSERT INTO app_users(username,display_name,role,telegram_id,active,pin_salt,pin_hash,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
-                                   (username, display, role, tg, active, salt, digest, now_text(), now_text())).lastrowid
+        values.update(username=username,display_name=display,role=role,active=active,employee_id=employee)
+        user_id=write_user_account(conn,tenants.COMPANY_ID.get(),user_id,values,salt,digest,now_text())
         repo=Repository(conn,tenants.COMPANY_ID.get())
         if repo.has_table('payroll_employee_identities'):
             repo.sync_payroll_employees()
@@ -874,7 +842,7 @@ class Handler(BaseHTTPRequestHandler):
                 token = create_session(conn, u["id"])
                 repo=Repository(conn,company_id)
                 if repo.ready():activity.login(repo,u['username'],u['id'],True,activity.client_type(self.headers),token)
-                data = {k:v for k,v in with_employee_id(u).items() if k not in {"pin_hash","pin_salt"}}
+                data = public_user_record({k:v for k,v in with_employee_id(u,conn,company_id).items() if k not in {"pin_hash","pin_salt"}})
             return self.send_json({"ok":True,"token":token,"user":data})
         if path in {"/api/ping", "/api/setup"}:
             with tenants.company_scope(1):
@@ -920,7 +888,7 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith("/api/platform/"):
                 return self.platform_route(method, path, identity)
             if path == "/api/me" and method == "GET":
-                safe = {k:v for k,v in identity.items() if k not in {"pin_salt","pin_hash"}}
+                safe = public_user_record({k:v for k,v in identity.items() if k not in {"pin_salt","pin_hash"}})
                 safe["role_label"] = ROLE_LABELS.get(identity["role"], "Platform Owner")
                 if not is_owner:
                     with tenants.company_scope(company_id), db() as conn:
@@ -934,7 +902,7 @@ class Handler(BaseHTTPRequestHandler):
                 raise PermissionError('Модуль отключён для компании')
             with tenants.company_scope(company_id):
                 self.tenant_request = True
-                self.request_user = dict(identity, role="admin", company_id=company_id, telegram_id=None, technical_owner=True) if is_owner else identity
+                self.request_user = dict(identity, role="admin", company_id=company_id, employee_id=None, technical_owner=True) if is_owner else identity
                 if not is_owner and not readonly_preview:
                     with db() as conn:activity.touch(Repository(conn,company_id),self.token(),identity)
                 if path.startswith('/api/v3/'):
@@ -1091,7 +1059,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(dict(ok=True,data=result))
             if method=='POST':repo.lock()
             service=Production(repo,self.request_user)
-            result=service.command(action,parse_body(self)) if method=='POST' else service.query(action,parse_qs(urlparse(self.path).query))
+            if method=='POST':
+                body=parse_body(self)
+                if action=='payroll-settlements':body=canonical_settlement_payload(repo,body)
+            else:
+                body=None
+            if action=='payroll-settlements' and method=='GET':
+                query=canonical_settlement_query(repo,parse_qs(urlparse(self.path).query))
+                result=service.query(action,query)
+            else:
+                result=service.command(action,body) if method=='POST' else service.query(action,parse_qs(urlparse(self.path).query))
             # Commit before acknowledging any write.
             if method=='POST':conn.commit()
             return self.send_json(dict(ok=True,data=result))
@@ -1152,10 +1129,9 @@ class Handler(BaseHTTPRequestHandler):
                 salt,ph=hash_pin(pin)
                 # APK/desktop accounts are independent from the retired Telegram identity.
                 # An employee card can be linked explicitly later by a company administrator.
-                cur=conn.execute("INSERT INTO app_users(username,display_name,pin_salt,pin_hash,role,telegram_id,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
-                                 (username,name,salt,ph,"admin",None,1,now_text(),now_text()))
-                token=create_session(conn,cur.lastrowid); conn.commit()
-            return self.send_json({"ok":True,"token":token,"user":{"username":username,"display_name":name,"role":"admin","employee_id":None,"telegram_id":None}})
+                user_id=insert_unlinked_user(conn,username,name,salt,ph,now_text())
+                token=create_session(conn,user_id); conn.commit()
+            return self.send_json({"ok":True,"token":token,"user":{"username":username,"display_name":name,"role":"admin","employee_id":None}})
         user=self.current_user()
         if not user: return self.error_json("Требуется вход",401)
         with db() as connection:
@@ -1215,11 +1191,11 @@ class Handler(BaseHTTPRequestHandler):
             return self.error_json("Маршрут не найден",404)
         if path.startswith("/api/users/") and method == "POST" and path.count("/") == 3:
             if not business_can(user,'users.manage',{'admin'}): raise PermissionError("Нет права управления сотрудниками")
-            return self.send_json({"ok":True,"id":save_user(parse_body(self),int(path.split("/")[3]))})
+            return self.send_json({"ok":True,"id":save_user_from_api(parse_body(self),int(path.split("/")[3]))})
         if method == "POST" and path not in {"/api/users", "/api/work"}:
             return self.error_json("Метод не поддерживается",405)
         if path=="/api/me":
-            safe={k:v for k,v in user.items() if k not in {"pin_hash","pin_salt"}}; safe["role_label"]=ROLE_LABELS.get(user["role"],user["role"])
+            safe=public_user_record({k:v for k,v in user.items() if k not in {"pin_hash","pin_salt"}}); safe["role_label"]=ROLE_LABELS.get(user["role"],user["role"])
             return self.send_json({"ok":True,"user":safe})
         if path=="/api/dashboard":
             if production_ready and 'finance.read' not in permissions:
@@ -1255,17 +1231,15 @@ class Handler(BaseHTTPRequestHandler):
             body=parse_body(self); result=save_work(user,body.get("client_id"),body.get("operation_id"),body.get("quantity"))
             return self.send_json({"ok":True,"work":result})
         if path=="/api/work/mine":
-            if not user.get("telegram_id"): return self.send_json({"ok":True,"rows":[]})
             with db() as conn:
-                rows=[dict(r) for r in conn.execute("SELECT id,client,operation,quantity,rate,salary,created_at FROM work_log WHERE telegram_id=? ORDER BY id DESC LIMIT 50",(user["telegram_id"],)).fetchall()]
+                rows=personal_work_rows(conn,tenants.COMPANY_ID.get(),user.get('employee_id'))
                 if production_ready and 'payroll.own' not in permissions:rows=[{k:v for k,v in r.items() if k not in ('rate','salary')} for r in rows]
             return self.send_json({"ok":True,"rows":rows})
         if path=="/api/payroll/mine":
-            if not user.get("telegram_id"): return self.send_json({"ok":True,"data":{"quantity":0,"accrued":0,"paid":0,"remaining":0}})
             s,e=period_bounds("current")
             with db() as conn:
-                q=conn.execute("SELECT COALESCE(SUM(quantity),0),COALESCE(SUM(salary),0) FROM work_log WHERE telegram_id=? AND created_at BETWEEN ? AND ?",(user["telegram_id"],s,e)).fetchone()
-                paid=conn.execute("SELECT COALESCE(SUM(amount),0) FROM payroll_transactions WHERE telegram_id=? AND period_start=? AND period_end=?",(user["telegram_id"],s,e)).fetchone()[0] if table_exists(conn,"payroll_transactions") else 0
+                q_quantity,q_salary,paid=personal_payroll_totals(conn,tenants.COMPANY_ID.get(),user.get('employee_id'),s,e)
+                q=(q_quantity,q_salary)
             return self.send_json({"ok":True,"data":{"quantity":q[0],"accrued":q[1],"paid":paid,"remaining":max(float(q[1] or 0)-float(paid or 0),0),"start":s,"end":e}})
         if path=="/api/materials":
             if not business_can(user,'materials.read',{"admin","director","shift","accountant"}): raise PermissionError("Нет доступа к складу материалов")
@@ -1290,8 +1264,12 @@ class Handler(BaseHTTPRequestHandler):
                 client_filter = ""
                 params = ()
                 if user["role"] == "manager":
-                    client_filter = "WHERE i.client IN (SELECT c.name FROM portal_clients c JOIN manager_client_assignments a ON a.client_id=c.id WHERE a.telegram_id=? AND a.active=1)"
-                    params = (user.get("telegram_id"),)
+                    allowed=manager_allowed_client_ids(conn,user) or set()
+                    if allowed:
+                        client_filter = "WHERE i.client IN (SELECT name FROM portal_clients WHERE id IN ("+','.join('?' for _ in allowed)+"))"
+                        params = tuple(sorted(allowed))
+                    else:
+                        client_filter='WHERE 1=0'
                 rows=[dict(r) for r in conn.execute(f"""
                     SELECT i.id,i.client,i.description,i.amount_due,i.due_date,i.created_at,i.closed_at,
                            COALESCE((SELECT SUM(p.amount) FROM client_payments p WHERE p.invoice_id=i.id),0) paid
@@ -1301,12 +1279,14 @@ class Handler(BaseHTTPRequestHandler):
         if path=="/api/users" and method=="GET":
             if not business_can(user,'users.manage',{'admin'}): raise PermissionError("Нет права управления сотрудниками")
             with db() as conn:
-                rows=[with_employee_id(r) for r in conn.execute("SELECT id,username,display_name,role,telegram_id,active,created_at FROM app_users ORDER BY display_name").fetchall()]
-                employees=[with_employee_id(r) for r in conn.execute("SELECT telegram_id,full_name,username FROM employees ORDER BY full_name").fetchall()]
+                repo=Repository(conn,tenants.COMPANY_ID.get())
+                rows=[]
+                rows=account_directory(conn,tenants.COMPANY_ID.get())
+                employees=repo.employee_catalog()
             return self.send_json({"ok":True,"users":rows,"employees":employees,"roles":ROLE_LABELS})
         if path=="/api/users" and method=="POST":
             if not business_can(user,'users.manage',{'admin'}): raise PermissionError("Нет права управления сотрудниками")
-            return self.send_json({"ok":True,"id":save_user(parse_body(self))})
+            return self.send_json({"ok":True,"id":save_user_from_api(parse_body(self))})
         return self.error_json("Маршрут не найден",404)
 
 

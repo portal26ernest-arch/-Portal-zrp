@@ -46,8 +46,8 @@ globalThis.PortalCore = (() => {
       return !!company && ['dashboard','sections','clients','materials','invoices','users','jobs','reports','news','excelImport','wms','notifications'].includes(page);
     }
     if (['dashboard','sections','jobs','news','notifications'].includes(page)) return true;
-    if (page==='work') return !!(user.employee_id??user.telegram_id) && ['admin','director','manager','packer','shift'].includes(user.role);
-    if (page==='payroll') return !!(user.employee_id??user.telegram_id);
+    if (page==='work') return !!user.employee_id && ['admin','director','manager','packer','shift'].includes(user.role);
+    if (page==='payroll') return !!user.employee_id;
     if (page==='clients') return user.role!=='packer';
     if (page==='materials') return ['admin','director','accountant','shift'].includes(user.role);
     if (page==='invoices') return ['admin','director','manager','accountant'].includes(user.role);

@@ -119,9 +119,7 @@ class DocumentAPITest(unittest.TestCase):
         self.get('documents?date_from=bad',status=400)
 
     def test_document_employee_filter_is_scoped_and_uses_stable_employee_id(self):
-        legacy_employee_id=self.request('/api/me',self.worker)['user']['employee_id']
-        with portal.tenants.company_scope(1),portal.db() as conn:
-            employee_id=Repository(conn,1).payroll_employee(legacy_employee_id,legacy=True)['employee_id']
+        employee_id=self.request('/api/me',self.worker)['user']['employee_id']
         document=self.upload(employee_id=employee_id)
         self.assertEqual(self.get('documents?employee_id='+str(employee_id))['data']['items'][0]['id'],document['id'])
         self.assertEqual(self.get('documents?employee_id=999999')['data']['total'],0)
@@ -233,7 +231,7 @@ class DocumentAPITest(unittest.TestCase):
         period=self.post('payroll-periods',dict(period_start=start,period_end=end))['data']
         employee=period['snapshot']['employees'][0]
         with portal.db() as conn:
-            payroll_employee=Repository(conn,1).payroll_employee(employee['employee_id'],legacy=True)['employee_id']
+            payroll_employee=employee['employee_id']
             settlements_before=Repository(conn,1).payroll_settlements(period['id'],payroll_employee)
         renderer=SimpleNamespace(payroll_slip_pdf=lambda *args: PDF)
         with patch.dict(sys.modules,{'pdf_documents':renderer}):

@@ -60,7 +60,7 @@ class ExcelImport:
     def state(self):
         result=catalog(self.s,self.company)
         result['_users']=self.r.catalog('users')
-        result['_employees']=[dict(legacy_id=row[0],full_name=row[1],username=row[2] or '') for row in self.r.sql('SELECT telegram_id,full_name,username FROM employees WHERE company_id=? ORDER BY telegram_id',(self.r.company_id,)).fetchall()]
+        result['_employees']=self.r.employee_catalog()
         result['_tariffs']=self.r.list('tariffs')
         result['_company_access']={k:self.company.get(k) for k in ('status','service_status','user_limit')}
         return result
@@ -141,7 +141,8 @@ class ExcelImport:
                         if uid is not None:
                             user=users.get(uid)
                             mapping=self.r.payroll_employee(eid) if eid is not None else None
-                            if not user or not mapping or user.get('telegram_id')!=mapping['legacy_employee_id']:raise ValueError('employee_user_identity_conflict')
+                            user_identity=user.get('employee_id') if user else None
+                            if not user or not mapping or user_identity!=mapping['employee_id']:raise ValueError('employee_user_identity_conflict')
                             role=role or user['role'];enabled=user['active'] if enabled is None else enabled
                             if rights.defaults(role)-self.s.permissions or rights.effective(self.r,user)-self.s.permissions:raise ValueError('role_escalation')
                             if (role!=user['role'] or enabled!=user['active']) and uid==self.u['id'] and not self.u.get('technical_owner'):raise ValueError('own_access_change_requires_access_api')

@@ -32,7 +32,7 @@ Statuses reflect the current roadmap and prior verified reports. `✅` means evi
 | 94–95 | Production domain/HTTPS | ⏳ | `05ab65e` nginx HTTPS/loopback template; Stage 7 report: temporary tunnel only; HTTP-01 TCP/80 issue | Domain/DNS/network and production certificate rollout | Yes |
 | 96–99 | Final import and production cutover | ⏳ | `PORTAL_PRODUCTION_CUTOVER_RUNBOOK.md` prepared only | Owner approval, freeze, snapshot, reconciliation and controlled cutover | Yes |
 | 100 | Rollback design | ✅ | `PORTAL_MASTER_ROADMAP.md`; Stage 7 rollback rehearsal | Final production rollback rehearsal is gated on cutover approval | Yes |
-| 102 | employee_id compatibility boundary | 🟡 | Legacy-boundary tests and runtime audit still required | Complete runtime audit; retain historical columns | No |
+| 102 | employee_id compatibility boundary | 🟡 | Read-only audit at current source: P0 external runtime 0, P0 active runtime identity 0; 50 explicit P1 legacy adapter/import/schema references; SQLite/API/UI suites pass | Disposable PostgreSQL/RLS identity test is added but awaits GitHub Web `documents-postgresql` result | No |
 | 105 | Money normalization | 🟡 | Payroll settlement uses integer minor units; legacy REAL inventory incomplete | Inventory/dual-read reconciliation and disposable PostgreSQL rehearsal | No |
 | 106–117 | TalAnt/WMS integration | 🔌 | No official API/sandbox evidence provided | Official API, sandbox and credentials | Yes |
 

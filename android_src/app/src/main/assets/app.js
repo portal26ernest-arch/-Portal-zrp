@@ -33,7 +33,7 @@ function toast(text,error=false){clearTimeout(toastTimer);$('toast').textContent
 function handleError(error){if(error?.stale||error?.cancelled)return;toast(error?.message||'Не удалось выполнить действие',true);}
 function can(page){return PortalCore.can(page,S.me,S.company);}
 function isOwner(){return S.me?.role==='platform_owner';}
-const employeeId=user=>user?.employee_id??user?.telegram_id??null;
+const employeeId=user=>user?.employee_id??null;
 function canLeave(){if(S.writes){toast('Дождитесь завершения записи');return false;}return true;}
 function clearCompanyData(){clearInterval(S.heartbeatTimer);S.heartbeatTimer=null;S.stage3=false;S.productionCatalog=null;S.permissionCatalog=[];if(S.me)delete S.me.permissions;S.clients=[];S.operations=[];S.userData=null;S.operationData=null;S.workSelection=null;S.epoch++;}
 

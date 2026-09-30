@@ -7,6 +7,9 @@ All writes require one company transaction. Immutable facts have no update API.
 import json
 import uuid
 from datetime import datetime, timezone
+from employee_identity import (assigned_client_ids, assignment_catalog, canonical_employee_id,
+    employee_catalog, employee_id_for_user, has_legacy_payroll, legacy_employee_id,
+    linked_user_catalog, payroll_identity_lookup, sync_employee_mappings, write_legacy_work)
 
 KINDS = {'batches','tasks','works','tariffs','permissions','plans','usage','expenses',
          'invoices','payments','settings','audit','links','requests','shipments',
@@ -91,34 +94,33 @@ class Repository:
 
     def sync_payroll_employees(self):
         """Assign surrogate payroll IDs; never derive a financial key from Telegram."""
-        self.sql('''INSERT INTO payroll_employee_identities(company_id,legacy_employee_id)
-                    SELECT e.company_id,e.telegram_id FROM employees e
-                    WHERE e.company_id=? AND NOT EXISTS (
-                        SELECT 1 FROM payroll_employee_identities i
-                        WHERE i.company_id=e.company_id AND i.legacy_employee_id=e.telegram_id)
-                    ORDER BY e.telegram_id''', (self.company_id,))
+        sync_employee_mappings(self.conn,self.company_id)
 
     def payroll_employee(self, identity, legacy=False):
-        # Column names are constants, and both lookup paths verify an existing card.
-        column='legacy_employee_id' if legacy else 'employee_id'
-        row=self.sql('''SELECT i.employee_id,i.legacy_employee_id
-                        FROM payroll_employee_identities i JOIN employees e
-                          ON e.company_id=i.company_id AND e.telegram_id=i.legacy_employee_id
-                        WHERE i.company_id=? AND i.'''+column+'=?',
-                     (self.company_id,identity)).fetchone()
-        if row is None:raise ValueError('Сотрудник не найден в этой компании')
-        return dict(employee_id=row[0],legacy_employee_id=row[1])
+        return payroll_identity_lookup(self.conn,self.company_id,identity,legacy)
+
+    def employee_identity_for_legacy(self, legacy_id):
+        identity=canonical_employee_id(self.conn,self.company_id,legacy_id)
+        if identity is None:raise ValueError('Сотрудник не связан с каноническим ID в этой компании')
+        return identity
+
+    def employee_identity_for_user(self, user):
+        """Resolve a legacy-linked account through the identity compatibility boundary."""
+        return employee_id_for_user(self.conn,self.company_id,user)
+
+    def legacy_identity_for_employee(self, identity):
+        legacy=legacy_employee_id(self.conn,self.company_id,identity)
+        if legacy is None:raise ValueError('Канонический ID сотрудника не найден в этой компании')
+        return legacy
+
+    def employee_catalog(self):
+        return employee_catalog(self.conn,self.company_id)
 
     def has_legacy_payroll(self, period, legacy_employee):
         # Historical payout semantics have not been reconciled into this ledger.
         # Presence alone blocks a second payout; no old amount is reinterpreted.
-        for table in ('payroll_transactions','payroll_payments'):
-            if self.has_table(table) and self.sql(
-                'SELECT 1 FROM '+table+' WHERE company_id=? AND telegram_id=? '
-                'AND substr(period_start,1,10)<=? AND substr(period_end,1,10)>=? LIMIT 1',
-                (self.company_id,legacy_employee,period['period_end'],period['period_start'])).fetchone():
-                return True
-        return False
+        employee=self.employee_identity_for_legacy(legacy_employee)
+        return has_legacy_payroll(self.conn,self.company_id,period,employee)
 
     def payroll_settlement(self, identity, required=True):
         row=self.sql('''SELECT id,company_id,employee_id,payroll_period_id,amount_minor,
@@ -158,12 +160,12 @@ class Repository:
                 'assignments':'manager_client_assignments','materials':'materials','norms':'operation_material_norms'}
         table=tables[name]
         if not self.has_table(table): return []
-        fields={'users':'id,display_name,role,telegram_id,active,company_id'}.get(name,'*')
+        if name=='users':return linked_user_catalog(self.conn,self.company_id)
+        if name=='assignments':return assignment_catalog(self.conn,self.company_id)
+        fields='*'
         cursor=self.sql(f'SELECT {fields} FROM {table} WHERE company_id=?',(self.company_id,))
         names=[c[0] for c in cursor.description]
         rows=[dict(zip(names,r)) for r in cursor.fetchall()]
-        if name=='users':
-            for row in rows:row['employee_id']=row.get('telegram_id')
         return rows
 
     def has_table(self, table):
@@ -181,15 +183,10 @@ class Repository:
 
     def legacy_work(self, user, client, operation, quantity, employee_rate, client_rate, created):
         """Compatibility projection, in the SAME transaction as the new ledger."""
-        employee=user.get('employee_id',user.get('telegram_id'))
+        employee=user.get('employee_id')
         if employee is None: raise ValueError('Доступ не связан с сотрудником')
-        if self.has_table('payroll_payments'):
-            paid=self.sql("SELECT 1 FROM payroll_payments WHERE company_id=? AND telegram_id=? AND period_start<=? AND period_end>=? AND status='paid'",(self.company_id,employee,created.replace('T',' ')[:19],created.replace('T',' ')[:19])).fetchone()
-            if paid: raise ValueError('Расчётный период уже закрыт')
-        values=dict(company_id=self.company_id,telegram_id=employee,username=user.get('username',''),first_name=user.get('display_name',''),client=client['name'],operation=operation['name'],quantity=quantity,rate=employee_rate/100,salary=quantity*employee_rate/100,client_rate=client_rate/100,revenue=quantity*client_rate/100,direct_cost=0,created_at=created.replace('T',' ')[:19])
-        values={k:v for k,v in values.items() if k in self.columns('work_log')}
-        cur=self.sql('INSERT INTO work_log('+','.join(values)+') VALUES('+','.join('?' for _ in values)+')'+(' RETURNING id' if self.dialect=='postgresql' else ''),tuple(values.values()))
-        return cur.fetchone()[0] if self.dialect=='postgresql' else cur.lastrowid
+        if has_legacy_payroll(self.conn,self.company_id,{'period_start':created[:10],'period_end':created[:10]},employee):raise ValueError('Расчётный период уже закрыт')
+        return write_legacy_work(self.conn,self.dialect,self.company_id,employee,user,client,operation,quantity,employee_rate,client_rate,created)
 
     def consume(self, material_id, quantity, unit_cost, legacy_id, actor):
         self.sql('UPDATE materials SET stock_qty=stock_qty-? WHERE company_id=? AND id=?',(quantity,self.company_id,material_id))
