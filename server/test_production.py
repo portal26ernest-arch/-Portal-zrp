@@ -165,8 +165,10 @@ class ProductionTest(unittest.TestCase):
     def test_today_dashboard_has_company_date_volume_finance_and_open_invoice_counts(self):
         work=self.work()
         self.post('invoices',dict(work_ids=[work['id']],due_at='2020-01-01'))
-        today=datetime.utcnow().date()
+        today=datetime.fromisoformat(self.get('today')['data']['date']).date()
         closed_payroll=None
+        expected_month_quantity=2
+        expected_month_finance=(1000,400)
         if today.day>15:
             start=today.replace(day=1).isoformat();end=today.replace(day=15).isoformat()
             with portal.tenants.company_scope(1),portal.db() as conn:
@@ -180,15 +182,17 @@ class ProductionTest(unittest.TestCase):
             self.post('payroll-settlements',dict(payroll_period_id=period['id'],employee_id=employee,
                 entry_type='payout',amount='1.00',reason='Dashboard test',request_id='dashboard-paid-once'))
             closed_payroll=(400,100,300)
+            expected_month_quantity=4
+            expected_month_finance=(2000,800)
         with portal.tenants.company_scope(1),portal.db() as conn:
             dashboard_repo=Repository(conn,1)
             dashboard_user=next(user for user in dashboard_repo.catalog('users') if user['id']==self.admin_id)
             Production(dashboard_repo,dashboard_user).today()
         data=self.get('today')['data']
         self.assertEqual(data['today_quantity'],2)
-        self.assertEqual(data['month_quantity'],4)
+        self.assertEqual(data['month_quantity'],expected_month_quantity)
         self.assertEqual(data['today_finance'],dict(revenue=1000,salary=400))
-        self.assertEqual((data['month_finance']['revenue'],data['month_finance']['salary']),(2000,800))
+        self.assertEqual((data['month_finance']['revenue'],data['month_finance']['salary']),expected_month_finance)
         self.assertEqual(data['today_productivity']['units'],2)
         self.assertIsNone(data['today_productivity']['units_per_hour'])
         self.assertEqual((data['open_invoice_count'],data['overdue_invoice_count'],data['overdue_debt']),(1,1,1000))
@@ -764,10 +768,9 @@ class ProductionTest(unittest.TestCase):
 
     def test_payroll_period_close_blocks_closed_dates_and_creates_document_snapshot(self):
         current=self.work()
-        today=datetime.utcnow().date()
-        if today.day>15:start=today.replace(day=1).isoformat();end=today.replace(day=15).isoformat()
-        else:
-            previous=(today.replace(day=1)-timedelta(days=1));start=previous.replace(day=16).isoformat();end=previous.isoformat()
+        today=datetime.fromisoformat(self.get('today')['data']['date']).date()
+        historical_month=(today-timedelta(days=60)).replace(day=1)
+        start=historical_month.isoformat();end=historical_month.replace(day=15).isoformat()
         with portal.db() as conn:
             r=Repository(conn,1);old=dict(current,id=str(uuid.uuid4()),completed_at=end+'T12:00:00.000000',created_at=end+'T12:00:00.000000')
             r.insert('works',{k:v for k,v in old.items() if k not in {'id','company_id'}},old['id']);conn.commit()
