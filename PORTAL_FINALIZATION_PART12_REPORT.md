@@ -390,3 +390,30 @@ Latest tested code at `e08e0d8dbe927cce9b82ab58e4ef4a5c7e9c29a4`; commits `cd22c
 - Earlier Web disposable PostgreSQL runs `36659765933` and `36659903107` failed for the newly added scenario. Public run summaries did not expose test output beyond exit code 1; exact initial cause is unknown. The final PG test isolates insert-once, duplicate suppression, and tenant visibility; that run passed. No security gate was relaxed.
 - Reminder scheduling remains incomplete: no operator timer, run metadata, or production enablement. Item 47 remains ⏳ and roadmap counts remain **73 ✅ / 33 🟡 / 8 ⏳ / 12 🔌**.
 - Exact NEXT: add disabled-by-default operator cadence/run/retry persistence, then test retry and concurrent deduplication on disposable PostgreSQL. Continue remaining A/B/C/D gaps. Production cutover **NOT performed**; no autopilot completion/blocked flag.
+
+## Continuation №3 — source-backed dashboard and tariff/date integrity
+
+### DONE NOW
+
+- Base checkpoint: `9c41aa856c6efdeb796f05694d7d3a6b71b76176`; final code SHA: `7917dacffaf1e0241595ccd63ab0336dbf43568a`. Logical commits: `b307c32` director dashboard/date metrics, `da4b493` PostgreSQL dashboard E2E, `635e692` tariff date/history tests, `2548d97` team productivity display, `7917dac` company-local finance month buckets.
+- Dashboard uses server facts for day/month volume and financials, open/overdue invoice count and balance, active jobs and closed-period payouts. Plan profit is `null` and shown as unavailable when plan sources are absent. Team units/hour are computed only from completed work with valid duration; missing duration is clearly unavailable.
+- Financial trend months use the company UTC offset for work, material usage and expense event dates.
+- Tariff tests prove the old work snapshot remains unchanged, a future effective tariff is selected after its boundary, and duplicate effective timestamps are rejected.
+- The Web fixture includes two disposable PostgreSQL tests for dashboard tenant isolation and effective-date tariff snapshots. Web #61 passed at `2548d97`; fixture setup uses a fresh `portal_test_web_*` DB and restricted `portal_web_*` roles and teardown fails unless DB/roles/temp resources are gone.
+
+### TESTS AND CI
+
+- Current local Server discovery at `7917dac`: **244 passed, 31 skipped, 0 failed**.
+- Full Node test suite at `2548d97`: **47 passed, 0 skipped, 0 failed**; focused Playwright UI: **26 passed**. No Android/Node files changed after that run.
+- Ops readiness tests: **7 passed**. Compileall, JS syntax, workflow YAML parse and `git diff --check` passed.
+- GitHub at `2548d97`: Server #83, Web #61 including disposable PostgreSQL, Android UI #41, Android APK #55 — all success.
+- GitHub at `7917dac`: Server #84 and Web #62 — both success. Android app source was unchanged after #41/#55.
+- Staging artifact: `PORTAL_Android_3.5-dev_staging_481dc11b4d9fcb1bd6cbef87a29605feab42ac6fb72fbe1a8886f71f57502f74`; APK SHA-256 `481dc11b4d9fcb1bd6cbef87a29605feab42ac6fb72fbe1a8886f71f57502f74`; build remains `3.5-dev-staging`, versionCode 35.
+- Local PostgreSQL fixture was skipped (no isolated local service/DSN) and created zero resources. GitHub disposable fixture passed; no production target was used. Earlier Parts 8–11 evidence is not counted as a new Part 12 run.
+
+### ROADMAP / NOT DONE
+
+- Numbered roadmap counts are **73 ✅ / 34 🟡 / 7 ⏳ / 12 🔌**. Items 19 and 44–47 evidence text was refreshed. Item 47 moved from ⏳ to 🟡 after code/tests established the company-scoped disabled operator runner and persistent cadence/run/retry records; system timer/configuration remain missing.
+- A–D remain incomplete. Next: continue source-backed profitability and remaining Client 360/alias/workflow gaps, then audit the unfinished role/settings and Documents parity paths. The reminder operator runner remains disabled-by-default and manually invoked; no production timer is enabled.
+- Next wider software tasks: employee ID legacy boundary and money cents inventory/reconciliation, safe marketplace news operator framework, backup restore rehearsal, Windows installer/toolchain, then final full readiness evidence.
+- Production cutover **NOT performed**. No autopilot completion or blocked flag created; software-completable work remains.

@@ -1,6 +1,6 @@
-# PORTAL release readiness matrix — Part 12 checkpoint
+# PORTAL release readiness matrix — Part 12 checkpoint `7917dac`
 
-Statuses reflect the current roadmap and prior verified reports. `✅` means evidenced completion in the named baseline report/test; it does not mean production cutover is approved. This checkpoint did not promote any roadmap status.
+Statuses reflect the current roadmap and prior verified reports. `✅` means evidenced completion in the named baseline report/test; it does not mean production cutover is approved. Current numbered counts: **73 ✅ / 34 🟡 / 7 ⏳ / 12 🔌**. Item 47 is 🟡 for the implemented/tested operator runner; an automatic system timer and persistent cadence configuration remain open.
 
 | Roadmap item | Feature | Status | Evidence commit/test | Remaining blocker | Owner action required |
 |---:|---|:---:|---|---|:---:|
@@ -9,7 +9,7 @@ Statuses reflect the current roadmap and prior verified reports. `✅` means evi
 | 12 | Company settings and user limits | 🟡 | `0006547`; `test_portal_tenancy` 15/15 plus active-seat/concurrency tests; Web #39 PostgreSQL API confirms standard limit=15, over-limit create denied, and cross-company access denied | Complete module-toggle model and director settings UI; production rollout | No |
 | 15 | Administrative audit UI | 🟡 | `0006547`, `cec4536`, `aa5cc64`, `2ca0ad0`, `1f3adc5`; company API filters/scope + owner audit Playwright; Web #39 PostgreSQL owner login/audit filter passes and admin/packer denied | Complete remaining audit policy matrix and production rollout | No |
 | 17 | Client 360 | 🟡 | `9bf3769`; Playwright Client 360 fixture; permission-aware source-backed detail view | Complete editable blocks, documents drilldown and API role/E2E checks | No |
-| 19 | Effective-date tariff history | 🟡 | `0d477bf`, `9bf3769`; history service test/shared UI; Server #45 and Web #19 green | Overlap/conflict and historical-work proofs; write role matrix | No |
+| 19 | Effective-date tariff history | 🟡 | `0d477bf`, `9bf3769`, `635e692`; `test_tariff_effective_boundary_preserves_prior_work_and_rejects_duplicate_interval`; Web #60 disposable PostgreSQL + Server #82 green | Broader role matrix and production rollout | No |
 | 28 | Batch plan/fact economics | 🟡 | Batch/economy API in `server/production_service.py` | Verify complete plan/fact inputs and UI | No |
 | 32 | Managed FBS/FBO/returns | 🟡 | Shipment/batch API exists | Complete workflow states, assignment, return and idempotent UI | No |
 | 33 | Name normalization/history | 🟡 | Roadmap only | Alias/rename history migration and tests | No |
@@ -17,9 +17,9 @@ Statuses reflect the current roadmap and prior verified reports. `✅` means evi
 | 38 | Payroll accrued/paid/balance | 🟡 | `0770275`, `320b6d9`, `d64f965`, `042a6fb`; Web #45 disposable PostgreSQL HTTP role-flow verifies admin payout, packer/cross-company denial, integer minor-unit balance and unchanged closed snapshot; local settlement/API and payroll XLSX tests remain in suite | Broader accountant/manager capability matrix and production rollout | No |
 | 42 | Receivables aging/overdue | 🟡 | `26e595d`; cents-based aging boundary/partial-payment/pagination test and browser filters; Server #45/Web #19 green | Disposable PostgreSQL integration and broader role/filter proof | No |
 | 43 | Profitability | 🟡 | Finance/economy API in production service | Validate unified client/batch/company calculations and UI | No |
-| 44–45 | PORTAL Сегодня/financial radar | 🟡 | `today()` in production service | Complete required source-backed metrics and honest empty states | No |
-| 46 | Productivity | 🟡 | Work records and analytics API | Unit/hour/quality period comparisons where source data exists | No |
-| 47 | Scheduled reminders | ⏳ | `cd22c20`, `2db871e`, `e08e0d8`; `test_reminder_jobs` 7/7 validates overdue/partial-payment and unbilled-work candidates, local-day boundaries, atomic duplicate suppression and retry; SQLite/API test verifies authorized attention visibility; Web run `36660208411` disposable PostgreSQL verifies tenant-scoped insert-once and cross-company isolation | Operator timer/run metadata, configured cadence/retry policy and production-disabled activation path remain; scheduler is not enabled | No |
+| 44–45 | PORTAL Сегодня/financial radar | 🟡 | `b307c32`, `da4b493`; dashboard HTTP/date/payment/unavailable-plan tests; Web #61 disposable PostgreSQL dashboard facts + tenant isolation; Server #83/#84 green | Complete remaining source-backed metric coverage and rollout | No |
+| 46 | Productivity | 🟡 | `2548d97`; today units/hour uses only timed work; UI test checks visible source metric; Server #83/#84 and Web #61 green | Client/batch/quality period comparisons where source data exists | No |
+| 47 | Scheduled reminders | 🟡 | `cd22c20`, `2db871e`, `e08e0d8`, `33374bd`, `3ef3f28`; `test_reminder_jobs` validates overdue/partial-payment and unbilled-work candidates, cadence boundaries, retry, persisted run metadata and disabled-by-default behavior; Web #`36660925542` disposable PostgreSQL runner/tenant checks passed | Add trusted system timer and persistent company cadence/configuration; keep production disabled until enabled by operator | No |
 | 52 | Payroll XLSX payments sheet | ✅ | `server/test_report_xlsx.py`; `PayrollSettlementTest.test_payroll_xlsx_document_includes_settlement_sheet_and_payment_date` | None for the tested generation flow | No |
 | 53,55–56,68 | Documents UI and cross-client sync | 🟡 | `490be25`; GitHub Web #33 / `da28db0` disposable PostgreSQL HTTP E2E: independent same-company sessions create/list/metadata/download/archive and observe archive state; cross-company denial; `e85078e` virtual folders/current-vs-archive UI | Complete history/revision and filter/grouping UI parity; production rollout remains unverified | No |
 | 59–63 | Android/Web save/share/email | 🟡 | `4e38943`; `node --test` 46/46 includes Web Share cancel/fallback/object URL/MIME tests and Android FileProvider/MIME/read-grant/share/email source contracts; Android UI run `36658950145` passed | Physical native chooser/save/email visual check remains | Yes (device check only) |

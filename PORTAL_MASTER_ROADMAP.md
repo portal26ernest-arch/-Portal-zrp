@@ -27,7 +27,7 @@
 16. ✅ Клиенты: создание, изменение, активен/архив.
 17. 🟡 Карточка клиента 360°: статистика и реквизиты есть, редактирование всех блоков неполное.
 18. ✅ Операции клиента и ставки сотруднику/клиенту.
-19. 🟡 Историчность тарифов и effective-date: серверная основа есть, UI управления версиями неполный.
+19. 🟡 Историчность тарифов и effective-date: UI текущих/прошлых версий и создание новой версии есть; Server/Web disposable PostgreSQL проверили повтор даты, effective boundary и сохранение старой ставки в work snapshot. Полная policy matrix и rollout остаются открытыми.
 20. ✅ Импортированы действующие клиентские тарифы и исключения.
 21. ✅ Ввод выработки клиент → операция → количество.
 22. ✅ Немедленный расчёт сдельной зарплаты.
@@ -55,10 +55,10 @@
 41. ✅ Базовая дебиторка: открытые/оплаченные суммы.
 42. 🟡 Просрочка и расширенный контроль дебиторки.
 43. 🟡 Выручка, себестоимость, маржа и прибыль по клиенту/партии.
-44. 🟡 Экран «PORTAL Сегодня».
-45. 🟡 Финансовый радар и блок «Требует внимания».
-46. 🟡 Производительность команды, клиента и партии.
-47. ⏳ Автоматические проверки/напоминания по невыставленным работам и неоплатам по расписанию.
+44. 🟡 «PORTAL Сегодня» показывает подтверждённые объём, выручку и начисления за день/месяц, выплаты закрытого периода и открытые счета; без плана прибыль отмечается как недоступная. Полный набор метрик и rollout ещё не закрыты.
+45. 🟡 Финансовый радар показывает дебиторку, просрочку, требующие внимания записи и сигналы убыточности клиентов; помесячная сводка учитывает часовой пояс компании. Полный набор источников и rollout остаются открытыми.
+46. 🟡 Производительность команды в единицах/час считается только по выработке с зафиксированным временем; без времени UI сообщает, что данных нет. Сравнения клиентов/партий и качества неполны.
+47. 🟡 Источники напоминаний, tenant-scoped идемпотентная доставка, cadence/run/retry metadata и disabled-by-default операторский runner реализованы и проверены. Автоматический системный timer и постоянная настройка расписания ещё не подключены.
 48. ✅ Общий payroll Excel в новом APK/VPS-контуре: сводка, сотрудники и детализация.
 49. ✅ Excel-расчётные листы по каждому сотруднику формируются отдельными листами.
 50. ✅ Серверный A4 PDF-расчётный лист строится только из закрытого payroll snapshot и регистрируется как scoped Document; реальный ReportLab 5.0.1 + Unicode font smoke и PostgreSQL/RLS gate пройдены на изолированном VPS.
@@ -240,5 +240,6 @@
 - Candidate Android metadata advanced from 3.4/34 to `3.5-dev-staging`/35. This is a staging build candidate only; no release workflow or production endpoint is authorized by this change.
 - Part 12 implementation is in progress. No additional roadmap item is marked complete by this bootstrap checkpoint. Existing Parts 8–11 evidence remains authoritative for their verified items.
 - Production cutover, DB mutation, DNS changes, production service/config changes, and real financial operations were not performed.
+- Part 12 continuation #3 verified tariff effective-date snapshots, timezone-aware financial month buckets, dashboard daily/monthly figures and source-backed team productivity. At `7917dac` local Server discovery passed 244 tests with 31 skips; Web disposable PostgreSQL and Server passed, and the same client code passed Android UI/APK CI at adjacent SHA `2548d97`. Item 47 moved from ⏳ to 🟡 after operator-run scheduling metadata/tests; the system timer remains open. Current counts: **73 ✅ / 34 🟡 / 7 ⏳ / 12 🔌**.
 - Windows installer is not yet implemented; local `dotnet` is unavailable. See `PORTAL_FINALIZATION_PART12_PROGRESS.md` for remaining work and `PORTAL_FINAL_EXTERNAL_BLOCKERS.md` for provider/owner actions.
 - Roadmap item 52 is closed on this branch after targeted HTTP/Documents/XLSX integration and workbook tests; payroll ledger facts are read from append-only settlement events and are not written into the closed snapshot.

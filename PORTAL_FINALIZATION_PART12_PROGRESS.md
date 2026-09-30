@@ -433,3 +433,35 @@ Production cutover **NOT performed**.
 - Add safe operator-run cadence/last-run/retry records and a deterministic scheduled entry point that stays disabled by default. Prove failure/retry and concurrent duplicate suppression on disposable PostgreSQL.
 - Then continue B tariff conflict/history, canonical client rename/aliases, batch FBS/FBO/returns; A director settings and remaining role matrix; C unified profitability/productivity/radar; and D remaining document parity.
 - Roadmap remains **73 ✅ / 33 🟡 / 8 ⏳ / 12 🔌**. No completion/blocked flag. Production cutover **NOT performed**.
+
+## AUTOMATIC CONTINUATION — director metrics and tariff proofs — 2026-09-30
+
+### DONE NOW
+
+- Continued from the clean pushed checkpoint `9c41aa8`; current code checkpoint is `7917dacffaf1e0241595ccd63ab0336dbf43568a` on the existing Part 12 branch/worktree.
+- `b307c32`: expanded PORTAL Сегодня with company-local today/month volume, revenue/payroll, open/overdue invoice totals, closed-period payout balance and honest unavailable-plan profit. Added aware-date handling in dashboard/receivables and tests.
+- `da4b493`: added disposable PostgreSQL HTTP coverage for dashboard facts and company isolation.
+- `635e692`: verified tariff effective boundary, duplicate effective timestamp denial and preservation of prior work snapshots; added the same scenario to the disposable PostgreSQL fixture.
+- `2548d97`: surfaced team units/hour only from work rows with recorded durations; UI explicitly displays “Нет данных времени” if duration data is missing.
+- `7917dac`: financial monthly trend buckets use the company's configured UTC offset; a month-boundary regression proves a UTC September work row can correctly belong to local October.
+- GitHub disposable Web/PostgreSQL, Server, Android UI and staging APK all passed at `2548d97`. Artifact: `PORTAL_Android_3.5-dev_staging_481dc11b4d9fcb1bd6cbef87a29605feab42ac6fb72fbe1a8886f71f57502f74`; APK SHA-256 is the artifact's 64-hex suffix. Server #83, Web #61, Android UI #41, APK #55.
+- At `7917dac`, Server #84 and Web #62 passed. The Android assets were unchanged after the successful `2548d97` UI/APK run; only server date aggregation changed afterward.
+- Roadmap evidence text for 19 and 44–47 was refreshed. Item 47 moved from ⏳ to 🟡 because the tested disabled-by-default runner, persisted cadence/run/retry records and tenant idempotency now exist; the trusted system timer and persistent company cadence configuration remain incomplete. Numbered checklist is now **73 ✅ / 34 🟡 / 7 ⏳ / 12 🔌**.
+
+### TESTS AT CURRENT CODE
+
+- `python -m unittest discover -s server -p 'test_*.py' -q`: **244 passed, 31 skipped, 0 failures** at `7917dac`.
+- `node --test android_src/tests/*.test.cjs`: **47 passed, 0 skipped, 0 failed** at `2548d97` (no Node code/test changed in `7917dac`). Focused browser UI: **26 passed**.
+- `python -m unittest ops.test_infra_readiness -q`: **7 passed**.
+- New focused tariff effective-date and local-month tests passed. `python -m compileall -q server ops android_src/tools`, Node syntax checks, YAML parsing, and `git diff --check` passed.
+- Local `test_documents_postgresql` remains opt-in and skipped because this workstation has no isolated PostgreSQL DSN; it created no DB/role. GitHub Web jobs execute the fixture with `portal_test_web_*`, restricted NOSUPERUSER/NOBYPASSRLS roles, and teardown assertions for DB=0/roles=0/temp=0. Web #61 passed the dashboard/tariff cases.
+- No production DB/service, DNS, financial transaction, credential, signing key, or physical phone was touched.
+
+### NEXT (SOFTWARE WORK REMAINS)
+
+- A: finish invitation/settings/audit full capability matrix and remaining company-owned settings policy review.
+- B: complete Client 360 editable/linked blocks, aliases/search normalization, remaining batch plan/fact source coverage and managed FBS/FBO workflow details.
+- C: finish profitability aggregation/reconciliation and period comparisons; reminder runner is still operator-invoked and has no active timer. Do not enable it in production.
+- D: finish Documents history/filter parity; same-company cross-session PostgreSQL E2E was proven in earlier Web CI and must not be misreported as a new run in this checkpoint.
+- Continue then through legacy employee_id/telegram_id and REAL-money inventory/reconciliation, marketplace-news disabled operator framework, backup restore rehearsal and final docs/release gates. Windows installer and production cutover remain open.
+- Next exact action: inspect and close an additional B/C gap with targeted tests; then commit/push and poll workflows. After that, refresh final readiness reports with exact tests/CI, leaving a clean checkpoint. No completion/blocked flag; no production cutover.
