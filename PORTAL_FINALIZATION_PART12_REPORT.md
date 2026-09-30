@@ -504,3 +504,17 @@ Latest tested code at `e08e0d8dbe927cce9b82ab58e4ef4a5c7e9c29a4`; commits `cd22c
 - Server unittest discovery: **254 run, 36 skipped, 0 failures** at `967e947` (server source matches `f5475ae`). An initial run concurrent with infra checks had one non-reproducible invoice-document idempotency assertion; its target passed independently, then full suite passed on isolated rerun. Contract/test limits were not relaxed.
 - Infra readiness: **7/7 passed**; Python compileall passed.
 - At source ancestor `b588462`, Web #`36678773323`, Android UI #`36678773573`, and APK #`36678773473` passed. Server #`36678086835` passed at `f5475ae` with unchanged server code. Web disposable PostgreSQL documents job #`36678086685` passed at `f5475ae`. `967e947` is a documentation-only descendant; no source changed.
+
+## AUTOMATIC CONTINUATION — Client 360 receivables drilldown — 2026-09-30
+
+### DONE NOW
+
+- `64dc650` opens existing receivables aging from Client 360 with `client_id`, resets local filters/page, and enforces `invoices.read`. Browser test covers the authorized filter and permission denial. No new server calculations or synthetic balances.
+- Browser UI **29 passed**, full Node/Android **50 passed**, JS syntax checks and `git diff --check` passed.
+- `b588462` Web/Android UI/APK workflows are green. For `64dc650`, Web #`36680058456`, Android UI #`36680058499`, APK #`36680058649` were in progress. Server source is unchanged since green Server #`36678086835` at `f5475ae`.
+- Roadmap counts remain **74 ✅ / 33 🟡 / 7 ⏳ / 12 🔌**. Production cutover not performed.
+
+### NOT DONE / EXACT NEXT
+
+- A–D remain partial: invitation/settings/audit role completeness; other Client 360 editable links/normalization; more source-backed profit and reminder cadence; final document history/role parity and disposable PG proof on current code.
+- Exact next: poll `64dc650` Web/Android UI/APK plus its PostgreSQL job; fix any software failure. Then continue A role matrix or C reminder/operator coverage, test, commit and push. No completion/blocked flag is warranted while software work remains.

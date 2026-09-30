@@ -594,3 +594,18 @@ Production cutover **NOT performed**.
 - Full server discovery at code SHA `967e947` (identical server files to `f5475ae`): **254 tests, 36 skipped, 0 failures**. One earlier run concurrent with `ops.test_infra_readiness` showed a single non-reproducible document idempotency assertion; the exact test passed alone and the complete suite passed when rerun without the concurrent operation. No API limit or assertion was weakened.
 - `ops.test_infra_readiness`: **7/7 passed**; `python -m compileall -q server android_src tools ops` passed.
 - CI at the code ancestor `b588462`: Web #`36678773323`, Android UI #`36678773573`, APK #`36678773473` all succeeded. The Server workflow is path-triggered and was green at `f5475ae` (#`36678086835`), where the server code used by `b588462` was unchanged. The Web workflow includes and passed the disposable PostgreSQL documents job at `f5475ae` (#`36678086685`). Docs checkpoint SHA `967e947` changes no source files.
+
+## AUTOMATIC CONTINUATION — Client 360 receivables drilldown — 2026-09-30
+
+### DONE NOW
+
+- `64dc650` adds a Client 360 action to open existing receivables aging for that client. It requires `invoices.read`, resets pagination and bucket filters, closes the profile sheet, and requests the canonical server endpoint with `client_id`; no invoice math or source facts are synthesized.
+- The browser role flow validates the filtered API request and selected client, then calls the action under a `clients.read`-only role and asserts denial. Browser UI suite **29/29 passed**. Full Android/Node suite **50/50 passed**; relevant `node --check` and `git diff --check` passed.
+- Prior current source SHA `b588462` has Web #`36678773323`, Android UI #`36678773573`, APK #`36678773473` green. New SHA `64dc650` workflows at check time: Web #`36680058456`, Android UI #`36680058499`, Android APK #`36680058649` running. Server files are unchanged since successful Server #`36678086835` at `f5475ae`. Staging version remains 3.5-dev-staging/versionCode 35.
+- Roadmap counts stay **74 ✅ / 33 🟡 / 7 ⏳ / 12 🔌**; items 17 and 42 remain 🟡. No release flag; production remains untouched.
+
+### EXACT NEXT
+
+- Poll all three `64dc650` workflows and Web disposable PostgreSQL job. Fix software failures rather than reporting them as gates.
+- A still needs complete role/settings/audit policy coverage; B still needs other source-backed Client 360 fields and normalization; C still needs broader profitability/reconciliation and persistent disabled-by-default cadence/operator scheduling; D still needs final documents revision/history/filter role coverage and a disposable PG run at final code SHA.
+- After the new CI result, continue one of those blocks with targeted tests, commit and push; keep the roadmap counts unchanged until additional acceptance evidence supports a status change. No complete/blocked flag while these software tasks remain.
