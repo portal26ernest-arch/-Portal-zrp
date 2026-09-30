@@ -204,7 +204,7 @@ def run_scheduled_company(repository, *, enabled=False, cadence="daily",
             # Exception messages may contain SQL or tenant data.
             result = {"enabled": True, "sent": 0, "duplicate": 0, "failed": 1}
     outcome = "disabled" if not enabled else ("retryable" if result["failed"] else "success")
-    record = dict(company_id=company_id, run_id=run_id, cadence=cadence,
+    record = dict(company_id=company_id, run_id=run_id, enabled=enabled, cadence=cadence,
                   cadence_id=cadence_id, started_at=current.astimezone(timezone.utc).isoformat(),
                   completed_at=current.astimezone(timezone.utc).isoformat(),
                   next_run_at=next_run_at(current, cadence, utc_offset_minutes),

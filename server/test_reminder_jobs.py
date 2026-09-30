@@ -167,7 +167,7 @@ class ReminderRunnerTests(unittest.TestCase):
             repository.insert('works',{'client_id':1,'completed_at':'2026-09-29'},'configured-work')
             now=datetime(2026,9,30,21,tzinfo=timezone.utc)
             disabled=run_configured_company(repository,now=now,run_id='configured-disabled')
-            self.assertEqual((disabled['outcome'],disabled['candidate_count']),('disabled',0))
+            self.assertEqual((disabled['enabled'],disabled['outcome'],disabled['candidate_count']),(False,'disabled',0))
             self.assertEqual(repository.list('notifications'),[])
             repository.insert('settings',{'reminder_enabled':False,'reminder_cadence':'daily',
                 'utc_offset_minutes':180},'control')
@@ -177,6 +177,7 @@ class ReminderRunnerTests(unittest.TestCase):
             enabled=run_configured_company(repository,now=now,run_id='configured-enabled')
             self.assertEqual((enabled['outcome'],enabled['cadence'],enabled['cadence_id']),
                 ('success','weekly','2026-W40'))
+            self.assertTrue(enabled['enabled'])
             self.assertEqual(enabled['sent'],1)
             self.assertNotIn('company_id',enabled)
             self.assertEqual(len(repository.list('notifications')),1)
