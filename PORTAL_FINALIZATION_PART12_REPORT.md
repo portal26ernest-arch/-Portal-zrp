@@ -646,3 +646,13 @@ Added `reconcile_linked_work_money()` as an offline, read-only validator. It com
 Final targeted suites (`test_migration_validation`, `test_migration_import`, `test_payroll_settlement`) passed **42/42**; compileall and diff check passed. The immediately preceding full Server suite passed **270 run / 43 skipped / 0 failed** before the final summary-count refinement; the final refinement is covered by the targeted test suite. Local disposable PostgreSQL is unavailable, so no live PostgreSQL claim is made for this change. Money-normalization item 105 remains 🟡; counts stay **75 ✅ / 32 🟡 / 7 ⏳ / 12 🔌**.
 
 **Exact NEXT:** test and review the dialect-specific major-unit compatibility boundary for `write_legacy_work`, `Repository.consume`, and `Repository.project_cost`; preserve the kopeck ledger as truth and reject any mismatch. Then attempt disposable PG coverage via the existing isolated CI gate. Do not rewrite legacy history or perform a production conversion.
+
+## Dialect-safe legacy money boundary (2026-09-30)
+
+`server/money_units.py` now converts integer minor units to exact `Decimal` for PostgreSQL `NUMERIC` bindings and preserves float-compatible binding for legacy SQLite schemas whose affinity is variable. Work-log and material-cost compatibility writes use this converter. Canonical kopecks remain authoritative; no legacy row or schema was rewritten. Tests cover exact PostgreSQL Decimal values, SQLite compatibility, invalid input/dialect, linked reconciliation and rounding boundaries.
+
+Current local evidence: full server discovery **274 run / 43 skipped / 0 failed**; identity-audit plus infra readiness **16/16**; money boundary **4/4**; migration/import/payroll **42/42**; compileall/diff-check passed. GitHub at preceding source `3270d44` passed Server Python 3.11/3.13, Web and disposable PostgreSQL, but does not include this latest money boundary. No local disposable PG DSN is configured, so no live PostgreSQL test claim for the new adapter.
+
+Money normalization item 105 remains 🟡; roadmap **75 ✅ / 32 🟡 / 7 ⏳ / 12 🔌**.
+
+**Exact NEXT:** push this source change and confirm Server and Web disposable PostgreSQL runs at its resulting SHA; then cover the Decimal binding and linked-fact reconciliation in PostgreSQL fixture tests. Keep existing REAL/NUMERIC history intact and do not convert production facts.

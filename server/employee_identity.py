@@ -7,6 +7,8 @@ fail closed for unmapped IDs. Older schemas retain a temporary compatibility
 mode until the additive Stage 6 migration is applied.
 """
 
+from money_units import legacy_major_currency
+
 
 def _has_table(connection, name):
     dialect = getattr(connection, 'dialect', 'sqlite')
@@ -305,7 +307,7 @@ def has_legacy_payroll(connection, company_id, period, employee_id):
 def write_legacy_work(connection, dialect, company_id, employee_id, user, client, operation, quantity, employee_rate, client_rate, created):
     legacy=legacy_employee_id(connection,company_id,employee_id)
     if legacy is None:raise ValueError('employee_id не связан с сотрудником этой компании')
-    values=dict(company_id=company_id,telegram_id=legacy,username=user.get('username',''),first_name=user.get('display_name',''),client=client['name'],operation=operation['name'],quantity=quantity,rate=employee_rate/100,salary=quantity*employee_rate/100,client_rate=client_rate/100,revenue=quantity*client_rate/100,direct_cost=0,created_at=created.replace('T',' ')[:19])
+    values=dict(company_id=company_id,telegram_id=legacy,username=user.get('username',''),first_name=user.get('display_name',''),client=client['name'],operation=operation['name'],quantity=quantity,rate=legacy_major_currency(employee_rate,dialect),salary=legacy_major_currency(quantity*employee_rate,dialect),client_rate=legacy_major_currency(client_rate,dialect),revenue=legacy_major_currency(quantity*client_rate,dialect),direct_cost=legacy_major_currency(0,dialect),created_at=created.replace('T',' ')[:19])
     cols=_columns(connection,'work_log');values={key:value for key,value in values.items() if key in cols}
     cursor=connection.execute('INSERT INTO work_log('+','.join(values)+') VALUES('+','.join('?' for _ in values)+')'+(' RETURNING id' if dialect=='postgresql' else ''),tuple(values.values()))
     return cursor.fetchone()[0] if dialect=='postgresql' else cursor.lastrowid

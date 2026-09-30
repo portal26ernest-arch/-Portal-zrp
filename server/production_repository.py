@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from employee_identity import (assigned_client_ids, assignment_catalog, canonical_employee_id,
     employee_catalog, employee_id_for_user, has_legacy_payroll, legacy_employee_id,
     linked_user_catalog, payroll_identity_lookup, sync_employee_mappings, write_legacy_work)
+from money_units import legacy_major_currency
 
 KINDS = {'batches','tasks','works','tariffs','permissions','plans','usage','expenses',
          'invoices','payments','settings','audit','links','requests','shipments',
@@ -191,9 +192,9 @@ class Repository:
     def consume(self, material_id, quantity, unit_cost, legacy_id, actor):
         self.sql('UPDATE materials SET stock_qty=stock_qty-? WHERE company_id=? AND id=?',(quantity,self.company_id,material_id))
         if self.has_table('material_movements'):
-            values=dict(company_id=self.company_id,material_id=material_id,qty_change=-quantity,unit_cost=unit_cost/100,movement_type='work',reference_type='work_log',reference_id=str(legacy_id),note='PORTAL: расход по выработке',created_at=utcnow(),created_by=actor)
+            values=dict(company_id=self.company_id,material_id=material_id,qty_change=-quantity,unit_cost=legacy_major_currency(unit_cost,self.dialect),movement_type='work',reference_type='work_log',reference_id=str(legacy_id),note='PORTAL: расход по выработке',created_at=utcnow(),created_by=actor)
             values={k:v for k,v in values.items() if k in self.columns('material_movements')}
             self.sql('INSERT INTO material_movements('+','.join(values)+') VALUES('+','.join('?' for _ in values)+')',tuple(values.values()))
 
     def project_cost(self, legacy_id, cost):
-        self.sql('UPDATE work_log SET direct_cost=? WHERE company_id=? AND id=?',(cost/100,self.company_id,legacy_id))
+        self.sql('UPDATE work_log SET direct_cost=? WHERE company_id=? AND id=?',(legacy_major_currency(cost,self.dialect),self.company_id,legacy_id))
