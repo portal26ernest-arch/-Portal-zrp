@@ -288,7 +288,12 @@ class ProductionTest(unittest.TestCase):
         self.assertEqual(events['company.settings.updated']['fields'],
                          ['monday_time','reminder_cadence','reminder_enabled','utc_offset_minutes'])
         self.assertEqual(events['user.permissions.updated']['fields'],['work.write'])
-        serialized=json.dumps(events,ensure_ascii=False)
+        # Audit timestamps can legitimately contain strings such as "11:30".
+        # Check only the event payload fields that could leak changed values.
+        safe_events={name:{key:value for key,value in event.items()
+                           if key not in ('id','created_at')}
+                     for name,event in events.items()}
+        serialized=json.dumps(safe_events,ensure_ascii=False)
         for value in ('11:30','240','true'):
             self.assertNotIn(value,serialized)
 
