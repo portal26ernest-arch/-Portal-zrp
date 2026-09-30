@@ -89,7 +89,8 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
                 admin.execute(sql.SQL('GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO {}').format(control))
                 admin.execute(sql.SQL('GRANT EXECUTE ON FUNCTION portal_provision_company(BIGINT) TO {}').format(control))
                 for cid in (1,2):
-                    admin.execute("INSERT INTO companies(id,name,user_limit,created_at,updated_at) VALUES(%s,%s,NULL,CURRENT_TIMESTAMP::text,CURRENT_TIMESTAMP::text)",(cid,'Synthetic company '+str(cid)))
+                    limit=None if cid==1 else 15
+                    admin.execute("INSERT INTO companies(id,name,user_limit,created_at,updated_at) VALUES(%s,%s,%s,CURRENT_TIMESTAMP::text,CURRENT_TIMESTAMP::text)",(cid,'Synthetic company '+str(cid),limit))
                     admin.execute('SELECT portal_provision_company(%s)',(cid,))
             import test_portal_app_server as legacy
             import test_production as production
@@ -278,6 +279,17 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
                 "SELECT payload FROM portal_production WHERE kind='audit' AND payload LIKE '%access_invite.%'")]
             self.assertGreaterEqual(len(events),3)
             self.assertTrue(all(token not in json.dumps(event) for event in events))
+
+    def test_postgresql_api_enforces_standard_active_user_limit(self):
+        """The standard company limit is enforced by the server, not just the UI."""
+        access=self.request('/api/v3/company-access',self.tokens[2])['data']
+        self.assertEqual((access['active_users'],access['user_limit'],access['unlimited']),(2,15,False))
+        with self.pg.connect(self.make_conninfo(self.admin_dsn,dbname=self.database),autocommit=True) as admin:
+            admin.execute('UPDATE companies SET user_limit=2 WHERE id=2')
+        self.request('/api/users',self.tokens[2],{'username':'over-seat','display_name':'Over Seat',
+                     'role':'packer','pin':'5678'},method='POST',status=400)
+        self.assertEqual(self.request('/api/v3/company-access',self.tokens[2])['data']['active_users'],2)
+        self.request('/api/v3/company-access',self.tokens[1],extra_headers={'X-Portal-Company':'2'},status=403)
 
     @unittest.skipUnless(_WEB_E2E,'Web browser gate only')
     def test_real_web_static_login_meta_and_company_scope_in_browser(self):
