@@ -346,3 +346,10 @@ Production cutover **NOT performed**.
 - C: payroll settlement role/E2E, persistent reminder candidates/dispatch, canonical profitability/productivity/radar remain software work.
 - D: real same-company Documents sync passed earlier; complete remaining shared UI revision/filter parity and Web Share/Android contracts.
 - Roadmap remains **72 ✅ / 34 🟡 / 8 ⏳ / 12 🔌**. No status promotion, no completion/blocked flag. Production cutover **NOT performed**.
+
+#### Owner explicit-scope follow-up — `ea531c5`
+
+- Added Platform Owner invitation API checks in PostgreSQL: create without explicit company selection returns 403; selecting company 2 allows only that scoped create and returns a company-prefixed one-time token. Existing company admin/packer denial and owner-audit filter checks remain in the same disposable fixture.
+- Targeted local invitation role tests: **2 passed**. The PostgreSQL fixture test is locally skipped (no local PostgreSQL); `python -m compileall -q .` and `git diff --check` passed.
+- GitHub Web **#40 / 36654066963** at `ea531c5`: Web and disposable PostgreSQL jobs success; fixture **10 tests, 8 passed, 2 skipped**, cleanup DB=0/roles=0/temp=0. Server **#62 / 36654067004**: Python 3.11/3.13 both **221 tests, 22 skipped, 0 failed**.
+- Exact next: complete remaining existing-employee invitation matrix and determine/implement company module-toggle model + director settings UI, then continue B and C software work. No roadmap status promotion or autopilot flag; production cutover **NOT performed**.

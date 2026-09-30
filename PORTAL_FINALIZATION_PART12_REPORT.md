@@ -340,3 +340,10 @@ A–D and Part 12 are **not complete**. No production cutover was performed.
 - Counts remain **72 ✅ / 34 🟡 / 8 ⏳ / 12 🔌**. A items 10–12/15 remain 🟡 pending the full role matrix, missing company module-toggle model, director settings UI and production gates.
 - Exact next: define additive module-toggle/settings storage and enforce it server-side; cover director-owned settings plus Platform Owner explicit company selection, then continue B product/client/batch workflows and C payroll/profitability/reminders. D UI/share parity and final Android checks remain after those.
 - Production cutover **NOT performed**. No completion or blocked flag created; software work remains.
+
+### Owner explicit-company invitation follow-up — `ea531c5`
+
+- The disposable PostgreSQL owner test now covers both denial with no company selection and successful invitation creation after explicitly selecting company 2. It asserts the resulting invite belongs to company 2 and the one-time token is scoped to that company.
+- GitHub Web **#40 / 36654066963**: Web and PostgreSQL jobs successful; PG suite **10 tests, 8 passed, 2 skipped**, cleanup verified DB=0/roles=0/temp=0. GitHub Server **#62 / 36654067004**: Python 3.11 and 3.13 each **221 tests, 22 skipped, 0 failed**.
+- Targeted local invite role tests **2 passed**; local PG gate remains skipped because this workstation has no isolated PostgreSQL. `compileall` and `git diff --check` passed.
+- Roadmap counts stay **72 ✅ / 34 🟡 / 8 ⏳ / 12 🔌**. Existing-employee flow matrix, module toggles/director settings UI, Blocks B/C/D remainder and final Android/Web release checks remain. Production cutover **NOT performed**.
