@@ -510,7 +510,12 @@ class ProductionTest(unittest.TestCase):
         progress=self.get('batches')['data'][0];self.assertEqual(progress['done'],0);self.assertFalse(progress['ready'])
 
     def test_control_schedule_and_uninvoiced_separate_from_debt(self):
-        self.work();self.post('settings',dict(monday_time='11:00',wednesday_time='12:00',utc_offset_minutes=0))
+        self.work();director=self.role_token('director');manager=self.role_token('manager')
+        self.assertEqual(self.get('settings',director)['data']['monday_time'],'10:00')
+        self.post('settings',dict(monday_time='11:00',wednesday_time='12:00',utc_offset_minutes=0),director)
+        self.get('settings',manager,status=403)
+        self.post('settings',dict(monday_time='09:00'),manager,status=403)
+        self.request('/api/v3/settings',self.admin,extra_headers={'X-Portal-Company':'2'},status=403)
         with portal.db() as conn:
             r=Repository(conn,1);u=next(u for u in r.catalog('users') if u['id']==self.admin_id)
             s=Production(r,u,lambda:'2026-09-30T13:00:00.000000')
