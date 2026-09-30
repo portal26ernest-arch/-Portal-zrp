@@ -454,6 +454,19 @@ class ProductionTest(unittest.TestCase):
         self.assertEqual((result['items'][0]['overdue_days'],result['items'][0]['bucket']),(1,'days_1_7'))
         self.assertEqual((dashboard['date'],dashboard['overdue_invoice_count'],dashboard['overdue_debt']),("2026-10-01",1,500))
 
+    def test_finance_monthly_trend_uses_company_local_month(self):
+        with portal.tenants.company_scope(1),portal.db() as conn:
+            repo=Repository(conn,1)
+            repo.insert('settings',dict(utc_offset_minutes=180),'control')
+            repo.insert('works',dict(client_id=1,client_name='Client',operation_id=1,operation_name='Packing',
+                quantity=1,salary=100,revenue=200,completed_at='2026-09-30T22:30:00+00:00'),'month-boundary-work')
+            conn.commit()
+            user=next(item for item in repo.catalog('users') if item['id']==self.admin_id)
+            result=Production(repo,user,clock=lambda:'2026-10-01T00:00:00').finance()
+        self.assertNotIn('2026-09',result['months'])
+        self.assertEqual(result['months']['2026-10']['revenue'],200)
+        self.assertEqual(result['months']['2026-10']['salary'],100)
+
     def test_idempotency_and_transaction_rollback(self):
         body=dict(client_id=1,operation_id=1,quantity=2,request_id='retry-work')
         a=self.post('work',body,self.worker)['data'];b=self.post('work',body,self.worker)['data'];self.assertEqual(a['id'],b['id'])

@@ -819,6 +819,7 @@ class Production:
 
     def finance(self):
         self.need('finance.read');works=self.scoped('works');usage=self.scoped('usage');expenses=self.scoped('expenses')
+        offset=self.settings()['utc_offset_minutes']
         clients=[];months={}
         for c in self.r.catalog('clients'):
             if not self.visible(c['id']):continue
@@ -827,11 +828,11 @@ class Production:
             profit=revenue-salary-material-other;batches=[b for b in self.scoped('batches') if b['client_id']==c['id']]
             clients.append(dict(client_id=c['id'],client_name=c['name'],revenue=revenue,salary=salary,materials=material,other=other,profit=profit,margin=profit/revenue if revenue else None,average_batch_profit=sum(self.economy(b['id'])['fact']['profit'] for b in batches)/len(batches) if batches else None))
         for w in works:
-            month=w['completed_at'][:7];m=months.setdefault(month,dict(revenue=0,salary=0,materials=0,other=0,overhead=0));m['revenue']+=w['revenue'];m['salary']+=w['salary']
+            month=company_date(w['completed_at'],offset).strftime('%Y-%m');m=months.setdefault(month,dict(revenue=0,salary=0,materials=0,other=0,overhead=0));m['revenue']+=w['revenue'];m['salary']+=w['salary']
         for row in usage:
-            month=row['created_at'][:7];m=months.setdefault(month,dict(revenue=0,salary=0,materials=0,other=0,overhead=0));m['materials']+=row['cost']
+            month=company_date(row['created_at'],offset).strftime('%Y-%m');m=months.setdefault(month,dict(revenue=0,salary=0,materials=0,other=0,overhead=0));m['materials']+=row['cost']
         for row in expenses:
-            month=(row.get('incurred_at') or row['created_at'])[:7];m=months.setdefault(month,dict(revenue=0,salary=0,materials=0,other=0,overhead=0))
+            month=company_date(row.get('incurred_at') or row['created_at'],offset).strftime('%Y-%m');m=months.setdefault(month,dict(revenue=0,salary=0,materials=0,other=0,overhead=0))
             if row.get('client_id') is None:m['overhead']+=row['amount']
             else:m['other']+=row['amount']
         for m in months.values():
