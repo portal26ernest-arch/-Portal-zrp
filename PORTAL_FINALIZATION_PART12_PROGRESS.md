@@ -878,3 +878,12 @@ Production cutover **NOT performed**.
 - Item 33 stays 🟡 and counts remain **76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌**. No complete/blocked flag. Production data/service/DNS/cutover and secrets untouched.
 
 **Exact NEXT:** commit and push the tested alias ambiguity guard and documentation, then verify Server Python 3.11/3.13 and Web disposable PostgreSQL at that SHA. Next inspect actual remaining Owner/Director invitation, company-settings and audit role cases in `server/test_documents_postgresql.py` and shared UI tests; add only a demonstrable missing permission/cross-company case. Preserve all canonical identities and production boundaries.
+
+## AUTOMATIC CONTINUATION — invitation/audit role boundary and redaction regression — 2026-09-30
+
+- Inspection found one missing explicit matrix assertion: a Director must be denied the separate Platform Owner support-audit endpoint while retaining access to the same-company audit after an invitation action. Added the PostgreSQL assertion and a shared browser sequence that filters company audit after Director invite decisions and verifies no platform-audit request is emitted.
+- CI for prior source `fd98617` found the disposable PostgreSQL audit-redaction test could fail when the string `240` appeared incidentally in a random UUID/timestamp. This was a test false positive, not a sensitive field leak. The stricter regression now asserts the exact value-free audit row shape (`id`, tenant/actor/event/entity, field names, timestamp) and rejects `values`/`details`; it keeps checking the expected setting field names.
+- Current local validation: `node --test android_src/tests/*.test.cjs` **53/53**; `ops.test_infra_readiness` **8/8**; compileall and diff check passed. The previous Web PG failure cleaned up (`db=0 roles=0 temp=0`); local PG tests skip because no local disposable fixture is configured. The corrected PG assertion is pending CI.
+- Roadmap counts unchanged **76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌**; no complete/blocked flag; production untouched.
+
+**Exact NEXT:** commit/push the corrected redaction and Director/company-audit role tests; verify Web `documents-postgresql` and Server 3.11/3.13 at that SHA, including disposable-resource cleanup. If green, record the tested A role boundary, keep production rollout/user-limit configuration open, and proceed to Client 360/item 17 source-backed gaps or batch economics/item 28. No production cutover.

@@ -381,6 +381,10 @@ test('browser UI regression',async t=>{
       await page.locator('#accessInviteForm [type=submit]').click();await page.waitForSelector('#oneTimeInviteToken');
       const directorCreate=(await page.evaluate(()=>mock.calls)).find(c=>c.method==='POST'&&c.url==='/api/v3/invitations'&&c.body?.username==='director-invitee');
       assert.equal(directorCreate.body.action,'create');assert.equal(Object.hasOwn(directorCreate.body,'pin'),false);
+      await page.evaluate(()=>closeSheet());await page.locator('[data-action=companyAudit]').click();await page.waitForSelector('#auditEntity');
+      await page.locator('#auditAction').fill('access_invite.created');await page.locator('#auditFilterForm [type=submit]').click();
+      await page.waitForFunction(()=>mock.calls.some(c=>c.url.startsWith('/api/v3/audit?')&&c.url.includes('action=access_invite.created')));
+      assert.equal((await page.evaluate(()=>mock.calls)).some(c=>c.url.startsWith('/api/platform/audit?')),false);
       assert.deepEqual(errors,[]);await page.close();
       const packer=await fixture(browser,'packer',{width:390,height:844},true);
       await packer.page.evaluate(()=>{mock.stage3Permissions=['work.write','tasks.read'];mock.invites=[

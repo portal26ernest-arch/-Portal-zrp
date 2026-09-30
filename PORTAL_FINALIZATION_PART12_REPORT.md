@@ -726,3 +726,11 @@ The Knowledge Base's eight employee surname spelling aliases now share a Unicode
 Validation on the working source: Excel import tests **17/17**; full Server discovery **295 tests / 46 skips / 0 failures**; compileall and `git diff --check` passed. Local PostgreSQL fixture cases skip because no disposable PostgreSQL DSN is configured; CI validation at the resulting SHA is pending. Item 33 remains 🟡 and roadmap counts remain **76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌**. No production systems or data were used.
 
 **Exact NEXT:** commit/push this checkpoint and verify Server 3.11/3.13 plus Web disposable PostgreSQL at its SHA. Then inspect the remaining Owner/Director invitation/settings/audit role matrix and implement the next concrete cross-company permission gap with PG and shared-UI coverage. Part 12 remains open; no completion/blocked flag; production cutover NOT performed.
+
+## Invitation and administrative-audit role follow-up — 2026-09-30
+
+Added a PostgreSQL check that a company Director cannot call the Platform Owner support-audit route and a Playwright Director flow that audits invitation decisions through the company audit UI without issuing a platform-audit request. The disposable PostgreSQL run at preceding SHA `fd98617` exposed a false-positive test: searching a numeric value across a serialized record also matched incidental random metadata. The revised test asserts the exact value-free record shape and expected field names, preserving the secret/value-redaction requirement.
+
+Local validation: Android/Web Node+Playwright suite **53/53**, `ops.test_infra_readiness` **8/8**, compileall and diff check passed. Local disposable PostgreSQL is unavailable; the `fd98617` Web PG job failed only the substring assertion and verified cleanup (`db=0 roles=0 temp=0`). Final PG and Server CI for this corrected test change is pending. Roadmap counts remain **76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌**; A stays 🟡 until updated evidence is green and release/rollout acceptance is met.
+
+**Exact NEXT:** commit/push this test correction and verify Server 3.11/3.13 plus Web disposable PostgreSQL and teardown. Then proceed to Client 360 or batch-economics gaps; no completion/blocked flag and production cutover NOT performed.

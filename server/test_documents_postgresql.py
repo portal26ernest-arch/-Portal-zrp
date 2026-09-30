@@ -319,9 +319,10 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.assertEqual(events['company.settings.updated']['fields'],
             ['monday_time','reminder_cadence','reminder_enabled','utc_offset_minutes'])
         self.assertEqual(events['user.permissions.updated']['fields'],['work.write'])
-        serialized=json.dumps(events,ensure_ascii=False)
-        for value in ('11:30','240','Synthetic packer 1','true'):
-            self.assertNotIn(value,serialized)
+        for event in events.values():
+            self.assertEqual(set(event),{'id','company_id','actor_id','event','entity_id','fields','created_at'})
+            self.assertNotIn('values',event)
+            self.assertNotIn('details',event)
         director=self.tokens['same_company_second_session']
         self.post('settings',{'reminder_enabled':True,'reminder_cadence':'daily'},director)
         self.assertEqual(self.get('settings',self.admin)['data']['reminder_cadence'],'daily')
@@ -643,6 +644,7 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.assertEqual(filtered['rows'][0]['outcome'],'success')
         self.assertNotIn(pin,json.dumps(filtered))
         self.request('/api/platform/audit',self.admin,status=403)
+        self.request('/api/platform/audit',self.tokens['same_company_second_session'],status=403)
         self.request('/api/platform/audit',self.tokens['company_1_packer'],status=403)
         invite_body={'action':'create','role':'packer','username':'owner-scoped-invite',
                      'display_name':'Owner Scoped Invite','request_id':'owner-scoped-invite-once'}
