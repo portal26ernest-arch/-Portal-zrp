@@ -40,6 +40,11 @@ class ProductionTest(unittest.TestCase):
 
     def work(self,**overrides):return self.post('work',dict(client_id=1,operation_id=1,quantity=2,**overrides),self.worker)['data']
 
+    def test_current_work_api_rejects_legacy_employee_field_without_writing(self):
+        before=len(self.get('works',self.worker)['data'])
+        self.post('work',dict(client_id=1,operation_id=1,quantity=2,telegram_id=101),self.worker,status=400)
+        self.assertEqual(len(self.get('works',self.worker)['data']),before)
+
     def test_batches_isolated_and_numbers_unique(self):
         a=self.batch();b=self.batch();other=self.post('batches',dict(client_id=1,product='Другое',quantity=10),self.other_admin)['data']
         self.assertEqual(len({a['number'],b['number'],other['number']}),3)

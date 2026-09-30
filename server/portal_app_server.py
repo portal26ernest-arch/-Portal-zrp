@@ -15,8 +15,7 @@ from urllib.parse import urlparse, parse_qs
 import portal_tenancy as tenants
 from production_repository import Repository
 from production_service import Production
-from employee_identity import (account_directory, assigned_client_ids, canonical_settlement_payload,
-    canonical_settlement_query, canonical_user_payload,
+from employee_identity import (account_directory, assigned_client_ids, canonical_user_payload,
     create_employee_card, create_invited_account, employee_exists, employee_id_for_user,
     employee_work_summary, insert_unlinked_user, legacy_employee_id, legacy_employee_id_for_user,
     insert_legacy_work_values, legacy_paid_period, personal_payroll_totals, personal_work_rows, public_user_record,
@@ -214,7 +213,7 @@ def with_employee_id(row, connection=None, company_id=None):
 
 
 def save_user_from_api(body, user_id=None):
-    """Canonical API boundary; telegram_id is accepted only by the identity adapter."""
+    """Canonical API boundary; retained legacy IDs stay behind the storage adapter."""
     with db() as conn:body=canonical_user_payload(conn,tenants.COMPANY_ID.get(),body)
     return save_user(body,user_id)
 
@@ -667,6 +666,8 @@ def parse_body(handler):
         raise
     if not isinstance(body, dict):
         raise ValueError("Ожидается JSON-объект")
+    if 'telegram_id' in body:
+        raise ValueError('Используйте employee_id')
     if getattr(handler, "tenant_request", False) and "company_id" in body:
         if type(body["company_id"]) is not int or body["company_id"] != tenants.COMPANY_ID.get():
             raise PermissionError("Компания определяется авторизованной сессией")
@@ -1070,11 +1071,11 @@ class Handler(BaseHTTPRequestHandler):
             service=Production(repo,self.request_user)
             if method=='POST':
                 body=parse_body(self)
-                if action=='payroll-settlements':body=canonical_settlement_payload(repo,body)
             else:
                 body=None
             if action=='payroll-settlements' and method=='GET':
-                query=canonical_settlement_query(repo,parse_qs(urlparse(self.path).query))
+                query=parse_qs(urlparse(self.path).query)
+                if 'telegram_id' in query:raise ValueError('Используйте employee_id')
                 result=service.query(action,query)
             else:
                 result=service.command(action,body) if method=='POST' else service.query(action,parse_qs(urlparse(self.path).query))
@@ -1237,7 +1238,10 @@ class Handler(BaseHTTPRequestHandler):
                 req=conn.execute("SELECT legal_name,inn,kpp,phone,email,contact_person FROM portal_client_requisites WHERE client_id=?",(client_id,)).fetchone() if table_exists(conn,"portal_client_requisites") else None
             return self.send_json({"ok":True,"client":dict(c),"stats":{"quantity":work[0],"revenue":work[1],"salary":work[2],"invoices":invoices[0],"invoiced":invoices[1]},"requisites":dict(req) if req else {}})
         if path=="/api/work" and method=="POST":
-            body=parse_body(self); result=save_work(user,body.get("client_id"),body.get("operation_id"),body.get("quantity"))
+            body=parse_body(self)
+            if "employee_id" in body:
+                raise ValueError("employee_id определяется авторизованной сессией")
+            result=save_work(user,body.get("client_id"),body.get("operation_id"),body.get("quantity"))
             return self.send_json({"ok":True,"work":result})
         if path=="/api/work/mine":
             with db() as conn:

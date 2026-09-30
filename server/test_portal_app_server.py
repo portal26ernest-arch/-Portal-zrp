@@ -75,6 +75,19 @@ class PortalAPITest(unittest.TestCase):
         conn.executescript(SCHEMA)
         conn.close()
         portal.ensure_schema()
+        # Current API fixtures install the additive canonical identity map.
+        # Separate migration tests below retain an unmigrated legacy database.
+        with portal.db() as conn:
+            conn.execute('''CREATE TABLE payroll_employee_identities (
+                employee_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                company_id INTEGER NOT NULL,
+                legacy_employee_id INTEGER NOT NULL,
+                UNIQUE(company_id,employee_id),
+                UNIQUE(company_id,legacy_employee_id))''')
+            conn.execute('''INSERT INTO payroll_employee_identities(company_id,legacy_employee_id)
+                SELECT company_id,telegram_id FROM employees ORDER BY telegram_id''')
+            self.employee_101=conn.execute('SELECT employee_id FROM payroll_employee_identities WHERE legacy_employee_id=101').fetchone()[0]
+            self.employee_202=conn.execute('SELECT employee_id FROM payroll_employee_identities WHERE legacy_employee_id=202').fetchone()[0]
         self.admin_id = portal.save_user({"username":"admin","pin":"1234","role":"admin"})
         self.worker_id = portal.save_user({"username":"worker","pin":"1234","role":"packer","telegram_id":101})
         self.cid = portal.save_client({"name":"Client"})
@@ -214,20 +227,20 @@ class PortalAPITest(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT full_name FROM employees WHERE telegram_id=?",(b,)).fetchone()[0],"Fresh Two")
         with portal.db() as conn:
             before_link=conn.execute("SELECT COUNT(*) FROM employees").fetchone()[0]
-        linked=self.request("/api/users",self.admin,{"username":"linked","display_name":"Existing","pin":"4321","role":"packer","employee_id":202})["id"]
+        linked=self.request("/api/users",self.admin,{"username":"linked","display_name":"Existing","pin":"4321","role":"packer","employee_id":self.employee_202})["id"]
         with portal.db() as conn:
             self.assertEqual(conn.execute("SELECT telegram_id FROM app_users WHERE id=?",(linked,)).fetchone()[0],202)
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM employees").fetchone()[0],before_link)
 
     def test_user_lifecycle_revokes_old_sessions(self):
-        uid=self.request("/api/users",self.admin,{"username":"new","pin":"4321","role":"packer","employee_id":202})["id"]
+        uid=self.request("/api/users",self.admin,{"username":"new","pin":"4321","role":"packer","employee_id":self.employee_202})["id"]
         token=self.login("new","4321")["token"]
-        self.request(f"/api/users/{uid}",self.admin,{"role":"shift","pin":"9876","employee_id":101})
+        self.request(f"/api/users/{uid}",self.admin,{"role":"shift","pin":"9876","employee_id":self.employee_101})
         self.request("/api/me",token,status=401)
         self.login("new","4321",401)
         new=self.login("new","9876")
         self.assertEqual(new["user"]["role"],"shift")
-        self.assertEqual(new["user"]["employee_id"],101)
+        self.assertEqual(new["user"]["employee_id"],self.employee_101)
         self.request(f"/api/users/{uid}",self.admin,{"active":0})
         self.request("/api/me",new["token"],status=401)
         self.login("new","9876",401)
@@ -266,7 +279,8 @@ class PortalAPITest(unittest.TestCase):
         self.request("/api/work",self.worker,{"client_id":self.cid,"operation_id":new,"quantity":2},status=400)
         self.request(path+f"/{new}",self.admin,{"active":1})
         self.request(path+f"/{self.oid}",self.admin,{"name":"Packing renamed","employee_rate":4,"client_rate":10})
-        self.request("/api/work",self.worker,{"client_id":self.cid,"operation_id":self.oid,"quantity":2,"telegram_id":202})
+        self.request("/api/work",self.worker,{"client_id":self.cid,"operation_id":self.oid,"quantity":2,"employee_id":self.employee_202},status=400)
+        self.request("/api/work",self.worker,{"client_id":self.cid,"operation_id":self.oid,"quantity":2})
         with portal.db() as conn:
             rows=conn.execute("SELECT telegram_id,operation,quantity,salary,revenue FROM work_log ORDER BY id").fetchall()
             self.assertEqual(rows[0][:],(101,"Packing renamed",3,6,15))

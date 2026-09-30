@@ -140,19 +140,21 @@ class PayrollSettlementTest(unittest.TestCase):
         self.post('payroll-settlements',dict(payroll_period_id=period['id'],employee_id=999999,
             entry_type='payout',amount=1,reason='Другой сотрудник'),status=400)
 
-    def test_employee_id_is_canonical_and_telegram_id_is_compatibility_only(self):
+    def test_employee_id_is_canonical_and_legacy_field_is_rejected_on_public_api(self):
         period=self.closed_period()
-        entry=self.post('payroll-settlements',dict(payroll_period_id=period['id'],telegram_id=self.legacy_employee_id,
-            entry_type='payout',amount=1,reason='Совместимый запрос'))['data']
+        self.post('payroll-settlements',dict(payroll_period_id=period['id'],telegram_id=self.legacy_employee_id,
+            entry_type='payout',amount=1,reason='Наследуемый ключ'),status=400)
+        self.get('payroll-settlements?payroll_period_id='+period['id']+'&telegram_id='+str(self.legacy_employee_id),status=400)
+        entry=self.post('payroll-settlements',dict(payroll_period_id=period['id'],employee_id=self.employee_id,
+            entry_type='payout',amount=1,reason='Канонический запрос'))['data']
         self.assertEqual(entry['employee_id'],self.employee_id);self.assertNotIn('telegram_id',entry)
         self.post('payroll-settlements',dict(payroll_period_id=period['id'],employee_id=self.employee_id,
             telegram_id=202,entry_type='payout',amount=1,reason='Конфликт'),status=400)
         self.assertNotEqual(self.employee_id,self.legacy_employee_id)
         self.post('payroll-settlements',dict(payroll_period_id=period['id'],employee_id=self.legacy_employee_id,
             entry_type='payout',amount=1,reason='Старый идентификатор не канонический'),status=400)
-        matching=self.post('payroll-settlements',dict(payroll_period_id=period['id'],employee_id=self.employee_id,
-            telegram_id=self.legacy_employee_id,entry_type='payout',amount=1,reason='Совпадение через связь'))['data']
-        self.assertEqual(matching['employee_id'],self.employee_id)
+        self.post('payroll-settlements',dict(payroll_period_id=period['id'],employee_id=self.employee_id,
+            telegram_id=self.legacy_employee_id,entry_type='payout',amount=1,reason='Два идентификатора'),status=400)
         with portal.db() as conn:
             columns={row[1] for row in conn.execute('PRAGMA table_info(payroll_settlement_entries)')}
         self.assertIn('employee_id',columns);self.assertNotIn('telegram_id',columns)

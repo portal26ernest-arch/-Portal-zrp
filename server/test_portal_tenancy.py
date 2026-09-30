@@ -41,6 +41,7 @@ class CompanyIsolationTest(unittest.TestCase):
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM work_log").fetchone()[0], 0)
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM app_users").fetchone()[0], 0)
                 conn.execute("INSERT INTO employees(telegram_id,full_name,username) VALUES(101,'Other Worker','one')")
+                conn.execute('INSERT INTO payroll_employee_identities(company_id,legacy_employee_id) VALUES(?,?)',(self.other,101))
             admin = portal.save_user({"username":"admin","pin":"5678","role":"admin"})
             worker = portal.save_user({"username":"worker","pin":"5678","role":"packer","telegram_id":101})
             self.other_client = portal.save_client({"name":"Client"})
@@ -130,10 +131,11 @@ class CompanyIsolationTest(unittest.TestCase):
     def test_manager_records_only_own_work_for_assigned_clients(self):
         manager = self.role_token("manager")
         other_manager = self.role_token("manager", self.other)
-        body = {"client_id":1,"operation_id":1,"quantity":4,"telegram_id":202}
+        body = {"client_id":1,"operation_id":1,"quantity":4}
         self.request("/api/work",manager,body,status=400)
         with portal.db() as conn:
             conn.execute("INSERT INTO manager_client_assignments(telegram_id,client_id,active) VALUES(101,1,1)")
+        self.request("/api/work",manager,dict(body,employee_id=self.employee_202),status=400)
         saved = self.request("/api/work",manager,body)["work"]
         self.assertEqual(saved["salary"],8)
         with portal.db() as conn:

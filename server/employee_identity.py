@@ -2,9 +2,8 @@
 
 Runtime APIs use employee_id. Historical tables still key employees by
 telegram_id, so the only code allowed to read/translate those values lives here.
-When the additive identity map is present, lookups are company-scoped and
-fail closed for unmapped IDs. Older schemas retain a temporary compatibility
-mode until the additive Stage 6 migration is applied.
+Lookups are company-scoped and fail closed for unmapped IDs. An installation
+without the additive Stage 6 identity map must migrate before serving users.
 """
 
 from money_units import legacy_major_currency
@@ -26,13 +25,12 @@ def canonical_employee_id(connection, company_id, legacy_id):
     """Resolve a stored legacy employee key to the canonical runtime ID."""
     if legacy_id is None:
         return None
-    try:
-        legacy_id = int(legacy_id)
-    except (TypeError, ValueError):
+    if type(legacy_id) is not int and not (isinstance(legacy_id,str) and legacy_id.lstrip('-').isdecimal()):
         return None
+    legacy_id=int(legacy_id)
     if not _has_table(connection, 'payroll_employee_identities'):
-        # Explicit pre-Stage-6 compatibility only; APIs still name it employee_id.
-        return legacy_id
+        # An unmigrated legacy key is never a canonical runtime identity.
+        return None
     row = connection.execute('''
         SELECT i.employee_id
         FROM payroll_employee_identities i
@@ -47,13 +45,12 @@ def legacy_employee_id(connection, company_id, employee_id):
     """Translate a canonical runtime ID only for a legacy-table operation."""
     if employee_id is None:
         return None
-    try:
-        employee_id = int(employee_id)
-    except (TypeError, ValueError):
+    if type(employee_id) is not int and not (isinstance(employee_id,str) and employee_id.isdecimal()):
         return None
+    employee_id=int(employee_id)
+    if employee_id < 1:return None
     if not _has_table(connection, 'payroll_employee_identities'):
-        # Explicit pre-Stage-6 compatibility only; no caller may use this as API identity.
-        return employee_id
+        return None
     row = connection.execute('''
         SELECT i.legacy_employee_id
         FROM payroll_employee_identities i
@@ -72,8 +69,13 @@ def employee_id_for_user(connection, company_id, user):
         try:return user[key]
         except (KeyError,IndexError):return None
     if value('employee_id') is not None:
-        identity=int(value('employee_id'))
-        return identity if legacy_employee_id(connection,company_id,identity) is not None else None
+        identity=value('employee_id')
+        legacy=legacy_employee_id(connection,company_id,identity)
+        if legacy is None:return None
+        linked=value('telegram_id')
+        if linked is not None and canonical_employee_id(connection,company_id,linked)!=int(identity):
+            return None
+        return int(identity)
     # telegram_id access is intentionally confined to this compatibility adapter.
     return canonical_employee_id(connection, company_id, value('telegram_id')) # employee_id compatibility boundary
 
@@ -86,25 +88,6 @@ def canonical_user_payload(connection, company_id, body, allow_legacy_bridge=Fal
         legacy=result.pop('telegram_id');mapped=canonical_employee_id(connection,company_id,legacy)
         if 'employee_id' in result and result['employee_id']!=mapped:raise ValueError('Конфликт employee_id')
         result['employee_id']=mapped
-    return result
-
-
-def canonical_settlement_payload(repository, body):
-    """Compatibility adapter for old settlement callers; service receives employee_id only."""
-    result=dict(body)
-    if 'telegram_id' in result: # employee_id settlement bridge
-        legacy=result.pop('telegram_id');mapped=repository.employee_identity_for_legacy(legacy)
-        if result.get('employee_id') not in (None,mapped):raise ValueError('Идентификаторы сотрудника не совпадают')
-        result['employee_id']=mapped
-    return result
-
-
-def canonical_settlement_query(repository, query):
-    result={key:list(values) for key,values in query.items()}
-    if 'telegram_id' in result: # employee_id settlement bridge
-        legacy=result.pop('telegram_id')[0];mapped=repository.employee_identity_for_legacy(legacy)
-        if result.get('employee_id') not in (None,[str(mapped)]):raise ValueError('Идентификаторы сотрудника не совпадают')
-        result['employee_id']=[str(mapped)]
     return result
 
 
@@ -128,10 +111,6 @@ def _columns(connection, table):
     return {row[1] for row in connection.execute('PRAGMA table_info('+table+')').fetchall()}
 
 
-def _has_table(connection, name):
-    return bool(connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",(name,)).fetchone()) if getattr(connection,'dialect','sqlite')!='postgresql' else bool(connection.execute('SELECT 1 FROM information_schema.tables WHERE table_schema=current_schema() AND table_name=?',(name,)).fetchone())
-
-
 def sync_employee_mappings(connection, company_id):
     if not _has_table(connection,'payroll_employee_identities') or not _has_table(connection,'employees'):return
     # The legacy telegram_id column is kept here as an explicit employee_id migration bridge.
@@ -143,11 +122,8 @@ def sync_employee_mappings(connection, company_id):
 
 def employee_catalog(connection, company_id):
     if not _has_table(connection,'employees'):return []
-    cols=_columns(connection,'employees')
-    scoped='company_id' in cols
     if not _has_table(connection,'payroll_employee_identities'):
-        rows=connection.execute('SELECT telegram_id,full_name,username FROM employees'+(' WHERE company_id=?' if scoped else '')+' ORDER BY full_name',((company_id,) if scoped else ())).fetchall() # employee_id compatibility projection
-        return [dict(employee_id=row[0],full_name=row[1],username=row[2]) for row in rows]
+        raise RuntimeError('Примените миграцию employee_id перед запуском каталога')
     # P1 schema bridge: only this mapper projects a retained telegram_id column to employee_id.
     rows=connection.execute('''SELECT i.employee_id,e.full_name,e.username FROM payroll_employee_identities i
         JOIN employees e ON e.company_id=i.company_id AND e.telegram_id=i.legacy_employee_id -- employee_id adapter
@@ -158,9 +134,7 @@ def employee_catalog(connection, company_id):
 def user_catalog(connection, company_id):
     cols=_columns(connection,'app_users')
     if not _has_table(connection,'payroll_employee_identities'):
-        field='telegram_id' if 'telegram_id' in cols else 'NULL'
-        rows=connection.execute(f'SELECT id,display_name,role,{field},active,company_id FROM app_users WHERE company_id=?',(company_id,)).fetchall()
-        return [dict(zip(('id','display_name','role','employee_id','active','company_id'),row)) for row in rows]
+        raise RuntimeError('Примените миграцию employee_id перед запуском каталога')
     rows=connection.execute('''SELECT u.id,u.display_name,u.role,i.employee_id,u.active,u.company_id
         FROM app_users u LEFT JOIN payroll_employee_identities i
         ON i.company_id=u.company_id AND i.legacy_employee_id=u.telegram_id -- employee_id adapter
