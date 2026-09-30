@@ -14,7 +14,10 @@ public partial class MainWindow : Window
 {
     private const int CurrentBuild = 35;
     private const long MaxInstallerBytes = 250L * 1024 * 1024;
-    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(5) };
+    private static readonly HttpClient Http = new(new HttpClientHandler { AllowAutoRedirect = false })
+    {
+        Timeout = TimeSpan.FromMinutes(5)
+    };
     private readonly string _settingsDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PORTAL");
     private string? _serverOrigin;

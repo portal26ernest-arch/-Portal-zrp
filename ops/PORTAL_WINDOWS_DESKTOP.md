@@ -16,3 +16,11 @@ Set-ExecutionPolicy -Scope Process Bypass
 The checksum detects artifact corruption and mismatched files; by itself it does not authenticate the publisher. Do not install packages from untrusted runs or locations. Production signing, release publication, update-channel policy, and visual verification on a supported Windows machine remain release gates.
 
 The shell blocks navigation to origins other than the configured origin and disables WebView developer tools, context menus, and pop-up windows. Only the origin is persisted; authentication/session handling stays with the shared Web client.
+
+## Update channel
+
+The Desktop shell checks a same-origin `GET /api/desktop-update` manifest. The server advertises nothing unless all four secret-free environment values are configured: `PORTAL_DESKTOP_UPDATE_VERSION`, `PORTAL_DESKTOP_UPDATE_BUILD`, `PORTAL_DESKTOP_UPDATE_URL`, and `PORTAL_DESKTOP_UPDATE_SHA256`.
+
+The manifest accepts HTTPS download URLs; plain HTTP is limited to loopback staging. The client rejects redirects, validates a 64-hex SHA-256, enforces a 250 MiB maximum, and only then launches the downloaded installer. The server manifest contains no credentials, tokens, signing keys, or company data.
+
+This implements the update contract, not a production publication. A trusted hosted installer URL, publisher/code signing if required, and an ordinary Windows install/update validation remain release gates.

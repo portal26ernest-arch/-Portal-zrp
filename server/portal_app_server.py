@@ -785,6 +785,14 @@ class Handler(BaseHTTPRequestHandler):
         self.tenant_request = False
         path = urlparse(self.path).path
         readonly_preview=path=='/api/v3/excel-import-preview'
+        if path == '/api/desktop-update':
+            if method != 'GET':
+                return self.error_json('Метод не поддерживается', 405)
+            import desktop_update
+            manifest = desktop_update.load_manifest(os.environ)
+            if manifest is None:
+                return self.error_json('Канал обновлений Desktop не настроен', 404)
+            return self.send_json({'ok': True, **manifest})
         if path == '/api/access-invites/accept' and method == 'POST':
             # The invitation token is the only bearer value accepted here. PIN is
             # read from the bounded POST body and is never accepted from a URL.

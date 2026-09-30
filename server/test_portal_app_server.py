@@ -15,6 +15,7 @@ import sqlite3
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 from contextlib import closing
 
 spec = importlib.util.spec_from_file_location("portal", Path(__file__).with_name("portal_app_server.py"))
@@ -131,6 +132,27 @@ class PortalAPITest(unittest.TestCase):
         logged=self.login("WORKER","1234")
         self.assertEqual(logged["user"]["username"],"worker")
         self.request("/api/users",self.admin,{"username":"WoRkEr","display_name":"Duplicate","pin":"4321","role":"packer"},status=400)
+
+    def test_desktop_update_manifest_is_public_and_fail_closed(self):
+        keys = {
+            "PORTAL_DESKTOP_UPDATE_VERSION": "",
+            "PORTAL_DESKTOP_UPDATE_BUILD": "",
+            "PORTAL_DESKTOP_UPDATE_URL": "",
+            "PORTAL_DESKTOP_UPDATE_SHA256": "",
+        }
+        with patch.dict(os.environ, keys, clear=False):
+            self.request("/api/desktop-update", status=404)
+        configured = {
+            "PORTAL_DESKTOP_UPDATE_VERSION": "3.6",
+            "PORTAL_DESKTOP_UPDATE_BUILD": "36",
+            "PORTAL_DESKTOP_UPDATE_URL": "https://downloads.example.test/PORTAL_Setup.exe",
+            "PORTAL_DESKTOP_UPDATE_SHA256": "a" * 64,
+        }
+        with patch.dict(os.environ, configured, clear=False):
+            data = self.request("/api/desktop-update")
+            self.assertEqual(data["build"], 36)
+            self.assertNotIn("token", data)
+            self.request("/api/desktop-update", body={}, status=405)
 
     def test_anonymous_denied_all_data_and_writes(self):
         for path in ("/api/me","/api/dashboard","/api/clients",f"/api/clients/{self.cid}",
