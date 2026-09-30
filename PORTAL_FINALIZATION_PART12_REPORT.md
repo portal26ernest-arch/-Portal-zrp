@@ -734,3 +734,11 @@ Added a PostgreSQL check that a company Director cannot call the Platform Owner 
 Local validation: Android/Web Node+Playwright suite **53/53**, `ops.test_infra_readiness` **8/8**, compileall and diff check passed. Local disposable PostgreSQL is unavailable; the `fd98617` Web PG job failed only the substring assertion and verified cleanup (`db=0 roles=0 temp=0`). Final PG and Server CI for this corrected test change is pending. Roadmap counts remain **76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌**; A stays 🟡 until updated evidence is green and release/rollout acceptance is met.
 
 **Exact NEXT:** commit/push this test correction and verify Server 3.11/3.13 plus Web disposable PostgreSQL and teardown. Then proceed to Client 360 or batch-economics gaps; no completion/blocked flag and production cutover NOT performed.
+
+## Batch plan financial permission boundary — 2026-09-30
+
+The task endpoint previously allowed `tasks.manage` users to set a nonzero planned `other_cost`, while the Android/Web form hid that financial input without `finance.read`. The API now rejects nonzero financial plan overrides without that capability and the UI omits the hidden field. Operational tasks with no override remain supported. Unit and browser coverage asserts denial, no task side effect, Director success, and role-specific request shape; an opt-in PostgreSQL test covers manager denial and zero-default task creation.
+
+Local validation: targeted production tests **2/2**, Android/Web Node+Playwright suite **54/54**, full Server discovery **297 tests / 47 gated skips / 0 failures**, `ops.test_infra_readiness` **8/8**, compileall, JavaScript syntax and `git diff --check` all passed. The local PostgreSQL suite was invoked and skipped **34** tests because no disposable database is configured; that is not PostgreSQL pass evidence. Current-SHA GitHub checks are pending. Item 28 remains 🟡; numbered roadmap counts remain **76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌**. No production DB/service/DNS/cutover or secret was touched.
+
+**Exact NEXT:** commit and push the tested API/UI role guard and checkpoint updates, then confirm current-SHA Server 3.11/3.13 and Web `documents-postgresql` including teardown. Keep item 28 partial for remaining plan/source completeness; next continue Client 360 item 17's remaining acceptance. Part 12 is not complete and no complete/blocked flag is warranted.

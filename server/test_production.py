@@ -496,6 +496,22 @@ class ProductionTest(unittest.TestCase):
         finance=self.get('finance')['data']['clients'][0];self.assertEqual(finance['profit'],-500)
         self.get('finance',self.worker,status=403)
 
+    def test_task_plan_other_cost_requires_finance_read_capability(self):
+        batch=self.batch()
+        manager=self.role_token('manager')
+        # Tasks may be delegated to a worker, but creating an explicit financial
+        # plan cost still requires the finance capability.
+        body=dict(batch_id=batch['id'],operation_id=1,quantity=10,assignees=[self.worker_id],other_cost='1.25')
+        self.request('/api/v3/tasks',manager,dict(body,request_id='manager-plan-cost-forbidden'),method='POST',status=403)
+        with portal.tenants.company_scope(1),portal.db() as conn:
+            repository=Repository(conn,1)
+            self.assertFalse(any(task['batch_id']==batch['id'] for task in repository.list('tasks')))
+        director=self.role_token('director')
+        created=self.request('/api/v3/tasks',director,dict(body,request_id='director-plan-cost-allowed'),method='POST')['data']
+        economy=self.get('economy?batch_id='+batch['id'],director)['data']
+        self.assertEqual(economy['plan']['other'],125)
+        self.assertEqual(created['batch_id'],batch['id'])
+
     def test_batch_economy_marks_missing_plan_unavailable_instead_of_zero(self):
         batch=self.batch()
         economy=self.get('economy?batch_id='+batch['id'])['data']

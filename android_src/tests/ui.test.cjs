@@ -88,7 +88,7 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
     localStorage.clear();
     const user={id:1,username:role,display_name:'Тестовый пользователь',role,company_id:1,employee_id:role==='platform_owner'?null:101};
     const client={id:1,name:'Клиент',active:1};
-    window.mock={calls:[],offline:false,rejectWrite:false,hold:false,held:[],update:{ok:true,configured:false},timer:null,stage3Today:null,stage3Batches:null,stage3Shipments:null,stage3Tasks:null,stage3Economy:null,stage3Permissions:null,stage3Invoices:null,clientNameHistory:[],clientRequisites:{legal_name:'ООО Тест',inn:'TEST-INN-001'},tariffHistory:[],presenceOnline:true,saved:null,previewMode:'ok',applyMode:'ok',payrollPaid:2000,invites:[],products:[]};
+    window.mock={calls:[],offline:false,rejectWrite:false,hold:false,held:[],update:{ok:true,configured:false},timer:null,stage3Today:null,stage3Batches:null,stage3Shipments:null,stage3Tasks:null,stage3Economy:null,stage3Permissions:null,stage3Invoices:null,stage3Users:null,clientNameHistory:[],clientRequisites:{legal_name:'ООО Тест',inn:'TEST-INN-001'},tariffHistory:[],presenceOnline:true,saved:null,previewMode:'ok',applyMode:'ok',payrollPaid:2000,invites:[],products:[]};
     const respond=(id,data)=>setTimeout(()=>window.PortalBridgeResult(id,JSON.stringify(data)),0);
     window.PortalNative={getServerUrl:()=> 'http://127.0.0.1:8765',getAppMetadata:()=>JSON.stringify(metadata),checkUpdates:id=>respond(id,mock.update),saveBase64FileAsync(id,filename,mime,file_b64){mock.saved={filename,mime,file_b64};respond(id,{ok:true,location:'Downloads/PORTAL/'+filename});},requestAsync(id,method,url,payload,token,company){
       mock.calls.push({method,url,body:payload?JSON.parse(payload):null,token,company});
@@ -120,7 +120,7 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
       else if(stage3&&url.startsWith('/api/v3/payroll-settlements?'))data.data={period_id:'period-1',period_start:'2026-09-01',period_end:'2026-09-15',status:'закрыт',money_unit:'kopeck',employees:[{employee_id:1,display_name:'Тестовый сотрудник',accrued:10000,adjustment:0,paid:mock.payrollPaid,balance:10000-mock.payrollPaid}],totals:{accrued:10000,adjustment:0,paid:mock.payrollPaid,balance:10000-mock.payrollPaid},entries:[{id:'payment-1',employee_id:1,entry_type:'payout',effect:'payment',amount:2000,occurred_at:'2026-09-20',reason:'Первая выплата',reference:'Платёж 1'}]};
       else if(stage3&&url.startsWith('/api/v3/analytics'))data.data={groups:[{user_id:1,client_id:1,product:'Товар',operation_id:1,quantity:12,units_per_hour:6}],forecasts:[],comparison:url.includes('from=')?{period_start:'2026-09-10',period_end:'2026-09-16',previous_start:'2026-09-03',previous_end:'2026-09-09',current:{units:12,units_per_hour:6},previous:{units:8,units_per_hour:4},units_delta:4,units_percent_delta:50,units_per_hour_delta:2}:undefined};
       else if(stage3&&url==='/api/v3/payroll-settlements'&&method==='POST'){mock.payrollPaid+=Math.round(Number(JSON.parse(payload).amount)*100);data.data={id:'payment-2',entry_type:'payout'};}
-      else if(stage3&&url==='/api/v3/catalog')data.data={clients:[{id:1,name:'Клиент'}],operations:[{id:1,client_id:1,name:'Упаковка'}],products:mock.products.filter(p=>p.active),users:[]};
+      else if(stage3&&url==='/api/v3/catalog')data.data={clients:[{id:1,name:'Клиент'}],operations:[{id:1,client_id:1,name:'Упаковка'}],products:mock.products.filter(p=>p.active),users:mock.stage3Users||[]};
       else if(stage3&&url.startsWith('/api/v3/client-name-history'))data.data=mock.clientNameHistory;
       else if(stage3&&url.startsWith('/api/v3/client-requisites?'))data.data=mock.clientRequisites;
       else if(stage3&&url==='/api/v3/client-requisites'&&method==='POST'){mock.clientRequisites={...mock.clientRequisites,...JSON.parse(payload)};data.data=mock.clientRequisites;}
@@ -578,6 +578,23 @@ test('browser UI regression',async t=>{
       const rendered=await page.locator('#sheetContent').innerText();
       assert.match(rendered,/Маржа[\s\S]*50,5% → Недоступно/);assert.match(rendered,/Себестоимость единицы: 2,25/);assert.match(rendered,/Прибыль на единицу: 2,75/);
       assert.deepEqual(errors,[]);await page.close();
+    });
+    await t.test('planned batch overhead is submitted only with finance capability',async()=>{
+      const batch={id:'batch-plan-role',number:'PRT-PLAN-ROLE',client_id:1,client_name:'Клиент',product:'Коробка',received_at:'2026-09-24',quantity:2,done:0,remaining:2,stage:'in_progress',ready:false};
+      const users=[{id:2,display_name:'Исполнитель',employee_id:102,active:true}];
+      for(const [role,permissions,expectCost] of [['admin',['tasks.manage','batches.receive','finance.read'],'1.25'],['manager',['tasks.manage','batches.receive'],null]]){
+        const {page,errors}=await fixture(browser,role,{width:390,height:844},true);
+        await page.evaluate(({permissions,batch,users})=>{mock.stage3Permissions=permissions;mock.stage3Batches=[batch];mock.stage3Users=users;},{permissions,batch,users});
+        await login(page);await page.evaluate(()=>go('batches'));await page.locator('[data-action=createTask]').click();await page.waitForSelector('#taskOperation');
+        assert.equal(await page.locator('#taskOther').count(),expectCost?1:0);
+        await page.selectOption('#taskOperation','1');await page.selectOption('#taskAssignees','2');
+        if(expectCost)await page.locator('#taskOther').fill(expectCost);
+        await page.locator('#createTaskForm [type=submit]').click();
+        await page.waitForFunction(()=>mock.calls.some(c=>c.method==='POST'&&c.url==='/api/v3/tasks'));
+        const created=await page.evaluate(()=>mock.calls.find(c=>c.method==='POST'&&c.url==='/api/v3/tasks'));
+        if(expectCost)assert.equal(created.body.other_cost,expectCost);else assert.equal(Object.hasOwn(created.body,'other_cost'),false);
+        assert.deepEqual(errors,[]);await page.close();
+      }
     });
     await t.test('shipped batch return flow is visible, permission aware and submits quantity/result',async()=>{
       const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);

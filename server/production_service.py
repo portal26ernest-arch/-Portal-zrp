@@ -232,6 +232,8 @@ class Production:
         self.need('tasks.manage');batch=self.entity('batches',b['batch_id']);op=self.operation(batch['client_id'],b['operation_id'])
         if batch['status']=='shipped':raise ValueError('Партия уже отгружена')
         target=qty(b['quantity'])
+        planned_other=cents(b.get('other_cost',0))
+        if planned_other:self.need('finance.read')
         if target!=batch['quantity']: raise ValueError('План обязательной операции должен покрывать всю партию')
         if any(t['batch_id']==batch['id'] and t['operation_id']==op['id'] for t in self.r.list('tasks')): raise ValueError('Эта операция уже запланирована для партии')
         assignees=b.get('assignees',[])
@@ -244,7 +246,7 @@ class Production:
         tariff=self.tariff(op['id']);self.valid_rates(tariff)
         norms=self.norms(op['id'],target)
         task=self.r.insert('tasks',dict(batch_id=batch['id'],client_id=batch['client_id'],product=batch['product'],operation_id=op['id'],operation_name=op['name'],quantity=target,assignees=assignees,due_at=stamp(b.get('due_at') or batch['due_at'],True),status='open'))
-        self.r.insert('plans',dict(batch_id=batch['id'],task_id=task['id'],client_id=batch['client_id'],quantity=target,tariff_id=tariff['id'],tariff_sources=tariff['sources'],salary=target*tariff['employee_rate'],revenue=target*tariff['client_rate'],materials=sum(n['cost'] for n in norms),other=cents(b.get('other_cost',0)),norms=norms))
+        self.r.insert('plans',dict(batch_id=batch['id'],task_id=task['id'],client_id=batch['client_id'],quantity=target,tariff_id=tariff['id'],tariff_sources=tariff['sources'],salary=target*tariff['employee_rate'],revenue=target*tariff['client_rate'],materials=sum(n['cost'] for n in norms),other=planned_other,norms=norms))
         return task
 
     def valid_rates(self,t):

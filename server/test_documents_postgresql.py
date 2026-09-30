@@ -411,6 +411,20 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.get('economy?batch_id='+batch['id'],self.tokens['company_1_packer'],status=403)
         self.get('economy?batch_id='+batch['id'],self.tokens[2],status=400)
 
+    def test_manager_cannot_set_nonzero_planned_other_cost_without_finance_capability(self):
+        batch=self.post('batches',dict(client_id=1,product='PG role-gated plan fixture',quantity=2))['data']
+        manager=self.tokens['company_1_packer']
+        self.addCleanup(lambda:self.post('permissions',{'user_id':2,'permissions':{'work.write':True}},self.admin))
+        self.post('permissions',{'user_id':2,'permissions':{'work.write':True,'tasks.manage':True}},self.admin)
+        self.request('/api/v3/tasks',manager,body={'batch_id':batch['id'],'operation_id':1,'quantity':2,
+            'assignees':[2],'other_cost':'1.25','request_id':'pg-manager-plan-cost-denied'},method='POST',status=403)
+        # A manager may still plan operational work without a financial override.
+        created=self.request('/api/v3/tasks',manager,body={'batch_id':batch['id'],'operation_id':1,'quantity':2,
+            'assignees':[2],'request_id':'pg-manager-plan-default-zero'},method='POST')['data']
+        economy=self.get('economy?batch_id='+batch['id'],self.admin)['data']
+        self.assertEqual(economy['plan']['other'],0)
+        self.assertEqual(created['batch_id'],batch['id'])
+
     def test_tariff_effective_version_keeps_postgresql_work_snapshots(self):
         from production_repository import Repository, utcnow
         self.assert_unique_legacy_work_links('tariff fixture baseline')

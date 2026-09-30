@@ -887,3 +887,13 @@ Production cutover **NOT performed**.
 - Roadmap counts unchanged **76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌**; no complete/blocked flag; production untouched.
 
 **Exact NEXT:** commit/push the corrected redaction and Director/company-audit role tests; verify Web `documents-postgresql` and Server 3.11/3.13 at that SHA, including disposable-resource cleanup. If green, record the tested A role boundary, keep production rollout/user-limit configuration open, and proceed to Client 360/item 17 source-backed gaps or batch economics/item 28. No production cutover.
+
+## AUTOMATIC CONTINUATION — batch plan financial permission boundary — 2026-09-30
+
+- Starting HEAD `a70b7f736a58f13f55fe741c15a1e7661caa29dd` was clean and synced after fetch; required Part 12 docs, AGENTS, Knowledge Base and Constitution were read. Assistant infra commit `1066c77` remains integrated.
+- Item 28 review found that task creation accepted a nonzero planned `other_cost` with `tasks.manage` alone, despite the shared UI exposing the field only to `finance.read`. The API now requires `finance.read` for a nonzero plan override, while operational task creation with zero/default cost remains available. Android/Web omit the field if it is not rendered.
+- Added server unit coverage for manager denial/no task creation and Director success with integer-cent plan data; added opt-in PostgreSQL manager denial/default-zero test and a two-role browser flow checking hidden-field omission. No RLS or existing test was weakened.
+- Local validation: targeted production tests **2/2 passed**; full Android/Web Node suite **54/54 passed**; full Server discovery **297 tests, 47 gated skips, 0 failures**; `ops.test_infra_readiness` **8/8**; opt-in `test_documents_postgresql` **34 skipped** (no disposable local PostgreSQL fixture); compileall, JS syntax and `git diff --check` passed. Earlier assertion against manager-visible batch list was invalid because manager role does not list batches; replaced with direct temporary repository state assertion and reran the targeted tests successfully.
+- Roadmap item 28 remains 🟡 while broader planned-source coverage is open; counts remain **76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌**. No production resources or secrets were used.
+
+**Exact NEXT:** commit/push the role-gated plan-cost API/UI regression and status docs; verify Server Python 3.11/3.13 and Web `documents-postgresql` against that exact SHA, including disposable resource cleanup. If green, record the narrower role boundary, keep item 28 🟡 for source completeness, then proceed to item 17's remaining Client 360 acceptance. Production rollout/cutover remains untouched; no completion/blocked flag.
