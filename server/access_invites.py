@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 
 from production_repository import Repository, utcnow
 from employee_identity import create_invited_account, create_employee_card
+from employee_names import persist_known_employee_aliases
 
 TABLE = 'portal_access_invites'
 ROLES = {'admin', 'director', 'manager', 'packer', 'shift', 'accountant'}
@@ -110,6 +111,7 @@ def accept(conn, repo, token, pin):
     employee_id = invite['employee_id']
     if employee_id is None:
         employee_id = create_employee_card(conn,repo.company_id,invite['display_name'],invite['username'])
+        persist_known_employee_aliases(repo,employee_id,invite['display_name'])
     app=_portal_app()
     salt, pin_hash = app.hash_pin(pin)
     user_id=create_invited_account(conn,repo.dialect,repo.company_id,dict(invite,employee_id=employee_id),salt,pin_hash,app.now_text())

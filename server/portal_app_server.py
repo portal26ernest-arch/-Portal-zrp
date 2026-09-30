@@ -24,6 +24,7 @@ from employee_identity import (account_directory, assigned_client_ids, canonical
 import production_permissions as business_rights
 from production_migrations import migrate as migrate_production
 from client_names import persist_client_alias, persist_known_client_aliases
+from employee_names import persist_known_employee_aliases
 import production_activity as activity
 from portal_config import load_config
 from pathlib import Path
@@ -486,7 +487,11 @@ def validate_employee(conn, value):
 
 
 def create_internal_employee(conn, display_name, username):
-    return create_employee_card(conn,tenants.COMPANY_ID.get(),display_name,username)
+    company_id=tenants.COMPANY_ID.get()
+    employee_id=create_employee_card(conn,company_id,display_name,username)
+    repo=Repository(conn,company_id)
+    if repo.ready():persist_known_employee_aliases(repo,employee_id,display_name)
+    return employee_id
 
 
 def save_user(body, user_id=None):
@@ -716,7 +721,7 @@ def company_module_for_route(path):
             'clients':'clients','catalogue':'clients','operations':'clients','products':'clients','client-requisites':'clients','client-name-history':'clients','client-aliases':'clients',
             'materials':'materials','usage':'materials',
             'invoices':'invoices','payments':'invoices','receivables':'invoices',
-            'users':'users','invitations':'users','company-access':'users','presence':'users','activity':'users','audit':'users',
+            'users':'users','invitations':'users','company-access':'users','presence':'users','activity':'users','audit':'users','employee-name-history':'users','employee-aliases':'users',
             'tasks':'jobs','batches':'batches','shipments':'batches','returns':'batches',
             'permissions':'permissions','tariffs':'tariffs','finance':'radar','expenses':'expenses',
             'analytics':'analytics','settings':'control','documents':'documents',

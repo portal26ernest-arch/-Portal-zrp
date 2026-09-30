@@ -61,6 +61,30 @@ class ImportAPITest(unittest.TestCase):
         with portal.db() as conn:
             self.assertEqual(conn.execute('SELECT full_name FROM employees WHERE company_id=1 AND telegram_id=?',(employee[0],)).fetchone()[0],'Артем Варданян')
 
+    def test_employee_rename_history_is_stable_id_scoped_and_never_matches_by_fio(self):
+        with portal.db() as conn:
+            r=Repository(conn,1);employee=r.employee_catalog()[0]
+            employee_id=employee['employee_id'];old_name=employee['full_name'];username=employee['username']
+        new_name='Артем Варданян'
+        payload=self.payload({'Сотрудники':[dict(employee_ref='stable-rename',employee_id=employee_id,
+                                                full_name=new_name,profile_username=username)]})
+        preview=self.preview(payload)
+        self.assertEqual(preview['rows'][0]['classification'],'update')
+        self.assertEqual(self.apply(payload,preview)['status'],'applied')
+        with portal.db() as conn:
+            r=Repository(conn,1);current={row['employee_id']:row for row in r.employee_catalog()}[employee_id]
+            self.assertEqual(current['full_name'],new_name)
+            history=[row for row in r.list('employee_name_history') if row['employee_id']==employee_id]
+            aliases=[row for row in r.list('employee_aliases') if row['employee_id']==employee_id]
+        self.assertEqual([(row['old_name'],row['new_name']) for row in history],[(old_name,new_name)])
+        self.assertTrue(any(row['alias']==old_name and row['source']=='rename' for row in aliases))
+        self.assertTrue(any(row['alias']=='Артем Вартанян' and row['source']=='knowledge' for row in aliases))
+        self.assertEqual(self.get('employee-name-history?employee_id='+str(employee_id))['data'],history)
+        self.assertEqual(self.get('employee-aliases?employee_id='+str(employee_id))['data'],aliases)
+        self.assertEqual(self.get('employee-name-history',self.other_admin)['data'],[])
+        self.get('employee-name-history',self.role_token('manager'),status=403)
+        self.request('/api/v3/employee-aliases',self.admin,status=403,extra_headers={'X-Portal-Company':'2'})
+
     def test_preview_no_database_writes_for_admin_or_selected_owner(self):
         data={'Клиенты':[dict(client_ref='new',name='Синтетический клиент',active=1)],
               'Сотрудники':[dict(employee_ref='new',full_name='Синтетический сотрудник')],

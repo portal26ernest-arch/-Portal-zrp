@@ -520,6 +520,28 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.request('/api/v3/client-aliases',self.admin,status=403,
                      extra_headers={'X-Portal-Company':'2'})
 
+    def test_z_employee_rename_history_aliases_are_stable_id_scoped_on_postgresql(self):
+        with self.portal.tenants.company_scope(1),self.portal.db() as conn:
+            from employee_identity import update_employee_card
+            from employee_names import persist_employee_rename
+            from production_repository import Repository
+            r=Repository(conn,1);employee=r.employee_catalog()[0]
+            employee_id=employee['employee_id'];old_name=employee['full_name']
+            update_employee_card(conn,1,employee_id,'Артем Варданян',employee['username'])
+            persist_employee_rename(r,employee_id,old_name,'Артем Варданян')
+            conn.commit()
+            current={row['employee_id']:row for row in r.employee_catalog()}[employee_id]
+        self.assertEqual(current['full_name'],'Артем Варданян')
+        history=self.get('employee-name-history?employee_id='+str(employee_id),self.admin)['data']
+        aliases=self.get('employee-aliases?employee_id='+str(employee_id),self.admin)['data']
+        self.assertEqual([(row['old_name'],row['new_name']) for row in history],[(old_name,'Артем Варданян')])
+        self.assertTrue(any(row['alias']==old_name and row['source']=='rename' for row in aliases))
+        self.assertTrue(any(row['alias']=='Артем Вартанян' and row['source']=='knowledge' for row in aliases))
+        self.assertEqual(self.get('employee-name-history',self.tokens[2])['data'],[])
+        self.request('/api/v3/employee-aliases',self.admin,status=403,
+                     extra_headers={'X-Portal-Company':'2'})
+        self.get('employee-name-history',self.tokens['company_1_packer'],status=403)
+
     def test_productivity_breakdown_is_tenant_scoped_and_self_only_on_postgresql(self):
         batch=self.post('batches',dict(client_id=1,product='PG productivity fixture',quantity=3),self.admin)['data']
         task=self.post('tasks',dict(batch_id=batch['id'],operation_id=1,quantity=3,assignees=[2]),self.admin)['data']

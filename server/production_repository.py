@@ -15,7 +15,7 @@ from money_units import legacy_major_currency
 KINDS = {'batches','tasks','works','tariffs','permissions','plans','usage','expenses',
          'invoices','payments','settings','audit','links','requests','shipments',
          'access_events','access_sessions','work_timers','timer_events',
-         'payroll_periods','invoice_revisions','documents','products','notifications','reminder_job_runs','client_name_history','client_aliases','chat_messages','chat_pins','chat_attachments'}
+         'payroll_periods','invoice_revisions','documents','products','notifications','reminder_job_runs','client_name_history','client_aliases','employee_name_history','employee_aliases','chat_messages','chat_pins','chat_attachments'}
 MUTABLE = {'batches','tasks','permissions','settings','access_sessions','work_timers','products'}
 DELETABLE = {'chat_messages','chat_pins','chat_attachments'}
 

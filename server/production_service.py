@@ -1235,6 +1235,17 @@ class Production:
             else:
                 visible_ids={client['id'] for client in self.r.catalog('clients') if self.visible(client['id'])}
             return [row for row in self.r.list('client_aliases') if row['client_id'] in visible_ids]
+        if action in ('employee-name-history','employee-aliases'):
+            self.need('users.manage')
+            employee_ids={employee['employee_id'] for employee in self.r.employee_catalog()}
+            raw_employee_id=params.get('employee_id',[None])[0]
+            if raw_employee_id not in (None,''):
+                try:employee_id=int(raw_employee_id)
+                except (TypeError,ValueError):raise ValueError('Некорректный сотрудник')
+                if employee_id not in employee_ids:raise ValueError('Сотрудник не найден в этой компании')
+                employee_ids={employee_id}
+            kind='employee_name_history' if action=='employee-name-history' else 'employee_aliases'
+            return [row for row in self.r.list(kind) if row['employee_id'] in employee_ids]
         if action=='tasks':return self.task_rows()
         if action=='timers':
             if not {'tasks.read','work.write','tasks.manage'} & self.permissions:raise PermissionError('Нет доступа к работе')
