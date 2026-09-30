@@ -718,3 +718,11 @@ All checks at `22ce6f3` passed: Server Python 3.11 and 3.13 each ran 294 tests w
 The correction excludes unlinked legacy invoice rows from the client-specific aging report. Item 42 is now ✅; roadmap counts are **76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌**. No production ledger or service was touched.
 
 **Exact NEXT:** inspect item 33's canonical client/employee alias-history lifecycle for a source-backed software gap, retaining company scope and append-only history. If no canonical source supports another alias operation, move to a different remaining software item. Continue the verifiable Owner/Director matrix and remaining C/D acceptance. Part 12 remains open; no complete/blocked flag.
+
+## Automatic continuation — employee Excel alias ambiguity guard — 2026-09-30
+
+The Knowledge Base's eight employee surname spelling aliases now share a Unicode-normalized search key in the Excel import preview. If an employee ID is absent and the imported name collides with a known spelling variant, import marks it ambiguous rather than creating or binding an employee. This is a conservative conflict guard only: no canonical name/history is rewritten, no alias is persisted, and no identity is silently merged.
+
+Validation on the working source: Excel import tests **17/17**; full Server discovery **295 tests / 46 skips / 0 failures**; compileall and `git diff --check` passed. Local PostgreSQL fixture cases skip because no disposable PostgreSQL DSN is configured; CI validation at the resulting SHA is pending. Item 33 remains 🟡 and roadmap counts remain **76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌**. No production systems or data were used.
+
+**Exact NEXT:** commit/push this checkpoint and verify Server 3.11/3.13 plus Web disposable PostgreSQL at its SHA. Then inspect the remaining Owner/Director invitation/settings/audit role matrix and implement the next concrete cross-company permission gap with PG and shared-UI coverage. Part 12 remains open; no completion/blocked flag; production cutover NOT performed.

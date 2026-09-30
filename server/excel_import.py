@@ -13,6 +13,7 @@ from decimal import Decimal,InvalidOperation
 
 from document_domain import Documents,clean_text,decode_file,validate_upload,XLSX_MIME
 from documents_api import require_import
+from employee_names import employee_name_key
 from excel_template import catalog,REQUISITES,TEMPLATE_VERSION
 from portal_excel_workbook import parse_template
 from production_repository import utcnow
@@ -132,9 +133,10 @@ class ExcelImport:
                         if uid is not None:user_ids_seen.add(uid)
                         name=clean_text(value['full_name']);before=employees.get(eid,{})
                         if eid is not None and not before:raise ValueError('foreign_or_missing_employee')
-                        if eid is None and (name.casefold() in seen_names[sheet] or any((e['full_name'] or '').casefold()==name.casefold() for e in state['_employees'])):
+                        name_key=employee_name_key(name)
+                        if eid is None and (name_key in seen_names[sheet] or any(employee_name_key(e['full_name'])==name_key for e in state['_employees'])):
                             issue(row,'employee_identity_ambiguous','conflict')
-                        seen_names[sheet].add(name.casefold())
+                        seen_names[sheet].add(name_key)
                         role=value['role'];enabled=active(value['active'],None)
                         if role and role not in ROLES:raise ValueError('invalid_role')
                         if uid is None and (role or enabled is not None):raise ValueError('access_requires_existing_user_id')

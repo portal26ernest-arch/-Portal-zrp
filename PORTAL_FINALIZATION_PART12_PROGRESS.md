@@ -869,3 +869,12 @@ Production cutover **NOT performed**.
 - Production data/service/DNS/cutover, secrets and phone test execution were not used.
 
 **Exact NEXT:** inspect roadmap item 33 alias/history behavior in `server/production_service.py`, repository schemas and shared Client 360 search. Implement only a missing canonical source-backed alias lifecycle (preserve canonical names/history and company scoping); if no safe source exists, document the missing source and move to another open software task. Run Server/Web/disposable PostgreSQL and UI coverage before any status promotion. Then continue A's remaining verifiable Owner/Director matrix and C/D gaps. No autopilot flag; production cutover NOT performed.
+
+## AUTOMATIC CONTINUATION — employee Excel alias ambiguity guard — 2026-09-30
+
+- Knowledge Base lists eight known employee surname spelling aliases. Added `server/employee_names.py` as a search-key helper and used it only to detect duplicate/ambiguous names in Excel imports when no stable employee ID is supplied. It does not rewrite names, silently bind identities, merge employees, or create a persistent alias record.
+- Regression covers all documented aliases, Unicode normalization, punctuation/order/case, rejected ambiguous preview, and unchanged canonical employee name.
+- Tests: `python -m unittest test_excel_import -q` **17/17**; full Server discovery **295 tests / 46 skipped / 0 failed**; `python -m compileall -q .` and `git diff --check` passed. CI at the new source SHA is pending. The skipped full-suite tests are fixture/environment gated; local disposable PostgreSQL is not configured.
+- Item 33 stays 🟡 and counts remain **76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌**. No complete/blocked flag. Production data/service/DNS/cutover and secrets untouched.
+
+**Exact NEXT:** commit and push the tested alias ambiguity guard and documentation, then verify Server Python 3.11/3.13 and Web disposable PostgreSQL at that SHA. Next inspect actual remaining Owner/Director invitation, company-settings and audit role cases in `server/test_documents_postgresql.py` and shared UI tests; add only a demonstrable missing permission/cross-company case. Preserve all canonical identities and production boundaries.

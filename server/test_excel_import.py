@@ -15,6 +15,7 @@ import test_documents_api as fixtures
 from excel_template import workbook
 from portal_excel_workbook import NS,parse_template
 from excel_import import ExcelImport
+from employee_names import employee_name_key
 from production_service import Production
 from production_repository import Repository
 
@@ -43,6 +44,22 @@ class ImportAPITest(unittest.TestCase):
     def database_hashes(self):
         paths=[Path(portal.DB_PATH),portal.tenants.platform_path(portal.DB_PATH),portal.tenants.tenant_path(portal.DB_PATH,self.other)]
         return {str(path):hashlib.sha256(path.read_bytes()).hexdigest() for path in paths}
+
+    def test_employee_name_aliases_prevent_ambiguous_import_without_rewriting_names(self):
+        for alias,canonical in (('Борисенко','Борискин'),('Вартанян','Варданян'),('Вдовин','Вдовина'),
+                                ('Шульгинова','Шульгина'),('Эленгатика','Элегантика'),('Корягин','Карягин'),
+                                ('Коорягин','Карягин'),('Чотчаев','Чотчаева')):
+            self.assertEqual(employee_name_key('Артем '+alias),employee_name_key('Артем '+canonical))
+        self.assertEqual(employee_name_key('  АРТЕМ Вартанян  '),employee_name_key('Артем Варданян'))
+        self.assertEqual(employee_name_key('Вартанян, Артем'),employee_name_key('Варданян, Артем'))
+        with portal.db() as conn:
+            employee=conn.execute('SELECT telegram_id FROM employees WHERE company_id=1 ORDER BY telegram_id LIMIT 1').fetchone()
+            conn.execute('UPDATE employees SET full_name=? WHERE company_id=1 AND telegram_id=?',('Артем Варданян',employee[0]))
+            conn.commit()
+        plan=self.preview(self.payload({'Сотрудники':[dict(employee_ref='alias-collision',full_name='Артем Вартанян')]}))
+        self.assertIn('employee_identity_ambiguous',plan['rows'][0]['errors'])
+        with portal.db() as conn:
+            self.assertEqual(conn.execute('SELECT full_name FROM employees WHERE company_id=1 AND telegram_id=?',(employee[0],)).fetchone()[0],'Артем Варданян')
 
     def test_preview_no_database_writes_for_admin_or_selected_owner(self):
         data={'Клиенты':[dict(client_ref='new',name='Синтетический клиент',active=1)],
