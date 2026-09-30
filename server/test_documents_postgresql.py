@@ -291,6 +291,21 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.assertEqual(self.request('/api/v3/company-access',self.tokens[2])['data']['active_users'],2)
         self.request('/api/v3/company-access',self.tokens[1],extra_headers={'X-Portal-Company':'2'},status=403)
 
+    def test_platform_owner_audit_is_separate_filtered_and_role_gated(self):
+        pin=secrets.token_urlsafe(24)
+        salt,digest=self.portal.hash_pin(pin)
+        with self.pg.connect(self.make_conninfo(self.admin_dsn,dbname=self.database),autocommit=True) as admin:
+            admin.execute('INSERT INTO platform_owners(id,username,display_name,pin_salt,pin_hash) VALUES(1,%s,%s,%s,%s)',
+                          ('synthetic-owner','Synthetic Owner',salt,digest))
+        owner=self.request('/api/platform/login',body={'username':'synthetic-owner','pin':pin})['token']
+        self.request('/api/platform/companies/2',owner,{'monthly_price':321},method='POST')
+        filtered=self.request('/api/platform/audit?company_id=2&event=company_updated&page=1&limit=10',owner)
+        self.assertEqual(filtered['total'],1)
+        self.assertEqual(filtered['rows'][0]['event'],'company_updated')
+        self.assertNotIn(pin,json.dumps(filtered))
+        self.request('/api/platform/audit',self.admin,status=403)
+        self.request('/api/platform/audit',self.tokens['company_1_packer'],status=403)
+
     @unittest.skipUnless(_WEB_E2E,'Web browser gate only')
     def test_real_web_static_login_meta_and_company_scope_in_browser(self):
         """Use Chromium against this fixture's real loopback API; no API routes are mocked."""
