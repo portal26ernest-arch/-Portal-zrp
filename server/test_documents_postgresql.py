@@ -286,10 +286,10 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
             admin.execute('INSERT INTO platform_owners(id,username,display_name,pin_salt,pin_hash) VALUES(1,%s,%s,%s,%s)',
                           ('synthetic-owner','Synthetic Owner',salt,digest))
         owner=self.request('/api/platform/login',body={'username':'synthetic-owner','pin':pin})['token']
-        self.request('/api/platform/companies/2',owner,{'monthly_price':321},method='POST')
-        filtered=self.request('/api/platform/audit?company_id=2&event=company_updated&page=1&limit=10',owner)
+        filtered=self.request('/api/platform/audit?company_id=1&actor_id=1&event=owner_login&page=1&limit=10',owner)
         self.assertEqual(filtered['total'],1)
-        self.assertEqual(filtered['rows'][0]['event'],'company_updated')
+        self.assertEqual(filtered['rows'][0]['event'],'owner_login')
+        self.assertEqual(filtered['rows'][0]['outcome'],'success')
         self.assertNotIn(pin,json.dumps(filtered))
         self.request('/api/platform/audit',self.admin,status=403)
         self.request('/api/platform/audit',self.tokens['company_1_packer'],status=403)
