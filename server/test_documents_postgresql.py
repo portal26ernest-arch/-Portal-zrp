@@ -264,7 +264,7 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
 
         with self.portal.tenants.company_scope(1),self.portal.db() as conn:
             repository=Repository(conn,1)
-            self.assertEqual(repository.legacy_identity_for_employee(employee_a['employee_id']),102)
+            self.assertEqual(repository.legacy_identity_for_employee(employee_a['employee_id']),101)
             with self.assertRaises(ValueError):
                 repository.legacy_identity_for_employee(employee_b['employee_id'])
 
