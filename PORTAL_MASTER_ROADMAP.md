@@ -40,8 +40,8 @@
 29. ✅ Материалы и остатки.
 30. ✅ Нормы материалов и фактическое списание при работе.
 31. ✅ Модуль расходов: аренда, логистика, забор из ТК, доставка на маркетплейсы, коммунальные/управленческие и прочие расходы; общекомпанейские расходы отделены от расходов клиента.
-32. 🟡 FBS/FBO/возвраты как операции есть; полноценные управляемые складские сценарии ещё не завершены.
-33. 🟡 Нормализация имён клиентов/сотрудников и история переименований.
+32. ✅ Внутренний generic batch workflow PORTAL: назначенные задания/исполнители, план-факт количества, FBS/FBO shipment, состояния частичного/полного возврата, результат возврата, audit и idempotency; service, shared UI и disposable PostgreSQL role/tenant E2E проверены. Внешняя интеграция TalAnt остаётся отдельным контуром 106–117.
+33. 🟡 Client имеет стабильный ID и историю переименований; поиск учитывает rename aliases и известные варианты имён Knowledge Base, не переписывая canonical записи. Полная нормализация клиентов/сотрудников и миграция aliases остаются открытыми.
 34. ✅ Алфавитная выдача основных справочников.
 35. ✅ Каталог продуктов клиента: стабильные ID, CRUD/архив, поиск и tenant-scoped связь с партиями; Stage 12 PostgreSQL/Web CI и браузерный role flow прошли на Part 12.
 
@@ -243,3 +243,4 @@
 - Part 12 continuation #3 verified tariff effective-date snapshots, timezone-aware financial month buckets, dashboard daily/monthly figures and source-backed team productivity. At `7917dac` local Server discovery passed 244 tests with 31 skips; Web disposable PostgreSQL and Server passed, and the same client code passed Android UI/APK CI at adjacent SHA `2548d97`. Item 47 moved from ⏳ to 🟡 after operator-run scheduling metadata/tests; the system timer remains open. Current counts: **73 ✅ / 34 🟡 / 7 ⏳ / 12 🔌**.
 - Windows installer is not yet implemented; local `dotnet` is unavailable. See `PORTAL_FINALIZATION_PART12_PROGRESS.md` for remaining work and `PORTAL_FINAL_EXTERNAL_BLOCKERS.md` for provider/owner actions.
 - Roadmap item 52 is closed on this branch after targeted HTTP/Documents/XLSX integration and workbook tests; payroll ledger facts are read from append-only settlement events and are not written into the closed snapshot.
+- Part 12 checkpoint `e85928e`: item 32 is ✅ after internal FBS/FBO shipment and return lifecycle, idempotency, audit and role/tenant tests including Web disposable PostgreSQL. Counts: **74 ✅ / 33 🟡 / 7 ⏳ / 12 🔌**. Production cutover remains NOT performed.

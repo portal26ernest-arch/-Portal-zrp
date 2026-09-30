@@ -520,3 +520,20 @@ Production cutover **NOT performed**.
 - C: finish unified source-backed profitability UI and productivity period comparison; persistent reminder cadence/system timer remains absent/disabled.
 - D: document revision/history parity beyond current revision labels, then retain existing cross-session PG E2E and file/share contracts in final regression.
 - Continue employee_id/telegram_id runtime-boundary and legacy monetary REAL inventory/reconciliation, news operator framework, backup restore rehearsal and Windows installer. No autopilot flag; software work remains. Production cutover **NOT performed**.
+
+## AUTOMATIC CONTINUATION — client aliases and shipment lifecycle — 2026-09-30
+
+### DONE NOW
+
+- Starting HEAD was `056e1e88598bb740302c490fe263afac9e321ebe`, synced except prepared roadmap/matrix alias evidence. CI at `056e1e8`: Web #75 plus disposable PostgreSQL, Android UI #48, and staging APK #62 passed. APK artifact `PORTAL_Android_3.5-dev_staging_d5c65948ad3a2909eb394c1330fab23d66efa48cbe51236ad3715cbcd7ad7e2d`; APK SHA-256 is the 64-hex suffix; version remains 3.5-dev-staging/versionCode 35.
+- `056e1e8` adds Knowledge Base client spelling aliases to search without changing canonical client rows or persisting guessed aliases. Item 33 remains 🟡.
+- `e85928e` adds service and disposable PostgreSQL HTTP coverage for FBS/FBO shipment completion: stable idempotency retry, conflicting request reuse rejection, tenant/role denial, single shipment row and audit record. Playwright confirms the shared UI submits the selected shipment direction with a request ID.
+- Local tests: shipment service **1 passed**; UI Playwright **28 passed**; full Node suite **49 passed**; Server discovery **249 passed, 34 skipped, 0 failed**; ops infra readiness **7 passed**. PostgreSQL shipment fixture was skipped locally because no disposable local PostgreSQL is configured. Compileall, relevant Node syntax check and `git diff --check` passed.
+- At `e85928e`, GitHub Web #76 (including disposable PostgreSQL), Android UI #49, APK build #63, and Server #93 (Python 3.11 and 3.13) passed. APK artifact `PORTAL_Android_3.5-dev_staging_daf9604d76bdf2f4bea40b065302ae6020371da6f49e8a74676b575b7aee7839`; APK SHA-256 is the 64-hex suffix. The isolated PostgreSQL fixture asserts DB=0, roles=0, temp=0 at teardown. No local database/role was created.
+
+### EXACT NEXT
+
+- Item 32 is ✅ after the verified assignment → work → FBS/FBO shipment → return lifecycle, HTTP/service/browser coverage, audit, tenant/role denial and idempotency. Counts are **74 ✅ / 33 🟡 / 7 ⏳ / 12 🔌**.
+- Continue A invitation/audit capability coverage and director-owned settings; B editable Client 360 blocks and broader alias/history coverage; C source-backed profitability/productivity comparisons and persistent reminder cadence/timer; D document revision/history UI parity.
+- Then complete employee_id/telegram_id runtime audit, legacy REAL money inventory/reconciliation, marketplace news operator framework, backup restore rehearsal, Windows thin installer and final integrated checks.
+- Production resources remain untouched; no complete/blocked flag is justified while software work remains. Production cutover **NOT performed**.

@@ -418,6 +418,16 @@ Latest tested code at `e08e0d8dbe927cce9b82ab58e4ef4a5c7e9c29a4`; commits `cd22c
 - Next wider software tasks: employee ID legacy boundary and money cents inventory/reconciliation, safe marketplace news operator framework, backup restore rehearsal, Windows installer/toolchain, then final full readiness evidence.
 - Production cutover **NOT performed**. No autopilot completion or blocked flag created; software-completable work remains.
 
+## Automatic continuation — client aliases and shipment lifecycle (`e85928e`)
+
+- `056e1e8` adds Knowledge Base spelling aliases to Client search while preserving stable client IDs and canonical names.
+- `e85928e` adds service, disposable PostgreSQL HTTP, and Playwright coverage for idempotent FBS/FBO shipment completion, audit, single-row shipment history, request-key conflict rejection, and tenant/role denial.
+- Local evidence: Server discovery **249 passed / 34 skipped / 0 failed**; Node suite **49 passed / 0 skipped / 0 failed**; focused browser UI **28 passed**; shipment service test **1 passed**; infrastructure readiness **7 passed**; compileall, relevant `node --check`, and `git diff --check` passed. The isolated PostgreSQL test skipped locally because no disposable DSN is configured.
+- GitHub at `056e1e8`: Web #75 + disposable PostgreSQL, Android UI #48, and APK #62 passed. Staging artifact `PORTAL_Android_3.5-dev_staging_d5c65948ad3a2909eb394c1330fab23d66efa48cbe51236ad3715cbcd7ad7e2d`; APK SHA-256 is the 64-hex suffix.
+- GitHub at `e85928e`: Web #76 + disposable PostgreSQL, Android UI #49, APK #63, and Server #93 (Python 3.11/3.13) passed. Staging artifact `PORTAL_Android_3.5-dev_staging_daf9604d76bdf2f4bea40b065302ae6020371da6f49e8a74676b575b7aee7839`; APK SHA-256 is the 64-hex suffix. The isolated PostgreSQL fixture asserts DB=0, roles=0, temp=0 at teardown. Version remains 3.5-dev-staging/versionCode 35.
+- Item 32 is now ✅ from the internal workflow evidence; counts are **74 ✅ / 33 🟡 / 7 ⏳ / 12 🔌**. Production DB/service, DNS, financial facts, signing secrets, and physical device were not used. Production cutover **NOT performed**.
+- Exact NEXT: continue A invite/audit/settings role completeness, B Client 360 editability, C unified profitability/reminder configuration, and D document revision-history parity. Then complete legacy ID/money audits, news framework, backup rehearsal, Windows installer and final integration checks. No completion/blocked flag while software work remains.
+
 ## Automatic continuation — company control settings and latest integration check
 
 - Latest checked branch HEAD: `2a0ab8f570de3a79ce6513df334ed284c1384b42` (`test: cover company control settings authorization`), following `ae9f83f` and `50a9e3e`. The shared Settings screen now exposes existing company control settings only to users with `company.settings`; the browser verifies a Director can read/save without submitting a company ID and a Manager cannot see the link. Server test verifies Director allow, Manager deny, and forged company header deny.
