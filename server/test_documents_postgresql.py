@@ -557,6 +557,46 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.request('/api/platform/companies/2',owner,{'module_toggles':{}},method='POST')
         self.assertEqual(self.request('/api/platform/companies/2',owner)['company']['module_toggles'],{})
 
+    def test_postgresql_platform_owner_company_controls_enforce_and_restore(self):
+        """Owner subscription/demo/state/seat controls are persisted, validated and tenant-safe."""
+        pin=secrets.token_urlsafe(24)
+        salt,digest=self.portal.hash_pin(pin)
+        with self.pg.connect(type(self).make_conninfo(self.admin_dsn,dbname=self.database),autocommit=True) as admin:
+            admin.execute('INSERT INTO platform_owners(id,username,display_name,pin_salt,pin_hash) VALUES(3,%s,%s,%s,%s)',
+                          ('company-controls-owner','Synthetic company controls owner',salt,digest))
+        owner=self.request('/api/platform/login',body={'username':'company-controls-owner','pin':pin})['token']
+        company_path='/api/platform/companies/2'
+        original=self.request(company_path,owner)['company']
+        restore={key:original.get(key) for key in ('name','status','monthly_price','demo_enabled','demo_start',
+                                                    'demo_end','user_limit','service_status','module_toggles')}
+        try:
+            start=(datetime.now(timezone.utc).replace(tzinfo=None)+timedelta(days=1)).replace(microsecond=0)
+            end=start+timedelta(days=7)
+            requested={'monthly_price':123456,'user_limit':16,'demo_enabled':1,
+                       'demo_start':start.isoformat(timespec='seconds'),'demo_end':end.isoformat(timespec='seconds'),
+                       'service_status':'active','status':'active','module_toggles':{'work':False}}
+            self.request(company_path,owner,requested,method='POST')
+            saved=self.request(company_path,owner)['company']
+            for key,value in requested.items():
+                self.assertEqual(saved[key],value,key)
+            access=self.request('/api/v3/company-access',self.tokens[2])['data']
+            self.assertEqual((access['user_limit'],access['unlimited']),(16,False))
+            portal_company=self.request('/api/platform/companies/1',owner)['company']
+            self.assertIsNone(portal_company['user_limit'])
+            portal_access=self.request('/api/v3/company-access',self.tokens[1])['data']
+            self.assertTrue(portal_access['unlimited'])
+            self.request('/api/platform/companies/1',owner,{'user_limit':16},method='POST',status=400)
+            active=access['active_users']
+            self.request(company_path,owner,{'user_limit':active-1},method='POST',status=400)
+            unchanged=self.request(company_path,owner)['company']
+            self.assertEqual(unchanged['user_limit'],16)
+            audit=self.request('/api/platform/audit?company_id=2&actor_id=3&event=company_updated',owner)
+            self.assertTrue(any(set(requested).issubset(set(json.loads(row['details']).get('fields',[])))
+                                for row in audit['rows']))
+            self.assertNotIn(pin,json.dumps(audit))
+        finally:
+            self.request(company_path,owner,restore,method='POST')
+
     def test_postgresql_product_catalog_edits_metadata_but_keeps_batch_snapshot(self):
         created=self.post('products',dict(action='create',client_id=1,name='PG catalog box'),self.tokens[1])['data']
         batch=self.post('batches',dict(client_id=1,product_id=created['id'],quantity=3),self.tokens[1])['data']
