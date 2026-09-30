@@ -244,7 +244,7 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
     def test_employee_identity_api_contract_is_canonical_and_company_scoped(self):
         from production_repository import Repository
 
-        employee_a=self.request('/api/me',self.tokens['company_1_packer'])['user']
+        employee_a=self.request('/api/me',self.tokens[1])['user']
         employee_b=self.request('/api/me',self.tokens[2])['user']
         self.assertIn('employee_id',employee_a)
         self.assertIn('employee_id',employee_b)
