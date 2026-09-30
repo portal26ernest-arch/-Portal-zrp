@@ -443,3 +443,58 @@ Latest tested code at `e08e0d8dbe927cce9b82ab58e4ef4a5c7e9c29a4`; commits `cd22c
 - GitHub Web `36668181017`: disposable PostgreSQL **20 tests / 18 pass / 2 skipped**, including independent same-company sessions and cross-company denial; cleanup `DB=0 roles=0 temp=0`. GitHub Android UI `36667824748` and APK `36667824984` passed at `3223ad0`. Staging 3.5-dev-staging/versionCode 35; artifact suffix/SHA-256 `d9a8def27b9365eda12d419aefcd95f40831d31715e56626577e6391116f57a5`.
 - An earlier Server run `36667911551` failed on a test retry that generated a new request ID; the assertion was corrected by reusing the same key, and repeat suite/CI at `c732067` passed. No application security or idempotency behavior was weakened.
 - Roadmap stays **73 ✅ / 34 🟡 / 7 ⏳ / 12 🔌**. Production cutover **NOT performed**. Exact NEXT: continue A invitation/audit/settings role coverage, B Client 360/normalization/batches, C profitability/productivity/reminder cadence, D history parity, then legacy ID/money audits and final release gates. Software work remains, so do not create completion/blocked flag.
+
+## AUTOMATIC CONTINUATION — Client 360 requisites and productivity period comparison — 2026-09-30
+
+### DONE NOW
+
+- Continued from actual pushed branch state `a4dd960`; kept the existing Part 12 worktree and branch.
+- `819dbfb` completed the first editable Client 360 requisite block using existing `portal_client_requisites`. Server reads/writes enforce current company/client visibility and `clients.read`/`clients.manage`; idempotent request retries return the original result. Audit records a safe action and client identity only, never the field values. Shared Android/Web UI permits edits only to `clients.manage` and reloads canonical values after save.
+- Added a disposable PostgreSQL API/RLS integration scenario to the existing Web gate. The test checks same-company independent-session visibility, company B isolation, forged header denial, retry idempotency, and absence of tax/bank values from audit. Locally it is skipped because this environment does not provide the disposable test PostgreSQL service.
+- `f5475ae` completed one productivity comparison block: optional date range vs an immediately prior equal-length period, interpreted with company-local offset. Quantity and delta use actual work records; hourly pace uses only valid timed work; no timing produces an unavailable result. UI date filters show both exact date windows.
+- The numbered roadmap count is unchanged at **74 ✅ / 33 🟡 / 7 ⏳ / 12 🔌**. Items 17 and 46 remain 🟡 because broader Client 360 and productivity acceptance remains.
+
+### TESTS RUN NOW
+
+- Requisites server test: **1 passed**. Full server discovery after both code blocks: **254 passed, 36 skipped, 0 failed**.
+- Browser UI after both blocks: **29 passed, 0 skipped, 0 failed**. Full Node suite: **50 passed, 0 skipped, 0 failed**.
+- Analytics period API test: **1 passed**. Infrastructure readiness: **7 passed**. `python -m compileall -q server ops android_src/tools`, relevant `node --check`, and `git diff --check`: passed.
+- At `819dbfb`, GitHub Server/Web/Android UI/Android APK (`36677295945`, `36677295988`, `36677295987`, `36677295995`) all succeeded. At `f5475ae`, Web #`36678086685`, its `documents-postgresql` job, Android UI #`36678086723`, and APK #`36678086692` succeeded; Server #`36678086835` was still in progress when recorded.
+- Staging artifact at `f5475ae`: `PORTAL_Android_3.5-dev_staging_67015a4feea9246b8d0ee04d0e964f8071a2a77bbdedaa6339b3d98dd59572dc`; APK SHA-256 is the 64-hex suffix. Version remains 3.5-dev-staging/versionCode 35.
+- No disposable database, role or temp resource was created locally; the Web CI disposable test performs teardown assertions. No production DB/service, DNS, financial data, credentials, signing secrets or physical phone was used. No production cutover.
+
+### PREVIOUSLY PROVEN
+
+- Earlier Part 12 evidence remains as described in preceding checkpoint sections; it is not presented as a new run for this continuation.
+- Existing assistant infrastructure commit `1066c77` was already integrated and its seven infrastructure tests had passed on an earlier checkpoint; this turn reran `ops.test_infra_readiness` **7/7**.
+
+### NOT DONE / EXACT NEXT
+
+- A invitation/access/settings/audit policy matrix remains incomplete.
+- B Client 360 still needs the remaining linked/editable blocks and normalization/history acceptance; item 17 stays 🟡.
+- C still needs broader profitability/reconciliation and reminder cadence/operator execution; production timer remains disabled.
+- D still needs successful execution of the new requisites PostgreSQL test in Web CI, remaining document revision/history parity and final Android/Web file contracts.
+- Exact next: poll the four workflows on `f5475ae`; diagnose any failure, then continue A authorization coverage or C reminder cadence/source-backed profit. After CI is green, refresh these checkpoints with run IDs, then commit/push the docs checkpoint.
+- Broader remaining work: employee ID/legacy telegram ID runtime audit, REAL money inventory and additive cents reconciliation strategy, disabled news operator framework, disposable backup restore rehearsal, Windows thin client/installer, and final full regression. Production cutover **NOT performed**.
+
+## AUTOMATIC CONTINUATION — Client 360 Documents drilldown — 2026-09-30
+
+### DONE NOW
+
+- `b588462` adds a Client 360 action to open the shared Documents screen filtered to that stable client ID, using the existing server `client_id` query filter and document/client capabilities. Browser tests assert the canonical request and active client filter.
+- UI browser tests: **29 passed, 0 failed**. Full Android/Node tests: **50 passed, 0 failed**. `node --check` for the changed JavaScript files and `git diff --check` passed.
+- On parent SHA `f5475ae`, Server `36678086835`, Web `36678086685`, Android UI `36678086723`, and Android APK `36678086692` all succeeded. The Web disposable PostgreSQL job passed. Staging artifact: `PORTAL_Android_3.5-dev_staging_67015a4feea9246b8d0ee04d0e964f8071a2a77bbdedaa6339b3d98dd59572dc`; SHA-256 `67015a4feea9246b8d0ee04d0e964f8071a2a77bbdedaa6339b3d98dd59572dc`; staging remains 3.5-dev-staging/versionCode 35.
+- Roadmap count remains **74 ✅ / 33 🟡 / 7 ⏳ / 12 🔌**; A–D remain incomplete. No production systems were touched.
+
+### PREVIOUSLY PROVEN
+
+- `819dbfb` Client 360 requisite API/UI; `f5475ae` productivity comparison. Earlier PG and full server results apply to those named SHAs only.
+- Documents cross-session PG E2E passed in Web CI at `f5475ae`; it is not claimed as a new `b588462` run.
+
+### NOT DONE / EXACT NEXT
+
+- A: invitation/access/settings/audit role-policy coverage remains partial.
+- B: more source-backed editable/linked Client 360 sections and broader normalization/history proof remain.
+- C: profitability/reconciliation breadth and reminder cadence/operator run remain; production scheduler remains disabled.
+- D: revision/history UI parity and final share/file contracts remain; rerun disposable PG cross-session E2E at the final code SHA.
+- Exact next: poll Server/Web/Android UI/Android APK for `b588462`; fix any software failure, then continue A role coverage or C reminder cadence with tests and a logical commit. Counts remain **74 ✅ / 33 🟡 / 7 ⏳ / 12 🔌**. Production cutover **NOT performed**.

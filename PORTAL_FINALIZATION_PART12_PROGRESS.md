@@ -537,3 +537,54 @@ Production cutover **NOT performed**.
 - Continue A invitation/audit capability coverage and director-owned settings; B editable Client 360 blocks and broader alias/history coverage; C source-backed profitability/productivity comparisons and persistent reminder cadence/timer; D document revision/history UI parity.
 - Then complete employee_id/telegram_id runtime audit, legacy REAL money inventory/reconciliation, marketplace news operator framework, backup restore rehearsal, Windows thin installer and final integrated checks.
 - Production resources remain untouched; no complete/blocked flag is justified while software work remains. Production cutover **NOT performed**.
+
+## AUTOMATIC CONTINUATION — Client 360 requisites and productivity period comparison — 2026-09-30
+
+### DONE NOW
+
+- Starting branch HEAD was `a4dd960` after fetch; worktree changes were the already-started Client 360 requisites implementation. No new worktree was created.
+- `819dbfb` adds the `client-requisites` read/write API over the existing company-scoped `portal_client_requisites` table; it does not introduce a duplicate table/model. Writes require `clients.manage`, reads require `clients.read`, target only the authenticated company/client, preserve partial updates, use command request-ID idempotency, and reject unknown/nontext fields. Audit records only `client.requisites.updated` plus the client ID; field values, bank account and tax identifiers are not included.
+- Shared Client 360 UI reads and edits requisites under the existing capability, provides empty/current form values, and refreshes from server after save. Browser role test verifies `clients.read` alone does not show edit; POST body has stable client ID and no forged company selector.
+- Added the live disposable PostgreSQL session/RLS test to the existing isolated Web fixture; it checks two same-company sessions, company B returning no company A values, forged company header denial, idempotent retry, and audit redaction. It skipped locally because there is no local disposable PostgreSQL service/DSN.
+- `f5475ae` adds optional analytics date-range comparison against the immediately preceding equal-length window. Dates are interpreted with the company UTC offset. Work units use source rows; units/hour uses only rows with valid positive duration, and comparative pace remains unavailable if either window lacks timing. Shared UI exposes date filters and explicit period labels.
+- Roadmap counts remain **74 ✅ / 33 🟡 / 7 ⏳ / 12 🔌**; neither item 17 nor 46 was promoted. There is no complete/blocked flag; A–D and other software work remain.
+- Commits pushed in order: `819dbfb` (`feat: edit tenant-scoped client requisites`), `f5475ae` (`feat: compare productivity across company periods`).
+
+### TESTS / CI
+
+- Client API target: **1 passed**; Client requisites Playwright included in UI suite.
+- At `819dbfb`, server full discovery: **253 passed, 36 skipped, 0 failures**; browser UI **28 passed**; full Node suite was run before the follow-up C increment and passed **49/49**. Ops infra tests **7/7**; compileall and diff-check passed.
+- GitHub at `819dbfb`: Server `36677295945`, Web `36677295988`, Android UI `36677295987`, Android APK `36677295995` all succeeded.
+- Analytics API target: **1 passed**; browser comparison test passed. After both blocks, full server discovery: **254 passed, 36 skipped, 0 failures**; focused browser UI **29/29**; full Node suite **50/50**; infra readiness **7/7**; compileall, relevant node checks and `git diff --check` passed.
+- GitHub Web `36678086685` and its `documents-postgresql` job completed successfully at `f5475ae8d95f5f6e29e21acecc55d1bac3422c61`; that disposable PostgreSQL job ran `test_documents_postgresql` and passed. Web teardown uses fixture assertions for database/role/temp cleanup. Android UI `36678086723` and APK build `36678086692` also passed. The staging artifact is `PORTAL_Android_3.5-dev_staging_67015a4feea9246b8d0ee04d0e964f8071a2a77bbdedaa6339b3d98dd59572dc`, with APK SHA-256 equal to the suffix `67015a4feea9246b8d0ee04d0e964f8071a2a77bbdedaa6339b3d98dd59572dc`. Server run `36678086835` remains in progress. Version remains 3.5-dev-staging/versionCode 35.
+
+### NOT DONE / EXACT NEXT
+
+- A remains partial: complete remaining invitation/access role matrix, settings policy, and owner/company audit flows.
+- B remains partial: finish Client 360 source-linked sections/edit controls and broader client/employee normalization; retain item 17 🟡.
+- C: after the period comparison, implement/verify additional profitability/reconciliation and disabled-by-default reminder cadence/retry/operator execution; do not enable a production timer.
+- D remains partial: wait for Web disposable PostgreSQL to execute the new Client requisites RLS/audit test, then complete revision/history/filter parity and final Android/Web file contracts.
+- Exact next software step: poll the four workflows on `f5475ae`; diagnose any failure, then continue C reminder cadence/source-backed profit or A authorization coverage. After CI is green, refresh these checkpoints with run IDs, then commit/push the docs checkpoint.
+- Broader remaining work: employee ID/legacy telegram ID runtime audit, REAL money inventory and additive cents reconciliation strategy, disabled news operator framework, disposable backup restore rehearsal, Windows thin client/installer, and final full regression. Production cutover **NOT performed**.
+
+## AUTOMATIC CONTINUATION — Client 360 Documents drilldown — 2026-09-30
+
+### DONE NOW
+
+- `b588462` adds a Client 360 action to open the shared Documents screen filtered to that stable client ID. The documents list uses the existing server `client_id` query filter; it does not add a second client/document store or use Android-only APIs. The action requires document access and client read/manage capability; the documents screen continues enforcing document capabilities.
+- Browser regression exercises the authorized Client 360 flow and asserts the resulting canonical `/api/v3/documents?...client_id=1` request and selected client filter. UI suite: **29 passed, 0 failed**. Full Android/Node suite: **50 passed, 0 failed**. `node --check` passed for both changed JS files; `git diff --check` passed.
+- `f5475ae` Server `36678086835`, Web `36678086685`, Android UI `36678086723`, and Android APK `36678086692` all completed successfully. Web's disposable PostgreSQL job passed. Staging APK artifact is `PORTAL_Android_3.5-dev_staging_67015a4feea9246b8d0ee04d0e964f8071a2a77bbdedaa6339b3d98dd59572dc` (SHA-256 `67015a4feea9246b8d0ee04d0e964f8071a2a77bbdedaa6339b3d98dd59572dc`); version remains 3.5-dev-staging/versionCode 35.
+- Roadmap count remains **74 ✅ / 33 🟡 / 7 ⏳ / 12 🔌**. Item 17 remains 🟡 because broader Client 360 acceptance is open. No production systems or disposable production resources were used.
+
+### PREVIOUSLY PROVEN
+
+- `819dbfb` tenant-scoped Client 360 requisites API/UI and PostgreSQL fixture coverage; `f5475ae` productivity period comparison; evidence and test totals remain recorded in the preceding progress entry.
+- Existing Documents cross-session PostgreSQL test ran in Web CI at `f5475ae`; do not count that old result as a run for `b588462`.
+
+### NOT DONE / EXACT NEXT
+
+- A invitation/access/settings/audit policy matrix remains partial.
+- B Client 360 still needs remaining source-backed linked/editable sections and normalization/history coverage; item 17 stays 🟡.
+- C needs additional profitability/reconciliation and reminder cadence/operator execution; production timer stays disabled.
+- D needs revision/history UI parity and final share/file contracts; cross-session PG test must run on the eventual final source SHA.
+- Exact next: poll Server/Web/Android UI/Android APK workflows for `b588462`; fix any software failure. Then continue invitation/settings role-coverage or reminder cadence, followed by targeted tests and commit. No completion or blocked flag is warranted while software work remains. Production cutover **NOT performed**.
