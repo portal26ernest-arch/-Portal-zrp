@@ -318,6 +318,23 @@ class ProductionTest(unittest.TestCase):
         self.assertIn('client_rate',manager_history[0])
         self.post('tariffs',dict(client_id=1,operation_id=1,employee_rate=1,effective_from='2020-01-01'),status=400)
 
+    def test_tariff_effective_boundary_preserves_prior_work_and_rejects_duplicate_interval(self):
+        before=self.work()
+        future=(datetime.fromisoformat(utcnow())+timedelta(days=1)).replace(microsecond=0).isoformat()
+        self.post('tariffs',dict(client_id=1,operation_id=1,employee_rate=3,effective_from=future))
+        self.post('tariffs',dict(client_id=1,operation_id=1,employee_rate=4,effective_from=future),status=400)
+        with portal.tenants.company_scope(1),portal.db() as conn:
+            repo=Repository(conn,1)
+            worker=next(user for user in repo.catalog('users') if user['id']==self.worker_id)
+            after_at=(datetime.fromisoformat(future)+timedelta(seconds=1)).isoformat()
+            after=Production(repo,worker,clock=lambda:after_at).work(dict(client_id=1,operation_id=1,quantity=2))
+            conn.commit()
+        old=self.get('works')['data']
+        self.assertEqual((before['salary'],before['employee_rate']),(400,200))
+        self.assertEqual(next(row for row in old if row['id']==before['id'])['salary'],400)
+        self.assertEqual((after['salary'],after['employee_rate']),(600,300))
+        self.assertEqual(len(self.get('tariff-history?operation_id=1')['data']),2)
+
     def test_individual_grant_deny_and_legacy_bypass(self):
         self.post('permissions',dict(user_id=self.worker_id,permissions={'batches.receive':True,'work.write':False}))
         self.post('batches',dict(client_id=1,product='X',quantity=1),self.worker)

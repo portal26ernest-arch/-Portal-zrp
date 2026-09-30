@@ -253,6 +253,25 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.assertEqual((foreign['today_quantity'],foreign['today_finance']['revenue'],foreign['open_invoice_count']),
                          (0,0,0))
 
+    def test_tariff_effective_version_keeps_postgresql_work_snapshots(self):
+        from production_repository import Repository, utcnow
+        before=self.post('work',dict(client_id=1,operation_id=1,quantity=2,request_id='pg-tariff-before'),
+                         self.tokens['company_1_packer'])['data']
+        future=(datetime.fromisoformat(utcnow())+timedelta(days=1)).replace(microsecond=0).isoformat()
+        self.post('tariffs',dict(client_id=1,operation_id=1,employee_rate=3,effective_from=future),self.admin)
+        self.post('tariffs',dict(client_id=1,operation_id=1,employee_rate=4,effective_from=future),self.admin,status=400)
+        with self.portal.tenants.company_scope(1),self.portal.db() as conn:
+            repo=Repository(conn,1)
+            worker=next(user for user in repo.catalog('users') if user['id']==2)
+            after_at=(datetime.fromisoformat(future)+timedelta(seconds=1)).isoformat()
+            after=self.production.Production(repo,worker,clock=lambda:after_at).work(
+                dict(client_id=1,operation_id=1,quantity=2))
+            conn.commit()
+        current={row['id']:row for row in self.get('works',self.tokens['company_1_packer'])['data']}
+        self.assertEqual((before['salary'],before['employee_rate']),(400,200))
+        self.assertEqual(current[before['id']]['salary'],400)
+        self.assertEqual((after['salary'],after['employee_rate']),(600,300))
+
     def test_secure_invitation_lifecycle_uses_hash_and_tenant_scope(self):
         """Stage 10 invitations remain hash-only, one-time and tenant-scoped on PostgreSQL."""
         body={'action':'create','role':'packer','username':'pg-invite-candidate',
