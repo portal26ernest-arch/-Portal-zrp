@@ -53,7 +53,7 @@
 39. ✅ Счета клиентам.
 40. ✅ Частичные и полные оплаты.
 41. ✅ Базовая дебиторка: открытые/оплаченные суммы.
-42. 🟡 Просрочка и расширенный контроль дебиторки.
+42. ✅ Просрочка и расширенный контроль дебиторки: client-local aging buckets, частичные оплаты, фильтр клиента/периода, пагинация, kopeck reconciliation, timezone boundaries, role/tenant denial и PostgreSQL cleanup проверены Server/Web/disposable PostgreSQL CI на `22ce6f3`; legacy invoices без client link не приписываются клиенту.
 43. 🟡 Выручка, себестоимость, маржа и прибыль по клиенту/партии.
 44. 🟡 «PORTAL Сегодня» показывает подтверждённые объём, выручку и начисления за день/месяц, выплаты закрытого периода и открытые счета; без плана прибыль отмечается как недоступная. Полный набор метрик и rollout ещё не закрыты.
 45. 🟡 Финансовый радар показывает дебиторку, просрочку, требующие внимания записи и сигналы убыточности клиентов; помесячная сводка учитывает часовой пояс компании. Полный набор источников и rollout остаются открытыми.
@@ -250,7 +250,7 @@
 - Money/identity focused checkpoint `35db147`: current identity scanner still reports P0=0, P1=50 explicit bridges and P2=129 historical/fixture references; audit/infra tests 16/16. Web run `36722642388` passed web and disposable `documents-postgresql` (31 tests, 2 skipped; cleanup db=0/roles=0/temp=0), including bounded linked legacy/canonical money reconciliation. Server run `36722642200` passed Python 3.11 and 3.13 (277 tests per version, 43 skipped). An earlier unfiltered synthetic company scan detected duplicate canonical links and remains a fail-closed data integrity finding; bounded test success does not certify the entire synthetic history. Item 105 remains 🟡; counts stay **75 ✅ / 32 🟡 / 7 ⏳ / 12 🔌**.
 - Latest Part 12 Windows/update checkpoint `4a1629c`: Windows CI `36727892734`, Web `36727892853` and Server `36727892708` passed; the Server matrix ran 289 tests on Python 3.11 and 3.13 (43 skips each), and disposable PG ran 31 tests/2 skips with cleanup db=0/roles=0/temp=0. The Web Share/Android client Node suite passed locally 52/52. Item 85 is 🟡, not a signed/released installer; update distribution is optional and requires external trusted publication/signature configuration. The strict synthetic whole-company money scan now passes, while an imported SQLite snapshot remains unknown and item 105 stays 🟡. Counts **75 ✅ / 33 🟡 / 6 ⏳ / 12 🔌**. No production cutover.
 
-### Part 12 continuation — 2026-09-30 (`23bd46f` baseline)
+### Part 12 continuation — 2026-09-30 (`22ce6f3`)
 - Client 360 shipment/return history is now visible in the shared UI with client/tenant filtering and browser regression tests (`664050d`); item 17 remains 🟡 until broader editable-profile acceptance is proven.
-- The Web disposable PostgreSQL run at `23bd46f` found a real edge case: historical invoices with no client link caused `receivables()` to raise `KeyError`. A locally tested change omits these unlinked rows from the client-only aging report and adds regression assertions. Full Server discovery passed 294 tests/46 skips; infra readiness 8/8. Await corrected-SHA Server and disposable PostgreSQL CI before updating item 42.
-- Roadmap counts remain **75 ✅ / 33 🟡 / 6 ⏳ / 12 🔌**. No production data/service/DNS/cutover or secrets were touched; production cutover NOT performed.
+- The Web disposable PostgreSQL run at `23bd46f` found a real edge case: historical invoices with no client link caused `receivables()` to raise `KeyError`. The `22ce6f3` correction excludes unlinked rows from the client-only aging report and adds regression assertions. Web and disposable PostgreSQL passed (33 PG tests, 2 gated skips, cleanup `db=0 roles=0 temp=0`); Server 3.11 and 3.13 each passed 294 tests/45 skips; `ops.test_infra_readiness` passed 8/8.
+- Item 42 is now ✅. Counts are **76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌**. No production data/service/DNS/cutover or secrets were touched; production cutover NOT performed.

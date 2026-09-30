@@ -860,3 +860,12 @@ Production cutover **NOT performed**.
 - Readiness stays **75 ✅ / 33 🟡 / 6 ⏳ / 12 🔌**; no roadmap item was promoted. Production DB/service/DNS/cutover and secrets were untouched.
 
 **Exact NEXT:** commit and push the receivables fix and tests; inspect the resulting SHA's Web `documents-postgresql` and Server 3.11/3.13 checks, requiring both the PG assertion and disposable-resource cleanup to pass. Then continue the A Owner/Director invitation/settings/audit role matrix and remaining B/C/D software items. No completion or blocked flag; production cutover NOT performed.
+
+## VERIFIED — receivables aging PostgreSQL regression — 2026-09-30 (`22ce6f3`)
+
+- Corrected-SHA GitHub checks all passed: Server Python 3.11 and 3.13 each ran 294 tests with 45 gated skips; Web passed its browser tests; `documents-postgresql` ran 33 tests with 2 expected skips, including the legacy missing-client regression and aging role/filter case. Teardown verified `db=0 roles=0 temp=0`.
+- Local full Server discovery was 294 tests / 46 skips / 0 failures; targeted receivables cases 3/3; infra readiness 8/8; compileall and diff check passed. Local PostgreSQL cases were skipped, so the disposable CI run is the PG evidence.
+- Item 42 is ✅; numbered roadmap counts are now **76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌**. Item 17 remains 🟡; shipment/return history was added in `664050d`, but full profile acceptance is still open.
+- Production data/service/DNS/cutover, secrets and phone test execution were not used.
+
+**Exact NEXT:** inspect roadmap item 33 alias/history behavior in `server/production_service.py`, repository schemas and shared Client 360 search. Implement only a missing canonical source-backed alias lifecycle (preserve canonical names/history and company scoping); if no safe source exists, document the missing source and move to another open software task. Run Server/Web/disposable PostgreSQL and UI coverage before any status promotion. Then continue A's remaining verifiable Owner/Director matrix and C/D gaps. No autopilot flag; production cutover NOT performed.

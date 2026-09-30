@@ -710,3 +710,11 @@ The disposable PostgreSQL job at `23bd46f` found that old invoice rows without a
 Roadmap counts remain **75 ✅ / 33 🟡 / 6 ⏳ / 12 🔌**. No production data, service, DNS, cutover or secrets were touched.
 
 **Exact NEXT:** commit/push this fix; validate Web's disposable `documents-postgresql` and Server 3.11/3.13 checks on the resulting SHA, including cleanup evidence. Then complete the Owner/Director invitation/settings/audit policy matrix and continue remaining Client 360, payroll, receivables and Documents gaps. Part 12 remains open; do not create complete/blocked flags.
+
+## Verified receivables aging PostgreSQL correction — 2026-09-30 (`22ce6f3`)
+
+All checks at `22ce6f3` passed: Server Python 3.11 and 3.13 each ran 294 tests with 45 skips; Web passed; disposable PostgreSQL ran 33 tests with 2 expected skips, including the repaired aging test, and cleanup verified `db=0 roles=0 temp=0`. Local Server discovery was 294/46 with no failures, focused aging tests 3/3, `ops.test_infra_readiness` 8/8, and compile/diff checks passed. The PostgreSQL suite was skipped locally due to no local fixture; the listed Web CI job is the actual PostgreSQL evidence.
+
+The correction excludes unlinked legacy invoice rows from the client-specific aging report. Item 42 is now ✅; roadmap counts are **76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌**. No production ledger or service was touched.
+
+**Exact NEXT:** inspect item 33's canonical client/employee alias-history lifecycle for a source-backed software gap, retaining company scope and append-only history. If no canonical source supports another alias operation, move to a different remaining software item. Continue the verifiable Owner/Director matrix and remaining C/D acceptance. Part 12 remains open; no complete/blocked flag.
