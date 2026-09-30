@@ -959,3 +959,11 @@ Production cutover **NOT performed**.
 - Roadmap item 17 is now ✅. Counts: **79 ✅ / 29 🟡 / 6 ⏳ / 12 🔌**. No production systems or data were changed.
 
 **Exact NEXT:** continue item 46 productivity. Use only existing timed work sources; replace raw IDs in UI where canonical names are available, surface consistency/variability honestly, and prove management vs self-only role scope. Do not invent quality scores when defects are not recorded.
+## AUTOMATIC CONTINUATION — source-backed productivity breakdown — `231e3c6` — 2026-09-30
+
+- Analytics now returns canonical employee/client/operation labels alongside stable IDs, groups work by employee/client/product/operation and adds a batch/operation breakdown. The UI uses those labels, shows timed quantity and rate variability only when at least two timed samples exist, and reports unavailable time/quality where the source has no facts.
+- Scope tests prove manager team analytics is limited to assigned clients and employee analytics remains self-only. Disposable PostgreSQL E2E checks team/self/foreign-company scope and batch metrics. No quality score or defect count is invented.
+- Local validation: `test_production` **51/51**, Android/Web Node+Playwright **35/35**, `ops.test_infra_readiness` **8/8**, Python compileall, JS syntax and `git diff --check` passed. Current-SHA GitHub Server 3.11/3.13, Web, `documents-postgresql`, Android UI and APK all succeeded; PostgreSQL test and container-stop steps passed. Local disposable PostgreSQL is not configured.
+- Item 46 remains 🟡 because the work source currently records no defects; quality cannot be measured until real defect facts are captured. Numbered roadmap counts remain **79 ✅ / 29 🟡 / 6 ⏳ / 12 🔌**. No production system was used.
+
+**Exact NEXT:** continue item 47 reminder scheduler. Review the existing disabled-by-default operator runner and persistent cadence/retry/idempotency tests; implement only the remaining safe software gap (a deterministic trusted timer/deployment artifact or operable run contract), and keep activation disabled unless explicitly configured. Then continue the still-partial Documents and access/settings role matrices. No complete/blocked flag is warranted.

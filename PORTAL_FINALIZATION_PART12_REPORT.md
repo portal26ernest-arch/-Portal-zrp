@@ -798,3 +798,12 @@ Client 360 now provides direct operation management and effective-date tariff cr
 Roadmap item **17** is promoted to ✅. Current counts: **79 ✅ / 29 🟡 / 6 ⏳ / 12 🔌**. Production cutover remains separate and unperformed.
 
 **Exact NEXT:** finish source-backed productivity/consistency and its role-scope evidence without manufacturing quality data.
+## Verified productivity breakdown checkpoint — `231e3c6` — 2026-09-30
+
+Server analytics now groups source-backed work by employee/client/product/operation and batch/operation, exposes canonical names, timed quantity and rate variability only when sufficient timed samples exist, and retains clear unavailable states for missing time and unrecorded defects. A manager sees team records only inside assigned client scope; an employee without `analytics.read` sees only their own records. Unit tests and disposable PostgreSQL regression cover those scopes, tenant separation, batch breakdown, and absent quality facts.
+
+Validation: Server `test_production` **51/51**; Android/Web Node+Playwright **35/35**; `ops.test_infra_readiness` **8/8**; compile/syntax/diff checks passed. GitHub checks for `231e3c6` all passed: Server 3.11 and 3.13, Web, disposable `documents-postgresql`, Android UI, and APK. PostgreSQL job test and container teardown both succeeded. No local disposable PG is configured and no production target was used.
+
+Item 46 remains 🟡 because this system does not yet record defects; quality results are intentionally unavailable. Roadmap counts remain **79 ✅ / 29 🟡 / 6 ⏳ / 12 🔌**.
+
+**Exact NEXT:** inspect and close only the software-completable remainder of item 47's safe reminder scheduler runner/timer contract while preserving disabled-by-default operation. Then continue partial Documents and invitation/access/settings/audit coverage. Production/domain/provider gates remain separate; no autopilot flag.
