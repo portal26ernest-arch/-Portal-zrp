@@ -187,6 +187,15 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
     @property
     def admin(self):return self.tokens[1]
 
+    def assert_unique_legacy_work_links(self, stage):
+        """Pinpoint duplicate canonical links without printing row identities."""
+        with self.portal.tenants.company_scope(1),self.portal.db() as conn:
+            from production_repository import Repository
+            legacy_ids=[row.get('legacy_id') for row in Repository(conn,1).list('works')
+                        if row.get('legacy_id') is not None]
+        self.assertEqual(len(legacy_ids),len(set(legacy_ids)),
+                         'duplicate canonical legacy-work links observed after '+stage)
+
     def upload(self,token,**values):
         data=b'%PDF-1.4\nSynthetic\n%%EOF\n'
         body=dict(action='upload',document_type='report_pdf',original_filename='test.pdf',mime_type='application/pdf',file_b64=base64.b64encode(data).decode(),title='Live PG test '+secrets.token_hex(4))
@@ -323,9 +332,11 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
                      extra_headers={'X-Portal-Company':'2'})
 
     def test_dashboard_finance_and_receivables_use_company_scoped_postgresql_facts(self):
+        self.assert_unique_legacy_work_links('dashboard fixture baseline')
         before=self.get('today',self.admin)['data']
         work=self.post('work',dict(client_id=1,operation_id=1,quantity=2,request_id='pg-dashboard-work'),
                        self.tokens['company_1_packer'])['data']
+        self.assert_unique_legacy_work_links('dashboard work write')
         due=(datetime.now(timezone.utc).date()-timedelta(days=1)).isoformat()
         self.post('invoices',dict(work_ids=[work['id']],due_at=due,request_id='pg-dashboard-invoice'),self.admin)
         today=self.get('today',self.admin)['data']
@@ -345,6 +356,7 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
             assignees=[2],other_cost=1))['data']
         self.post('work',dict(task_id=task['id'],quantity=1,request_id='pg-economy-work-once'),
                   self.tokens['company_1_packer'])
+        self.assert_unique_legacy_work_links('batch work write')
         self.post('expenses',dict(batch_id=batch['id'],category_code='logistics',amount='0.25',
             note='synthetic batch expense',request_id='pg-economy-expense-once'),self.admin)
         economy=self.get('economy?batch_id='+batch['id'],self.admin)['data']
@@ -359,8 +371,10 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
 
     def test_tariff_effective_version_keeps_postgresql_work_snapshots(self):
         from production_repository import Repository, utcnow
+        self.assert_unique_legacy_work_links('tariff fixture baseline')
         before=self.post('work',dict(client_id=1,operation_id=1,quantity=2,request_id='pg-tariff-before'),
                          self.tokens['company_1_packer'])['data']
+        self.assert_unique_legacy_work_links('tariff API work write')
         future=(datetime.fromisoformat(utcnow())+timedelta(days=1)).replace(microsecond=0).isoformat()
         self.post('tariffs',dict(client_id=1,operation_id=1,employee_rate=3,effective_from=future),self.admin)
         self.post('tariffs',dict(client_id=1,operation_id=1,employee_rate=4,effective_from=future),self.admin,status=400)
@@ -371,6 +385,7 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
             after=self.production.Production(repo,worker,clock=lambda:after_at).work(
                 dict(client_id=1,operation_id=1,quantity=2))
             conn.commit()
+        self.assert_unique_legacy_work_links('tariff direct service work write')
         current={row['id']:row for row in self.get('works',self.tokens['company_1_packer'])['data']}
         self.assertEqual((before['salary'],before['employee_rate']),(400,200))
         self.assertEqual(current[before['id']]['salary'],400)
