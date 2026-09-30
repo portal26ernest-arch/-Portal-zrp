@@ -433,6 +433,25 @@ test('browser UI regression',async t=>{
       assert.equal(saved.body.module_toggles.work,false);assert.equal(saved.company,'');
       assert.deepEqual(errors,[]);await page.close();
     });
+    await t.test('platform owner saves company subscription state and override while PORTAL stays unlimited',async()=>{
+      const {page,errors}=await fixture(browser,'platform_owner');
+      await page.locator('#loginCompany').click();await page.locator('#sheetContent [data-action=technicalLogin]').click();await login(page);
+      await page.locator('[data-action=editPlatformCompany][data-id="2"]').click();
+      assert.equal(await page.locator('#platformCompanyLimit').inputValue(),'15');
+      await page.locator('#platformCompanyLimit').fill('16');await page.locator('#platformCompanyFee').fill('123.45');
+      await page.selectOption('#platformCompanyStatus','suspended');await page.selectOption('#platformServiceStatus','expired');
+      await page.locator('#platformDemoEnabled').check();await page.locator('#platformDemoStart').fill('2026-09-01T09:00');await page.locator('#platformDemoEnd').fill('2026-10-01T18:00');
+      await page.locator('#module-toggle-work').uncheck();await page.locator('#platformCompanyForm [type=submit]').click();
+      await page.waitForFunction(()=>mock.calls.some(c=>c.method==='POST'&&c.url==='/api/platform/companies/2'));
+      const saved=await page.evaluate(()=>mock.calls.findLast(c=>c.method==='POST'&&c.url==='/api/platform/companies/2'));
+      assert.equal(saved.body.user_limit,16);assert.equal(saved.body.monthly_price,12345);assert.equal(saved.body.status,'suspended');assert.equal(saved.body.service_status,'expired');
+      assert.equal(saved.body.demo_enabled,1);assert.equal(saved.body.demo_start,'2026-09-01T09:00:00');assert.equal(saved.body.demo_end,'2026-10-01T18:00:00');assert.equal(saved.body.module_toggles.work,false);
+      await page.waitForSelector('[data-action=editPlatformCompany][data-id="1"]');await page.locator('[data-action=editPlatformCompany][data-id="1"]').click();
+      assert.equal(await page.locator('#platformCompanyLimit').isDisabled(),true);
+      await page.locator('#platformCompanyForm [type=submit]').click();await page.waitForFunction(()=>mock.calls.filter(c=>c.method==='POST'&&c.url==='/api/platform/companies/1').length===1);
+      const portalSave=await page.evaluate(()=>mock.calls.find(c=>c.method==='POST'&&c.url==='/api/platform/companies/1'));
+      assert.equal(Object.hasOwn(portalSave.body,'user_limit'),false);assert.deepEqual(errors,[]);await page.close();
+    });
     await t.test('analytics compares company-local periods and labels missing timing honestly',async()=>{
       const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);
       await page.evaluate(()=>mock.stage3Permissions=['analytics.read']);await login(page);await page.evaluate(()=>go('analytics'));
