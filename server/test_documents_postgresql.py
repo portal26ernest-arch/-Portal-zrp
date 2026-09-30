@@ -121,6 +121,7 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
                     r.sql("INSERT INTO portal_client_operations(company_id,id,client_id,name,employee_rate,client_rate,created_at,updated_at) VALUES(?,1,1,'Packing',2,5,?,?)",(cid,utcnow(),utcnow()))
                     r.insert('tariffs',dict(client_id=1,operation_id=1,employee_rate=200,client_rate=500,effective_from=utcnow()))
                     cls.tokens[cid]=cls.portal.create_session(conn,1)
+                    if cid==1:cls.tokens['company_1_packer']=cls.portal.create_session(conn,2)
                 with cls.portal.tenants.company_scope(cid),cls.portal.db() as conn:migrate(conn,cid)
             # A second, independent account/session in company 1 proves that
             # documents are server truth shared across clients, not session state.
@@ -256,6 +257,9 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         # forged company header make the first session cross its RLS boundary.
         company_two=self.request('/api/v3/invitations?status=pending',self.tokens[2])['data']['items']
         self.assertNotIn(invite_id,[row['id'] for row in company_two])
+        self.request('/api/v3/invitations',self.tokens['company_1_packer'],
+                     {'action':'create','role':'packer','username':'forbidden-invite',
+                      'display_name':'Forbidden','request_id':'pg-invite-forbidden'},method='POST',status=403)
         self.request('/api/v3/invitations',self.admin,extra_headers={'X-Portal-Company':'2'},status=403)
         self.request('/api/access-invites/accept',body={'token':token,'pin':'6789'},method='POST',
                      extra_headers={'X-Portal-Company':'2'},status=403)
