@@ -17,6 +17,7 @@ import subprocess
 import tempfile
 import threading
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -237,6 +238,20 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         refreshed=self.get('documents?include_archived=true',first)['data']['items']
         self.assertEqual(next(row for row in refreshed if row['id']==doc['id'])['status'],'archived')
         self.get('document-metadata?id='+doc['id'],first)
+
+    def test_dashboard_finance_and_receivables_use_company_scoped_postgresql_facts(self):
+        work=self.post('work',dict(client_id=1,operation_id=1,quantity=2,request_id='pg-dashboard-work'),
+                       self.tokens['company_1_packer'])['data']
+        due=(datetime.now(timezone.utc).date()-timedelta(days=1)).isoformat()
+        self.post('invoices',dict(work_ids=[work['id']],due_at=due,request_id='pg-dashboard-invoice'),self.admin)
+        today=self.get('today',self.admin)['data']
+        self.assertEqual((today['today_quantity'],today['month_quantity']),(2,2))
+        self.assertEqual(today['today_finance'],dict(revenue=1000,salary=400))
+        self.assertEqual((today['debt'],today['open_invoice_count'],today['overdue_invoice_count'],today['overdue_debt']),
+                         (1000,1,1,1000))
+        foreign=self.get('today',self.tokens[2])['data']
+        self.assertEqual((foreign['today_quantity'],foreign['today_finance']['revenue'],foreign['open_invoice_count']),
+                         (0,0,0))
 
     def test_secure_invitation_lifecycle_uses_hash_and_tenant_scope(self):
         """Stage 10 invitations remain hash-only, one-time and tenant-scoped on PostgreSQL."""
