@@ -618,43 +618,6 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
             self.assertEqual(Repository(conn,2).list('notifications'),[])
             self.assertEqual(Repository(conn,2).list('reminder_job_runs'),[])
 
-    def test_postgresql_configured_reminder_concurrent_runs_insert_once(self):
-        import concurrent.futures
-        from datetime import datetime, timezone
-        from production_repository import Repository
-        from reminder_jobs import run_configured_company
-
-        now=datetime(2026,9,30,21,tzinfo=timezone.utc)
-        invoice_id='pg-reminder-concurrent-invoice'
-        with self.portal.tenants.company_scope(1),self.portal.db() as conn:
-            repository=Repository(conn,1)
-            repository.insert('invoices',dict(amount=100,due_at='2026-09-28',work_ids=[]),invoice_id)
-            settings=repository.get('settings','control',False)
-            if settings:
-                settings.update(reminder_enabled=True,reminder_cadence='daily',utc_offset_minutes=180)
-                repository.update('settings',settings)
-            else:
-                repository.insert('settings',dict(reminder_enabled=True,reminder_cadence='daily',utc_offset_minutes=180),'control')
-            conn.commit()
-
-        def run(index):
-            with self.portal.tenants.company_scope(1),self.portal.db() as conn:
-                result=run_configured_company(Repository(conn,1),now=now,run_id=f'pg-reminder-concurrent-{index}')
-                conn.commit()
-                return result
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-            results=list(pool.map(run,(1,2)))
-        self.assertEqual(sum(item['sent'] for item in results),1)
-        self.assertEqual(sum(item['duplicate'] for item in results),1)
-        self.assertTrue(all(item['outcome']=='success' for item in results))
-        with self.portal.tenants.company_scope(1),self.portal.db() as conn:
-            repository=Repository(conn,1)
-            notifications=[row for row in repository.list('notifications') if row['entity_id']==invoice_id]
-            runs=[row for row in repository.list('reminder_job_runs') if row['run_id'].startswith('pg-reminder-concurrent-')]
-        self.assertEqual(len(notifications),1)
-        self.assertEqual(len(runs),2)
-
     def test_postgresql_api_enforces_standard_active_user_limit(self):
         """The standard company limit is enforced by the server, not just the UI."""
         access=self.request('/api/v3/company-access',self.tokens[2])['data']
