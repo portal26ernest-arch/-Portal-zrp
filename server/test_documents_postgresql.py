@@ -282,7 +282,7 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
     def test_platform_owner_audit_is_separate_filtered_and_role_gated(self):
         pin=secrets.token_urlsafe(24)
         salt,digest=self.portal.hash_pin(pin)
-        with self.pg.connect(self.make_conninfo(self.admin_dsn,dbname=self.database),autocommit=True) as admin:
+        with self.pg.connect(type(self).make_conninfo(self.admin_dsn,dbname=self.database),autocommit=True) as admin:
             admin.execute('INSERT INTO platform_owners(id,username,display_name,pin_salt,pin_hash) VALUES(1,%s,%s,%s,%s)',
                           ('synthetic-owner','Synthetic Owner',salt,digest))
         owner=self.request('/api/platform/login',body={'username':'synthetic-owner','pin':pin})['token']
