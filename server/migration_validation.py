@@ -6,7 +6,7 @@ two DB-API connections and must abort cutover when ``compare`` raises.
 
 import hashlib
 import json
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 
 TABLES = (
@@ -104,6 +104,85 @@ def compare(source, destination):
         if source.get(table) != destination.get(table):
             raise ValidationError('Migration validation failed: ' + table)
     return True
+
+
+def reconcile_linked_work_money(legacy_conn, ledger_conn, company_id,
+                                legacy_dialect='sqlite', ledger_dialect='sqlite'):
+    """Read-only exact reconciliation for legacy work rows linked from the ledger.
+
+    Legacy work facts store currency in major units while canonical ledger payloads
+    store integer minor units. Only rows explicitly linked by ``legacy_id`` are
+    compared; both reads are company-scoped and this function never writes.
+    """
+    if type(company_id) is not int or company_id < 1:
+        raise ValidationError('Invalid company_id')
+    legacy_columns = _columns(legacy_conn, legacy_dialect, 'work_log')
+    if not {'id', 'company_id'}.issubset(legacy_columns):
+        raise ValidationError('Missing legacy work identity columns')
+    fields = [field for field in ('rate', 'salary', 'client_rate', 'revenue', 'direct_cost')
+              if field in legacy_columns]
+    if not fields:
+        raise ValidationError('Missing legacy work money columns')
+    legacy_placeholder = '%s' if legacy_dialect == 'postgresql' else '?'
+    legacy_sql = ('SELECT id,' + ','.join(fields) + ' FROM work_log WHERE company_id=' +
+                  legacy_placeholder)
+    legacy_rows = legacy_conn.execute(legacy_sql, (company_id,)).fetchall()
+    legacy_by_id = {}
+    for row in legacy_rows:
+        identity = int(row[0])
+        if identity in legacy_by_id:
+            raise ValidationError('Duplicate company-scoped legacy work identity')
+        legacy_by_id[identity] = dict(zip(fields, row[1:]))
+
+    ledger_placeholder = '%s' if ledger_dialect == 'postgresql' else '?'
+    ledger_sql = ('SELECT payload FROM portal_production WHERE company_id=' +
+                  ledger_placeholder + " AND kind='works'")
+    canonical_rows = ledger_conn.execute(ledger_sql, (company_id,)).fetchall()
+    legacy_to_canonical = {'rate': 'employee_rate', 'salary': 'salary',
+                           'client_rate': 'client_rate', 'revenue': 'revenue',
+                           'direct_cost': 'direct_cost'}
+    matched = checked = 0
+    linked_legacy_ids = set()
+    for row in canonical_rows:
+        try:
+            work = row[0] if isinstance(row[0], dict) else json.loads(row[0])
+        except (TypeError, ValueError) as exc:
+            raise ValidationError('Invalid canonical work payload') from exc
+        if work.get('company_id') != company_id:
+            raise ValidationError('Canonical work company mismatch')
+        if work.get('legacy_id') is None:
+            continue
+        try:
+            legacy_id = int(work['legacy_id'])
+        except (TypeError, ValueError) as exc:
+            raise ValidationError('Invalid linked legacy work identity') from exc
+        if legacy_id in linked_legacy_ids:
+            raise ValidationError('Duplicate canonical link to legacy work')
+        linked_legacy_ids.add(legacy_id)
+        legacy = legacy_by_id.get(legacy_id)
+        if legacy is None:
+            raise ValidationError('Linked legacy work row is missing')
+        matched += 1
+        for old_field in fields:
+            new_field = legacy_to_canonical[old_field]
+            old_value = legacy[old_field]
+            new_value = work.get(new_field)
+            if old_value is None and new_value is None:
+                continue
+            try:
+                major = Decimal(str(old_value))
+                if not major.is_finite() or type(new_value) is not int:
+                    raise InvalidOperation
+                expected_minor = int((major * 100).quantize(Decimal('1'),
+                                                         rounding=ROUND_HALF_UP))
+            except (InvalidOperation, TypeError, ValueError) as exc:
+                raise ValidationError('Invalid linked work money value') from exc
+            if expected_minor != new_value:
+                raise ValidationError('Legacy/canonical work money mismatch: ' + old_field)
+            checked += 1
+    return {'matched_work_count': matched,
+            'unlinked_legacy_work_count': len(legacy_by_id) - len(linked_legacy_ids),
+            'money_fields_checked': checked}
 
 
 def compare_migration_history(source_rows, destination_rows, required_version=6):

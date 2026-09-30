@@ -638,3 +638,11 @@ The current branch revalidated the canonical identity boundary without changing 
 After adding the inventory: `test_migration_validation`, `test_migration_import`, and `test_payroll_settlement` passed 40/40; `compileall` and diff check passed. Full server discovery on the unchanged source had passed 268 run / 43 skipped / 0 failed. Roadmap remains **75 ✅ / 32 🟡 / 7 ⏳ / 12 🔌**.
 
 **Exact NEXT:** add and test read-only synthetic linked-fact reconciliation for legacy major units versus integer minor units, covering rounding boundaries and immutable old snapshots. Do not convert or backfill actual facts before a disposable snapshot rehearsal.
+
+## Legacy-to-canonical work money reconciliation (2026-09-30)
+
+Added `reconcile_linked_work_money()` as an offline, read-only validator. It compares only explicit canonical `works.legacy_id` links, scopes both databases by company, converts legacy major units with `Decimal` and `ROUND_HALF_UP`, rejects missing/duplicate links, tenant mismatch, non-integer canonical values, and amount drift, and reports matched/unlinked/checked counts without values. Synthetic coverage proves duplicate business IDs across tenants remain distinct, source rows stay unchanged, `1.005` major units reconcile to 101 minor units, and mismatch fails closed. It has not been connected to cutover or run against a real imported snapshot.
+
+Final targeted suites (`test_migration_validation`, `test_migration_import`, `test_payroll_settlement`) passed **42/42**; compileall and diff check passed. The immediately preceding full Server suite passed **270 run / 43 skipped / 0 failed** before the final summary-count refinement; the final refinement is covered by the targeted test suite. Local disposable PostgreSQL is unavailable, so no live PostgreSQL claim is made for this change. Money-normalization item 105 remains 🟡; counts stay **75 ✅ / 32 🟡 / 7 ⏳ / 12 🔌**.
+
+**Exact NEXT:** test and review the dialect-specific major-unit compatibility boundary for `write_legacy_work`, `Repository.consume`, and `Repository.project_cost`; preserve the kopeck ledger as truth and reject any mismatch. Then attempt disposable PG coverage via the existing isolated CI gate. Do not rewrite legacy history or perform a production conversion.

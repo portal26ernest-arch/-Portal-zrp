@@ -5,7 +5,8 @@ import unittest
 from pathlib import Path
 
 from migration_validation import (ValidationError, compare, compare_migration_history,
-                                  snapshot, validate_postgresql_schema)
+                                  reconcile_linked_work_money, snapshot,
+                                  validate_postgresql_schema)
 from production_repository import Repository
 from production_migrations import migrate_retention
 
@@ -66,6 +67,53 @@ def fixture():
 
 
 class MigrationValidationTest(unittest.TestCase):
+    def test_linked_legacy_money_reconciles_in_company_scope_without_writes(self):
+        conn = fixture()
+        try:
+            conn.execute('INSERT INTO work_log VALUES (?,?,?,?,?)',
+                         (101, 1, 2, 10.01, 20.03))
+            conn.execute('INSERT INTO work_log VALUES (?,?,?,?,?)',
+                         (101, 2, 2, 99.99, 199.98))
+            for company_id, salary, revenue in ((1, 1001, 2003), (2, 9999, 19998)):
+                payload = dict(id='linked-' + str(company_id), company_id=company_id,
+                               legacy_id=101, salary=salary, revenue=revenue)
+                conn.execute('INSERT INTO portal_production VALUES (?,?,?,?,?)',
+                             (company_id, 'works', payload['id'], json.dumps(payload),
+                              '2026-09-30'))
+            before = conn.execute(
+                'SELECT company_id,id,salary,revenue FROM work_log WHERE id=101 ORDER BY company_id'
+            ).fetchall()
+            self.assertEqual(reconcile_linked_work_money(conn, conn, 1),
+                             {'matched_work_count': 1,
+                              'unlinked_legacy_work_count': 1,
+                              'money_fields_checked': 2})
+            after = conn.execute(
+                'SELECT company_id,id,salary,revenue FROM work_log WHERE id=101 ORDER BY company_id'
+            ).fetchall()
+            self.assertEqual(before, after)
+        finally:
+            conn.close()
+
+    def test_linked_legacy_money_uses_half_up_minor_unit_rounding_and_fails_closed(self):
+        conn = fixture()
+        try:
+            conn.execute('INSERT INTO work_log VALUES (?,?,?,?,?)', (77, 1, 1, 1.005, None))
+            payload = dict(id='rounding-case', company_id=1, legacy_id=77,
+                           salary=101, revenue=None)
+            conn.execute('INSERT INTO portal_production VALUES (?,?,?,?,?)',
+                         (1, 'works', payload['id'], json.dumps(payload), '2026-09-30'))
+            self.assertEqual(reconcile_linked_work_money(conn, conn, 1),
+                             {'matched_work_count': 1,
+                              'unlinked_legacy_work_count': 1,
+                              'money_fields_checked': 1})
+            payload['salary'] = 102
+            conn.execute('UPDATE portal_production SET payload=? WHERE company_id=1 AND kind=? AND id=?',
+                         (json.dumps(payload), 'works', payload['id']))
+            with self.assertRaisesRegex(ValidationError, 'salary'):
+                reconcile_linked_work_money(conn, conn, 1)
+        finally:
+            conn.close()
+
     def test_postgresql_sql_adapter_contract_without_server(self):
         class Rows:
             def __init__(self, rows):
