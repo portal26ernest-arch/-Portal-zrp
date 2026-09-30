@@ -524,10 +524,14 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
                                           (invite_id,)).fetchone()[0],'approved')
 
     def test_invitation_links_existing_employee_without_creating_duplicate_employee(self):
+        employee=next(row for row in self.request('/api/users',self.tokens[2])['employees']
+                      if row['username']=='existing-employee')
+        employee_id=employee['employee_id']
         body={'action':'create','role':'packer','username':'existing-employee-invite',
-              'display_name':'Synthetic existing employee','employee_id':103,'request_id':'existing-employee-invite-once'}
+              'display_name':'Synthetic existing employee','employee_id':employee_id,
+              'request_id':'existing-employee-invite-once'}
         created=self.request('/api/v3/invitations',self.tokens[2],body,method='POST')['data']
-        self.assertEqual(created['invite']['employee_id'],103)
+        self.assertEqual(created['invite']['employee_id'],employee_id)
         accepted=self.request('/api/access-invites/accept',body={'token':created['token'],'pin':'6789'},method='POST')['data']
         self.assertEqual(accepted['status'],'pending_approval')
         self.request('/api/v3/invitations',self.tokens[2],{'action':'approve','invite_id':created['invite']['id']},method='POST')
@@ -804,7 +808,6 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         employee_id=period['snapshot']['employees'][0]['employee_id']
         with self.portal.tenants.company_scope(1),self.portal.db() as conn:
             repo=Repository(conn,1)
-            employee_id=repo.payroll_employee(employee_id,legacy=True)['employee_id']
             snapshot_before=repo.get('payroll_periods',period['id'])['snapshot']
 
         payout_body=dict(payroll_period_id=period['id'],employee_id=employee_id,
@@ -864,8 +867,9 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         period=self.post('payroll-periods',dict(period_start=start.isoformat(),period_end=end.isoformat()),self.tokens[1])['data']
         employee_id=period['snapshot']['employees'][0]['employee_id']
         with self.portal.tenants.company_scope(1),self.portal.db() as conn:
-            repo=Repository(conn,1);employee_id=repo.payroll_employee(employee_id,legacy=True)['employee_id']
-            snapshot_before=repo.get('payroll_periods',period['id'])['snapshot'];settlements_before=repo.payroll_settlements(period['id'],employee_id)
+            repo=Repository(conn,1)
+            snapshot_before=repo.get('payroll_periods',period['id'])['snapshot']
+            settlements_before=repo.payroll_settlements(period['id'],employee_id)
         payroll_body=dict(document_type='payroll_slip_pdf',payroll_period_id=period['id'],employee_id=employee_id)
         payroll_doc=self.post('document-generate',payroll_body,self.tokens[1])['data']
         self.assertEqual(self.post('document-generate',payroll_body,self.tokens[1])['data']['id'],payroll_doc['id'])
@@ -915,7 +919,7 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
             period=self.post('payroll-periods',dict(period_start=start.isoformat(),period_end=end.isoformat()),self.tokens[1])['data']
             employee_id=period['snapshot']['employees'][0]['employee_id']
             with self.portal.tenants.company_scope(1),self.portal.db() as conn:
-                repo=Repository(conn,1);employee_id=repo.payroll_employee(employee_id,legacy=True)['employee_id']
+                repo=Repository(conn,1)
                 snapshot_before=repo.get('payroll_periods',period['id'])['snapshot']
                 settlements_before=repo.payroll_settlements(period['id'],employee_id)
             payroll_body=dict(document_type='payroll_slip_pdf',payroll_period_id=period['id'],employee_id=employee_id)
