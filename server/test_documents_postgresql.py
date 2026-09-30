@@ -446,6 +446,25 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.assertEqual(len([row for row in rows if row.get('type')=='return' and row['batch_id']==batch['id']]),1)
         self.request('/api/v3/returns',self.tokens['company_1_packer'],body=dict(batch_id=batch['id'],quantity=1),method='POST',status=403)
 
+    def test_postgresql_internal_shipment_completion_is_idempotent_and_audited(self):
+        batch=self.post('batches',dict(client_id=1,product='Shipment fixture',quantity=4),self.tokens[1])['data']
+        task=self.post('tasks',dict(batch_id=batch['id'],operation_id=1,quantity=4,
+                                   assignees=[2]),self.tokens[1])['data']
+        self.post('work',dict(task_id=task['id'],quantity=4),self.tokens['company_1_packer'])
+        body=dict(batch_id=batch['id'],direction='FBO',request_id='pg-shipment-once')
+        first=self.post('shipments',body,self.tokens[1])['data']
+        retry=self.post('shipments',body,self.tokens[1])['data']
+        self.assertEqual(first['id'],retry['id'])
+        self.assertEqual((first['direction'],first['quantity']),('FBO',4))
+        self.request('/api/v3/shipments',self.tokens[2],body=dict(batch_id=batch['id'],direction='FBO'),method='POST',status=400)
+        self.request('/api/v3/shipments',self.tokens['company_1_packer'],body=body,method='POST',status=403)
+        rows=self.request('/api/v3/shipments',self.tokens[1])['data']
+        self.assertEqual(len([row for row in rows if row.get('batch_id')==batch['id']]),1)
+        with self.portal.tenants.company_scope(1),self.portal.db() as conn:
+            from production_repository import Repository
+            audit=[row for row in Repository(conn,1).list('audit') if row.get('entity_id')==first['id']]
+        self.assertEqual(len(audit),1)
+
     def test_postgresql_reminder_candidates_and_notification_sink_are_scoped_and_idempotent(self):
         from datetime import datetime, timedelta, timezone
         from production_repository import Repository

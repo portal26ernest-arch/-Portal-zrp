@@ -269,6 +269,24 @@ class ProductionTest(unittest.TestCase):
         self.post('shipments',dict(batch_id=b['id'],direction='FBO'))
         self.assertEqual(self.get('batches')['data'][0]['stage'],'shipped')
 
+    def test_internal_shipment_completion_is_idempotent_and_audited(self):
+        batch=self.batch()
+        task=self.task(batch)
+        self.work(task_id=task['id'])
+        self.post('work',dict(task_id=task['id'],quantity=8),self.worker)
+        body=dict(batch_id=batch['id'],direction='FBS',request_id='shipment-complete-once')
+        first=self.post('shipments',body)['data']
+        replay=self.post('shipments',body)['data']
+        self.assertEqual(first['id'],replay['id'])
+        self.assertEqual((first['direction'],first['quantity']),('FBS',10))
+        rows=[row for row in self.get('shipments')['data'] if row['batch_id']==batch['id']]
+        self.assertEqual(len(rows),1)
+        with portal.tenants.company_scope(1),portal.db() as conn:
+            repository=Repository(conn,1)
+            events=[row for row in repository.list('audit') if row.get('entity_id')==first['id']]
+            self.assertEqual(len(events),1)
+        self.post('shipments',dict(batch_id=batch['id'],direction='FBO',request_id='shipment-complete-once'),status=400)
+
     def test_without_task_and_later_link_preserve_money(self):
         w=self.work();self.assertTrue(w['without_task']);self.assertIsNone(w['batch_id'])
         before=self.get('works')['data'][0];b=self.batch()

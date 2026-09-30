@@ -447,6 +447,17 @@ test('browser UI regression',async t=>{
       await worker.page.waitForFunction(()=>S.page==='batches'&&!document.querySelector('.loading'));
       assert.equal(await worker.page.locator('[data-action=returnBatch]').count(),0);assert.deepEqual(worker.errors,[]);await worker.page.close();
     });
+    await t.test('ready batch shipment flow records the selected FBO/FBS direction',async()=>{
+      const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);
+      await page.evaluate(()=>{mock.stage3Batches=[{id:'batch-ready',number:'PRT-READY',client_id:1,client_name:'Клиент',product:'Коробка',received_at:'2026-09-24',quantity:4,done:4,remaining:0,stage:'ready',returned_quantity:0,returnable_quantity:0,ready:true}];});
+      await login(page);await page.evaluate(()=>go('batches'));await page.waitForSelector('[data-action=shipBatch]');
+      await page.locator('[data-action=shipBatch]').click();await page.selectOption('#shipDirection','FBO');await page.locator('#shipForm [type=submit]').click();
+      await page.waitForFunction(()=>mock.calls.some(c=>c.method==='POST'&&c.url==='/api/v3/shipments'));
+      const saved=await page.evaluate(()=>mock.calls.find(c=>c.method==='POST'&&c.url==='/api/v3/shipments'));
+      assert.deepEqual({batch_id:saved.body.batch_id,direction:saved.body.direction},{batch_id:'batch-ready',direction:'FBO'});
+      assert.equal(typeof saved.body.request_id,'string');assert.ok(saved.body.request_id.length>0);
+      assert.deepEqual(errors,[]);await page.close();
+    });
     await t.test('Stage 3 timer, presence, activity and system information',async()=>{
       const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);
       await page.evaluate(()=>mock.stage3Permissions=['work.write','tasks.read','tasks.manage','batches.receive','finance.read','invoices.read','invoices.create','users.manage','clients.read','clients.manage','access.history.read','payroll.own']);
