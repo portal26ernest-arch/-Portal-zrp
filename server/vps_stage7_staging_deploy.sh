@@ -74,7 +74,7 @@ if [[ ! -x "$VENV/bin/python" ]]; then
   python3 -m venv "$VENV"
 fi
 "$VENV/bin/pip" -q install --upgrade pip
-"$VENV/bin/pip" -q install "psycopg[binary]"
+"$VENV/bin/pip" -q install -r "$REPO/server/requirements.txt" "psycopg[binary]"
 chmod -R a+rX "$VENV"
 
 echo "[3/9] Секреты staging-БД"

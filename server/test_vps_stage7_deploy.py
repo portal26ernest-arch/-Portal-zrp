@@ -48,6 +48,12 @@ class Stage7DeploySafetyTests(unittest.TestCase):
         self.assertIn('ss -ltn | grep -q "127.0.0.1:$API_PORT"', DEPLOY)
         self.assertIn('ss -ltn | grep -Eq "0\\.0\\.0\\.0:5432|\\[::\\]:5432"', DEPLOY)
 
+    def test_stage7_installs_canonical_server_runtime_dependencies(self):
+        self.assertIn('pip" -q install -r "$REPO/server/requirements.txt" "psycopg[binary]"', DEPLOY)
+        requirements = (ROOT / "server" / "requirements.txt").read_text(encoding="utf-8")
+        self.assertIn("openpyxl==3.1.5", requirements)
+        self.assertIn("reportlab==5.0.1", requirements)
+
     def test_runtime_service_is_unprivileged_and_hardened(self):
         for directive in ('User=portal-stage7', 'NoNewPrivileges=true', 'ProtectSystem=full',
                           'ProtectKernelTunables=true', 'RestrictSUIDSGID=true', 'UMask=0077'):
