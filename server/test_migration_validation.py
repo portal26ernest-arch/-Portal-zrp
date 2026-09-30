@@ -139,6 +139,26 @@ class MigrationValidationTest(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_linked_money_filter_targets_one_work_without_hiding_full_scan_duplicates(self):
+        conn = fixture()
+        try:
+            conn.execute('INSERT INTO work_log VALUES (?,?,?,?,?)',
+                         (89, 1, 1, 2.50, 5.00))
+            for identity in ('work-89-a', 'work-89-b'):
+                payload = dict(id=identity, company_id=1, legacy_id=89,
+                               salary=250, revenue=500)
+                conn.execute('INSERT INTO portal_production VALUES (?,?,?,?,?)',
+                             (1, 'works', identity, json.dumps(payload), '2026-09-30'))
+            with self.assertRaisesRegex(ValidationError, 'Duplicate canonical link'):
+                reconcile_linked_work_money(conn, conn, 1)
+            self.assertEqual(reconcile_linked_work_money(
+                conn, conn, 1, canonical_work_ids=('work-89-a',)),
+                {'matched_work_count': 1,
+                 'unlinked_legacy_work_count': 1,
+                 'money_fields_checked': 2})
+        finally:
+            conn.close()
+
     def test_postgresql_sql_adapter_contract_without_server(self):
         class Rows:
             def __init__(self, rows):

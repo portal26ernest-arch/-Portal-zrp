@@ -107,15 +107,28 @@ def compare(source, destination):
 
 
 def reconcile_linked_work_money(legacy_conn, ledger_conn, company_id,
-                                legacy_dialect='sqlite', ledger_dialect='sqlite'):
+                                legacy_dialect='sqlite', ledger_dialect='sqlite',
+                                canonical_work_ids=None):
     """Read-only exact reconciliation for legacy work rows linked from the ledger.
 
     Legacy work facts store currency in major units while canonical ledger payloads
     store integer minor units. Only rows explicitly linked by ``legacy_id`` are
-    compared; both reads are company-scoped and this function never writes.
+    compared; both reads are company-scoped and this function never writes. An
+    optional canonical work ID set supports a bounded per-record check; omitting
+    it performs the complete company scan and detects duplicate legacy links.
     """
     if type(company_id) is not int or company_id < 1:
         raise ValidationError('Invalid company_id')
+    selected_work_ids = None
+    if canonical_work_ids is not None:
+        if isinstance(canonical_work_ids, (str, bytes)):
+            raise ValidationError('Invalid canonical work filter')
+        try:
+            selected_work_ids = {str(identity) for identity in canonical_work_ids}
+        except TypeError as exc:
+            raise ValidationError('Invalid canonical work filter') from exc
+        if not selected_work_ids or any(not identity for identity in selected_work_ids):
+            raise ValidationError('Invalid canonical work filter')
     legacy_columns = _columns(legacy_conn, legacy_dialect, 'work_log')
     if not {'id', 'company_id'}.issubset(legacy_columns):
         raise ValidationError('Missing legacy work identity columns')
@@ -150,6 +163,8 @@ def reconcile_linked_work_money(legacy_conn, ledger_conn, company_id,
         if usage.get('company_id') != company_id:
             raise ValidationError('Canonical usage company mismatch')
         work_id = usage.get('work_id')
+        if selected_work_ids is not None and str(work_id) not in selected_work_ids:
+            continue
         cost = usage.get('cost')
         if work_id is None or type(cost) is not int:
             raise ValidationError('Invalid canonical usage money field')
@@ -167,6 +182,8 @@ def reconcile_linked_work_money(legacy_conn, ledger_conn, company_id,
             raise ValidationError('Invalid canonical work payload') from exc
         if work.get('company_id') != company_id:
             raise ValidationError('Canonical work company mismatch')
+        if selected_work_ids is not None and str(work.get('id')) not in selected_work_ids:
+            continue
         if work.get('legacy_id') is None:
             continue
         try:

@@ -382,8 +382,9 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
                        self.tokens['company_1_packer'])['data']
         with self.portal.tenants.company_scope(1),self.portal.db() as conn:
             from migration_validation import reconcile_linked_work_money
-            result=reconcile_linked_work_money(conn,conn,1,'postgresql','postgresql')
-        self.assertGreaterEqual(result['matched_work_count'],1)
+            result=reconcile_linked_work_money(conn,conn,1,'postgresql','postgresql',
+                                               canonical_work_ids=[work['id']])
+        self.assertEqual(result['matched_work_count'],1)
         self.assertGreaterEqual(result['money_fields_checked'],5)
         self.assertGreaterEqual(result['unlinked_legacy_work_count'],0)
 

@@ -672,3 +672,11 @@ The first real PostgreSQL reconciliation attempt failed safely: canonical work r
 Local migration and money suites passed **14/14**. A full local suite run ended with **275 run / 44 skipped / 1 failure** at an existing XLSX idempotency repeat assertion; rerunning that assertion with the focused suites passed **15/15**. Do not describe the full local suite as green. The Server 3.11/3.13 jobs passed for `ffeba71`, but its disposable PG run still showed the issue and does not validate this correction.
 
 **Exact NEXT:** commit and push the correction, then confirm the named disposable PostgreSQL gate and Server jobs at the corrected SHA. Roadmap remains **75 ✅ / 32 🟡 / 7 ⏳ / 12 🔌**; no conversion or production-data operation occurred.
+
+### Disposable duplicate-link finding and bounded test — 2026-09-30
+
+A full-company read-only PostgreSQL reconciliation in run `f6338d6` failed closed on duplicate canonical links to a retained legacy work key. The isolated DB/roles/temp resources were verified removed. The validator still rejects these duplicates in full-scan mode. To prove the newly created row independently of older synthetic records, the integration now selects that canonical work ID; an added unit test proves the default full scan continues to fail on duplicate links. This is not evidence that historical data is reconciled, and no production snapshot was accessed.
+
+Local migration/money tests passed **15/15**. Full Server discovery on the immediately preceding source passed **276 run / 44 skipped / 0 failed**; Server 3.11/3.13 passed at `f6338d6`; Web UI passed while Web's disposable PostgreSQL job exposed the duplicate-link condition. `compileall` and diff check pass.
+
+**Exact NEXT:** push and verify the bounded disposable-PG test plus teardown. Keep money item 105 🟡 until that test passes; separately retain duplicate historical links as a known full-scan integrity finding. Roadmap **75 ✅ / 32 🟡 / 7 ⏳ / 12 🔌**. Production DB/cutover untouched.

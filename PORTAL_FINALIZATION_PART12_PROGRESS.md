@@ -804,3 +804,12 @@ Production cutover **NOT performed**.
 - Local migration-validation and money-unit tests: **14/14 passed**. The earlier full local Server attempt on this source had **275 run / 44 skipped / 1 failure** in an existing XLSX request-id repeat assertion; rerunning that exact assertion together with migration/money tests passed **15/15**. Treat the full-suite failure as recorded, not a green full run. Server workflows at `ffeba71` passed 3.11 and 3.13; its PostgreSQL run was superseded by this fix.
 
 **Exact NEXT:** commit/push the usage-based reconciliation correction and re-run the disposable PostgreSQL and Server workflows. Update this checkpoint only from those named final-SHA results; retain the money readiness item as 🟡 until the corrected linked-fact gate succeeds.
+
+### Bounded linked-work verification after disposable duplicate finding — 2026-09-30
+
+- The whole-company disposable PostgreSQL run at `f6338d6` reached the linked-money test but failed closed because an earlier synthetic case had duplicate canonical `legacy_id` links. Teardown succeeded (`db=0 roles=0 temp=0`); do not report a full-scan PG pass.
+- Kept full-scan duplicate detection strict. Added optional `canonical_work_ids` to the read-only validator so the PG integration can validate exactly the synthetic work just created, while a SQLite contract test proves the unfiltered full scan still rejects duplicate links. The bounded test does not certify all company history or production data.
+- Local `test_migration_validation` + `test_money_units`: **15/15 passed**; full local Server suite for the same prior behavior: **276 run, 44 skipped, 0 failed**; compileall and diff check pass. Server 3.11/3.13 passed at `f6338d6`; Web UI passed, but its PG job failed on the duplicate-link finding.
+- Money roadmap item remains 🟡 pending the corrected bounded disposable-PG result and, separately, full-history reconciliation. No live data was read or changed.
+
+**Exact NEXT:** push the bounded PG assertion and duplicate-scan regression test. Verify the specific-record test passes on disposable PostgreSQL with fixture cleanup. Preserve a separate explicit note that full-company reconciliation fails on duplicate synthetic history until that integrity condition is investigated; do not suppress duplicates or run production reconciliation.
