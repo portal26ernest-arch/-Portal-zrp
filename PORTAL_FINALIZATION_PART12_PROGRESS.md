@@ -1003,3 +1003,12 @@ Production cutover **NOT performed**.
 - Roadmap items 10, 11, 12 and 15 are now ✅. Numbered counts: **87 ✅ / 21 🟡 / 6 ⏳ / 12 🔌**. Production cutover remains separate and was not performed.
 
 **Exact NEXT:** inspect remaining partial item 28 (batch plan/fact economics) for a concrete source-backed gap. Do not promote item 46 quality while no defect source exists; do not enable reminder/news production timers or any cutover gate.
+
+## VERIFIED — batch plan/fact source completeness — 2026-10-01
+
+- Batch planning is fully source-backed: planned payroll and revenue come from the effective tariff snapshot; planned materials come from active operation norms using Decimal quantities and integer minor-unit cost rounding; planned other cost exists only as an explicit finance-gated override.
+- Fact economics uses immutable work money snapshots, actual material usage linked to work, and actual batch expenses. Deviation, exact basis-point margins, finished-unit cost and profit per unit are derived from those facts. Missing plan rows remain null/«Недоступно», never an invented zero plan.
+- Security/UI evidence already executes on current descendants: finance-gated other-cost entry, denial without capability, tenant denial, browser labels, absent-plan rendering and PostgreSQL plan/fact reconciliation. Server run **161**, Web/disposable PostgreSQL run **154**, and Android UI run **76** are green.
+- Roadmap item 28 is now ✅. Numbered counts: **88 ✅ / 20 🟡 / 6 ⏳ / 12 🔌**. No new planning source was invented; production cutover was not performed.
+
+**Exact NEXT:** enumerate the remaining 🟡 roadmap items and classify each as (a) software-completable now, (b) physical-device/manual gate, or (c) external/provider/production gate. Continue only category (a) automatically.
