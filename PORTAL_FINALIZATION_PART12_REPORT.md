@@ -525,3 +525,28 @@ Latest tested code at `e08e0d8dbe927cce9b82ab58e4ef4a5c7e9c29a4`; commits `cd22c
 - Server workflow was not triggered because server source did not change; same server code passed Server #`36678086835` at `f5475ae`, and local discovery at current source was **254 passed, 36 skipped**.
 - Anonymous GitHub API returned 403 for job logs, so no new DB/role/temp cleanup counts are claimed from this run. Earlier fixture cleanup evidence remains attributed to its earlier SHA/run.
 - No build version change: staging remains 3.5-dev-staging/versionCode 35.
+
+## AUTOMATIC CONTINUATION REPORT — invitation role and audit evidence — 2026-09-30
+
+### DONE NOW
+
+- `510becd` emits company audit events for settings and capability changes with field names only; values are excluded. `bd8222b` restores mutable PostgreSQL settings/capability test fixtures.
+- `6c6c4ee` adds cross-role and tenant invitation decision assertions: Director approve, Manager/Packer denial, cross-company rejection, forged header rejection, one-time approval audit, idempotent Director revoke, and rejection of a revoked token.
+- Readiness counts remain **74 ✅ / 33 🟡 / 7 ⏳ / 12 🔌**; no roadmap status was promoted by this incremental coverage.
+
+### PREVIOUSLY PROVEN
+
+- Prior Documents independent-session PostgreSQL E2E and cleanup evidence remain attributed to the named earlier Web run in the readiness matrix; this continuation does not present it as a new run.
+- `1066c77` infrastructure-readiness work was already integrated. This continuation reran `ops.test_infra_readiness` successfully.
+
+### TESTS / CI
+
+- Local targeted invite role test: **1 passed**. Full server unittest discovery: **258 tests, 39 skipped, 0 failed**. Local opt-in PostgreSQL module: **26 skipped** because no disposable local PostgreSQL configuration is present. Compileall, infra tests **7/7**, and `git diff --check` passed.
+- Web CI #`36682830228`: both `documents-postgresql` and `web` jobs passed at `6c6c4ee`. Server CI #`36682830272`: Python 3.11 and 3.13 jobs passed.
+- The preceding Web job at `229650a` failed due to a response-shape assumption in the new test; it was corrected and rerun green at `6c6c4ee`. `bd8222b` Web #`36681705904` and Server #`36681705913` were green for the settings/audit fixture changes.
+- Staging remains 3.5-dev-staging/versionCode 35. Server-only tests did not require a new APK. No production resources were changed.
+
+### NOT DONE / EXACT NEXT
+
+- A–D still have software work remaining: owner/director settings/audit coverage; Client 360/batch/normalization cases; unified source-backed profitability and persistent reminder cadence; document history/revision parity and final disposable PostgreSQL run.
+- Next code task: add focused shared UI regression for document history revision ordering and permission-aware access, then continue remaining blocks. Employee-ID/legacy Telegram-ID runtime audit, REAL-money inventory, news operator framework, backup restore rehearsal, Windows thin client, and final integrated regression remain. No autopilot flag and no production cutover.

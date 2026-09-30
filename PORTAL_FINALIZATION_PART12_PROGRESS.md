@@ -616,3 +616,34 @@ Production cutover **NOT performed**.
 - The Server workflow did not trigger because this commit changed only Android/Web JS and browser tests. Server files are unchanged from `f5475ae`, where Server #`36678086835` passed; local full Server suite at current source: **254 passed, 36 skipped**.
 - Web GitHub job logs were unavailable via anonymous API (403); report only the green named PG job. Prior source fixture cleanup assertions at earlier Web PG runs remain prior evidence, not new cleanup-count output for this run.
 - `64dc650` APK remains staging 3.5-dev-staging/versionCode 35. Artifact/hash already recorded above from successful b588462 APK; no distributable changed in this source-only UI commit.
+
+## AUTOMATIC CONTINUATION — invitation decision role matrix — 2026-09-30
+
+### DONE NOW
+
+- Starting HEAD was `bd8222b`, clean and synced. Confirmed the preceding settings/capability audit changes and PostgreSQL fixture restoration passed Web #`36681705904` (including `documents-postgresql`) and Server #`36681705913`.
+- `510becd` adds safe company audit events for settings and permission changes; summaries contain only changed field names, never setting or capability values. `bd8222b` restores the mutable settings/capability fixture after the new PostgreSQL test.
+- Added an invitation decision role matrix in `6c6c4ee`: a Director can approve an accepted request in the same company; a packer cannot list, approve, or revoke; company B cannot decide a company A invite by known ID; a forged company header is rejected; repeated approval does not duplicate the audit event. The SQLite regression also proves a Manager cannot revoke, a Director can revoke idempotently, and a revoked token cannot be accepted.
+- Roadmap counts remain **74 ✅ / 33 🟡 / 7 ⏳ / 12 🔌**. No item was promoted from this role-coverage increment.
+
+### TESTS / CI
+
+- Targeted `test_production.ProductionTest.test_invite_revoke_and_role_capability_denials`: **1 passed**. The first local attempt exposed a duplicate test-token setup; removed the redundant setup and reran successfully.
+- Full Server unittest discovery at `6c6c4ee`: **258 tests, 39 skipped, 0 failed** (208.224 seconds). New opt-in PostgreSQL cases skip locally because no disposable local PostgreSQL service/DSN is configured.
+- `python -m unittest test_documents_postgresql -q`: **26 skipped locally**, all gated on disposable PostgreSQL configuration; it does not constitute local live-PG evidence.
+- `python -m unittest ops.test_infra_readiness -q`: **7 passed**. `python -m compileall -q server android_src tools ops` and `git diff --check`: passed.
+- Web #`36682830228` passed both `documents-postgresql` and `web`; Server #`36682830272` passed Python 3.11 and 3.13. Web #`229650a` was an earlier failed test attempt: the test expected the decision response under `data.invite`; API returns the invite directly in `data`. Corrected in `6c6c4ee` and rerun green.
+- `bd8222b` Web #`36681705904` and Server #`36681705913` passed before the role matrix. Staging version remains 3.5-dev-staging/versionCode 35; no APK rebuild was triggered by server-only test changes.
+
+### PREVIOUSLY PROVEN
+
+- Existing same-company independent-session Documents PostgreSQL E2E and teardown evidence remains attributed to the earlier Web job listed in the readiness matrix; it was not rerun as a final Part 12 gate in this checkpoint.
+- Assistant infra helper `1066c77` is already integrated; infra readiness was rerun above. No production DB/service/DNS/signing material or phone was used.
+
+### NOT DONE / EXACT NEXT
+
+- A: complete the remaining Platform Owner and Director settings/audit role matrix; production rollout is not claimed.
+- B: complete remaining source-backed Client 360 sections, durable normalization/alias history, and missing batch plan/fact economics evidence.
+- C: finish unified profitability/source coverage and reminder cadence configuration/operator execution; production reminder timer remains disabled.
+- D: complete document revision/history UI parity and run the cross-session PostgreSQL E2E on the eventual final tested source SHA.
+- Exact next implementation: inspect the shared Documents revision/history screen and add browser assertions for revision ordering, current/archived labels, and denied history access; run targeted UI/server tests, then commit and push. Continue A–D after this test block; do not stop at this checkpoint. No completion/blocked flag. Production cutover **NOT performed**.
