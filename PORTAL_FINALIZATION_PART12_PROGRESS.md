@@ -993,3 +993,13 @@ Production cutover **NOT performed**.
 - Roadmap item 19 is now ✅. Numbered counts: **83 ✅ / 25 🟡 / 6 ⏳ / 12 🔌**. Production cutover was not performed.
 
 **Exact NEXT:** reconcile A items 10–12 and 15 against current evidence. Owner subscription/demo/state/seat/module controls and Director settings are already implemented/tested, so identify only a concrete missing role/policy case; do not keep stale blockers merely for production rollout, which is tracked separately.
+
+## VERIFIED — access/settings/audit matrix reconciliation — 2026-10-01
+
+- Roadmap items 10–11 are software-complete: invitation tokens are hash-only at rest and one-time; expiry/revoke/idempotent replay and tenant isolation are proven; Manager/Packer cannot administer invites; Director can create/approve/revoke in-company; Admin lifecycle is covered; Platform Owner requires explicit company scope; existing employees are linked without duplicate employee creation; accept UI keeps PIN/token out of URLs.
+- Item 12 is software-complete for the approved controls: active-seat/concurrency enforcement, standard user limit, unlimited PORTAL, Director capability-gated company schedule/activity settings, Manager/Packer and forged-company denial, plus Platform Owner fee/demo/company-state/service-state/seat/module controls with persistence, validation and audit.
+- Item 15 is software-complete: company audit and separate Platform Owner support-audit have actor/event/entity/date filters and pagination; role/tenant boundaries and value-free audit redaction are verified.
+- Evidence is cumulative and re-executed by current descendants: shared Android/Web UI run **76** at `fa680cd`; Web/disposable PostgreSQL run **154** at `a80d3a3` (**35 tests / 2 skips**, cleanup **db=0 roles=0 temp=0**); Server run **161** at `a80d3a3` (**300 tests / 47 skips / 0 failed** on Python 3.11 and 3.13).
+- Roadmap items 10, 11, 12 and 15 are now ✅. Numbered counts: **87 ✅ / 21 🟡 / 6 ⏳ / 12 🔌**. Production cutover remains separate and was not performed.
+
+**Exact NEXT:** inspect remaining partial item 28 (batch plan/fact economics) for a concrete source-backed gap. Do not promote item 46 quality while no defect source exists; do not enable reminder/news production timers or any cutover gate.

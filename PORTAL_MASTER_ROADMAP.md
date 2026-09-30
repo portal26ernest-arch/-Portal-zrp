@@ -15,12 +15,12 @@
 7. ✅ Отдельный сценарий «Выдать доступ существующему сотруднику».
 8. ✅ Логин/PIN, сессии, отзыв старых сессий после смены доступа.
 9. ✅ История входов, Online/Offline, heartbeat.
-10. 🟡 Безопасный одноразовый invite/access-request lifecycle и Android/Web create/list/accept/approve/revoke UI реализованы; Stage 10 hash-at-rest, идемпотентность, tenant scope и role denial подтверждены disposable PostgreSQL. Полная матрица ролей и production rollout остаются открытыми.
-11. 🟡 Безопасная ссылка/одноразовая выдача токена и одобрение директором/admin реализованы; логин/PIN не передаются в URL. PostgreSQL проверяет отказ Platform Owner без выбора компании, действие только после явного выбора и привязку к существующему сотруднику без дублирования employee; полная роль-матрица и production rollout остаются открытыми.
-12. 🟡 Серверный лимит активных пользователей, concurrency lock, unlimited PORTAL и Platform Owner fee/demo/status/limit/module-toggle UI реализованы; стандартный лимит и отказ сверх доступных мест проверены через PostgreSQL API. Директору доступен отдельный permission-gated экран существующих расписания и настроек активности; полный набор разрешённых company settings и production rollout остаются открытыми.
+10. ✅ Безопасный одноразовый invite/access-request lifecycle и Android/Web create/list/accept/approve/revoke UI: hash-at-rest, one-time token, expiry/revoke, idempotency, tenant scope, Manager/Packer denial и Director/Admin decision paths подтверждены Server/Web/disposable PostgreSQL и shared UI. Production cutover отслеживается отдельно.
+11. ✅ Безопасная ссылка/одноразовая выдача токена и одобрение директором/admin: логин/PIN не передаются в URL; Platform Owner без выбранной компании получает отказ, с явной компанией работает в её scope; existing-employee привязывается без создания дубля. Роль/tenant/idempotency/audit matrix и UI acceptance подтверждены.
+12. ✅ Серверный лимит активных пользователей, concurrency lock, unlimited PORTAL, Platform Owner fee/demo/status/limit/module-toggle controls и Director permission-gated company settings реализованы. PostgreSQL подтверждает persistence/validation/audit, стандартный seat limit, PORTAL unlimited, forged-company denial и Manager/Packer denial. Production rollout отслеживается отдельно.
 13. ✅ Уникальность логинов; с 3.1 вход должен быть без учёта регистра.
 14. ✅ Активность/отключение пользователя без удаления истории.
-15. 🟡 Company/owner audit views с фильтрами и пагинацией реализованы; Platform Owner authorization/filtering и отказ company admin/packer подтверждены disposable PostgreSQL. Остаются policy matrix и release/production gates.
+15. ✅ Company/owner audit views разделены и имеют фильтры/пагинацию; company audit доступен авторизованным ролям своей компании, Platform Owner support-audit — только Owner. Actor/event/entity/date filters, role/tenant denial и value-free redaction подтверждены shared UI, Server и disposable PostgreSQL.
 
 ## B. Клиенты, тарифы и производство
 
