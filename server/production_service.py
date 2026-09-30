@@ -41,6 +41,14 @@ def settlement_cents(value, signed=False):
         raise ValueError('Сумма должна быть ненулевой, не более 1 000 000 000 рублей; выплата — положительной')
     return int(amount)
 
+def margin_basis_points(profit, revenue):
+    """Return a rounded integer percent in basis points; missing/zero revenue is unavailable."""
+    if profit is None or revenue is None or revenue <= 0:
+        return None
+    sign=-1 if profit<0 else 1
+    numerator=abs(profit)*10000
+    return sign*((numerator*2+revenue)//(2*revenue))
+
 def request_identity(value):
     if not isinstance(value,str) or not 1<=len(value)<=128 or value.strip()!=value:
         raise ValueError('Идентификатор запроса: от 1 до 128 символов без пробелов по краям')
@@ -871,13 +879,16 @@ class Production:
         fact['profit']=fact['revenue']-fact['salary']-fact['materials']-fact['other']
         plan['profit']=(plan['revenue']-plan['salary']-plan['materials']-plan['other']) if plans else None
         plan['volume']=sum(p['quantity'] for p in plans) if plans else None;fact['volume']=sum(w['quantity'] for w in works)
+        margins={key:margin_basis_points(values['profit'],values['revenue']) for key,values in (('plan',plan),('fact',fact))}
+        margins['deviation']=(margins['fact']-margins['plan']
+                              if margins['fact'] is not None and margins['plan'] is not None else None)
         units=self.progress(batch)['done']
         deviation={k:(fact[k]-plan[k] if plan[k] is not None else None) for k in plan}
         def per_unit_kopecks(amount):
             if not units:return None
             sign=-1 if amount<0 else 1
             return sign*((abs(amount)+units//2)//units)
-        return dict(batch_id=batch_id,plan=plan,fact=fact,deviation=deviation,finished_units=units,
+        return dict(batch_id=batch_id,plan=plan,fact=fact,deviation=deviation,margin_bps=margins,finished_units=units,
                     cost_per_unit=per_unit_kopecks(fact['salary']+fact['materials']+fact['other']),
                     profit_per_unit=per_unit_kopecks(fact['profit']))
 

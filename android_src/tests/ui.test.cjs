@@ -88,7 +88,7 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
     localStorage.clear();
     const user={id:1,username:role,display_name:'Тестовый пользователь',role,company_id:1,telegram_id:role==='platform_owner'?null:101};
     const client={id:1,name:'Клиент',active:1};
-    window.mock={calls:[],offline:false,rejectWrite:false,hold:false,held:[],update:{ok:true,configured:false},timer:null,stage3Today:null,stage3Batches:null,stage3Permissions:null,stage3Invoices:null,clientNameHistory:[],clientRequisites:{legal_name:'ООО Тест',inn:'TEST-INN-001'},tariffHistory:[],presenceOnline:true,saved:null,previewMode:'ok',applyMode:'ok',payrollPaid:2000,invites:[],products:[]};
+    window.mock={calls:[],offline:false,rejectWrite:false,hold:false,held:[],update:{ok:true,configured:false},timer:null,stage3Today:null,stage3Batches:null,stage3Economy:null,stage3Permissions:null,stage3Invoices:null,clientNameHistory:[],clientRequisites:{legal_name:'ООО Тест',inn:'TEST-INN-001'},tariffHistory:[],presenceOnline:true,saved:null,previewMode:'ok',applyMode:'ok',payrollPaid:2000,invites:[],products:[]};
     const respond=(id,data)=>setTimeout(()=>window.PortalBridgeResult(id,JSON.stringify(data)),0);
     window.PortalNative={getServerUrl:()=> 'http://127.0.0.1:8765',getAppMetadata:()=>JSON.stringify(metadata),checkUpdates:id=>respond(id,mock.update),saveBase64FileAsync(id,filename,mime,file_b64){mock.saved={filename,mime,file_b64};respond(id,{ok:true,location:'Downloads/PORTAL/'+filename});},requestAsync(id,method,url,payload,token,company){
       mock.calls.push({method,url,body:payload?JSON.parse(payload):null,token,company});
@@ -110,7 +110,7 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
       else if(stage3&&url==='/api/v3/timers'&&method==='GET')data.data=mock.timer&&['running','paused'].includes(mock.timer.status)?[mock.timer]:[];
       else if(stage3&&url==='/api/v3/timers'&&method==='POST'){const b=JSON.parse(payload);mock.timer={id:'timer-1',task_id:'task-1',user_id:1,started_at:'2026-09-25T09:12:00',pauses:[],status:({start:'running',pause:'paused',resume:'running',finish:'completed'})[b.event]};data.data=mock.timer;}
       else if(stage3&&url==='/api/v3/batches')data.data=mock.stage3Batches||[{id:'batch-1',number:'PRT-2026-000001',client_id:1,client_name:'Клиент',product:'Коробка',received_at:'2026-09-24',quantity:10,done:2,remaining:8,stage:'in_progress',operations:[{operation:'Упаковка',done:2,planned:10}],ready:false}];
-      else if(stage3&&url.startsWith('/api/v3/economy?'))data.data={plan:{salary:null,revenue:null,materials:null,other:null,profit:null,volume:null},fact:{salary:0,revenue:0,materials:0,other:0,profit:0,volume:0},deviation:{salary:null,revenue:null,materials:null,other:null,profit:null,volume:null},finished_units:0};
+      else if(stage3&&url.startsWith('/api/v3/economy?'))data.data=mock.stage3Economy||{plan:{salary:null,revenue:null,materials:null,other:null,profit:null,volume:null},fact:{salary:0,revenue:0,materials:0,other:0,profit:0,volume:0},deviation:{salary:null,revenue:null,materials:null,other:null,profit:null,volume:null},margin_bps:{plan:null,fact:null,deviation:null},finished_units:0,cost_per_unit:null,profit_per_unit:null};
       else if(stage3&&url==='/api/v3/invoices')data.data=mock.stage3Invoices||[];
       else if(stage3&&url==='/api/v3/documents')data.data=[{id:'doc-client',title:'Документ клиента',client_id:1,document_type:'invoice_pdf',status:'ready'}];
       else if(stage3&&url==='/api/v3/finance')data.data={clients:[]};
@@ -500,6 +500,14 @@ test('browser UI regression',async t=>{
       const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);await login(page);await page.evaluate(()=>go('batches'));
       await page.waitForSelector('[data-action=batchEconomy]');await page.locator('[data-action=batchEconomy]').click();await page.waitForSelector('#sheetContent');
       assert.match(await page.locator('#sheetContent').innerText(),/Недоступно/);
+      assert.deepEqual(errors,[]);await page.close();
+    });
+    await t.test('batch economics shows basis-point margins and per-unit profit without inventing zero',async()=>{
+      const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);
+      await page.evaluate(()=>{mock.stage3Economy={plan:{salary:400,revenue:1000,materials:0,other:100,profit:500,volume:2},fact:{salary:200,revenue:500,materials:0,other:25,profit:275,volume:1},deviation:{salary:-200,revenue:-500,materials:0,other:-75,profit:-225,volume:-1},margin_bps:{plan:5050,fact:null,deviation:null},finished_units:1,cost_per_unit:225,profit_per_unit:275};});
+      await login(page);await page.evaluate(()=>go('batches'));await page.locator('[data-action=batchEconomy]').click();await page.waitForSelector('#sheetContent');
+      const rendered=await page.locator('#sheetContent').innerText();
+      assert.match(rendered,/Маржа[\s\S]*50,5% → Недоступно/);assert.match(rendered,/Себестоимость единицы: 2,25/);assert.match(rendered,/Прибыль на единицу: 2,75/);
       assert.deepEqual(errors,[]);await page.close();
     });
     await t.test('shipped batch return flow is visible, permission aware and submits quantity/result',async()=>{

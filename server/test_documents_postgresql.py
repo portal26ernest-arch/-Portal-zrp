@@ -324,6 +324,7 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.assertEqual(economy['plan'],dict(salary=400,revenue=1000,materials=0,other=100,profit=500,volume=2))
         self.assertEqual(economy['fact'],dict(salary=200,revenue=500,materials=0,other=25,profit=275,volume=1))
         self.assertEqual(economy['deviation'],dict(salary=-200,revenue=-500,materials=0,other=-75,profit=-225,volume=-1))
+        self.assertEqual(economy['margin_bps'],dict(plan=5000,fact=5500,deviation=500))
         self.assertEqual((economy['finished_units'],economy['cost_per_unit'],economy['profit_per_unit']),
                          (1,225,275))
         self.get('economy?batch_id='+batch['id'],self.tokens['company_1_packer'],status=403)

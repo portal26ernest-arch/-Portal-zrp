@@ -447,12 +447,14 @@ class ProductionTest(unittest.TestCase):
         self.assertEqual(economy['plan'],dict(salary=2000,revenue=5000,materials=4000,other=0,profit=-1000,volume=10))
         self.assertEqual(economy['fact'],dict(salary=400,revenue=1000,materials=800,other=0,profit=-200,volume=2))
         self.assertEqual(economy['deviation'],dict(salary=-1600,revenue=-4000,materials=-3200,other=0,profit=800,volume=-8))
+        self.assertEqual(economy['margin_bps'],dict(plan=-2000,fact=-2000,deviation=0))
         self.assertEqual((economy['finished_units'],economy['cost_per_unit'],economy['profit_per_unit']),(2,600,-100))
         self.post('usage',dict(work_id=w['id'],material_id=1,quantity=1))
         self.post('expenses',dict(batch_id=b['id'],amount=1,category='Доставка'))
         e=self.get('economy?batch_id='+b['id'])['data']
         self.assertEqual(e['fact'],dict(salary=400,revenue=1000,materials=1000,other=100,profit=-500,volume=2))
         self.assertEqual(e['deviation'],dict(salary=-1600,revenue=-4000,materials=-3000,other=100,profit=500,volume=-8))
+        self.assertEqual(e['margin_bps'],dict(plan=-2000,fact=-5000,deviation=-3000))
         self.assertEqual((e['cost_per_unit'],e['profit_per_unit']),(750,-250))
         finance=self.get('finance')['data']['clients'][0];self.assertEqual(finance['profit'],-500)
         self.get('finance',self.worker,status=403)
@@ -463,8 +465,18 @@ class ProductionTest(unittest.TestCase):
         for key in ('salary','revenue','materials','other','profit','volume'):
             self.assertIsNone(economy['plan'][key],key)
             self.assertIsNone(economy['deviation'][key],key)
+        self.assertIsNone(economy['margin_bps']['plan'])
+        self.assertIsNone(economy['margin_bps']['deviation'])
         self.assertEqual(economy['fact']['volume'],0)
         self.assertEqual(economy['fact']['profit'],0)
+
+    def test_margin_basis_points_use_integer_rounding_and_zero_revenue_is_unavailable(self):
+        from production_service import margin_basis_points
+        self.assertEqual(margin_basis_points(1,3),3333)
+        self.assertEqual(margin_basis_points(-1,3),-3333)
+        self.assertEqual(margin_basis_points(1,20000),1)
+        self.assertEqual(margin_basis_points(-1,20000),-1)
+        self.assertIsNone(margin_basis_points(0,0))
 
     def test_persisted_reminder_appears_only_in_authorized_company_attention(self):
         from production_repository import Repository
