@@ -516,7 +516,7 @@ test('browser UI regression',async t=>{
       assert.deepEqual(errors,[]);await page.close();
     });
     await t.test('client product catalog supports stable-ID create, rename and archive',async()=>{
-      const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);await page.evaluate(()=>mock.stage3Permissions=['work.write','tasks.read','tasks.manage','batches.receive','finance.read','invoices.read','invoices.create','users.manage','clients.read','clients.manage','documents.read','access.history.read','payroll.own']);await login(page);
+      const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);await page.evaluate(()=>mock.stage3Permissions=['work.write','tasks.read','tasks.manage','batches.receive','finance.read','invoices.read','invoices.create','users.manage','clients.read','clients.manage','documents.read','access.history.read','payroll.own','rates.employee','rates.client']);await login(page);
       await page.evaluate(async()=>{mock.clientNameOverride='Борискин';mock.stage3Invoices=[{id:1,client_id:1,remaining:12500}];mock.stage3Shipments=[{id:'ship-client',batch_id:'batch-1',client_id:1,direction:'FBS',quantity:10},{id:'return-client',type:'return',batch_id:'batch-1',client_id:1,direction:'FBS',quantity:2,condition:'damaged'},{id:'ship-other',batch_id:'batch-other',client_id:2,direction:'FBO',quantity:99}];mock.stage3Tasks=[{id:'task-client',batch_id:'batch-1',batch_number:'PRT-2026-000001',operation_name:'Упаковка клиента',quantity:10,done:2,remaining:8},{id:'task-other',batch_id:'batch-other',batch_number:'PRT-OTHER',operation_name:'Чужая партия',quantity:1,done:0,remaining:1}];mock.clientNameHistory=[{client_id:1,old_name:'Старое название',new_name:'Новое <имя>',occurred_at:'2026-09-30T10:00:00'}];mock.tariffHistory=[{operation_id:1,effective_from:'2026-01-01T00:00:00',employee_rate:200,client_rate:500},{operation_id:1,effective_from:'2099-01-01T00:00:00',employee_rate:300,client_rate:700}];await go('clients');});await page.waitForSelector('#clientSearch');
       await page.locator('#clientSearch').fill('Старое название');assert.equal(await page.locator('#content [data-action=openClient]').isVisible(),true);
       await page.locator('#clientSearch').fill('Борисенко');assert.equal(await page.locator('#content [data-action=openClient]').isVisible(),true);
@@ -545,6 +545,19 @@ test('browser UI regression',async t=>{
       await page.locator('#sheetContent details summary').click();
       assert.match(await page.locator('#sheetContent').innerText(),/Действует сейчас/);
       assert.match(await page.locator('#sheetContent').innerText(),/Будущая версия/);
+      assert.equal(await page.locator('[data-action=newTariff][data-return-to-client="true"]').count(),1);
+      assert.equal(await page.locator('[data-action=clientOperations]').count(),1);
+      await page.locator('[data-action=newTariff][data-return-to-client="true"]').click();await page.waitForSelector('#tariffForm');
+      await page.locator('#tariffEmployee').fill('2.50');await page.locator('#tariffClient').fill('5.50');
+      await page.locator('#tariffForm [type=submit]').click();
+      await page.waitForFunction(()=>mock.calls.some(c=>c.method==='POST'&&c.url==='/api/v3/tariffs'));
+      const tariffWrite=await page.evaluate(()=>mock.calls.find(c=>c.method==='POST'&&c.url==='/api/v3/tariffs'));
+      assert.equal(tariffWrite.body.client_id,1);assert.equal(tariffWrite.body.operation_id,1);assert.equal(tariffWrite.body.employee_rate,'2.50');assert.equal(tariffWrite.body.client_rate,'5.50');
+      await page.waitForFunction(()=>document.querySelector('#sheetContent')?.textContent.includes('Реквизиты и контакты'));
+      await page.locator('[data-action=clientOperations]').click();await page.waitForFunction(()=>document.querySelector('#content')?.textContent.includes('Операции клиента'));
+      assert.equal(await page.locator('#content [data-action=editOperation]').count()>0,true);
+      assert.equal(await page.evaluate(()=>mock.calls.some(c=>c.url==='/api/admin/clients/1/operations')),true);
+      await page.evaluate(()=>actions.openClient({dataset:{id:'1'}}));await page.waitForSelector('[data-action=manageClientProducts]');
       await page.locator('[data-action=manageClientProducts]').click();await page.locator('[data-action=newCatalogProduct]').click();
       await page.locator('#catalogProductName').fill('Коробка');await page.locator('#catalogProductForm [type=submit]').click();
       await page.waitForFunction(()=>mock.calls.some(c=>c.method==='POST'&&c.url==='/api/v3/products'&&c.body?.action==='create'));
@@ -570,6 +583,8 @@ test('browser UI regression',async t=>{
       await restricted.page.waitForSelector('#clientSearch');await restricted.page.locator('#content [data-action=openClient]').click();
       await restricted.page.waitForFunction(()=>document.querySelector('#sheetContent')?.textContent.includes('Реквизиты и контакты'));
       assert.equal(await restricted.page.locator('[data-action=editClientRequisites]').count(),0);
+      assert.equal(await restricted.page.locator('[data-action=clientOperations]').count(),0);
+      assert.equal(await restricted.page.locator('[data-action=newTariff]').count(),0);
       assert.equal(await restricted.page.evaluate(()=>mock.calls.some(c=>c.url==='/api/v3/tasks')),false);
       assert.equal(await restricted.page.evaluate(()=>actions.openClientReceivables({dataset:{id:'1'}}).then(()=>false).catch(error=>error.message==='Недостаточно прав для просмотра дебиторки')),true);
       assert.deepEqual(restricted.errors,[]);await restricted.page.close();
