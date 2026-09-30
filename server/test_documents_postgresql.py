@@ -258,6 +258,11 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.assertNotIn('PG-ACCOUNT-CANARY',json.dumps(audits,ensure_ascii=False))
 
     def test_company_settings_and_permission_changes_are_audited_without_values(self):
+        # The PostgreSQL class shares one disposable database across tests;
+        # unittest cleanup restores state even if an assertion below fails.
+        self.addCleanup(lambda: self.post('settings',{'monday_time':'10:00','wednesday_time':'10:00',
+            'utc_offset_minutes':180,'presence_heartbeat_seconds':60,'presence_timeout_seconds':180},self.admin))
+        self.addCleanup(lambda: self.post('permissions',{'user_id':2,'permissions':{'work.write':True}},self.admin))
         self.post('settings',{'monday_time':'11:30','utc_offset_minutes':240},self.admin)
         self.post('permissions',{'user_id':2,'permissions':{'work.write':False}},self.admin)
         settings=self.get('audit?action=company.settings.updated',self.admin)['data']['items']
