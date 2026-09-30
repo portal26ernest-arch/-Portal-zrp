@@ -702,6 +702,7 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         now=datetime.now(timezone.utc)
         invoice_id='pg-reminder-operator-overdue'
         saved_settings={}
+        operator_errors=[]
         for company_id in (1,2):
             with self.portal.tenants.company_scope(company_id),self.portal.db() as conn:
                 repo=Repository(conn,company_id)
@@ -716,10 +717,14 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
                                                 work_ids=[]),invoice_id)
                 conn.commit()
         try:
-            first=run_enabled_companies(now=now,run_prefix='pg-reminder-operator',application=self.portal)
+            first=run_enabled_companies(now=now,run_prefix='pg-reminder-operator',application=self.portal,
+                                        on_failure=lambda company_id,error_type: operator_errors.append((company_id,error_type)))
+            self.assertEqual(operator_errors,[])
             self.assertEqual((first['companies_seen'],first['companies_run'],first['failures']), (2,1,0))
             self.assertGreaterEqual(first['sent'],1)
-            retry=run_enabled_companies(now=now,run_prefix='pg-reminder-operator-retry',application=self.portal)
+            retry=run_enabled_companies(now=now,run_prefix='pg-reminder-operator-retry',application=self.portal,
+                                        on_failure=lambda company_id,error_type: operator_errors.append((company_id,error_type)))
+            self.assertEqual(operator_errors,[])
             self.assertGreaterEqual(retry['duplicate'],1)
             with self.portal.tenants.company_scope(1),self.portal.db() as conn:
                 notices=Repository(conn,1).list('notifications')
@@ -731,9 +736,14 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
                 with self.portal.tenants.company_scope(company_id),self.portal.db() as conn:
                     repo=Repository(conn,company_id)
                     saved=saved_settings[company_id]
-                    restore=dict(saved or {},reminder_enabled=False,reminder_cadence='daily',utc_offset_minutes=0)
-                    if saved:repo.update('settings',restore)
-                    else:repo.insert('settings',restore,'control')
+                    if saved:
+                        repo.update('settings',saved)
+                    else:
+                        # The fixture DB is disposable. Keep the temporary row
+                        # disabled rather than trying to reinsert its key.
+                        current=repo.get('settings','control',False)
+                        if current:
+                            repo.update('settings',dict(current,reminder_enabled=False))
                     conn.commit()
 
     def test_postgresql_api_enforces_standard_active_user_limit(self):

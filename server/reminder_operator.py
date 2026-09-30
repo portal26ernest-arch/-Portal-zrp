@@ -16,7 +16,7 @@ _RUN_PREFIX = re.compile(r"^[A-Za-z0-9._:-]{1,96}$")
 
 
 def run_company_jobs(company_ids, *, open_company, company_available, run_job,
-                     now=None, run_prefix=None):
+                     now=None, run_prefix=None, on_failure=None):
     """Run opted-in companies through caller-provided tenant-bound resources.
 
     `open_company(id)` must yield a transaction-scoped repository for exactly
@@ -63,12 +63,20 @@ def run_company_jobs(company_ids, *, open_company, company_available, run_job,
             summary["sent"] += record["sent"]
             summary["duplicate"] += record["duplicate"]
             summary["candidate_failures"] += record["failed"]
-        except Exception:
+        except Exception as exc:
             summary["failures"] += 1
+            if on_failure is not None:
+                try:
+                    # Expose only the tenant ID and exception class to an
+                    # explicitly supplied test/monitor callback. Never expose
+                    # exception text, SQL, credentials, or tenant payloads.
+                    on_failure(company_id, type(exc).__name__)
+                except Exception:
+                    pass
     return summary
 
 
-def run_enabled_companies(*, now=None, run_prefix=None, application=None):
+def run_enabled_companies(*, now=None, run_prefix=None, application=None, on_failure=None):
     """Enumerate the control registry and process only available PostgreSQL tenants.
 
     `application` is an explicit composition seam for isolated integration tests
@@ -97,7 +105,7 @@ def run_enabled_companies(*, now=None, run_prefix=None, application=None):
     return run_company_jobs(company_ids, open_company=open_company,
                             company_available=company_available,
                             run_job=run_configured_company,
-                            now=now, run_prefix=run_prefix)
+                            now=now, run_prefix=run_prefix, on_failure=on_failure)
 
 
 def main():
