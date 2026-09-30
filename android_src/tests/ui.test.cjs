@@ -694,7 +694,7 @@ test('browser UI regression',async t=>{
       assert.match(await page.locator('#content').innerText(),/Скорость команды\s+5 шт\./);
       await page.evaluate(()=>{mock.stage3Today={date:'2026-09-25',mode:'management',today_quantity:17,ready:1,active_batches:2,in_progress:0,tasks:[],attention:[]};void go('dashboard');});
       await page.waitForFunction(()=>document.querySelector('#content').textContent.includes('PORTAL Сегодня')&&!document.querySelector('.loading'));
-      assert.doesNotMatch(await page.locator('#content').innerText(),/Ожидаемая прибыль|Выручка|Начислено сотрудникам/);
+      assert.doesNotMatch(await page.locator('#content').innerText(),/Плановая прибыль|Выручка|Начислено|Выплачено \/ остаток/);
       await page.evaluate(()=>{mock.stage3Today=null;void go('batches');});
       await page.waitForFunction(()=>S.page==='batches'&&document.querySelector('#content').textContent.includes('Связанные задания'));
       assert.match(await page.locator('#content').innerText(),/PRT-2026-000001/);
