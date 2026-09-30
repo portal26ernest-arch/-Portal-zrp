@@ -444,6 +444,15 @@ class ProductionTest(unittest.TestCase):
         manager_history=self.get('tariff-history?operation_id=1',self.worker)['data']
         self.assertNotIn('employee_rate',manager_history[0])
         self.assertIn('client_rate',manager_history[0])
+        client_future=(datetime.utcnow()+timedelta(days=2)).isoformat()
+        self.post('tariffs',dict(client_id=1,operation_id=1,employee_rate=7,effective_from=client_future),self.worker,status=403)
+        client_body=dict(client_id=1,operation_id=1,client_rate=7,effective_from=client_future,request_id='tariff-client-only-idempotent')
+        client_version=self.post('tariffs',client_body,self.worker)['data']
+        client_replay=self.post('tariffs',client_body,self.worker)['data']
+        self.assertEqual(client_version['client_rate'],700)
+        self.assertEqual(client_replay['id'],client_version['id'])
+        self.assertNotIn('employee_rate',client_version)
+        self.assertNotIn('employee_rate',client_replay)
         self.post('tariffs',dict(client_id=1,operation_id=1,employee_rate=1,effective_from='2020-01-01'),status=400)
 
     def test_tariff_effective_boundary_preserves_prior_work_and_rejects_duplicate_interval(self):

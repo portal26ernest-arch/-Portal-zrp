@@ -454,7 +454,7 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.assertEqual((before['salary'],before['employee_rate']),(400,200))
         self.assertEqual(current[before['id']]['salary'],400)
         self.assertEqual((after['salary'],after['employee_rate']),(600,300))
-        self.addCleanup(lambda:self.post('permissions',{'user_id':2,'permissions':{'rates.employee':False}},self.admin))
+        self.addCleanup(lambda:self.post('permissions',{'user_id':2,'permissions':{'rates.employee':False,'rates.client':False}},self.admin))
         self.post('permissions',{'user_id':2,'permissions':{'rates.employee':True}},self.admin)
         employee_only=self.get('tariff-history?operation_id=1',self.tokens['company_1_packer'])['data']
         self.assertTrue(employee_only)
@@ -464,6 +464,24 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
                      {'client_id':1,'operation_id':1,'client_rate':'7.00',
                       'effective_from':(datetime.fromisoformat(future)+timedelta(days=1)).isoformat(),
                       'request_id':'pg-tariff-client-rate-forbidden'},method='POST',status=403)
+        self.post('permissions',{'user_id':2,'permissions':{'rates.employee':False,'rates.client':True}},self.admin)
+        client_only=self.get('tariff-history?operation_id=1',self.tokens['company_1_packer'])['data']
+        self.assertTrue(client_only)
+        self.assertTrue(all('client_rate' in row for row in client_only))
+        self.assertTrue(all('employee_rate' not in row for row in client_only))
+        self.request('/api/v3/tariffs',self.tokens['company_1_packer'],
+                     {'client_id':1,'operation_id':1,'employee_rate':'7.00',
+                      'effective_from':(datetime.fromisoformat(future)+timedelta(days=2)).isoformat(),
+                      'request_id':'pg-tariff-employee-rate-forbidden'},method='POST',status=403)
+        allowed_body={'client_id':1,'operation_id':1,'client_rate':'7.00',
+                      'effective_from':(datetime.fromisoformat(future)+timedelta(days=2)).isoformat(),
+                      'request_id':'pg-tariff-client-rate-allowed'}
+        allowed=self.request('/api/v3/tariffs',self.tokens['company_1_packer'],allowed_body,method='POST')['data']
+        replay=self.request('/api/v3/tariffs',self.tokens['company_1_packer'],allowed_body,method='POST')['data']
+        self.assertEqual(allowed['client_rate'],700)
+        self.assertEqual(replay['id'],allowed['id'])
+        self.assertNotIn('employee_rate',allowed)
+        self.assertNotIn('employee_rate',replay)
 
     def test_zzz_linked_legacy_and_canonical_money_reconcile_on_postgresql(self):
         work=self.post('work',dict(client_id=1,operation_id=1,quantity=2,

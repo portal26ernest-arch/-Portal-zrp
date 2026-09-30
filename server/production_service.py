@@ -1180,11 +1180,14 @@ class Production:
         if old:
             if old['fingerprint']!=fingerprint:raise ValueError('Идентификатор запроса уже использован')
             result=dict(old['result'])
-            if action in ('work','tariffs'):
+            if action=='work':
                 if not {'finance.read','rates.client','invoices.create'} & self.permissions:
                     result.pop('client_rate',None);result.pop('revenue',None)
                 if not {'payroll.own','payroll.all','rates.employee'} & self.permissions:
                     result.pop('employee_rate',None);result.pop('salary',None)
+            elif action=='tariffs':
+                if 'rates.client' not in self.permissions:result.pop('client_rate',None)
+                if 'rates.employee' not in self.permissions:result.pop('employee_rate',None)
             return result
         result=methods[action](body)
         if action=='payroll-settlements':
@@ -1196,11 +1199,14 @@ class Production:
         else:self.r.audit(self.u,'client.requisites.updated' if action=='client-requisites' else action,
                           result.get('client_id',result.get('id','control')) if action=='client-requisites' else result.get('id','control'))
         result=dict(result)
-        if action in ('work','tariffs'):
+        if action=='work':
             if not {'finance.read','rates.client','invoices.create'} & self.permissions:
                 result.pop('client_rate',None);result.pop('revenue',None)
             if not {'payroll.own','payroll.all','rates.employee'} & self.permissions:
                 result.pop('employee_rate',None);result.pop('salary',None)
+        elif action=='tariffs':
+            if 'rates.client' not in self.permissions:result.pop('client_rate',None)
+            if 'rates.employee' not in self.permissions:result.pop('employee_rate',None)
         self.r.insert('requests',dict(fingerprint=fingerprint,result=result),key)
         return result
 
