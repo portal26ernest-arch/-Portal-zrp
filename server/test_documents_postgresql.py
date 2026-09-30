@@ -429,6 +429,39 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
                 "SELECT payload FROM portal_production WHERE kind='audit' AND payload LIKE '%access_invite.%'")]
             self.assertTrue(all(token not in json.dumps(event) and expired['token'] not in json.dumps(event) for event in events))
 
+    def test_invitation_approval_is_role_scoped_and_retry_safe_on_postgresql(self):
+        """A director may decide own-company requests; packers and other tenants cannot."""
+        created=self.request('/api/v3/invitations',self.admin,{
+            'action':'create','role':'packer','username':'pg-role-matrix-candidate',
+            'display_name':'PG Role Matrix Candidate','request_id':'pg-role-matrix-create'},method='POST')['data']
+        invite_id=created['invite']['id']
+        self.request('/api/access-invites/accept',body={'token':created['token'],'pin':'6789'},method='POST')
+
+        # Packer cannot inspect or decide access requests, even with a forged
+        # company header. A same-company director can approve the request.
+        self.request('/api/v3/invitations?status=accepted',self.tokens['company_1_packer'],status=403)
+        for action in ('approve','revoke'):
+            self.request('/api/v3/invitations',self.tokens['company_1_packer'],
+                         {'action':action,'invite_id':invite_id},method='POST',status=403)
+        director=self.tokens['same_company_second_session']
+        self.request('/api/v3/invitations',director,{'action':'approve','invite_id':invite_id},
+                     method='POST',extra_headers={'X-Portal-Company':'2'},status=403)
+        # A different tenant cannot use the known ID to decide this invite.
+        self.request('/api/v3/invitations',self.tokens[2],
+                     {'action':'approve','invite_id':invite_id},method='POST',status=400)
+
+        approved=self.request('/api/v3/invitations',director,
+                              {'action':'approve','invite_id':invite_id},method='POST')['data']['invite']
+        replay=self.request('/api/v3/invitations',director,
+                            {'action':'approve','invite_id':invite_id},method='POST')['data']['invite']
+        self.assertEqual((approved['status'],replay['status']),('approved','approved'))
+        events=self.request('/api/v3/audit?action=access_invite.approved&entity_id='+invite_id,
+                            director)['data']['items']
+        self.assertEqual(len(events),1)
+        with self.portal.tenants.company_scope(1),self.portal.db() as conn:
+            self.assertEqual(conn.execute('SELECT status FROM portal_access_invites WHERE company_id=1 AND id=?',
+                                          (invite_id,)).fetchone()[0],'approved')
+
     def test_invitation_links_existing_employee_without_creating_duplicate_employee(self):
         body={'action':'create','role':'packer','username':'existing-employee-invite',
               'display_name':'Synthetic existing employee','employee_id':103,'request_id':'existing-employee-invite-once'}
