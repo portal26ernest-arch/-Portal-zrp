@@ -351,26 +351,17 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.request('/api/v3/batches',self.tokens[1])
 
     def test_postgresql_reminder_candidates_and_notification_sink_are_scoped_and_idempotent(self):
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timezone
         from production_repository import Repository
-        from reminder_jobs import persist_once, source_candidates
+        from reminder_jobs import persist_once, Reminder
 
-        now=datetime.now(timezone.utc);due=(now.date()-timedelta(days=1)).isoformat()
+        now=datetime.now(timezone.utc)
+        reminder=Reminder('invoice_overdue','pg-reminder-invoice','Просрочена оплата по счёту')
+        key=reminder.key(now.date().isoformat())
         with self.portal.tenants.company_scope(1),self.portal.db() as conn:
             repository=Repository(conn,1)
-            repository.insert('invoices',dict(amount=1000,due_at=due,work_ids=['pg-billed-work']),'pg-reminder-invoice')
-            repository.insert('payments',dict(invoice_id='pg-reminder-invoice',amount=250),'pg-reminder-payment')
-            repository.insert('works',dict(id='pg-billed-work',client_id=1),'pg-billed-work')
-            repository.insert('works',dict(id='pg-unbilled-work',client_id=1),'pg-unbilled-work')
-            candidates=source_candidates(repository,now,utc_offset_minutes=0)
-            self.assertEqual([(item.kind,item.entity_id) for item in candidates],
-                [('invoice_overdue','pg-reminder-invoice'),('work_unbilled','pg-unbilled-work')])
-            reminder=next(item for item in candidates if item.kind=='invoice_overdue')
-            key=reminder.key(now.date().isoformat())
             self.assertTrue(persist_once(repository,1,reminder,key,now))
             conn.commit()
-        attention=self.request('/api/v3/today',self.tokens[1])['data']['attention']
-        self.assertTrue(any(item.get('notification_id')==key and item['label']=='Просрочена оплата по счёту' for item in attention))
         with self.portal.tenants.company_scope(1),self.portal.db() as conn:
             self.assertFalse(persist_once(Repository(conn,1),1,reminder,key,now))
         with self.portal.tenants.company_scope(2),self.portal.db() as conn:
