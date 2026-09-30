@@ -47,7 +47,6 @@ class PdfDocumentsTest(unittest.TestCase):
                 employee_id=period['snapshot']['employees'][0]['employee_id']
                 with api_fixtures.portal.db() as conn:
                     repo=Repository(conn,1)
-                    employee_id=repo.payroll_employee(employee_id,legacy=True)['employee_id']
                     settlements_before=repo.payroll_settlements(period['id'],employee_id)
                 payroll_doc=api.post('document-generate',dict(document_type='payroll_slip_pdf',payroll_period_id=period['id'],employee_id=employee_id))['data']
                 payroll_bytes=base64.b64decode(api.get('document-file?id='+payroll_doc['id'])['data']['file_b64'])
