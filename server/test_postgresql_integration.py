@@ -17,8 +17,6 @@ from urllib.error import HTTPError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
-from employee_identity import sync_employee_mappings
-
 
 @unittest.skipUnless(os.environ.get('PORTAL_PG_INTEGRATION') == '1',
                      'requires isolated PostgreSQL test VPS')
@@ -78,9 +76,11 @@ class PostgreSQLIntegration(unittest.TestCase):
                      salt_text, digest, now, now)).fetchone()[0]
                 user_ids[role + '_username'] = username
             # Raw fixture insertion is an explicit legacy-schema bridge. Runtime
-            # APIs use canonical employee_id, so materialize the same mapping a
-            # migrated company receives before exercising task/work flows.
-            sync_employee_mappings(cls.tenant, company_id)
+            # APIs use canonical employee_id, so materialize the PostgreSQL mapping
+            # inside the already-bound disposable company scope.
+            cls.tenant.execute('''INSERT INTO payroll_employee_identities(company_id,legacy_employee_id)
+                SELECT company_id,telegram_id FROM employees WHERE company_id=%s
+                ON CONFLICT(company_id,legacy_employee_id) DO NOTHING''', (company_id,))
             cls.tenant.commit()
             cls.companies[label] = dict(id=company_id, **user_ids)
 
