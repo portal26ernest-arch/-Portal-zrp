@@ -171,6 +171,20 @@ class CompanyIsolationTest(unittest.TestCase):
         self.assertTrue(any(r["event"]=="owner_login" and r["outcome"]=="denied" for r in rows))
         self.assertTrue(any(r["event"]=="technical_access" and r["company_id"]==self.other for r in rows))
         self.assertTrue(any(r["event"]=="company_updated" for r in rows))
+        sample=next(r for r in rows if r["event"]=="technical_access" and r["company_id"]==self.other)
+        filtered=self.request('/api/platform/audit?company_id='+str(self.other)+'&actor_id='+str(sample['actor_id'])+
+                              '&event=technical_access&from='+sample['created_at'][:10]+'&to='+sample['created_at'][:10]+
+                              '&page=1&limit=1',self.owner)
+        self.assertGreaterEqual(filtered['total'],1)
+        self.assertEqual((filtered['page'],filtered['limit'],len(filtered['rows'])),(1,1,1))
+        self.assertEqual(filtered['rows'][0]['id'],sample['id'])
+        if filtered['total']>1:
+            next_page=self.request('/api/platform/audit?company_id='+str(self.other)+'&actor_id='+str(sample['actor_id'])+
+                                   '&event=technical_access&from='+sample['created_at'][:10]+'&to='+sample['created_at'][:10]+
+                                   '&page=2&limit=1',self.owner)
+            self.assertEqual((next_page['page'],len(next_page['rows'])),(2,1))
+            self.assertNotEqual(next_page['rows'][0]['id'],sample['id'])
+        self.request('/api/platform/audit?page=0',self.owner,status=400)
         with tenants.control(portal.DB_PATH) as conn:
             for sql in ("DELETE FROM platform_audit", "UPDATE platform_audit SET outcome='changed'", "INSERT OR REPLACE INTO platform_audit SELECT * FROM platform_audit LIMIT 1"):
                 with self.assertRaises(sqlite3.IntegrityError):
