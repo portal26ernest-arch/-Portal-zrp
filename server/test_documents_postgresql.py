@@ -482,6 +482,31 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.request('/api/v3/client-name-history',self.admin,status=403,
                      extra_headers={'X-Portal-Company':'2'})
 
+    def test_productivity_breakdown_is_tenant_scoped_and_self_only_on_postgresql(self):
+        batch=self.post('batches',dict(client_id=1,product='PG productivity fixture',quantity=3),self.admin)['data']
+        task=self.post('tasks',dict(batch_id=batch['id'],operation_id=1,quantity=3,assignees=[2]),self.admin)['data']
+        now=datetime.now(timezone.utc).replace(tzinfo=None)
+        self.post('work',dict(task_id=task['id'],quantity=1,started_at=(now-timedelta(hours=1)).isoformat(),
+            request_id='pg-productivity-work-1'),self.tokens['company_1_packer'])
+        self.post('work',dict(task_id=task['id'],quantity=1,started_at=(now-timedelta(hours=2)).isoformat(),
+            request_id='pg-productivity-work-2'),self.tokens['company_1_packer'])
+
+        team=self.get('analytics',self.admin)['data']
+        own=self.get('analytics',self.tokens['company_1_packer'])['data']
+        foreign=self.get('analytics',self.tokens[2])['data']
+        group=next(row for row in team['groups']
+                   if row['user_id']==2 and row['client_id']==1 and row['product']=='PG productivity fixture')
+        self.assertTrue(group['user_name']);self.assertTrue(group['client_name']);self.assertTrue(group['operation_name'])
+        self.assertEqual(group['timed_quantity'],2);self.assertGreater(group['units_per_hour'],0)
+        self.assertIsNotNone(group['variability'])
+        batch_group=next(row for row in team['batch_groups'] if row['batch_id']==batch['id'] and row['operation_id']==1)
+        self.assertEqual(batch_group['quantity'],2);self.assertGreater(batch_group['units_per_hour'],0)
+        self.assertIsNotNone(batch_group['variability'])
+        self.assertEqual({row['user_id'] for row in own['groups']},{2})
+        self.assertIn(batch['id'],{row['batch_id'] for row in own['batch_groups']})
+        self.assertNotIn(batch['id'],{row['batch_id'] for row in foreign['batch_groups']})
+        self.assertEqual(team['quality'],dict(available=False,recorded_units=0,defects=None))
+
     def test_zz_profitability_reconciles_postgresql_source_facts_without_allocating_overhead(self):
         before=self.get('finance',self.admin)['data']
         before_client=next(row for row in before['clients'] if row['client_id']==1)

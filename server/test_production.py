@@ -664,10 +664,37 @@ class ProductionTest(unittest.TestCase):
         self.work();data=self.get('analytics',self.worker)['data']
         self.assertFalse(data['ranking']);self.assertIsNone(data['groups'][0]['units_per_hour'])
         self.assertEqual(data['groups'][0]['user_id'],self.worker_id)
+        self.assertTrue(data['groups'][0]['user_name']);self.assertTrue(data['groups'][0]['client_name']);self.assertTrue(data['groups'][0]['operation_name'])
+        self.assertEqual(data['quality'],dict(available=False,recorded_units=0,defects=None));self.assertEqual(data['batch_groups'],[])
         b=self.batch();t=self.task(b)
         self.post('work',dict(task_id=t['id'],quantity=2,started_at=(datetime.utcnow()-timedelta(hours=1)).isoformat()),self.worker)
-        forecast=self.get('analytics',self.worker)['data']['forecasts'][0]
+        updated=self.get('analytics',self.worker)['data'];forecast=updated['forecasts'][0]
+        batch_group=next(group for group in updated['batch_groups'] if group['batch_id']==b['id'] and group['operation_id']==1)
+        self.assertEqual(batch_group['client_id'],1);self.assertTrue(batch_group['batch_number']);self.assertGreater(batch_group['units_per_hour'],0)
         self.assertGreater(forecast['units_per_hour'],0);self.assertIsNotNone(forecast['estimated_completion'])
+
+    def test_analytics_manager_sees_team_only_for_assigned_clients(self):
+        manager=self.role_token('manager');manager_user=self.request('/api/me',manager)['user']
+        with portal.tenants.company_scope(1),portal.db() as conn:
+            legacy_id=conn.execute('SELECT telegram_id FROM app_users WHERE id=?',(manager_user['id'],)).fetchone()[0]
+            conn.execute('INSERT INTO manager_client_assignments(telegram_id,client_id,active) VALUES(?,1,1)',(legacy_id,))
+            conn.commit()
+            hidden_client=portal.save_client({'name':'Analytics unassigned client'})
+            hidden_operation=portal.save_operation({'name':'Hidden operation','employee_rate':2,'client_rate':5},hidden_client)
+        self.work()
+        self.post('work',dict(client_id=1,operation_id=1,quantity=2),self.admin)
+        self.post('work',dict(client_id=hidden_client,operation_id=hidden_operation,quantity=3),self.worker)
+
+        team=self.get('analytics',manager)['data']
+        self.assertEqual({group['user_id'] for group in team['groups'] if group['client_id']==1},{self.worker_id,self.admin_id})
+        self.assertNotIn(hidden_client,{group['client_id'] for group in team['groups']})
+        self.assertTrue(all(group['client_name']=='Client' and group['operation_name']=='Packing'
+                            for group in team['groups']))
+        self.assertEqual(team['quality'],dict(available=False,recorded_units=0,defects=None))
+
+        self_only=self.get('analytics',self.worker)['data']
+        self.assertEqual({group['user_id'] for group in self_only['groups']},{self.worker_id})
+        self.assertEqual(sum(group['quantity'] for group in self_only['groups']),5)
 
     def test_analytics_period_comparison_uses_company_dates_and_valid_timing_only(self):
         with portal.tenants.company_scope(1),portal.db() as conn:

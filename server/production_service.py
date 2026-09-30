@@ -997,7 +997,11 @@ class Production:
         params=params or {}
         all_team='analytics.read' in self.permissions
         if not all_team:self.need('work.write')
-        rows=[w for w in self.scoped('works') if all_team or w['user_id']==self.u['id']];groups={}
+        rows=[w for w in self.scoped('works') if all_team or w['user_id']==self.u['id']];groups={};batch_groups={}
+        users={u['id']:u.get('display_name') or u.get('username') or str(u['id']) for u in self.r.catalog('users')}
+        clients={c['id']:c['name'] for c in self.r.catalog('clients')}
+        operations={o['id']:o['name'] for o in self.r.catalog('operations')}
+        batches={b['id']:b for b in self.scoped('batches')}
         start_text=params.get('from',[''])[0];end_text=params.get('to',[''])[0]
         if bool(start_text)!=bool(end_text):raise ValueError('Укажите обе даты периода')
         comparison=None
@@ -1026,16 +1030,41 @@ class Production:
                 units_per_hour_delta=(current_measure['units_per_hour']-previous_measure['units_per_hour'])
                     if current_measure['units_per_hour'] is not None and previous_measure['units_per_hour'] is not None else None)
         else:all_rows=rows
-        for w in rows:
-            key=(w['user_id'],w['client_id'],w['product'] or (self.r.get('batches',self.batch_for_work(w))['product'] if self.batch_for_work(w) else ''),w['operation_id'])
-            g=groups.setdefault(key,dict(user_id=key[0],client_id=key[1],product=key[2],operation_id=key[3],quantity=0,samples=0,timed_quantity=0,seconds=0,rates=[]))
-            g['quantity']+=w['quantity'];g['samples']+=1
-            if w['duration_seconds'] and w['duration_seconds']>0:
-                g['timed_quantity']+=w['quantity'];g['seconds']+=w['duration_seconds'];g['rates'].append(w['quantity']/w['duration_seconds']*3600)
-        for g in groups.values():
-            rates=g.pop('rates');g['units_per_hour']=g['timed_quantity']/g['seconds']*3600 if g['seconds'] else None
+        def add_sample(group,work):
+            group['quantity']+=work['quantity'];group['samples']+=1
+            if work.get('duration_seconds') and work['duration_seconds']>0:
+                group['timed_quantity']+=work['quantity'];group['seconds']+=work['duration_seconds']
+                group['rates'].append(work['quantity']/work['duration_seconds']*3600)
+        def finish_group(group):
+            rates=group.pop('rates');group['units_per_hour']=group['timed_quantity']/group['seconds']*3600 if group['seconds'] else None
             mean=sum(rates)/len(rates) if rates else 0
-            g['variability']=((sum((v-mean)**2 for v in rates)/len(rates))**.5/mean) if len(rates)>=2 and mean else None
+            group['variability']=((sum((v-mean)**2 for v in rates)/len(rates))**.5/mean) if len(rates)>=2 and mean else None
+        for w in rows:
+            batch_id=w.get('batch_id') or self.batch_for_work(w)
+            batch=batches.get(batch_id) if batch_id else None
+            product=w.get('product') or (batch or {}).get('product','')
+            key=(w['user_id'],w['client_id'],product,w['operation_id'])
+            g=groups.setdefault(key,dict(user_id=key[0],user_name=users.get(key[0],str(key[0])),
+                client_id=key[1],client_name=clients.get(key[1],str(key[1])),product=key[2],operation_id=key[3],
+                operation_name=operations.get(key[3],str(key[3])),quantity=0,samples=0,timed_quantity=0,seconds=0,rates=[]))
+            add_sample(g,w)
+            if batch_id:
+                bkey=(batch_id,w['operation_id'])
+                bg=batch_groups.setdefault(bkey,dict(batch_id=batch_id,batch_number=(batch or {}).get('number',str(batch_id)),
+                    client_id=w['client_id'],client_name=clients.get(w['client_id'],str(w['client_id'])),
+                    product=product,operation_id=w['operation_id'],operation_name=operations.get(w['operation_id'],str(w['operation_id'])),
+                    quantity=0,samples=0,timed_quantity=0,seconds=0,rates=[]))
+                add_sample(bg,w)
+        for group in groups.values():finish_group(group)
+        for group in batch_groups.values():finish_group(group)
+        quality_samples=[]
+        for work in rows:
+            q=work.get('quality') if isinstance(work.get('quality'),dict) else {}
+            defects=q.get('defects')
+            if isinstance(defects,(int,float)) and not isinstance(defects,bool) and defects>=0:
+                quality_samples.append((work,defects))
+        quality=(dict(available=True,recorded_units=sum(w['quantity'] for w,_ in quality_samples),defects=sum(v for _,v in quality_samples))
+                 if quality_samples else dict(available=False,recorded_units=0,defects=None))
         forecasts=[]
         for t in self.scoped('tasks'):
             if not all_team and self.u['id'] not in t['assignees']:continue
@@ -1044,7 +1073,7 @@ class Production:
             pace=done/elapsed if elapsed>0 else 0
             eta=(datetime.fromisoformat(self.clock())+timedelta(seconds=max(0,t['quantity']-done)/pace)).isoformat() if pace else None
             forecasts.append(dict(task_id=t['id'],done=done,remaining=max(0,t['quantity']-done),units_per_hour=pace*3600 if pace else None,estimated_completion=eta,due_at=t['due_at']))
-        result=dict(groups=list(groups.values()),forecasts=forecasts,ranking=False)
+        result=dict(groups=list(groups.values()),batch_groups=list(batch_groups.values()),forecasts=forecasts,quality=quality,ranking=False)
         if comparison is not None:result['comparison']=comparison
         return result
 
