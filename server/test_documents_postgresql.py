@@ -135,6 +135,8 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
                 r.sql('INSERT INTO employees(company_id,telegram_id,full_name,username) VALUES(?,103,?,?)',(1,'Synthetic second director','second'))
                 r.sql('''INSERT INTO app_users(company_id,id,username,display_name,role,telegram_id,active,pin_salt,pin_hash,created_at,updated_at)
                      VALUES(?,3,'second-director','Synthetic second director','director',103,1,?,?,?,?)''',(1,salt,pin_hash,utcnow(),utcnow()))
+                from employee_identity import sync_employee_mappings
+                sync_employee_mappings(conn,1)
                 cls.tokens['same_company_second_session']=cls.portal.create_session(conn,3)
             # Only the fixture administrator adjusts sequences after explicit IDs.
             with psycopg.connect(make_conninfo(cls.admin_dsn,dbname=cls.database),autocommit=True) as admin:
