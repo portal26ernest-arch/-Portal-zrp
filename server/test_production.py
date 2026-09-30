@@ -325,9 +325,9 @@ class ProductionTest(unittest.TestCase):
         self.assertEqual(events['company.settings.updated']['fields'],
                          ['monday_time','reminder_cadence','reminder_enabled','utc_offset_minutes'])
         self.assertEqual(events['user.permissions.updated']['fields'],['work.write'])
-        serialized=json.dumps(events,ensure_ascii=False)
-        for value in ('11:30','240','true'):
-            self.assertNotIn(value,serialized)
+        allowed={'actor_id','company_id','created_at','entity_id','event','fields','id'}
+        self.assertEqual(set(events['company.settings.updated']),allowed)
+        self.assertEqual(set(events['user.permissions.updated']),allowed)
 
     def test_company_access_summary_is_capability_and_owner_scope_checked(self):
         self.assertTrue(self.get('company-access')['data']['unlimited'])
