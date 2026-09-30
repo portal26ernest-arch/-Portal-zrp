@@ -2,8 +2,9 @@
 
 This module deliberately does not start a timer or send external messages. A
 trusted operator job supplies candidate reminders and a company-scoped delivery
-callback. Successful reminder keys are persisted by the caller so retries are
-safe; failed deliveries are returned as sanitized counts and remain retryable.
+callback. The callback must atomically insert the unique reminder key and its
+internal notification in one tenant-scoped transaction; failed deliveries are
+returned as sanitized counts and remain retryable.
 """
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -48,11 +49,13 @@ class ReminderRunner:
         iso = current.isocalendar()
         return f"{iso.year}-W{iso.week:02d}"
 
-    def run(self, company_id, reminders, *, already_sent, deliver):
+    def run(self, company_id, reminders, *, dispatch_once):
         """Deliver a batch for one explicit tenant.
 
-        `already_sent(company_id, key)` and `deliver(company_id, reminder, key)`
-        must use the caller's tenant-scoped transaction/repository. The runner
+        `dispatch_once(company_id, reminder, key)` must atomically create the
+        notification and a unique sent-key record in the caller's tenant-scoped
+        transaction. It returns True for a newly dispatched reminder, False if
+        the key already exists, and raises on a retryable failure. The runner
         never changes company context or interpolates company IDs into queries.
         """
         if type(company_id) is not int or company_id < 1:
@@ -66,14 +69,14 @@ class ReminderRunner:
             if not isinstance(reminder, Reminder):
                 raise TypeError("Reminder candidates must be validated Reminder values")
             key = reminder.key(cadence_id)
-            if already_sent(company_id, key):
-                duplicate += 1
-                continue
             try:
-                deliver(company_id, reminder, key)
+                was_sent = dispatch_once(company_id, reminder, key)
             except Exception:
                 # Deliberately do not serialize exception text or candidate data.
                 failed += 1
                 continue
-            sent += 1
+            if was_sent:
+                sent += 1
+            else:
+                duplicate += 1
         return {"enabled": True, "sent": sent, "duplicate": duplicate, "failed": failed}

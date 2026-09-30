@@ -9,8 +9,7 @@ class ReminderRunnerTests(unittest.TestCase):
         called = []
         result = ReminderRunner().run(
             4, [Reminder("invoice_overdue", "inv-1", "Invoice overdue")],
-            already_sent=lambda *_: False,
-            deliver=lambda *args: called.append(args),
+            dispatch_once=lambda *args: called.append(args) or True,
         )
         self.assertEqual(result, {"enabled": False, "sent": 0, "duplicate": 0, "failed": 0})
         self.assertEqual(called, [])
@@ -22,17 +21,20 @@ class ReminderRunnerTests(unittest.TestCase):
         deliveries = []
         reminder = Reminder("invoice_overdue", "invoice-7", "Overdue")
 
-        def deliver(company, candidate, key):
+        def dispatch_once(company, candidate, key):
+            if (company, key) in sent:
+                return False
             if not deliveries:
                 deliveries.append((company, key, "failed"))
                 raise RuntimeError("must not be exposed")
             deliveries.append((company, key, "sent"))
             sent.add((company, key))
+            return True
 
-        failed = runner.run(4, [reminder], already_sent=lambda c, k: (c, k) in sent, deliver=deliver)
-        retried = runner.run(4, [reminder], already_sent=lambda c, k: (c, k) in sent, deliver=deliver)
-        repeated = runner.run(4, [reminder], already_sent=lambda c, k: (c, k) in sent, deliver=deliver)
-        other_company = runner.run(5, [reminder], already_sent=lambda c, k: (c, k) in sent, deliver=deliver)
+        failed = runner.run(4, [reminder], dispatch_once=dispatch_once)
+        retried = runner.run(4, [reminder], dispatch_once=dispatch_once)
+        repeated = runner.run(4, [reminder], dispatch_once=dispatch_once)
+        other_company = runner.run(5, [reminder], dispatch_once=dispatch_once)
 
         self.assertEqual(failed["failed"], 1)
         self.assertEqual(retried["sent"], 1)
@@ -57,7 +59,7 @@ class ReminderRunnerTests(unittest.TestCase):
         runner = ReminderRunner(enabled=True)
         for company in (None, 0, "4", True):
             with self.subTest(company=company), self.assertRaises(PermissionError):
-                runner.run(company, [], already_sent=lambda *_: False, deliver=lambda *_: None)
+                runner.run(company, [], dispatch_once=lambda *_: True)
         with self.assertRaises(ValueError):
             ReminderRunner(utc_offset_minutes=900)
 
