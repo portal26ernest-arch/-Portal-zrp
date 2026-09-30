@@ -981,6 +981,11 @@ class Production:
             groups=self.analytics()['groups'];timed_units=sum(g['timed_quantity'] for g in groups);seconds=sum(g['seconds'] for g in groups)
             result['productivity']=dict(units=sum(g['quantity'] for g in groups),timed_units=timed_units,
                                         units_per_hour=timed_units/(seconds/3600) if seconds>0 else None)
+            timed_today=[w for w in today_works if w.get('duration_seconds') and w['duration_seconds']>0]
+            today_seconds=sum(w['duration_seconds'] for w in timed_today)
+            result['today_productivity']=dict(units=sum(w['quantity'] for w in today_works),
+                timed_units=sum(w['quantity'] for w in timed_today),
+                units_per_hour=sum(w['quantity'] for w in timed_today)/(today_seconds/3600) if today_seconds>0 else None)
         return result
 
     def command(self,action,body):

@@ -55,6 +55,7 @@
         <div class="today-kpi"><span>Активные партии</span><b>${num(d.active_batches||0)}</b></div>
         ${d.active_jobs!==undefined?`<div class="today-kpi"><span>Открытые задания</span><b>${num(d.active_jobs)}</b></div>`:''}
         ${d.today_finance?`<div class="today-kpi"><span>Выручка сегодня</span><b>${rub(d.today_finance.revenue)}</b></div><div class="today-kpi"><span>Начислено сегодня</span><b>${rub(d.today_finance.salary)}</b></div>`:''}
+        ${d.today_productivity?`<div class="today-kpi"><span>Скорость команды</span><b>${d.today_productivity.units_per_hour==null?'Нет данных времени':num(d.today_productivity.units_per_hour)+' шт./ч'}</b></div>`:''}
       </div></section>`+
       `<section class="dashboard-section attention-zone"><div class="section-label"><h2>Требует внимания</h2><button class="text-link" data-action="go" data-page="notifications">Все события</button></div><div class="attention-stack">${attentionHtml(attention.slice(0,4))}</div></section>`+
       (finance?`<section class="dashboard-section"><div class="section-label"><h2>Финансовый радар</h2><button class="text-link" data-action="go" data-page="radar">Подробнее</button></div><div class="money-grid">

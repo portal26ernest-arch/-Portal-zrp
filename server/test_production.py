@@ -116,6 +116,8 @@ class ProductionTest(unittest.TestCase):
         self.assertEqual(data['month_quantity'],4)
         self.assertEqual(data['today_finance'],dict(revenue=1000,salary=400))
         self.assertEqual((data['month_finance']['revenue'],data['month_finance']['salary']),(2000,800))
+        self.assertEqual(data['today_productivity']['units'],2)
+        self.assertIsNone(data['today_productivity']['units_per_hour'])
         self.assertEqual((data['open_invoice_count'],data['overdue_invoice_count'],data['overdue_debt']),(1,1,1000))
         self.assertIsNone(data['expected_profit'])
         if closed_payroll is None:self.assertIsNone(data['closed_month_payroll'])
