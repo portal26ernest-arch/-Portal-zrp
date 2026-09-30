@@ -588,3 +588,9 @@ Production cutover **NOT performed**.
 - C needs additional profitability/reconciliation and reminder cadence/operator execution; production timer stays disabled.
 - D needs revision/history UI parity and final share/file contracts; cross-session PG test must run on the eventual final source SHA.
 - Exact next: poll Server/Web/Android UI/Android APK workflows for `b588462`; fix any software failure. Then continue invitation/settings role-coverage or reminder cadence, followed by targeted tests and commit. No completion or blocked flag is warranted while software work remains. Production cutover **NOT performed**.
+
+### Integration regression follow-up
+
+- Full server discovery at code SHA `967e947` (identical server files to `f5475ae`): **254 tests, 36 skipped, 0 failures**. One earlier run concurrent with `ops.test_infra_readiness` showed a single non-reproducible document idempotency assertion; the exact test passed alone and the complete suite passed when rerun without the concurrent operation. No API limit or assertion was weakened.
+- `ops.test_infra_readiness`: **7/7 passed**; `python -m compileall -q server android_src tools ops` passed.
+- CI at the code ancestor `b588462`: Web #`36678773323`, Android UI #`36678773573`, APK #`36678773473` all succeeded. The Server workflow is path-triggered and was green at `f5475ae` (#`36678086835`), where the server code used by `b588462` was unchanged. The Web workflow includes and passed the disposable PostgreSQL documents job at `f5475ae` (#`36678086685`). Docs checkpoint SHA `967e947` changes no source files.

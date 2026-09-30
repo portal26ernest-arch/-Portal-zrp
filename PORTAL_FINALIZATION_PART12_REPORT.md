@@ -498,3 +498,9 @@ Latest tested code at `e08e0d8dbe927cce9b82ab58e4ef4a5c7e9c29a4`; commits `cd22c
 - C: profitability/reconciliation breadth and reminder cadence/operator run remain; production scheduler remains disabled.
 - D: revision/history UI parity and final share/file contracts remain; rerun disposable PG cross-session E2E at the final code SHA.
 - Exact next: poll Server/Web/Android UI/Android APK for `b588462`; fix any software failure, then continue A role coverage or C reminder cadence with tests and a logical commit. Counts remain **74 ✅ / 33 🟡 / 7 ⏳ / 12 🔌**. Production cutover **NOT performed**.
+
+### Integration regression follow-up
+
+- Server unittest discovery: **254 run, 36 skipped, 0 failures** at `967e947` (server source matches `f5475ae`). An initial run concurrent with infra checks had one non-reproducible invoice-document idempotency assertion; its target passed independently, then full suite passed on isolated rerun. Contract/test limits were not relaxed.
+- Infra readiness: **7/7 passed**; Python compileall passed.
+- At source ancestor `b588462`, Web #`36678773323`, Android UI #`36678773573`, and APK #`36678773473` passed. Server #`36678086835` passed at `f5475ae` with unchanged server code. Web disposable PostgreSQL documents job #`36678086685` passed at `f5475ae`. `967e947` is a documentation-only descendant; no source changed.

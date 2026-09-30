@@ -1,4 +1,4 @@
-# PORTAL release readiness matrix — Part 12 checkpoint `b588462` (CI pending)
+# PORTAL release readiness matrix — Part 12 checkpoint `967e947` (code CI green on `b588462`; Server code unchanged since green `f5475ae`)
 
 Statuses reflect the current roadmap and prior verified reports. `✅` means evidenced completion in the named baseline report/test; it does not mean production cutover is approved. Current numbered counts: **74 ✅ / 33 🟡 / 7 ⏳ / 12 🔌**. Item 47 is 🟡 for the implemented/tested operator runner; an automatic system timer and persistent cadence configuration remain open.
 
