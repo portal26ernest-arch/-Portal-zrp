@@ -2,7 +2,8 @@ import unittest
 import sqlite3
 from datetime import datetime, timezone
 
-from reminder_jobs import Reminder, ReminderRunner, persist_once, source_candidates
+from reminder_jobs import (Reminder, ReminderRunner, persist_once, source_candidates,
+                           run_scheduled_company, next_run_at)
 from production_repository import Repository
 
 
@@ -102,6 +103,31 @@ class ReminderRunnerTests(unittest.TestCase):
             self.assertEqual(connection.execute("SELECT count(*) FROM portal_production WHERE company_id=8 AND kind='notifications'").fetchone()[0],1)
             with self.assertRaises(PermissionError):persist_once(repository,9,reminder,key,now)
         finally:connection.close()
+
+    def test_operator_entrypoint_is_disabled_and_records_sanitized_run(self):
+        connection=sqlite3.connect(':memory:')
+        try:
+            connection.execute('CREATE TABLE portal_production(company_id INTEGER,kind TEXT,id TEXT,payload TEXT,created_at TEXT,PRIMARY KEY(company_id,kind,id))')
+            repository=Repository(connection,8)
+            repository.insert('works',{'client_id':1,'completed_at':'2026-09-29'},'work-1')
+            now=datetime(2026,9,30,21,tzinfo=timezone.utc)
+            disabled=run_scheduled_company(repository,now=now,run_id='disabled-1')
+            self.assertEqual(disabled['outcome'],'disabled')
+            self.assertEqual(disabled['candidate_count'],0)
+            self.assertEqual(repository.list('notifications'),[])
+            enabled=run_scheduled_company(repository,enabled=True,now=now,run_id='enabled-1')
+            self.assertEqual((enabled['outcome'],enabled['sent'],enabled['failed']),('success',1,0))
+            self.assertEqual(enabled['next_run_at'],'2026-10-01T00:00:00+00:00')
+            run_rows=repository.list('reminder_job_runs')
+            self.assertEqual({row['run_id'] for row in run_rows},{'disabled-1','enabled-1'})
+            self.assertNotIn('company_id',enabled)
+            self.assertNotIn('secret',str(run_rows).lower())
+        finally:connection.close()
+
+    def test_daily_weekly_next_run_boundaries(self):
+        now=datetime(2026,9,30,21,30,tzinfo=timezone.utc)
+        self.assertEqual(next_run_at(now,'daily',180),'2026-10-01T21:00:00+00:00')
+        self.assertEqual(next_run_at(now,'weekly',180),'2026-10-04T21:00:00+00:00')
 
 
 if __name__ == "__main__":

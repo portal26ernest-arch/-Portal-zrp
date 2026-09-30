@@ -351,21 +351,30 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.request('/api/v3/batches',self.tokens[1])
 
     def test_postgresql_reminder_candidates_and_notification_sink_are_scoped_and_idempotent(self):
-        from datetime import datetime, timezone
+        from datetime import datetime, timedelta, timezone
         from production_repository import Repository
-        from reminder_jobs import persist_once, Reminder
+        from reminder_jobs import run_scheduled_company
 
         now=datetime.now(timezone.utc)
-        reminder=Reminder('invoice_overdue','pg-reminder-invoice','Просрочена оплата по счёту')
-        key=reminder.key(now.date().isoformat())
+        invoice_id='pg-reminder-invoice'
         with self.portal.tenants.company_scope(1),self.portal.db() as conn:
             repository=Repository(conn,1)
-            self.assertTrue(persist_once(repository,1,reminder,key,now))
+            repository.insert('invoices',dict(amount=100,due_at=(now.date()-timedelta(days=2)).isoformat(),work_ids=[]),invoice_id)
+            first=run_scheduled_company(repository,enabled=True,now=now,run_id='reminder-run-1')
             conn.commit()
+        self.assertEqual((first['outcome'],first['failed']),('success',0))
         with self.portal.tenants.company_scope(1),self.portal.db() as conn:
-            self.assertFalse(persist_once(Repository(conn,1),1,reminder,key,now))
+            repository=Repository(conn,1)
+            second=run_scheduled_company(repository,enabled=True,now=now,run_id='reminder-run-2')
+            notices=repository.list('notifications')
+            run_rows=repository.list('reminder_job_runs')
+            conn.commit()
+        self.assertGreaterEqual(second['duplicate'],1)
+        self.assertEqual(sum(row['entity_id']==invoice_id for row in notices),1)
+        self.assertEqual(len([row for row in run_rows if row['outcome']=='success']),2)
         with self.portal.tenants.company_scope(2),self.portal.db() as conn:
             self.assertEqual(Repository(conn,2).list('notifications'),[])
+            self.assertEqual(Repository(conn,2).list('reminder_job_runs'),[])
 
     def test_postgresql_api_enforces_standard_active_user_limit(self):
         """The standard company limit is enforced by the server, not just the UI."""

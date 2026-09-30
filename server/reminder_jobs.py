@@ -9,6 +9,7 @@ returned as sanitized counts and remain retryable.
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import re
+import uuid
 
 
 _KEY_PART = re.compile(r"^[A-Za-z0-9._:-]{1,160}$")
@@ -84,10 +85,10 @@ def persist_once(repository, company_id, reminder, key, occurred_at):
         occurred_at=occurred_at.astimezone(timezone.utc).isoformat()),key)
 
 
-def repository_dispatcher(repository):
+def repository_dispatcher(repository, *, occurred_at=None):
     """Adapt a transaction-scoped Repository to ReminderRunner's callback contract."""
     def dispatch(company_id, reminder, key):
-        return persist_once(repository,company_id,reminder,key,datetime.now(timezone.utc))
+        return persist_once(repository,company_id,reminder,key,occurred_at or datetime.now(timezone.utc))
     return dispatch
 
 
@@ -145,3 +146,61 @@ class ReminderRunner:
             else:
                 duplicate += 1
         return {"enabled": True, "sent": sent, "duplicate": duplicate, "failed": failed}
+
+
+def next_run_at(now, cadence, utc_offset_minutes=0):
+    """Return the next local cadence boundary as a UTC ISO timestamp."""
+    if not isinstance(now, datetime) or now.tzinfo is None:
+        raise ValueError("Reminder clock must include a timezone")
+    if cadence not in {"daily", "weekly"}:
+        raise ValueError("Unsupported reminder cadence")
+    zone = timezone(timedelta(minutes=utc_offset_minutes))
+    local = now.astimezone(zone)
+    if cadence == "daily":
+        target = (local + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    else:
+        days = 7 - local.weekday()
+        target = (local + timedelta(days=days)).replace(hour=0, minute=0, second=0, microsecond=0)
+    return target.astimezone(timezone.utc).isoformat()
+
+
+def run_scheduled_company(repository, *, enabled=False, cadence="daily",
+                          utc_offset_minutes=0, now=None, run_id=None):
+    """Operator entry point for one explicitly scoped company transaction.
+
+    Production remains disabled unless the trusted operator explicitly enables
+    it. Every attempted run appends a sanitized run record. Failed candidates
+    are safe to retry in the same cadence because notification inserts are
+    atomic and keyed by company/entity/cadence.
+    """
+    company_id = getattr(repository, "company_id", None)
+    if type(company_id) is not int or company_id < 1:
+        raise PermissionError("An explicit company scope is required")
+    current = now or datetime.now(timezone.utc)
+    if not isinstance(current, datetime) or current.tzinfo is None:
+        raise ValueError("Reminder clock must include a timezone")
+    if run_id is None:
+        run_id = str(uuid.uuid4())
+    if not isinstance(run_id, str) or not _KEY_PART.fullmatch(run_id):
+        raise ValueError("Invalid reminder run identity")
+
+    runner = ReminderRunner(enabled=enabled, cadence=cadence,
+                            utc_offset_minutes=utc_offset_minutes,
+                            clock=lambda: current)
+    cadence_id = runner.cadence_id(current)
+    result = {"enabled": False, "sent": 0, "duplicate": 0, "failed": 0}
+    candidates = []
+    if enabled:
+        candidates = source_candidates(repository, current,
+                                       utc_offset_minutes=utc_offset_minutes)
+        result = runner.run(company_id, candidates,
+                            dispatch_once=repository_dispatcher(repository, occurred_at=current))
+    outcome = "disabled" if not enabled else ("retryable" if result["failed"] else "success")
+    record = dict(company_id=company_id, run_id=run_id, cadence=cadence,
+                  cadence_id=cadence_id, started_at=current.astimezone(timezone.utc).isoformat(),
+                  completed_at=current.astimezone(timezone.utc).isoformat(),
+                  next_run_at=next_run_at(current, cadence, utc_offset_minutes),
+                  outcome=outcome, candidate_count=len(candidates), sent=result["sent"],
+                  duplicate=result["duplicate"], failed=result["failed"])
+    repository.insert_once("reminder_job_runs", record, run_id)
+    return {key: value for key, value in record.items() if key != "company_id"}
