@@ -444,13 +444,16 @@ class ProductionTest(unittest.TestCase):
     def test_plan_fact_and_actual_materials(self):
         b=self.batch();t=self.task(b);w=self.work(task_id=t['id'])
         economy=self.get('economy?batch_id='+b['id'])['data']
-        self.assertEqual(economy['plan']['salary'],2000);self.assertEqual(economy['plan']['materials'],4000)
-        self.assertEqual(economy['fact']['salary'],400);self.assertEqual(economy['fact']['materials'],800)
-        self.assertEqual(economy['fact']['profit'],-200)
+        self.assertEqual(economy['plan'],dict(salary=2000,revenue=5000,materials=4000,other=0,profit=-1000,volume=10))
+        self.assertEqual(economy['fact'],dict(salary=400,revenue=1000,materials=800,other=0,profit=-200,volume=2))
+        self.assertEqual(economy['deviation'],dict(salary=-1600,revenue=-4000,materials=-3200,other=0,profit=800,volume=-8))
+        self.assertEqual((economy['finished_units'],economy['cost_per_unit'],economy['profit_per_unit']),(2,600,-100))
         self.post('usage',dict(work_id=w['id'],material_id=1,quantity=1))
         self.post('expenses',dict(batch_id=b['id'],amount=1,category='Доставка'))
-        e=self.get('economy?batch_id='+b['id'])['data'];self.assertEqual(e['fact']['profit'],-500)
-        self.assertEqual(e['deviation']['materials'],-3000)
+        e=self.get('economy?batch_id='+b['id'])['data']
+        self.assertEqual(e['fact'],dict(salary=400,revenue=1000,materials=1000,other=100,profit=-500,volume=2))
+        self.assertEqual(e['deviation'],dict(salary=-1600,revenue=-4000,materials=-3000,other=100,profit=500,volume=-8))
+        self.assertEqual((e['cost_per_unit'],e['profit_per_unit']),(750,-250))
         finance=self.get('finance')['data']['clients'][0];self.assertEqual(finance['profit'],-500)
         self.get('finance',self.worker,status=403)
 

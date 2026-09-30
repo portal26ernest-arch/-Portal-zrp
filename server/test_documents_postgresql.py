@@ -309,6 +309,23 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.assertEqual((foreign['today_quantity'],foreign['today_finance']['revenue'],foreign['open_invoice_count']),
                          (0,0,0))
 
+    def test_batch_economy_reconciles_integer_plan_fact_and_tenant_scope(self):
+        batch=self.post('batches',dict(client_id=1,product='PG economics fixture',quantity=2))['data']
+        task=self.post('tasks',dict(batch_id=batch['id'],operation_id=1,quantity=2,
+            assignees=[2],other_cost=1))['data']
+        self.post('work',dict(task_id=task['id'],quantity=1,request_id='pg-economy-work-once'),
+                  self.tokens['company_1_packer'])
+        self.post('expenses',dict(batch_id=batch['id'],category_code='logistics',amount='0.25',
+            note='synthetic batch expense',request_id='pg-economy-expense-once'),self.admin)
+        economy=self.get('economy?batch_id='+batch['id'],self.admin)['data']
+        self.assertEqual(economy['plan'],dict(salary=400,revenue=1000,materials=0,other=100,profit=500,volume=2))
+        self.assertEqual(economy['fact'],dict(salary=200,revenue=500,materials=0,other=25,profit=275,volume=1))
+        self.assertEqual(economy['deviation'],dict(salary=-200,revenue=-500,materials=0,other=-75,profit=-225,volume=-1))
+        self.assertEqual((economy['finished_units'],economy['cost_per_unit'],economy['profit_per_unit']),
+                         (1,225,275))
+        self.get('economy?batch_id='+batch['id'],self.tokens['company_1_packer'],status=403)
+        self.get('economy?batch_id='+batch['id'],self.tokens[2],status=400)
+
     def test_tariff_effective_version_keeps_postgresql_work_snapshots(self):
         from production_repository import Repository, utcnow
         before=self.post('work',dict(client_id=1,operation_id=1,quantity=2,request_id='pg-tariff-before'),
