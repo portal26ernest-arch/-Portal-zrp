@@ -518,3 +518,10 @@ Latest tested code at `e08e0d8dbe927cce9b82ab58e4ef4a5c7e9c29a4`; commits `cd22c
 
 - A–D remain partial: invitation/settings/audit role completeness; other Client 360 editable links/normalization; more source-backed profit and reminder cadence; final document history/role parity and disposable PG proof on current code.
 - Exact next: poll `64dc650` Web/Android UI/APK plus its PostgreSQL job; fix any software failure. Then continue A role matrix or C reminder/operator coverage, test, commit and push. No completion/blocked flag is warranted while software work remains.
+
+### GitHub CI finalization for this checkpoint
+
+- At code SHA `64dc650f5818d891d27e95e99c1d471f6e50923e`: Web #`36680058456` (with `documents-postgresql`), Android UI #`36680058499`, and Android APK #`36680058649` succeeded.
+- Server workflow was not triggered because server source did not change; same server code passed Server #`36678086835` at `f5475ae`, and local discovery at current source was **254 passed, 36 skipped**.
+- Anonymous GitHub API returned 403 for job logs, so no new DB/role/temp cleanup counts are claimed from this run. Earlier fixture cleanup evidence remains attributed to its earlier SHA/run.
+- No build version change: staging remains 3.5-dev-staging/versionCode 35.

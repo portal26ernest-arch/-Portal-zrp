@@ -609,3 +609,10 @@ Production cutover **NOT performed**.
 - Poll all three `64dc650` workflows and Web disposable PostgreSQL job. Fix software failures rather than reporting them as gates.
 - A still needs complete role/settings/audit policy coverage; B still needs other source-backed Client 360 fields and normalization; C still needs broader profitability/reconciliation and persistent disabled-by-default cadence/operator scheduling; D still needs final documents revision/history/filter role coverage and a disposable PG run at final code SHA.
 - After the new CI result, continue one of those blocks with targeted tests, commit and push; keep the roadmap counts unchanged until additional acceptance evidence supports a status change. No complete/blocked flag while these software tasks remain.
+
+### GitHub CI finalization for this checkpoint
+
+- At code SHA `64dc650f5818d891d27e95e99c1d471f6e50923e`, Web #`36680058456` (including `documents-postgresql`), Android UI #`36680058499`, and Android APK #`36680058649` all completed successfully.
+- The Server workflow did not trigger because this commit changed only Android/Web JS and browser tests. Server files are unchanged from `f5475ae`, where Server #`36678086835` passed; local full Server suite at current source: **254 passed, 36 skipped**.
+- Web GitHub job logs were unavailable via anonymous API (403); report only the green named PG job. Prior source fixture cleanup assertions at earlier Web PG runs remain prior evidence, not new cleanup-count output for this run.
+- `64dc650` APK remains staging 3.5-dev-staging/versionCode 35. Artifact/hash already recorded above from successful b588462 APK; no distributable changed in this source-only UI commit.
