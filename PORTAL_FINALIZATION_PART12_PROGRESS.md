@@ -931,3 +931,13 @@ Production cutover **NOT performed**.
 - Roadmap item 38 remains 🟡 until expanded PG evidence and rollout; counts remain **76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌**.
 
 **Exact NEXT:** commit/push the payroll role E2E and UI regression plus evidence; verify Web `documents-postgresql` on that SHA, Server checks and all triggered Android gates. Confirm job teardown succeeds. Then inspect the remaining high-priority Documents cross-session/UI or payroll source-backed gap and update exact NEXT.
+
+## VERIFIED — payroll settlement + exact profitability — `42dd31f` — 2026-09-30
+
+- GitHub Web run `36770988439` passed; disposable PostgreSQL ran **34 tests / 2 gated skips / 0 failures**. Both `test_payroll_settlement_role_scope_and_closed_snapshot_over_postgresql` and `test_zz_profitability_reconciles_postgresql_source_facts_without_allocating_overhead` passed. Cleanup verified `db=0 roles=0 temp=0`.
+- GitHub Server run `36770988418` passed on `42dd31f`. Runtime source at `d98f501` adds exact client/company margin basis points and finance totals while retaining kopeck money facts; PostgreSQL role accounts in the test fixture are created through the canonical company-scoped user path.
+- Item 38 is now ✅: accrued/paid/balance, append-only payouts, accountant/admin allowance, manager/packer denial, cross-company denial, replay safety and closed-snapshot immutability are evidenced.
+- Item 43 is now ✅: client/batch/company revenue, payroll, materials, attributable expenses, separate company overhead, profit and exact basis-point margins are source-backed and reconciled; no synthetic overhead allocation is introduced.
+- Current roadmap counts: **78 ✅ / 30 🟡 / 6 ⏳ / 12 🔌**. Production DB, DNS, release secrets and cutover remain untouched.
+
+**Exact NEXT:** finish item 17 Client 360 by wiring the existing client operation/tariff management path directly from the client card if the existing server capability supports it, with role/UI regression and no duplicate business logic. Then continue only remaining software-completable items; keep domain, physical-device checks, off-server backup target, signed Windows publication, official news sources and production cutover as external owner/provider gates.

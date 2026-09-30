@@ -772,3 +772,13 @@ Expanded the disposable PostgreSQL payroll HTTP test beyond packer denial/admin 
 Local validation: payroll settlement suite **25/25**, browser UI **35/35**, infra readiness **8/8**, compile/syntax/diff checks passed. The disposable PostgreSQL suite cannot run on this local host; current-SHA CI must establish the new role assertions. Item 38 remains 🟡 and counts are **76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌**.
 
 **Exact NEXT:** commit/push the new role cases and evidence; verify Web disposable PostgreSQL and teardown, Server checks, Android UI/APK. Then resume cross-session Documents or another remaining payroll E2E gap; do not claim production rollout readiness.
+
+## Verified payroll + profitability checkpoint — `42dd31f` — 2026-09-30
+
+Web/disposable PostgreSQL run `36770988439` completed successfully: **34 tests, 2 gated skips, 0 failures**, followed by verified cleanup `db=0 roles=0 temp=0`. The expanded payroll settlement role-flow and the profitability reconciliation test both passed. Server run `36770988418` also passed.
+
+Roadmap items **38** and **43** are therefore promoted to ✅. Payroll balances are backed by append-only minor-unit settlement facts and immutable closed snapshots. Profitability uses source-backed revenue/payroll/material/attributable-expense facts, keeps shared overhead separate, and exposes exact basis-point margins with kopeck totals. No production data or cutover action was performed.
+
+Current counts: **78 ✅ / 30 🟡 / 6 ⏳ / 12 🔌**.
+
+**Exact NEXT:** close the remaining source-backed Client 360 operation/tariff management gap, then proceed through the remaining software-completable release items. External gates remain explicitly separate.
