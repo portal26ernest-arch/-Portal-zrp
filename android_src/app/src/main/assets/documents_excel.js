@@ -152,6 +152,8 @@
             ['payroll','invoice','report','imports','company','clients','employees']
               .map(x => `<option>${x}</option>`).join(''))}
           ${selectField('docStatus', 'Статус', '<option value="all">Все</option><option value="ready">Готов</option><option value="archived">В архиве</option>')}
+          ${allowed('clients.read') || allowed('clients.manage') ? field('docClient', 'Клиент ID', state.filters.client_id || '', 'number', 'min="1" step="1"') : ''}
+          ${allowed('users.manage') || allowed('payroll.all') ? field('docEmployee', 'Сотрудник ID', state.filters.employee_id || '', 'number', 'min="1" step="1"') : ''}
           ${field('docFrom', 'С даты', '', 'date')}
           ${field('docTo', 'По дату', '', 'date')}
         </div>
@@ -166,6 +168,8 @@
     $('docStatus').value = state.filters.status || 'all';
     $('docFrom').value = state.filters.date_from || '';
     $('docTo').value = state.filters.date_to || '';
+    if ($('docClient')) $('docClient').value = state.filters.client_id || '';
+    if ($('docEmployee')) $('docEmployee').value = state.filters.employee_id || '';
 
     $('documentsFilters').addEventListener('submit', event => {
       event.preventDefault();
@@ -175,7 +179,9 @@
         category: $('docCategory').value,
         status: $('docStatus').value,
         date_from: $('docFrom').value,
-        date_to: $('docTo').value
+        date_to: $('docTo').value,
+        ...($('docClient') ? {client_id: $('docClient').value} : {}),
+        ...($('docEmployee') ? {employee_id: $('docEmployee').value} : {})
       };
       state.page = 1;
       state.rows = [];

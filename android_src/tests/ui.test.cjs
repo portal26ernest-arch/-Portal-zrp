@@ -222,6 +222,14 @@ test('browser UI regression',async t=>{
       await page.waitForFunction(()=>mock.calls.filter(c=>c.url.startsWith('/api/v3/documents?')).length>=2);
       await page.locator('#docQuery').fill('акт');await page.locator('#documentsFilters').evaluate(form=>form.requestSubmit());
       await page.waitForFunction(()=>mock.calls.some(c=>c.url.includes('/api/v3/documents?')&&c.url.includes('q=%D0%B0%D0%BA%D1%82')));
+      assert.equal(await page.locator('#docClient').count(),1);assert.equal(await page.locator('#docEmployee').count(),1);
+      await page.locator('#docClient').fill('1');await page.locator('#docEmployee').fill('101');await page.locator('#documentsFilters').evaluate(form=>form.requestSubmit());
+      await page.waitForFunction(()=>mock.calls.some(c=>c.url.includes('/api/v3/documents?')&&c.url.includes('client_id=1')&&c.url.includes('employee_id=101')));
+      const restricted=await fixture(browser,'packer',{width:390,height:844},true);
+      await restricted.page.evaluate(()=>mock.stage3Permissions=['documents.read']);await login(restricted.page);await restricted.page.evaluate(()=>go('documents'));
+      await restricted.page.waitForFunction(()=>document.querySelector('#content').innerText.includes('Готовый документ'));
+      assert.equal(await restricted.page.locator('#docClient').count(),0);assert.equal(await restricted.page.locator('#docEmployee').count(),0);
+      assert.deepEqual(restricted.errors,[]);await restricted.page.close();
 
       const file={name:'PORTAL_test.xlsx',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',buffer:Buffer.from('PK-test')};
       await page.evaluate(()=>go('excelImport'));await page.waitForFunction(()=>document.querySelector('#content').innerText.includes('Шаблон PORTAL 1.0'));
