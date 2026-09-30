@@ -19,6 +19,33 @@ permissions:
   contents: read
 
 jobs:
+  documents-postgresql:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: portal-ci-disposable-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      PORTAL_DOCUMENTS_PG_INTEGRATION: "1"
+      PORTAL_TEST_POSTGRES_ADMIN_DSN: postgresql://postgres:portal-ci-disposable-only@127.0.0.1:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -r server/requirements-test.txt "psycopg[binary]==3.2.10"
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - run: python -m unittest server.test_documents_postgresql -v
+
   web:
     runs-on: ubuntu-latest
     timeout-minutes: 20

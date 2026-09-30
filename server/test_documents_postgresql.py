@@ -1,6 +1,7 @@
 """Opt-in disposable PostgreSQL fixture: never accepts a production DSN.
 
-Run as the postgres OS user with PORTAL_DOCUMENTS_PG_INTEGRATION=1 (or
+Run as the postgres OS user, or set PORTAL_TEST_POSTGRES_ADMIN_DSN to an
+explicit isolated test cluster with PORTAL_DOCUMENTS_PG_INTEGRATION=1 (or
 PORTAL_WEB_PG_E2E=1 for the same disposable fixture under the Web gate).
 Creates a fresh randomly named portal_test_documents_* database, two restricted
 roles, synthetic companies and an in-process HTTP handler. Removes only resources
@@ -31,18 +32,27 @@ _REAL_PDF=os.environ.get('PORTAL_DOCUMENTS_PG_REAL_PDF')=='1'
 class DocumentsPostgreSQLTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        import pwd
         import psycopg
         from psycopg import sql
-        from psycopg.conninfo import make_conninfo
-        if os.getuid()!=pwd.getpwnam('postgres').pw_uid:raise RuntimeError('Run disposable fixture as postgres OS user')
+        from psycopg.conninfo import conninfo_to_dict, make_conninfo
+        admin_dsn=os.environ.get('PORTAL_TEST_POSTGRES_ADMIN_DSN')
+        if not admin_dsn:
+            import pwd
+            if os.name!='posix' or os.getuid()!=pwd.getpwnam('postgres').pw_uid:
+                raise RuntimeError('Set PORTAL_TEST_POSTGRES_ADMIN_DSN for an isolated disposable test cluster')
+        else:
+            admin_options=conninfo_to_dict(admin_dsn)
+            if admin_options.get('user')!='postgres' or admin_options.get('host') not in ('127.0.0.1','localhost','::1') or admin_options.get('hostaddr') not in (None,'127.0.0.1','::1') or admin_options.get('dbname') not in (None,'','postgres'):
+                raise RuntimeError('Disposable PostgreSQL admin DSN must target local postgres only')
+        cls.make_conninfo=make_conninfo
         cls.pg,cls.sql=psycopg,sql;cls.created_db=False;cls.created_roles=[]
         suffix=secrets.token_hex(6)
         db_prefix='portal_test_web_' if _WEB_E2E else 'portal_test_documents_'
         role_prefix='portal_web_' if _WEB_E2E else 'portal_docs_'
         cls.database=db_prefix+suffix
         cls.roles={'tenant':role_prefix+'t_'+suffix,'control':role_prefix+'c_'+suffix}
-        cls.super_connection=psycopg.connect('dbname=postgres user=postgres host=/var/run/postgresql',autocommit=True)
+        cls.admin_dsn=make_conninfo(admin_dsn,dbname='postgres') if admin_dsn else 'dbname=postgres user=postgres host=/var/run/postgresql'
+        cls.super_connection=psycopg.connect(cls.admin_dsn,autocommit=True)
         cls.tmp=tempfile.TemporaryDirectory(prefix='portal-documents-pg-')
         try:
             passwords={kind:secrets.token_urlsafe(32) for kind in cls.roles}
@@ -57,7 +67,7 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
             cls.migration('postgresql_stage8_documents_excel.sql')
             cls.migration('postgresql_stage9_invoice_revisions.sql')
             cls.migration('postgresql_stage10_access_invites.sql')
-            with psycopg.connect('dbname='+cls.database+' user=postgres host=/var/run/postgresql',autocommit=True) as admin:
+            with psycopg.connect(make_conninfo(cls.admin_dsn,dbname=cls.database),autocommit=True) as admin:
                 tenant=sql.Identifier(cls.roles['tenant']);control=sql.Identifier(cls.roles['control'])
                 for role in (tenant,control):
                     admin.execute(sql.SQL('GRANT CONNECT ON DATABASE {} TO {}').format(sql.Identifier(cls.database),role))
@@ -131,9 +141,10 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
 
     @classmethod
     def migration(cls,name):
-        result=subprocess.run(['psql','-X','-v','ON_ERROR_STOP=1','-q','-d',cls.database],
+        migration_dsn=cls.make_conninfo(cls.admin_dsn,dbname=cls.database)
+        result=subprocess.run(['psql','-X','-v','ON_ERROR_STOP=1','-q','--dbname',migration_dsn],
             input=(Path(__file__).parent/'migrations'/name).read_text(encoding='utf-8'),text=True,capture_output=True)
-        if result.returncode:raise RuntimeError('Disposable migration failed: '+name+'\n'+result.stderr)
+        if result.returncode:raise RuntimeError('Disposable migration failed: '+name)
 
     @classmethod
     def cleanup(cls):
@@ -150,8 +161,15 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
                 if not cls.database.startswith(expected):raise RuntimeError('Unexpected disposable database name')
                 cls.super_connection.execute(cls.sql.SQL('DROP DATABASE {}').format(cls.sql.Identifier(cls.database)))
             for role in cls.created_roles:cls.super_connection.execute(cls.sql.SQL('DROP ROLE {}').format(cls.sql.Identifier(role)))
+            if cls.created_db and cls.super_connection.execute('SELECT 1 FROM pg_database WHERE datname=%s',(cls.database,)).fetchone():
+                raise RuntimeError('Disposable PostgreSQL database cleanup failed')
+            for role in cls.created_roles:
+                if cls.super_connection.execute('SELECT 1 FROM pg_roles WHERE rolname=%s',(role,)).fetchone():
+                    raise RuntimeError('Disposable PostgreSQL role cleanup failed')
             cls.super_connection.close()
-        if hasattr(cls,'tmp'):cls.tmp.cleanup()
+        if hasattr(cls,'tmp'):
+            temp_path=cls.tmp.name;cls.tmp.cleanup()
+            if os.path.exists(temp_path):raise RuntimeError('Disposable PostgreSQL fixture files were not cleaned')
 
     @classmethod
     def tearDownClass(cls):cls.cleanup()
