@@ -71,7 +71,7 @@
         <div class="money-card"><span>Прочие расходы</span><strong>${rub(financeOther)}</strong></div>
         <div class="money-card emphasis"><span>Чистый результат</span><strong>${rub(finance.profit)}</strong><small>${margin==null?'Маржа не определена':'Маржа '+num(margin)+'%'}</small></div>
         ${d.month_finance?`<div class="money-card"><span>Выручка за месяц</span><strong>${rub(d.month_finance.revenue)}</strong></div><div class="money-card"><span>Начислено за месяц</span><strong>${rub(d.month_finance.salary)}</strong></div>`:''}
-        ${d.closed_month_payroll!==undefined?`<div class="money-card"><span>Выплачено / остаток</span><strong>${d.closed_month_payroll?`${rub(d.closed_month_payroll.paid)} / ${rub(d.closed_month_payroll.balance)}`:'Нет закрытого периода'}</strong></div>`:''}
+        ${(allowed('payroll.settlement.read')||allowed('payroll.all'))&&d.closed_month_payroll!==undefined?`<div class="money-card"><span>Закрытый ФОТ</span><strong>${d.closed_month_payroll?`Начислено ${rub(d.closed_month_payroll.accrued)} · Выплачено ${rub(d.closed_month_payroll.paid)} · Остаток ${rub(d.closed_month_payroll.balance)}`:'Нет закрытого периода'}</strong></div>`:''}
         ${d.expected_profit!==undefined?`<div class="money-card"><span>Плановая прибыль</span><strong>${d.expected_profit==null?'Недоступна':rub(d.expected_profit)}</strong></div>`:''}
       </div></section>`:'')+
       `<div class="dashboard-two"><section class="dashboard-section compact-panel"><div class="section-label"><h2>Зарплата</h2><button class="text-link" data-action="go" data-page="payrollPeriods">Открыть</button></div>
