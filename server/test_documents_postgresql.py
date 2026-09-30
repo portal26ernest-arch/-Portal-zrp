@@ -596,7 +596,12 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         with self.portal.tenants.company_scope(1),self.portal.db() as conn:
             repository=Repository(conn,1)
             repository.insert('invoices',dict(amount=100,due_at=(now.date()-timedelta(days=2)).isoformat(),work_ids=[]),invoice_id)
-            repository.insert('settings',dict(reminder_enabled=True,reminder_cadence='weekly',utc_offset_minutes=180),'control')
+            saved_settings=repository.get('settings','control',False)
+            if saved_settings:
+                saved_settings.update(reminder_enabled=True,reminder_cadence='weekly',utc_offset_minutes=180)
+                repository.update('settings',saved_settings)
+            else:
+                repository.insert('settings',dict(reminder_enabled=True,reminder_cadence='weekly',utc_offset_minutes=180),'control')
             first=run_configured_company(repository,now=now,run_id='reminder-run-1')
             conn.commit()
         self.assertEqual((first['outcome'],first['failed'],first['cadence']),('success',0,'weekly'))
