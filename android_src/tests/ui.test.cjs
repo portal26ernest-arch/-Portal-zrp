@@ -338,6 +338,20 @@ test('browser UI regression',async t=>{
       await page.waitForFunction(()=>pending.size===0);assert.equal(await page.locator('[data-action=selectCompany]').count(),2);
       assert.equal(await page.locator('#supportStrip').isVisible(),false);assert.deepEqual(errors,[]);await page.close();
     });
+    await t.test('platform owner audit is separate and filters are sent only from owner surface',async()=>{
+      const {page,errors}=await fixture(browser,'platform_owner');
+      await page.locator('#loginCompany').click();await page.locator('#sheetContent [data-action=technicalLogin]').click();await login(page);
+      await page.locator('[data-action=audit]').click();await page.waitForSelector('#ownerAuditCompany');
+      assert.match(await page.locator('#sheetContent').innerText(),/Только действия Platform Owner и системной поддержки/);
+      await page.locator('#ownerAuditCompany').fill('2');await page.locator('#ownerAuditActor').fill('1');
+      await page.locator('#ownerAuditEvent').fill('technical_access');await page.locator('#ownerAuditFrom').fill('2026-09-01');await page.locator('#ownerAuditTo').fill('2026-09-30');
+      await page.locator('#ownerAuditFilterForm [type=submit]').click();
+      await page.waitForFunction(()=>mock.calls.some(c=>c.url.startsWith('/api/platform/audit?')&&c.url.includes('company_id=2')));
+      const url=await page.evaluate(()=>mock.calls.filter(c=>c.url.startsWith('/api/platform/audit?')).at(-1).url);
+      assert.match(url,/actor_id=1/);assert.match(url,/event=technical_access/);assert.match(url,/from=2026-09-01/);assert.match(url,/to=2026-09-30/);
+      assert.match(await page.locator('#sheetContent').innerText(),/Запросы и секреты в журнал не включаются/);
+      assert.deepEqual(errors,[]);await page.close();
+    });
     await t.test('Stage 3 timer, presence, activity and system information',async()=>{
       const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);
       await page.evaluate(()=>mock.stage3Permissions=['work.write','tasks.read','tasks.manage','batches.receive','finance.read','invoices.read','invoices.create','users.manage','clients.read','clients.manage','access.history.read','payroll.own']);
