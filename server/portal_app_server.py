@@ -734,7 +734,7 @@ def company_module_for_route(path):
             'materials':'materials','usage':'materials',
             'invoices':'invoices','payments':'invoices','receivables':'invoices',
             'users':'users','invitations':'users','company-access':'users','presence':'users','activity':'users','audit':'users',
-            'tasks':'jobs','batches':'batches','shipments':'batches',
+            'tasks':'jobs','batches':'batches','shipments':'batches','returns':'batches',
             'permissions':'permissions','tariffs':'tariffs','finance':'radar','expenses':'expenses',
             'analytics':'analytics','settings':'control','documents':'documents',
             'document-file':'documents','document-metadata':'documents','document-upload':'documents',
