@@ -415,6 +415,29 @@ test('browser UI regression',async t=>{
       await page.waitForFunction(()=>pending.size===0);assert.equal(await page.locator('[data-action=selectCompany]').count(),2);
       assert.equal(await page.locator('#supportStrip').isVisible(),false);assert.deepEqual(errors,[]);await page.close();
     });
+    await t.test('owner invitation writes require selected company confirmation and stay in support audit',async()=>{
+      const {page,errors}=await fixture(browser,'platform_owner',{width:390,height:844},true);
+      await page.locator('#loginCompany').click();await page.locator('#sheetContent [data-action=technicalLogin]').click();await login(page);
+      await page.locator('[data-action=selectCompany][data-id="2"]').click();await page.locator('[data-action=confirmSheet]').click();
+      await page.waitForFunction(()=>S.writes===0);
+      const support=await page.evaluate(async()=>{await go('users');return {page:S.page,company:S.company?.id,stage3:S.stage3,permissions:S.me?.permissions};});
+      assert.equal(support.page,'users',JSON.stringify(support));await page.locator('[data-action=createAccessInvite]').click();
+      await page.locator('#inviteName').fill('Сотрудник второй компании');await page.locator('#inviteUsername').fill('second-company-staff');
+      await page.locator('#accessInviteForm [type=submit]').click();
+      await page.waitForFunction(()=>document.querySelector('#sheetContent').textContent.includes('Компания: Вторая компания · #2'));
+      assert.equal((await page.evaluate(()=>mock.calls)).some(c=>c.method==='POST'&&c.url==='/api/v3/invitations'),false);
+      await page.locator('[data-action=confirmSheet]').click();await page.waitForSelector('#oneTimeInviteToken');
+      const calls=await page.evaluate(()=>mock.calls),create=calls.find(c=>c.method==='POST'&&c.url==='/api/v3/invitations');
+      assert.equal(create.company,'2');assert.equal(create.body.action,'create');assert.equal(Object.hasOwn(create.body,'pin'),false);
+      assert.ok((await page.locator('#oneTimeInviteToken').inputValue()).length>=40);
+      await page.evaluate(()=>{closeSheet();actions.exitSupport();});await page.waitForSelector('[data-action=selectCompany]');
+      assert.equal(await page.locator('#oneTimeInviteToken').count(),0);assert.equal(await page.locator('#supportStrip').isVisible(),false);
+      await page.locator('[data-action=audit]').click();await page.waitForSelector('#ownerAuditCompany');
+      await page.locator('#ownerAuditCompany').fill('2');await page.locator('#ownerAuditEvent').fill('technical_access');
+      await page.locator('#ownerAuditFilterForm [type=submit]').click();
+      await page.waitForFunction(()=>mock.calls.some(c=>c.url.startsWith('/api/platform/audit?')&&c.url.includes('company_id=2')&&c.url.includes('event=technical_access')));
+      assert.deepEqual(errors,[]);await page.close();
+    });
     await t.test('platform owner audit is separate and filters are sent only from owner surface',async()=>{
       const {page,errors}=await fixture(browser,'platform_owner');
       await page.locator('#loginCompany').click();await page.locator('#sheetContent [data-action=technicalLogin]').click();await login(page);

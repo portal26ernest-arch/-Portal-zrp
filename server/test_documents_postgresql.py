@@ -596,6 +596,13 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
                               extra_headers={'X-Portal-Company':'2'})['data']
         self.assertTrue(selected['token'].startswith('2.'))
         self.assertEqual(selected['invite']['company_id'],2)
+        support_audit=self.request(
+            '/api/platform/audit?company_id=2&actor_id=1&event=technical_access',owner)
+        support_events=[(row['outcome'],json.loads(row['details']))
+                        for row in support_audit['rows']]
+        self.assertTrue(any(outcome=='success' and details.get('route')=='/api/v3/invitations'
+                            and details.get('status')==200 for outcome,details in support_events))
+        self.assertNotIn(pin,json.dumps(support_audit))
 
     def test_postgresql_platform_module_toggles_enforce_company_routes(self):
         """Company module flags persist in PostgreSQL and gate real tenant HTTP requests."""
