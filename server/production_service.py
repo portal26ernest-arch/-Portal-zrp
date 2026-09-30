@@ -933,10 +933,39 @@ class Production:
         return dict(as_of=local_today.isoformat(),currency='RUB',money_unit='kopeck',outstanding=outstanding_total,overdue=overdue_total,
                     buckets=buckets,clients=sorted(clients.values(),key=lambda row:(row['name'].casefold(),row['client_id'])),items=items,page=page,limit=limit,total=total)
 
-    def analytics(self):
+    def analytics(self,params=None):
+        params=params or {}
         all_team='analytics.read' in self.permissions
         if not all_team:self.need('work.write')
         rows=[w for w in self.scoped('works') if all_team or w['user_id']==self.u['id']];groups={}
+        start_text=params.get('from',[''])[0];end_text=params.get('to',[''])[0]
+        if bool(start_text)!=bool(end_text):raise ValueError('Укажите обе даты периода')
+        comparison=None
+        if start_text:
+            try:
+                start=datetime.strptime(start_text,'%Y-%m-%d').date();end=datetime.strptime(end_text,'%Y-%m-%d').date()
+            except (TypeError,ValueError):raise ValueError('Период аналитики должен быть задан датами YYYY-MM-DD')
+            if start.isoformat()!=start_text or end.isoformat()!=end_text or end<start or (end-start).days>365:
+                raise ValueError('Период аналитики должен быть от 1 до 366 дней')
+            offset=self.settings()['utc_offset_minutes']
+            all_rows=rows
+            previous_end=start-timedelta(days=1);previous_start=previous_end-timedelta(days=(end-start).days)
+            rows=[w for w in all_rows if start<=company_date(w['completed_at'],offset)<=end]
+            previous=[w for w in all_rows if previous_start<=company_date(w['completed_at'],offset)<=previous_end]
+            def measure(items):
+                timed=[w for w in items if w.get('duration_seconds') and w['duration_seconds']>0]
+                timed_units=sum(w['quantity'] for w in timed);seconds=sum(w['duration_seconds'] for w in timed)
+                return dict(units=sum(w['quantity'] for w in items),timed_units=timed_units,seconds=seconds,
+                            units_per_hour=timed_units/(seconds/3600) if seconds else None)
+            current_measure=measure(rows);previous_measure=measure(previous)
+            comparison=dict(period_start=start.isoformat(),period_end=end.isoformat(),
+                previous_start=previous_start.isoformat(),previous_end=previous_end.isoformat(),
+                current=current_measure,previous=previous_measure,
+                units_delta=current_measure['units']-previous_measure['units'],
+                units_percent_delta=((current_measure['units']-previous_measure['units'])/previous_measure['units']*100) if previous_measure['units'] else None,
+                units_per_hour_delta=(current_measure['units_per_hour']-previous_measure['units_per_hour'])
+                    if current_measure['units_per_hour'] is not None and previous_measure['units_per_hour'] is not None else None)
+        else:all_rows=rows
         for w in rows:
             key=(w['user_id'],w['client_id'],w['product'] or (self.r.get('batches',self.batch_for_work(w))['product'] if self.batch_for_work(w) else ''),w['operation_id'])
             g=groups.setdefault(key,dict(user_id=key[0],client_id=key[1],product=key[2],operation_id=key[3],quantity=0,samples=0,timed_quantity=0,seconds=0,rates=[]))
@@ -950,12 +979,14 @@ class Production:
         forecasts=[]
         for t in self.scoped('tasks'):
             if not all_team and self.u['id'] not in t['assignees']:continue
-            observations=[w for w in rows if w.get('task_id')==t['id']];done=sum(w['quantity'] for w in observations)
+            observations=[w for w in all_rows if w.get('task_id')==t['id']];done=sum(w['quantity'] for w in observations)
             timed=[w for w in observations if w['started_at']];elapsed=(datetime.fromisoformat(self.clock())-min(datetime.fromisoformat(w['started_at']) for w in timed)).total_seconds() if timed else 0
             pace=done/elapsed if elapsed>0 else 0
             eta=(datetime.fromisoformat(self.clock())+timedelta(seconds=max(0,t['quantity']-done)/pace)).isoformat() if pace else None
             forecasts.append(dict(task_id=t['id'],done=done,remaining=max(0,t['quantity']-done),units_per_hour=pace*3600 if pace else None,estimated_completion=eta,due_at=t['due_at']))
-        return dict(groups=list(groups.values()),forecasts=forecasts,ranking=False)
+        result=dict(groups=list(groups.values()),forecasts=forecasts,ranking=False)
+        if comparison is not None:result['comparison']=comparison
+        return result
 
     def today(self):
         settings=self.settings();now=datetime.fromisoformat(self.clock())+timedelta(minutes=settings['utc_offset_minutes']);day=now.date().isoformat()
@@ -1117,7 +1148,7 @@ class Production:
             self.need('expenses.read');return self.scoped('expenses')
         if action=='finance':return self.finance()
         if action=='economy':return self.economy(params.get('batch_id',[''])[0])
-        if action=='analytics':return self.analytics()
+        if action=='analytics':return self.analytics(params)
         if action=='payroll-periods':
             self.need('payroll.all')
             start=params.get('period_start',[None])[0];end=params.get('period_end',[None])[0]

@@ -117,6 +117,7 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
       else if(stage3&&url.startsWith('/api/v3/receivables'))data.data={as_of:'2026-09-30',money_unit:'kopeck',outstanding:12500,overdue:4000,total:2,page:1,limit:50,buckets:{current:{count:1,amount:8500},days_1_7:{count:1,amount:4000},days_8_30:{count:0,amount:0},days_31_60:{count:0,amount:0},days_61_plus:{count:0,amount:0},undated:{count:0,amount:0}},clients:[{client_id:1,name:'Клиент',outstanding:12500}],items:[{invoice_id:1,client_id:1,amount:8500,paid:0,outstanding:8500,due_at:'2026-09-30',overdue_days:0,bucket:'current'},{invoice_id:2,client_id:1,amount:6000,paid:2000,outstanding:4000,due_at:'2026-09-29',overdue_days:1,bucket:'days_1_7'}]};
       else if(stage3&&url==='/api/v3/payroll-periods')data.data=[{id:'period-1',period_start:'2026-09-01',period_end:'2026-09-15',closed_at:'2026-09-16',snapshot:{total_quantity:10,total_salary:10000,employees:[{employee_id:1,display_name:'Тестовый сотрудник',salary:10000}]}}];
       else if(stage3&&url.startsWith('/api/v3/payroll-settlements?'))data.data={period_id:'period-1',period_start:'2026-09-01',period_end:'2026-09-15',status:'закрыт',money_unit:'kopeck',employees:[{employee_id:1,display_name:'Тестовый сотрудник',accrued:10000,adjustment:0,paid:mock.payrollPaid,balance:10000-mock.payrollPaid}],totals:{accrued:10000,adjustment:0,paid:mock.payrollPaid,balance:10000-mock.payrollPaid},entries:[{id:'payment-1',employee_id:1,entry_type:'payout',effect:'payment',amount:2000,occurred_at:'2026-09-20',reason:'Первая выплата',reference:'Платёж 1'}]};
+      else if(stage3&&url.startsWith('/api/v3/analytics'))data.data={groups:[{user_id:1,client_id:1,product:'Товар',operation_id:1,quantity:12,units_per_hour:6}],forecasts:[],comparison:url.includes('from=')?{period_start:'2026-09-10',period_end:'2026-09-16',previous_start:'2026-09-03',previous_end:'2026-09-09',current:{units:12,units_per_hour:6},previous:{units:8,units_per_hour:4},units_delta:4,units_percent_delta:50,units_per_hour_delta:2}:undefined};
       else if(stage3&&url==='/api/v3/payroll-settlements'&&method==='POST'){mock.payrollPaid+=Math.round(Number(JSON.parse(payload).amount)*100);data.data={id:'payment-2',entry_type:'payout'};}
       else if(stage3&&url==='/api/v3/catalog')data.data={clients:[{id:1,name:'Клиент'}],operations:[{id:1,client_id:1,name:'Упаковка'}],products:mock.products.filter(p=>p.active),users:[]};
       else if(stage3&&url.startsWith('/api/v3/client-name-history'))data.data=mock.clientNameHistory;
@@ -407,6 +408,19 @@ test('browser UI regression',async t=>{
       await page.waitForFunction(()=>mock.calls.some(c=>c.method==='POST'&&c.url==='/api/platform/companies/2'));
       const saved=await page.evaluate(()=>mock.calls.findLast(c=>c.method==='POST'&&c.url==='/api/platform/companies/2'));
       assert.equal(saved.body.module_toggles.work,false);assert.equal(saved.company,'');
+      assert.deepEqual(errors,[]);await page.close();
+    });
+    await t.test('analytics compares company-local periods and labels missing timing honestly',async()=>{
+      const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);
+      await page.evaluate(()=>mock.stage3Permissions=['analytics.read']);await login(page);await page.evaluate(()=>go('analytics'));
+      await page.locator('#analyticsFrom').fill('2026-09-10');await page.locator('#analyticsTo').fill('2026-09-16');
+      await page.locator('#analyticsFilterForm [type=submit]').click();
+      await page.waitForFunction(()=>mock.calls.some(c=>c.url==='/api/v3/analytics?from=2026-09-10&to=2026-09-16'));
+      await page.waitForFunction(()=>document.querySelector('#content').innerText.includes('Объём за период'));
+      assert.match(await page.locator('#content').innerText(),/10\.09\.2026–16\.09\.2026 · сравнение с 03\.09\.2026–09\.09\.2026/);
+      assert.match(await page.locator('#content').innerText(),/Объём за период\s+12 шт\./);
+      assert.match(await page.locator('#content').innerText(),/Изменение объёма\s+4 шт\. · 50%/);
+      assert.match(await page.locator('#content').innerText(),/Изменение темпа\s+2 шт\.\/час/);
       assert.deepEqual(errors,[]);await page.close();
     });
     await t.test('client product catalog supports stable-ID create, rename and archive',async()=>{

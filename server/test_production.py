@@ -555,6 +555,25 @@ class ProductionTest(unittest.TestCase):
         forecast=self.get('analytics',self.worker)['data']['forecasts'][0]
         self.assertGreater(forecast['units_per_hour'],0);self.assertIsNotNone(forecast['estimated_completion'])
 
+    def test_analytics_period_comparison_uses_company_dates_and_valid_timing_only(self):
+        with portal.tenants.company_scope(1),portal.db() as conn:
+            repo=Repository(conn,1);worker=next(user for user in repo.catalog('users') if user['id']==self.worker_id)
+            Production(repo,worker,lambda:'2026-10-05T12:00:00.000000').work(
+                dict(client_id=1,operation_id=1,quantity=1))
+            Production(repo,worker,lambda:'2026-10-12T12:00:00.000000').work(
+                dict(client_id=1,operation_id=1,quantity=2,started_at='2026-10-12T11:00:00.000000'))
+            conn.commit()
+        data=self.get('analytics?from=2026-10-10&to=2026-10-16',self.worker)['data']
+        comparison=data['comparison']
+        self.assertEqual((comparison['previous_start'],comparison['previous_end']),('2026-10-03','2026-10-09'))
+        self.assertEqual((comparison['current']['units'],comparison['previous']['units'],comparison['units_delta']),(2,1,1))
+        self.assertEqual(comparison['current']['units_per_hour'],2)
+        self.assertIsNone(comparison['previous']['units_per_hour'])
+        self.assertIsNone(comparison['units_per_hour_delta'])
+        self.assertEqual(sum(group['quantity'] for group in data['groups']),2)
+        self.get('analytics?from=2026-10-10',self.worker,status=400)
+        self.get('analytics?from=2026-10-17&to=2026-10-10',self.worker,status=400)
+
     def test_multiple_operations_do_not_double_count_finished_units(self):
         b=self.batch();t=self.task(b);self.post('work',dict(task_id=t['id'],quantity=10),self.worker)
         op=portal.save_operation(dict(name='Проверка',employee_rate=1,client_rate=2),1)
