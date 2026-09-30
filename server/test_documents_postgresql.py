@@ -497,8 +497,15 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
             admin.execute('INSERT INTO platform_owners(id,username,display_name,pin_salt,pin_hash) VALUES(1,%s,%s,%s,%s)',
                           ('synthetic-owner','Synthetic Owner',salt,digest))
         owner=self.request('/api/platform/login',body={'username':'synthetic-owner','pin':pin})['token']
-        filtered=self.request('/api/platform/audit?company_id=1&actor_id=1&event=owner_login&page=1&limit=10',owner)
-        self.assertEqual(filtered['total'],1)
+        self.request('/api/platform/login',body={'username':'synthetic-owner','pin':pin})
+        day=datetime.now(timezone.utc).date().isoformat()
+        query=f'company_id=1&actor_id=1&event=owner_login&from={day}&to={day}&limit=1'
+        filtered=self.request('/api/platform/audit?'+query+'&page=1',owner)
+        next_page=self.request('/api/platform/audit?'+query+'&page=2',owner)
+        self.assertEqual(filtered['total'],2)
+        self.assertEqual((filtered['page'],filtered['limit'],len(filtered['rows'])),(1,1,1))
+        self.assertEqual((next_page['page'],len(next_page['rows'])),(2,1))
+        self.assertNotEqual(filtered['rows'][0]['id'],next_page['rows'][0]['id'])
         self.assertEqual(filtered['rows'][0]['event'],'owner_login')
         self.assertEqual(filtered['rows'][0]['outcome'],'success')
         self.assertNotIn(pin,json.dumps(filtered))
