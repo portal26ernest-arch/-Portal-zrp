@@ -905,3 +905,12 @@ Production cutover **NOT performed**.
 - Item 28 stays 🟡 because wider plan-entry/source completeness remains open; counts stay **76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌**. No production or secret use.
 
 **Exact NEXT:** continue item 17 Client 360 from its open acceptance: inspect the current client profile UI/API and identify the next concrete, source-backed editable or linked block gap. Preserve tenant scoping and history; add service, browser and opt-in PostgreSQL assertions only for a real missing contract. Do not promote item 17 without full evidence. Part 12 remains open; no completion/blocked flag.
+
+## AUTOMATIC CONTINUATION — Client 360 partial-source error state — 2026-09-30
+
+- Profile inspection found that allowed Client 360 sources used `.catch(()=>null)`, after which failed reads were indistinguishable from empty collections; the card omitted those sections without saying its data was incomplete.
+- Shared Android/Web UI now lists the names of allowed source sections that failed and labels the card as partial, while continuing to render source data that did load. Error text is escaped. Added a browser regression that returns a synthetic 503 for shipments and asserts the explicit shipment/return warning alongside available requisites.
+- Local validation: focused Client 360 browser UI **34/34**; full Android/Web Node+Playwright suite **55/55**; `ops.test_infra_readiness` **8/8**; JavaScript syntax and `git diff --check` passed. No backend, PostgreSQL, or production data was changed for this UI-only correction.
+- Item 17 remains 🟡: broader profile editing acceptance is still unspecified/incomplete. Roadmap counts remain **76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌**. Current SHA CI is pending.
+
+**Exact NEXT:** commit/push this shared UI partial-source state and regression, then verify current-SHA Android UI/build, Web, Server and disposable PostgreSQL checks. If green, continue item 43 profitability by inspecting existing canonical source facts and reconciliation coverage; do not invent/allocate absent amounts or promote item 17/43 without full evidence. No autopilot flag; production cutover remains unperformed.

@@ -748,3 +748,11 @@ Local validation: targeted production tests **2/2**, Android/Web Node+Playwright
 At `968cbe2`, GitHub Server Python 3.11/3.13, Web, Web's disposable PostgreSQL job, Android UI and staging APK checks all succeeded. The PostgreSQL job test and container-stop teardown steps completed successfully. Local validation on the implementation source was targeted production tests 2/2, Android/Web Node+Playwright 54/54, full Server discovery 297 tests/47 skips/0 failures, `ops.test_infra_readiness` 8/8, compileall, JS syntax and `git diff --check`. Local PostgreSQL execution was skipped because no disposable DSN was configured. Item 28 remains 🟡 pending broader plan/source completeness; roadmap counts remain 76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌. Production was untouched.
 
 **Exact NEXT:** resume item 17 Client 360 by inspecting remaining profile UI/API acceptance and identifying a concrete source-backed editable/linked block gap. Preserve company scope and history; add focused service/browser/disposable PostgreSQL coverage where a real gap exists. No complete or blocked flag.
+
+## Client 360 partial-source error state — 2026-09-30
+
+Inspection found that the shared Client 360 profile silently treated failed allowed reads as empty sections after swallowing their errors. It now shows an escaped notice naming failed sections while retaining successfully loaded data. A browser regression simulates a shipments read failure and verifies that the card reports a partial load while still rendering the available requisites.
+
+Local validation: focused Client 360 UI **34/34**, complete Android/Web Node+Playwright suite **55/55**, `ops.test_infra_readiness` **8/8**, JavaScript syntax and diff check passed. This UI-only change added no PostgreSQL/backend behavior; CI at the next SHA is pending. Item 17 remains 🟡 and counts remain **76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌**. Production systems were not touched.
+
+**Exact NEXT:** commit/push this UI and regression change, then verify all relevant current-SHA Android UI/APK, Web/disposable PostgreSQL and Server gates. Continue item 43 by tracing existing profitability source facts and reconciliation; leave unavailable financial facts unavailable and preserve partial roadmap status until evidence is complete.
