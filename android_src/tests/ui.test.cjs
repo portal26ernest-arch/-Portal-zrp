@@ -375,6 +375,11 @@ test('browser UI regression',async t=>{
       assert.equal((await page.evaluate(()=>mock.invites.find(i=>i.id==='invite-pending-1').status)),'revoked');
       assert.equal(await page.locator('[data-action=decideAccessInvite][data-id=access-request-1]').count(),0);
       assert.equal(await page.locator('[data-action=decideAccessInvite][data-id=invite-pending-1]').count(),0);
+      await page.locator('[data-action=createAccessInvite]').click();
+      await page.locator('#inviteName').fill('Новое приглашение директора');await page.locator('#inviteUsername').fill('director-invitee');
+      await page.locator('#accessInviteForm [type=submit]').click();await page.waitForSelector('#oneTimeInviteToken');
+      const directorCreate=(await page.evaluate(()=>mock.calls)).find(c=>c.method==='POST'&&c.url==='/api/v3/invitations'&&c.body?.username==='director-invitee');
+      assert.equal(directorCreate.body.action,'create');assert.equal(Object.hasOwn(directorCreate.body,'pin'),false);
       assert.deepEqual(errors,[]);await page.close();
       const packer=await fixture(browser,'packer',{width:390,height:844},true);
       await packer.page.evaluate(()=>{mock.stage3Permissions=['work.write','tasks.read'];mock.invites=[
@@ -419,8 +424,8 @@ test('browser UI regression',async t=>{
       const {page,errors}=await fixture(browser,'platform_owner',{width:390,height:844},true);
       await page.locator('#loginCompany').click();await page.locator('#sheetContent [data-action=technicalLogin]').click();await login(page);
       await page.locator('[data-action=selectCompany][data-id="2"]').click();await page.locator('[data-action=confirmSheet]').click();
-      await page.waitForFunction(()=>S.writes===0);
-      const support=await page.evaluate(async()=>{await go('users');return {page:S.page,company:S.company?.id,stage3:S.stage3,permissions:S.me?.permissions};});
+      await page.waitForSelector('#supportStrip:not(.hidden)');await page.waitForFunction(()=>S.page==='dashboard'&&!document.querySelector('.loading')&&S.writes===0);
+      const support=await page.evaluate(async()=>{await go('users');return {page:S.page,company:S.company?.id,stage3:S.stage3};});
       assert.equal(support.page,'users',JSON.stringify(support));await page.locator('[data-action=createAccessInvite]').click();
       await page.locator('#inviteName').fill('Сотрудник второй компании');await page.locator('#inviteUsername').fill('second-company-staff');
       await page.locator('#accessInviteForm [type=submit]').click();

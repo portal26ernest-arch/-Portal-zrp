@@ -549,6 +549,20 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
             self.assertEqual(conn.execute('SELECT status FROM portal_access_invites WHERE company_id=1 AND id=?',
                                           (invite_id,)).fetchone()[0],'approved')
 
+    def test_director_can_create_company_invitation_with_actor_audit_on_postgresql(self):
+        director=self.tokens['same_company_second_session']
+        created=self.request('/api/v3/invitations',director,{
+            'action':'create','role':'packer','username':'pg-director-invite',
+            'display_name':'Director-created invite','request_id':'pg-director-create-once'},method='POST')['data']
+        invite=created['invite']
+        self.assertEqual((invite['company_id'],invite['created_by']),(1,3))
+        self.assertTrue(created['token'].startswith('1.'))
+        audit=self.request('/api/v3/audit?action=access_invite.created&entity_id='+invite['id'],director)['data']['items']
+        self.assertEqual(len(audit),1)
+        self.assertEqual(audit[0]['actor_id'],3)
+        foreign=self.request('/api/v3/invitations?status=pending',self.tokens[2])['data']['items']
+        self.assertNotIn(invite['id'],[row['id'] for row in foreign])
+
     def test_invitation_links_existing_employee_without_creating_duplicate_employee(self):
         employee=next(row for row in self.request('/api/users',self.tokens[2])['employees']
                       if row['username']=='existing-employee')

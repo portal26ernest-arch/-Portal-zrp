@@ -691,7 +691,8 @@ def audit_route(path):
     """A fixed route label, not a raw URL that could carry secrets."""
     parts = path.strip("/").split("/")
     known = {"api", "platform", "companies", "audit", "me", "company", "dashboard", "clients", "admin",
-             "operations", "work", "mine", "payroll", "materials", "jobs", "invoices", "users", "login"}
+             "operations", "work", "mine", "payroll", "materials", "jobs", "invoices", "users", "login",
+             "v3", "invitations"}
     if any(p not in known and not p.isdecimal() for p in parts):
         return "unknown"
     return "/" + "/".join("{id}" if p.isdecimal() else p for p in parts)

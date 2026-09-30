@@ -302,6 +302,11 @@ class PortalAPITest(unittest.TestCase):
             portal.db()
         self.assertFalse(missing.exists())
 
+    def test_audit_route_allowlist_labels_invitation_api_without_raw_paths(self):
+        self.assertEqual(portal.audit_route('/api/v3/invitations'),'/api/v3/invitations')
+        self.assertEqual(portal.audit_route('/api/v3/invitations/123'),'/api/v3/invitations/{id}')
+        self.assertEqual(portal.audit_route('/api/v3/unlisted-secret-path'),'unknown')
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
