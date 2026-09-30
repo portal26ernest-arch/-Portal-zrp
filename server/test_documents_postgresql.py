@@ -227,7 +227,7 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.assertEqual(base64.b64decode(file_data['file_b64']),b'%PDF-1.4\nSynthetic\n%%EOF\n')
         archived=self.post('documents',dict(action='archive',id=doc['id']),second)['data']
         self.assertEqual(archived['status'],'archived')
-        refreshed=self.get('documents?include_archived=true',first)['data']
+        refreshed=self.get('documents?include_archived=true',first)['data']['items']
         self.assertEqual(next(row for row in refreshed if row['id']==doc['id'])['status'],'archived')
         self.get('document-metadata?id='+doc['id'],first)
 
