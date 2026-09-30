@@ -795,3 +795,12 @@ Production cutover **NOT performed**.
 - Roadmap stays **75 ✅ / 32 🟡 / 7 ⏳ / 12 🔌**; money item 105 remains 🟡. No production facts or schema changed.
 
 **Exact NEXT:** commit/push this test checkpoint, then verify Web's named `documents-postgresql` job at the resulting SHA. Confirm the job includes the new test and teardown succeeds before updating the report. Keep canonical kopecks authoritative; no data conversion or production reconciliation.
+
+### PostgreSQL reconciliation feedback and correction — 2026-09-30
+
+- The disposable PostgreSQL run at `60f99db` exposed a real contract mismatch: canonical `works` records do not carry `direct_cost`; the canonical source is the sum of company-scoped `usage.cost` rows for that work. The failing gate correctly cleaned up its disposable resources (`db=0 roles=0 temp=0`).
+- `ffeba71` added field-name-only diagnostics; Web's `documents-postgresql` run confirmed `direct_cost` was the non-integer/missing canonical field. No amounts or row payloads were emitted.
+- The reconciliation now derives legacy `direct_cost` from linked canonical usage rows, validating their company marker and integer-minor `cost`. A synthetic unit test checks exact equality and fails closed when usage drifts. It does not mutate either source.
+- Local migration-validation and money-unit tests: **14/14 passed**. The earlier full local Server attempt on this source had **275 run / 44 skipped / 1 failure** in an existing XLSX request-id repeat assertion; rerunning that exact assertion together with migration/money tests passed **15/15**. Treat the full-suite failure as recorded, not a green full run. Server workflows at `ffeba71` passed 3.11 and 3.13; its PostgreSQL run was superseded by this fix.
+
+**Exact NEXT:** commit/push the usage-based reconciliation correction and re-run the disposable PostgreSQL and Server workflows. Update this checkpoint only from those named final-SHA results; retain the money readiness item as 🟡 until the corrected linked-fact gate succeeds.

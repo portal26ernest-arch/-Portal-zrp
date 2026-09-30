@@ -138,6 +138,23 @@ def reconcile_linked_work_money(legacy_conn, ledger_conn, company_id,
     ledger_sql = ('SELECT payload FROM portal_production WHERE company_id=' +
                   ledger_placeholder + " AND kind='works'")
     canonical_rows = ledger_conn.execute(ledger_sql, (company_id,)).fetchall()
+    usage_sql = ('SELECT payload FROM portal_production WHERE company_id=' +
+                 ledger_placeholder + " AND kind='usage'")
+    usage_rows = ledger_conn.execute(usage_sql, (company_id,)).fetchall()
+    usage_by_work = {}
+    for row in usage_rows:
+        try:
+            usage = row[0] if isinstance(row[0], dict) else json.loads(row[0])
+        except (TypeError, ValueError) as exc:
+            raise ValidationError('Invalid canonical usage payload') from exc
+        if usage.get('company_id') != company_id:
+            raise ValidationError('Canonical usage company mismatch')
+        work_id = usage.get('work_id')
+        cost = usage.get('cost')
+        if work_id is None or type(cost) is not int:
+            raise ValidationError('Invalid canonical usage money field')
+        key = str(work_id)
+        usage_by_work[key] = usage_by_work.get(key, 0) + cost
     legacy_to_canonical = {'rate': 'employee_rate', 'salary': 'salary',
                            'client_rate': 'client_rate', 'revenue': 'revenue',
                            'direct_cost': 'direct_cost'}
@@ -164,9 +181,17 @@ def reconcile_linked_work_money(legacy_conn, ledger_conn, company_id,
             raise ValidationError('Linked legacy work row is missing')
         matched += 1
         for old_field in fields:
-            new_field = legacy_to_canonical[old_field]
             old_value = legacy[old_field]
-            new_value = work.get(new_field)
+            if old_field == 'direct_cost':
+                canonical_work_id = work.get('id')
+                if canonical_work_id is None:
+                    raise ValidationError('Missing canonical work identity for direct_cost')
+                new_value = usage_by_work.get(str(canonical_work_id), 0)
+                if old_value is None and new_value == 0:
+                    continue
+            else:
+                new_field = legacy_to_canonical[old_field]
+                new_value = work.get(new_field)
             if old_value is None and new_value is None:
                 continue
             try:

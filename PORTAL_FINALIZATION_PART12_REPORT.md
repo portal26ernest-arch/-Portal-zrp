@@ -664,3 +664,11 @@ Added an opt-in integration case that creates synthetic work through the API and
 Local relevant suite: **77 run, 46 passed, 31 skipped, 0 failed**. The skipped cases require disposable PostgreSQL; `compileall` and `git diff --check` passed. The prior source SHA `059c567` passed Server 3.11/3.13 and Web including disposable PostgreSQL, but does not include the new test.
 
 **Exact NEXT:** push this integration test and verify the named Web `documents-postgresql` job at its resulting SHA. Do not infer a PostgreSQL pass from local skips. Money item 105 stays 🟡; roadmap counts remain **75 ✅ / 32 🟡 / 7 ⏳ / 12 🔌**. No production data/schema was touched and production cutover was not performed.
+
+### PG feedback — linked direct-cost source correction — 2026-09-30
+
+The first real PostgreSQL reconciliation attempt failed safely: canonical work rows do not have a `direct_cost` property; material `usage.cost` rows are the canonical source. The fixture teardown verified `db=0 roles=0 temp=0`. Updated the read-only reconciler to sum company-scoped integer-minor `usage.cost` by canonical work id, validate tenant identity/type and compare that total with legacy direct cost. Added equality/drift unit coverage. The diagnostic reports field labels only, not money or row values.
+
+Local migration and money suites passed **14/14**. A full local suite run ended with **275 run / 44 skipped / 1 failure** at an existing XLSX idempotency repeat assertion; rerunning that assertion with the focused suites passed **15/15**. Do not describe the full local suite as green. The Server 3.11/3.13 jobs passed for `ffeba71`, but its disposable PG run still showed the issue and does not validate this correction.
+
+**Exact NEXT:** commit and push the correction, then confirm the named disposable PostgreSQL gate and Server jobs at the corrected SHA. Roadmap remains **75 ✅ / 32 🟡 / 7 ⏳ / 12 🔌**; no conversion or production-data operation occurred.

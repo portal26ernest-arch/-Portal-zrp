@@ -114,6 +114,31 @@ class MigrationValidationTest(unittest.TestCase):
         finally:
             conn.close()
 
+    def test_linked_legacy_direct_cost_reconciles_to_canonical_usage(self):
+        conn = fixture()
+        try:
+            conn.execute('ALTER TABLE work_log ADD COLUMN direct_cost REAL')
+            conn.execute('INSERT INTO work_log VALUES (?,?,?,?,?,?)',
+                         (88, 1, 1, 2.50, 5.00, 3.75))
+            work = dict(id='canonical-work-88', company_id=1, legacy_id=88,
+                        salary=250, revenue=500)
+            conn.execute('INSERT INTO portal_production VALUES (?,?,?,?,?)',
+                         (1, 'works', work['id'], json.dumps(work), '2026-09-30'))
+            usage = dict(id='usage-88', company_id=1, work_id=work['id'], cost=375)
+            conn.execute('INSERT INTO portal_production VALUES (?,?,?,?,?)',
+                         (1, 'usage', usage['id'], json.dumps(usage), '2026-09-30'))
+            self.assertEqual(reconcile_linked_work_money(conn, conn, 1),
+                             {'matched_work_count': 1,
+                              'unlinked_legacy_work_count': 1,
+                              'money_fields_checked': 3})
+            usage['cost'] = 374
+            conn.execute('UPDATE portal_production SET payload=? WHERE company_id=1 AND kind=? AND id=?',
+                         (json.dumps(usage), 'usage', usage['id']))
+            with self.assertRaisesRegex(ValidationError, 'direct_cost'):
+                reconcile_linked_work_money(conn, conn, 1)
+        finally:
+            conn.close()
+
     def test_postgresql_sql_adapter_contract_without_server(self):
         class Rows:
             def __init__(self, rows):
