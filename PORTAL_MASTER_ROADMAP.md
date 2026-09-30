@@ -136,7 +136,7 @@
 102. ✅ Runtime/API contracts используют employee_id; legacy telegram_id остаётся только в явно перечисленных adapter/import/schema/history bridges. Аудит: P0 external 0, P0 active identity 0, P1 50; disposable PostgreSQL/RLS проверка одинаковых legacy keys в двух компаниях прошла в Web run `36714999102` (`documents-postgresql`, 30 tests, 2 skipped, cleanup db=0/roles=0/temp=0). Отдельный Server Python 3.13 сбой invoice XLSX idempotency не относится к employee identity и остаётся в readiness.
 103. ✅ Защита от повторных записей/идемпотентность в критичных сценариях.
 104. ✅ Regression/unit/integration тесты и GitHub gates.
-105. 🟡 Денежные расчёты: новый производственный слой использует cents; legacy REAL-поля ещё требуют дальнейшей нормализации.
+105. 🟡 Денежные расчёты: канонические факты хранятся в копейках; PostgreSQL legacy NUMERIC получает точный Decimal. Добавлены read-only linked-work сверка и disposable PostgreSQL тест точечной записи. Unfiltered company scan остаётся fail-closed на duplicate canonical legacy links в синтетической истории; причины нужно разобрать до rehearsal полноисторического snapshot. Production rows не читались и не конвертировались.
 
 ## G1. Stage 7 staging — повторно проверено 28.09.2026
 
@@ -246,3 +246,5 @@
 - Part 12 checkpoint `e85928e`: item 32 is ✅ after internal FBS/FBO shipment and return lifecycle, idempotency, audit and role/tenant tests including Web disposable PostgreSQL. Counts: **74 ✅ / 33 🟡 / 7 ⏳ / 12 🔌**. Production cutover remains NOT performed.
 
 - Part 12 automatic continuation checkpoint `278fb2e` / server-Web source `06a7e93`: invitation UI role coverage now verifies Director decisions and Packer denial; reminder operator return contract is fixed and Web disposable PostgreSQL plus Server 3.11/3.13 passed. Android UI and staging APK at `278fb2e` passed. Counts remain **74 ✅ / 33 🟡 / 7 ⏳ / 12 🔌**; no completion status changed. Production cutover **NOT performed**.
+
+- Money/identity focused checkpoint `35db147`: current identity scanner still reports P0=0, P1=50 explicit bridges and P2=129 historical/fixture references; audit/infra tests 16/16. Web run `36722642388` passed web and disposable `documents-postgresql` (31 tests, 2 skipped; cleanup db=0/roles=0/temp=0), including bounded linked legacy/canonical money reconciliation. Server run `36722642200` passed Python 3.11 and 3.13 (277 tests per version, 43 skipped). An earlier unfiltered synthetic company scan detected duplicate canonical links and remains a fail-closed data integrity finding; bounded test success does not certify the entire synthetic history. Item 105 remains 🟡; counts stay **75 ✅ / 32 🟡 / 7 ⏳ / 12 🔌**.

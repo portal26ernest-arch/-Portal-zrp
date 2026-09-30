@@ -813,3 +813,22 @@ Production cutover **NOT performed**.
 - Money roadmap item remains 🟡 pending the corrected bounded disposable-PG result and, separately, full-history reconciliation. No live data was read or changed.
 
 **Exact NEXT:** push the bounded PG assertion and duplicate-scan regression test. Verify the specific-record test passes on disposable PostgreSQL with fixture cleanup. Preserve a separate explicit note that full-company reconciliation fails on duplicate synthetic history until that integrity condition is investigated; do not suppress duplicates or run production reconciliation.
+
+## Final evidence — linked legacy money check + canonical employee runtime audit — 2026-09-30
+
+### Current source and CI
+
+- HEAD after implementation/test push: `35db147` (`test: bound linked money check to synthetic work`), branch push succeeded. `git diff --check` and `python -m compileall -q server ops` pass.
+- Web run `36722642388` at this SHA passed `web` and `documents-postgresql`. The isolated PG suite ran **31 tests, 2 gated skips**, including `test_linked_legacy_and_canonical_money_reconcile_on_postgresql`; cleanup explicitly verified `db=0 roles=0 temp=0`.
+- Server run `36722642200` passed Python 3.11 and 3.13: **277 tests per runtime, 43 skipped, 0 failures**.
+- Local full Server discovery before the final optional-filter unit addition: **276 run, 44 skipped, 0 failures**. Current migration/money targeted tests: **15/15**; audit + infra readiness: **16/16**; identity scanner `--fail-on-p0`: P0 **0**. Compileall and diff checks pass.
+
+### Scope/result
+
+- Item 102 remains ✅: P0 external runtime **0**, P0 active direct identity **0**; P1 **50** explicit compatibility/import/schema/runtime bridge refs retained, P2 **129** history/fixture refs. No Telegram/Termux runtime is enabled.
+- Item 105 remains 🟡: PostgreSQL compatibility binds exact Decimal major units; read-only linked work reconciliation uses integer-minor canonical facts, including direct cost derived from same-company usage. The fresh, bounded PostgreSQL linked-record case passed and reveals no monetary values.
+- A previous unfiltered whole-company reconciliation over the *shared disposable test history* failed closed because duplicate canonical links to a legacy work key existed among earlier synthetic test rows. The corrected bounded test does not claim that all historical links are clean; full-company duplicate investigation and any authorized imported-snapshot rehearsal remain open. The earlier PG job also cleaned all disposable resources.
+- Numbered roadmap remains **75 ✅ / 32 🟡 / 7 ⏳ / 12 🔌**. No readiness item changed status.
+- No production DB, service, DNS, cutover, secrets or real financial records were touched.
+
+**Exact NEXT:** inspect the synthetic PostgreSQL suite's earlier work-producing tests and isolate the origin of duplicate canonical legacy links. If caused by fixture/order or an application double-write, correct that software defect with a strict unfiltered PG regression; if they are valid multiple records, define an explicit no-data-loss reconciliation policy and cover it. Do not weaken duplicate detection. Then continue software items 85 (Windows thin client/installer) and 77 (safe marketplace-news scheduler), and final regression/release gates. No complete/blocked flag; Part 12 remains open.

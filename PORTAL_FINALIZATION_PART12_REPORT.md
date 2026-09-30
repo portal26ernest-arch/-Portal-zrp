@@ -680,3 +680,13 @@ A full-company read-only PostgreSQL reconciliation in run `f6338d6` failed close
 Local migration/money tests passed **15/15**. Full Server discovery on the immediately preceding source passed **276 run / 44 skipped / 0 failed**; Server 3.11/3.13 passed at `f6338d6`; Web UI passed while Web's disposable PostgreSQL job exposed the duplicate-link condition. `compileall` and diff check pass.
 
 **Exact NEXT:** push and verify the bounded disposable-PG test plus teardown. Keep money item 105 🟡 until that test passes; separately retain duplicate historical links as a known full-scan integrity finding. Roadmap **75 ✅ / 32 🟡 / 7 ⏳ / 12 🔌**. Production DB/cutover untouched.
+
+## Final focused report — employee_id P0 and linked legacy money checkpoint — 2026-09-30
+
+At `35db147`, the employee identity scanner reports P0 external/direct-runtime dependencies **0**; retained compatibility bridges remain explicit (50 P1; 129 P2 history/fixtures). Identity-audit and infrastructure-readiness suites passed **16/16**.
+
+A safe, read-only legacy-major-unit to canonical-minor-unit work reconciler now uses PostgreSQL Decimal bindings, Decimal half-up comparison, and company-scoped canonical usage for direct costs. The targeted synthetic linked-work case passed in Web disposable PostgreSQL run `36722642388` (31 tests, 2 skipped; cleanup db=0/roles=0/temp=0). Server run `36722642200` passed 3.11 and 3.13 (277 tests each, 43 skipped). Local targeted migration/money suites passed 15/15; local full suite at the preceding behavior passed 276/44.
+
+The unfiltered whole-company sweep previously found duplicate links in earlier synthetic test history and remains fail-closed. The bounded PG success is not full-history proof. Item 105 stays 🟡. Readiness totals remain **75 ✅ / 32 🟡 / 7 ⏳ / 12 🔌**. No live financial facts or production systems were accessed.
+
+**Exact NEXT:** find the software source of duplicate links in the preceding PostgreSQL test operations and preserve strict duplicate rejection; then continue Windows thin client/installer and safe news scheduler framework, followed by final regression/release evidence. P1 identity bridges remain listed/covered. No autopilot flag; production cutover not performed.
