@@ -241,6 +241,22 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.assertEqual(next(row for row in refreshed if row['id']==doc['id'])['status'],'archived')
         self.get('document-metadata?id='+doc['id'],first)
 
+    def test_client_requisites_are_shared_scoped_and_audit_omits_field_values(self):
+        body={'client_id':1,'legal_name':'Synthetic requisites','inn':'PG-INN-CANARY',
+              'settlement_account':'PG-ACCOUNT-CANARY','request_id':'pg-client-requisites-once'}
+        saved=self.post('client-requisites',body,self.admin)['data']
+        retried=self.post('client-requisites',body,self.admin)['data']
+        self.assertEqual(saved,retried)
+        self.assertEqual(self.get('client-requisites?client_id=1',self.tokens['same_company_second_session'])['data']['inn'],'PG-INN-CANARY')
+        self.assertEqual(self.get('client-requisites?client_id=1',self.tokens[2])['data'],{})
+        self.request('/api/v3/client-requisites?client_id=1',self.admin,status=403,
+                     extra_headers={'X-Portal-Company':'2'})
+        audits=self.get('audit?action=client.requisites.updated',self.admin)['data']['items']
+        self.assertEqual(len(audits),1)
+        self.assertEqual(audits[0]['summary'],'Обновлены реквизиты клиента')
+        self.assertNotIn('PG-INN-CANARY',json.dumps(audits,ensure_ascii=False))
+        self.assertNotIn('PG-ACCOUNT-CANARY',json.dumps(audits,ensure_ascii=False))
+
     def test_dashboard_finance_and_receivables_use_company_scoped_postgresql_facts(self):
         work=self.post('work',dict(client_id=1,operation_id=1,quantity=2,request_id='pg-dashboard-work'),
                        self.tokens['company_1_packer'])['data']

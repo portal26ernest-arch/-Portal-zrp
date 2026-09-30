@@ -84,6 +84,50 @@ class Production:
         if not c or (active and not c['active']): raise PermissionError('Клиент недоступен')
         return c
 
+    CLIENT_REQUISITE_FIELDS=('legal_name','inn','kpp','ogrn','legal_address','settlement_account',
+        'bank_name','bik','correspondent_account','phone','email','contact_person','tax_info')
+
+    def _client_requisites(self,client_id):
+        self.client(client_id)
+        if not self.r.has_table('portal_client_requisites'):return {}
+        fields=(*self.CLIENT_REQUISITE_FIELDS,'updated_at')
+        row=self.r.sql('SELECT '+','.join(fields)+' FROM portal_client_requisites WHERE company_id=? AND client_id=?',
+                       (self.r.company_id,client_id)).fetchone()
+        return dict(zip(fields,row)) if row else {}
+
+    def client_requisites(self,params):
+        self.need('clients.read')
+        raw=params.get('client_id',[None])[0]
+        try:client_id=int(raw)
+        except (TypeError,ValueError):raise ValueError('Укажите корректного клиента')
+        return self._client_requisites(client_id)
+
+    def save_client_requisites(self,b):
+        self.need('clients.manage')
+        if set(b)-{'company_id','client_id','request_id',*self.CLIENT_REQUISITE_FIELDS}:
+            raise ValueError('Неизвестные поля реквизитов клиента')
+        identity=b.get('client_id')
+        if type(identity) is not int or identity<1:raise ValueError('Укажите корректного клиента')
+        self.client(identity)
+        if not self.r.has_table('portal_client_requisites'):
+            raise ValueError('Сначала примените миграцию реквизитов клиентов')
+        old=self._client_requisites(identity)
+        values=dict(old)
+        for key in self.CLIENT_REQUISITE_FIELDS:
+            if key not in b:continue
+            value=b[key]
+            if value is None:value=''
+            if not isinstance(value,str):raise ValueError('Реквизиты должны быть текстом')
+            values[key]=text(value,key,optional=True)
+        if not any(key in b for key in self.CLIENT_REQUISITE_FIELDS):
+            raise ValueError('Укажите данные для изменения')
+        columns=('company_id','client_id',*self.CLIENT_REQUISITE_FIELDS,'updated_at','updated_by')
+        updates=','.join(key+'=excluded.'+key for key in (*self.CLIENT_REQUISITE_FIELDS,'updated_at','updated_by'))
+        self.r.sql('INSERT INTO portal_client_requisites('+','.join(columns)+') VALUES('+','.join('?' for _ in columns)+') '
+                   'ON CONFLICT(company_id,client_id) DO UPDATE SET '+updates,
+                   (self.r.company_id,identity,*(values.get(key,'') for key in self.CLIENT_REQUISITE_FIELDS),self.clock(),self.u['id']))
+        return dict(client_id=identity,**{key:values.get(key,'') for key in self.CLIENT_REQUISITE_FIELDS})
+
     def entity(self,kind,identity):
         obj=self.r.get(kind,identity)
         if 'client_id' in obj: self.client(obj['client_id'])
@@ -991,9 +1035,9 @@ class Production:
 
     def command(self,action,body):
         if 'company_id' in body and (type(body['company_id']) is not int or body['company_id']!=self.r.company_id):raise PermissionError('Компания определяется сессией')
-        methods={'batches':self.batch,'products':self.product,'tasks':self.task,'work':self.work,'timers':self.timer,'links':self.link,'tariffs':self.create_tariff,'permissions':self.set_permissions,'usage':self.usage,'expenses':self.expense,'invoices':self.invoice,'payments':self.payment,'settings':self.settings,'shipments':self.ship,'returns':self.return_batch,'payroll-periods':self.payroll_period,'payroll-settlements':self.payroll_settlement,'chat':self.chat_command,'documents':self.document}
+        methods={'batches':self.batch,'products':self.product,'client-requisites':self.save_client_requisites,'tasks':self.task,'work':self.work,'timers':self.timer,'links':self.link,'tariffs':self.create_tariff,'permissions':self.set_permissions,'usage':self.usage,'expenses':self.expense,'invoices':self.invoice,'payments':self.payment,'settings':self.settings,'shipments':self.ship,'returns':self.return_batch,'payroll-periods':self.payroll_period,'payroll-settlements':self.payroll_settlement,'chat':self.chat_command,'documents':self.document}
         if action not in methods: raise ValueError('Действие не поддерживается')
-        authorization={'batches':'batches.receive','products':'clients.manage','tasks':'tasks.manage','work':'work.write','timers':'work.write','links':'work.link','permissions':'users.manage','usage':'materials.use','expenses':'expenses.manage','invoices':'invoices.create','payments':'payments.record','settings':'company.settings','shipments':'batches.receive','returns':'batches.receive','payroll-periods':'payroll.close','chat':'chat.write','documents':'documents.manage'}
+        authorization={'batches':'batches.receive','products':'clients.manage','client-requisites':'clients.manage','tasks':'tasks.manage','work':'work.write','timers':'work.write','links':'work.link','permissions':'users.manage','usage':'materials.use','expenses':'expenses.manage','invoices':'invoices.create','payments':'payments.record','settings':'company.settings','shipments':'batches.receive','returns':'batches.receive','payroll-periods':'payroll.close','chat':'chat.write','documents':'documents.manage'}
         if action in authorization:self.need(authorization[action])
         if action=='payroll-settlements':
             entry_type=body.get('entry_type')
@@ -1029,7 +1073,8 @@ class Production:
                 amount=result['amount'],request_id=result['request_id'],actor_kind=result['actor_kind'],
                 reason={'payout':'Выплата зарплаты','adjustment':'Корректировка начисления','reversal':'Сторно записи'}[result['entry_type']],
                 reason_sha256=hashlib.sha256(result['reason'].encode('utf-8')).hexdigest())
-        else:self.r.audit(self.u,action,result.get('id','control'))
+        else:self.r.audit(self.u,'client.requisites.updated' if action=='client-requisites' else action,
+                          result.get('client_id',result.get('id','control')) if action=='client-requisites' else result.get('id','control'))
         result=dict(result)
         if action in ('work','tariffs'):
             if not {'finance.read','rates.client','invoices.create'} & self.permissions:
@@ -1041,6 +1086,7 @@ class Production:
 
     def query(self,action,params):
         if action=='today':return self.today()
+        if action=='client-requisites':return self.client_requisites(params)
         if action=='client-name-history':
             self.need('clients.read')
             raw_client_id=params.get('client_id',[None])[0]

@@ -66,6 +66,40 @@ class ProductionTest(unittest.TestCase):
         self.assertEqual(self.get('catalog')['data']['products'],[])
         self.post('batches',dict(client_id=1,product_id=created['id'],quantity=1),status=400)
 
+    def test_client_requisites_are_company_scoped_editable_and_audited_without_values(self):
+        with portal.db() as conn:
+            conn.execute('DROP TABLE portal_client_requisites')
+            conn.execute('''CREATE TABLE portal_client_requisites(
+                company_id INTEGER NOT NULL,client_id INTEGER NOT NULL,legal_name TEXT,inn TEXT,kpp TEXT,ogrn TEXT,
+                legal_address TEXT,settlement_account TEXT,bank_name TEXT,bik TEXT,correspondent_account TEXT,
+                phone TEXT,email TEXT,contact_person TEXT,tax_info TEXT,updated_at TEXT NOT NULL,updated_by INTEGER,
+                PRIMARY KEY(company_id,client_id))''')
+        values={'legal_name':'ООО Тест','inn':'TEST-INN-001','bank_name':'Тестовый банк',
+                'settlement_account':'TEST-ACCOUNT-SECRET','email':'client@example.invalid'}
+        body=dict(client_id=1,**values,request_id='client-requisites-create-once')
+        first=self.request('/api/v3/client-requisites',self.admin,body,method='POST')['data']
+        retry=self.request('/api/v3/client-requisites',self.admin,body,method='POST')['data']
+        self.assertEqual(first,retry)
+        self.assertEqual(self.get('client-requisites?client_id=1')['data']['inn'],values['inn'])
+        self.assertEqual(self.get('client-requisites?client_id=1',self.other_admin)['data'],{})
+        self.request('/api/v3/client-requisites?client_id=1',self.admin,status=403,
+                     extra_headers={'X-Portal-Company':str(self.other)})
+        self.request('/api/v3/client-requisites',self.admin,dict(client_id=1,company_id=self.other,inn='x'),method='POST',status=403)
+        self.request('/api/v3/client-requisites',self.admin,dict(client_id=1,unknown='x'),method='POST',status=400)
+        self.request('/api/v3/client-requisites',self.admin,dict(client_id=1,inn=123),method='POST',status=400)
+        manager=self.role_token('manager')
+        self.request('/api/v3/client-requisites',manager,dict(client_id=1,inn='forbidden'),method='POST',status=403)
+        with portal.tenants.company_scope(1),portal.db() as conn:
+            row=conn.execute('SELECT company_id,client_id,updated_by FROM portal_client_requisites').fetchone()
+            self.assertEqual(tuple(row),(1,1,self.admin_id))
+            audits=[json.loads(row['payload']) for row in conn.execute(
+                "SELECT payload FROM portal_production WHERE company_id=1 AND kind='audit'")]
+        event=next(item for item in audits if item.get('event')=='client.requisites.updated')
+        self.assertEqual(event['entity_id'],'1')
+        serialized=json.dumps(event,ensure_ascii=False)
+        for secretish in values.values():self.assertNotIn(secretish,serialized)
+        self.assertEqual(self.get('audit?action=client.requisites.updated')['data']['total'],1)
+
     def test_client_rename_keeps_stable_id_and_work_snapshot_and_appends_name_history(self):
         with portal.tenants.company_scope(1),portal.db() as conn:
             original=portal.get_client(conn,1)['name']

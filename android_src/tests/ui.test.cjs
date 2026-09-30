@@ -88,7 +88,7 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
     localStorage.clear();
     const user={id:1,username:role,display_name:'Тестовый пользователь',role,company_id:1,telegram_id:role==='platform_owner'?null:101};
     const client={id:1,name:'Клиент',active:1};
-    window.mock={calls:[],offline:false,rejectWrite:false,hold:false,held:[],update:{ok:true,configured:false},timer:null,stage3Today:null,stage3Batches:null,stage3Permissions:null,clientNameHistory:[],tariffHistory:[],presenceOnline:true,saved:null,previewMode:'ok',applyMode:'ok',payrollPaid:2000,invites:[],products:[]};
+    window.mock={calls:[],offline:false,rejectWrite:false,hold:false,held:[],update:{ok:true,configured:false},timer:null,stage3Today:null,stage3Batches:null,stage3Permissions:null,clientNameHistory:[],clientRequisites:{legal_name:'ООО Тест',inn:'TEST-INN-001'},tariffHistory:[],presenceOnline:true,saved:null,previewMode:'ok',applyMode:'ok',payrollPaid:2000,invites:[],products:[]};
     const respond=(id,data)=>setTimeout(()=>window.PortalBridgeResult(id,JSON.stringify(data)),0);
     window.PortalNative={getServerUrl:()=> 'http://127.0.0.1:8765',getAppMetadata:()=>JSON.stringify(metadata),checkUpdates:id=>respond(id,mock.update),saveBase64FileAsync(id,filename,mime,file_b64){mock.saved={filename,mime,file_b64};respond(id,{ok:true,location:'Downloads/PORTAL/'+filename});},requestAsync(id,method,url,payload,token,company){
       mock.calls.push({method,url,body:payload?JSON.parse(payload):null,token,company});
@@ -120,6 +120,8 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
       else if(stage3&&url==='/api/v3/payroll-settlements'&&method==='POST'){mock.payrollPaid+=Math.round(Number(JSON.parse(payload).amount)*100);data.data={id:'payment-2',entry_type:'payout'};}
       else if(stage3&&url==='/api/v3/catalog')data.data={clients:[{id:1,name:'Клиент'}],operations:[{id:1,client_id:1,name:'Упаковка'}],products:mock.products.filter(p=>p.active),users:[]};
       else if(stage3&&url.startsWith('/api/v3/client-name-history'))data.data=mock.clientNameHistory;
+      else if(stage3&&url.startsWith('/api/v3/client-requisites?'))data.data=mock.clientRequisites;
+      else if(stage3&&url==='/api/v3/client-requisites'&&method==='POST'){mock.clientRequisites={...mock.clientRequisites,...JSON.parse(payload)};data.data=mock.clientRequisites;}
       else if(stage3&&url.startsWith('/api/v3/tariff-history?operation_id='))data.data=mock.tariffHistory;
       else if(stage3&&url==='/api/v3/products'&&method==='POST'){const body=JSON.parse(payload);let product;if(body.action==='create'){product={id:'product-1',company_id:1,client_id:body.client_id,name:body.name,active:true};mock.products.push(product);}else{product=mock.products.find(p=>p.id===body.product_id);if(product){if(body.action==='archive')product.active=false;else product.name=body.name;}}data.data=product;}
       else if(stage3&&url==='/api/v3/products')data.data=mock.products;
@@ -418,6 +420,13 @@ test('browser UI regression',async t=>{
       await page.locator('#clientSearch').fill('');await page.locator('#content [data-action=openClient]').click();
       await page.waitForFunction(()=>document.querySelector('#sheetContent')?.textContent.includes('Реквизиты и контакты'));
       assert.match(await page.locator('#sheetContent').innerText(),/Старое название → Новое <имя>/);
+      assert.match(await page.locator('#sheetContent').innerText(),/TEST-INN-001/);
+      await page.locator('[data-action=editClientRequisites]').click();await page.locator('#clientReqInn').fill('TEST-INN-002');
+      await page.locator('#clientRequisitesForm [type=submit]').click();
+      await page.waitForFunction(()=>mock.calls.some(c=>c.method==='POST'&&c.url==='/api/v3/client-requisites'));
+      const requisites=await page.evaluate(()=>mock.calls.find(c=>c.method==='POST'&&c.url==='/api/v3/client-requisites'));
+      assert.equal(requisites.body.client_id,1);assert.equal(requisites.body.inn,'TEST-INN-002');assert.equal('company_id' in requisites.body,false);
+      await page.waitForFunction(()=>document.querySelector('#sheetContent')?.textContent.includes('TEST-INN-002'));
       assert.match(await page.locator('#sheetContent').innerText(),/История ставок · 2/);
       await page.locator('#sheetContent details summary').click();
       assert.match(await page.locator('#sheetContent').innerText(),/Действует сейчас/);
@@ -433,6 +442,12 @@ test('browser UI regression',async t=>{
       await page.waitForFunction(()=>mock.calls.some(c=>c.method==='POST'&&c.url==='/api/v3/products'&&c.body?.action==='update'));
       await page.locator('[data-action=archiveCatalogProduct]').click();await page.waitForFunction(()=>mock.calls.some(c=>c.method==='POST'&&c.url==='/api/v3/products'&&c.body?.action==='archive'));
       assert.deepEqual(errors,[]);await page.close();
+      const restricted=await fixture(browser,'manager',{width:390,height:844},true);
+      await restricted.page.evaluate(()=>mock.stage3Permissions=['clients.read']);await login(restricted.page);await restricted.page.evaluate(()=>go('clients'));
+      await restricted.page.waitForSelector('#clientSearch');await restricted.page.locator('#content [data-action=openClient]').click();
+      await restricted.page.waitForFunction(()=>document.querySelector('#sheetContent')?.textContent.includes('Реквизиты и контакты'));
+      assert.equal(await restricted.page.locator('[data-action=editClientRequisites]').count(),0);
+      assert.deepEqual(restricted.errors,[]);await restricted.page.close();
     });
     await t.test('batch economics labels an absent plan as unavailable',async()=>{
       const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);await login(page);await page.evaluate(()=>go('batches'));
