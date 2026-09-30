@@ -292,7 +292,7 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         before=self.get('finance',self.admin)['data']
         before_client=next(row for row in before['clients'] if row['client_id']==1)
         work=self.post('work',dict(client_id=1,operation_id=1,quantity=2,request_id='pg-profitability-work'),
-                       self.tokens['company_1_packer'])['data']
+                       self.admin)['data']
         with self.portal.tenants.company_scope(1),self.portal.db() as conn:
             from production_repository import Repository
             Repository(conn,1).insert('usage',dict(work_id=work['id'],client_id=1,quantity='1',
