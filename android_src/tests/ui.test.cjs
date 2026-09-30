@@ -96,7 +96,7 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
       if(mock.rejectWrite&&method==='POST')return respond(id,{ok:false,httpStatus:401});
       let data={ok:true};
       if(stage3&&url==='/api/v3/meta')Object.assign(data,{ready:true,heartbeat_seconds:60,permissions:mock.stage3Permissions||['work.write','tasks.read','tasks.manage','batches.receive','finance.read','invoices.read','invoices.create','users.manage','access.history.read','payroll.own'],catalog:[{code:'work.write',group:'Работа',label:'Вносить свою выработку',recommended:['Сборщик']},{code:'access.history.read',group:'Сотрудники',label:'Просматривать историю входов сотрудников',recommended:['Управляющий','Администратор']}]});
-      else if(stage3&&url.startsWith('/api/v3/documents?'))data.data={items:[{id:'doc-ready',title:'Готовый документ',document_type:'report_xlsx',category:'report',document_date:'2026-09-29',created_at:'2026-09-29T00:00:00Z',size_bytes:2048,status:'ready',revision:1},{id:'doc-archived',title:'Архивный документ',document_type:'report_pdf',category:'report',document_date:'2026-09-28',created_at:'2026-09-28T00:00:00Z',size_bytes:1024,status:'archived',revision:1}],total:2,page:1,limit:50};
+      else if(stage3&&url.startsWith('/api/v3/documents?'))data.data={items:[{id:'doc-ready',title:'Готовый документ',document_type:'report_xlsx',category:'report',document_date:'2026-09-29',created_at:'2026-09-29T00:00:00Z',client_id:1,size_bytes:2048,status:'ready',revision:1},{id:'doc-archived',title:'Архивный документ',document_type:'report_pdf',category:'report',document_date:'2026-09-28',created_at:'2026-09-28T00:00:00Z',size_bytes:1024,status:'archived',revision:1}],total:2,page:1,limit:50};
       else if(stage3&&url.startsWith('/api/v3/document-history?'))data.data=[{id:'doc-ready',title:'Готовый документ',created_at:'2026-09-29T00:00:00Z',status:'ready',revision:1},{id:'doc-older',title:'Старая версия',created_at:'2026-09-28T00:00:00Z',status:'archived',revision:2}];
       else if(stage3&&url.startsWith('/api/v3/document-file?id=')){const result=url.includes('result-');data.data=result?{filename:'PORTAL_import_result.json',mime_type:'application/json',file_b64:'e30='}:{filename:'PORTAL_report.xlsx',mime_type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',file_b64:'UEs='};}
       else if(stage3&&url==='/api/v3/document-archive'&&method==='POST')data.data={id:'doc-ready',status:'archived'};
@@ -112,7 +112,7 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
       else if(stage3&&url==='/api/v3/batches')data.data=mock.stage3Batches||[{id:'batch-1',number:'PRT-2026-000001',client_id:1,client_name:'Клиент',product:'Коробка',received_at:'2026-09-24',quantity:10,done:2,remaining:8,stage:'in_progress',operations:[{operation:'Упаковка',done:2,planned:10}],ready:false}];
       else if(stage3&&url.startsWith('/api/v3/economy?'))data.data={plan:{salary:null,revenue:null,materials:null,other:null,profit:null,volume:null},fact:{salary:0,revenue:0,materials:0,other:0,profit:0,volume:0},deviation:{salary:null,revenue:null,materials:null,other:null,profit:null,volume:null},finished_units:0};
       else if(stage3&&url==='/api/v3/invoices')data.data=[];
-      else if(stage3&&url==='/api/v3/documents')data.data=[];
+      else if(stage3&&url==='/api/v3/documents')data.data=[{id:'doc-client',title:'Документ клиента',client_id:1,document_type:'invoice_pdf',status:'ready'}];
       else if(stage3&&url==='/api/v3/finance')data.data={clients:[]};
       else if(stage3&&url.startsWith('/api/v3/receivables'))data.data={as_of:'2026-09-30',money_unit:'kopeck',outstanding:12500,overdue:4000,total:2,page:1,limit:50,buckets:{current:{count:1,amount:8500},days_1_7:{count:1,amount:4000},days_8_30:{count:0,amount:0},days_31_60:{count:0,amount:0},days_61_plus:{count:0,amount:0},undated:{count:0,amount:0}},clients:[{client_id:1,name:'Клиент',outstanding:12500}],items:[{invoice_id:1,client_id:1,amount:8500,paid:0,outstanding:8500,due_at:'2026-09-30',overdue_days:0,bucket:'current'},{invoice_id:2,client_id:1,amount:6000,paid:2000,outstanding:4000,due_at:'2026-09-29',overdue_days:1,bucket:'days_1_7'}]};
       else if(stage3&&url==='/api/v3/payroll-periods')data.data=[{id:'period-1',period_start:'2026-09-01',period_end:'2026-09-15',closed_at:'2026-09-16',snapshot:{total_quantity:10,total_salary:10000,employees:[{employee_id:1,display_name:'Тестовый сотрудник',salary:10000}]}}];
@@ -424,7 +424,7 @@ test('browser UI regression',async t=>{
       assert.deepEqual(errors,[]);await page.close();
     });
     await t.test('client product catalog supports stable-ID create, rename and archive',async()=>{
-      const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);await page.evaluate(()=>mock.stage3Permissions=['work.write','tasks.read','tasks.manage','batches.receive','finance.read','invoices.read','invoices.create','users.manage','clients.read','clients.manage','access.history.read','payroll.own']);await login(page);
+      const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);await page.evaluate(()=>mock.stage3Permissions=['work.write','tasks.read','tasks.manage','batches.receive','finance.read','invoices.read','invoices.create','users.manage','clients.read','clients.manage','documents.read','access.history.read','payroll.own']);await login(page);
       await page.evaluate(async()=>{mock.clientNameOverride='Борискин';mock.clientNameHistory=[{client_id:1,old_name:'Старое название',new_name:'Новое <имя>',occurred_at:'2026-09-30T10:00:00'}];mock.tariffHistory=[{operation_id:1,effective_from:'2026-01-01T00:00:00',employee_rate:200,client_rate:500},{operation_id:1,effective_from:'2099-01-01T00:00:00',employee_rate:300,client_rate:700}];await go('clients');});await page.waitForSelector('#clientSearch');
       await page.locator('#clientSearch').fill('Старое название');assert.equal(await page.locator('#content [data-action=openClient]').isVisible(),true);
       await page.locator('#clientSearch').fill('Борисенко');assert.equal(await page.locator('#content [data-action=openClient]').isVisible(),true);
@@ -455,6 +455,10 @@ test('browser UI regression',async t=>{
       await page.locator('[data-action=editCatalogProduct]').click();await page.waitForSelector('#catalogProductForm');await page.locator('#catalogProductName').fill('Коробка новая');await page.locator('#catalogProductForm [type=submit]').click();
       await page.waitForFunction(()=>mock.calls.some(c=>c.method==='POST'&&c.url==='/api/v3/products'&&c.body?.action==='update'));
       await page.locator('[data-action=archiveCatalogProduct]').click();await page.waitForFunction(()=>mock.calls.some(c=>c.method==='POST'&&c.url==='/api/v3/products'&&c.body?.action==='archive'));
+      await page.evaluate(()=>actions.openClient({dataset:{id:'1'}}));await page.waitForSelector('[data-action=openClientDocuments]');
+      await page.locator('[data-action=openClientDocuments]').click();
+      await page.waitForFunction(()=>mock.calls.some(c=>c.url.startsWith('/api/v3/documents?')&&c.url.includes('client_id=1')));
+      assert.equal(await page.locator('#docClient').inputValue(),'1');
       assert.deepEqual(errors,[]);await page.close();
       const restricted=await fixture(browser,'manager',{width:390,height:844},true);
       await restricted.page.evaluate(()=>mock.stage3Permissions=['clients.read']);await login(restricted.page);await restricted.page.evaluate(()=>go('clients'));

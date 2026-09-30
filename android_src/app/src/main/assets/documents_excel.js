@@ -204,6 +204,17 @@
     }
   };
 
+  window.PortalDocuments = Object.freeze({
+    openForClient: async identity => {
+      requireDocs();
+      if (!allowed('clients.read') && !allowed('clients.manage')) throw new Error('Нет права фильтровать документы по клиенту');
+      const clientId=Number(identity);
+      if (!Number.isSafeInteger(clientId) || clientId<1) throw new Error('Некорректный клиент');
+      state.query='';state.filters={client_id:String(clientId),status:'all'};state.page=1;state.rows=[];
+      return screens.documents();
+    }
+  });
+
   actions.refreshPortalDocuments = () => {
     state.page = 1;
     state.rows = [];
