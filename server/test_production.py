@@ -270,7 +270,9 @@ class ProductionTest(unittest.TestCase):
         self.get('audit',self.worker,status=403)
 
     def test_company_settings_and_capability_changes_are_audited_without_values(self):
-        self.post('settings',dict(monday_time='11:30',utc_offset_minutes=240))
+        self.post('settings',dict(monday_time='11:30',utc_offset_minutes=240,
+                                 reminder_enabled=True,reminder_cadence='weekly'))
+        self.assertEqual(self.get('settings')['data']['reminder_cadence'],'weekly')
         self.post('permissions',dict(user_id=self.worker_id,permissions={'work.write':False}))
         settings=self.get('audit?action=company.settings.updated')['data']['items']
         capabilities=self.get('audit?action=user.permissions.updated')['data']['items']
@@ -283,7 +285,8 @@ class ProductionTest(unittest.TestCase):
                 "SELECT payload FROM portal_production WHERE company_id=1 AND kind='audit'")]
         events={row['event']:row for row in rows if row.get('event') in
                 ('company.settings.updated','user.permissions.updated')}
-        self.assertEqual(events['company.settings.updated']['fields'],['monday_time','utc_offset_minutes'])
+        self.assertEqual(events['company.settings.updated']['fields'],
+                         ['monday_time','reminder_cadence','reminder_enabled','utc_offset_minutes'])
         self.assertEqual(events['user.permissions.updated']['fields'],['work.write'])
         serialized=json.dumps(events,ensure_ascii=False)
         for value in ('11:30','240','true'):
@@ -608,8 +611,15 @@ class ProductionTest(unittest.TestCase):
 
     def test_control_schedule_and_uninvoiced_separate_from_debt(self):
         self.work();director=self.role_token('director');manager=self.role_token('manager')
-        self.assertEqual(self.get('settings',director)['data']['monday_time'],'10:00')
-        self.post('settings',dict(monday_time='11:00',wednesday_time='12:00',utc_offset_minutes=0),director)
+        defaults=self.get('settings',director)['data']
+        self.assertEqual(defaults['monday_time'],'10:00')
+        self.assertEqual((defaults['reminder_enabled'],defaults['reminder_cadence']),(False,'daily'))
+        self.post('settings',dict(monday_time='11:00',wednesday_time='12:00',utc_offset_minutes=0,
+                                  reminder_enabled=True,reminder_cadence='weekly'),director)
+        configured=self.get('settings',director)['data']
+        self.assertEqual((configured['reminder_enabled'],configured['reminder_cadence']),(True,'weekly'))
+        self.post('settings',dict(reminder_enabled='true'),director,status=400)
+        self.post('settings',dict(reminder_cadence='hourly'),director,status=400)
         self.get('settings',manager,status=403)
         self.post('settings',dict(monday_time='09:00'),manager,status=403)
         self.request('/api/v3/settings',self.admin,extra_headers={'X-Portal-Company':'2'},status=403)

@@ -3,7 +3,7 @@ import sqlite3
 from datetime import datetime, timezone
 
 from reminder_jobs import (Reminder, ReminderRunner, persist_once, source_candidates,
-                           run_scheduled_company, next_run_at)
+                           run_scheduled_company, run_configured_company, next_run_at)
 from production_repository import Repository
 
 
@@ -157,6 +157,30 @@ class ReminderRunnerTests(unittest.TestCase):
             records=repository.list('reminder_job_runs')
             self.assertEqual({row['outcome'] for row in records},{'retryable','success'})
             self.assertNotIn('private backend detail',str(records))
+        finally:connection.close()
+
+    def test_saved_company_settings_drive_operator_run_but_default_disabled(self):
+        connection=sqlite3.connect(':memory:')
+        try:
+            connection.execute('CREATE TABLE portal_production(company_id INTEGER,kind TEXT,id TEXT,payload TEXT,created_at TEXT,PRIMARY KEY(company_id,kind,id))')
+            repository=Repository(connection,8)
+            repository.insert('works',{'client_id':1,'completed_at':'2026-09-29'},'configured-work')
+            now=datetime(2026,9,30,21,tzinfo=timezone.utc)
+            disabled=run_configured_company(repository,now=now,run_id='configured-disabled')
+            self.assertEqual((disabled['outcome'],disabled['candidate_count']),('disabled',0))
+            self.assertEqual(repository.list('notifications'),[])
+            repository.insert('settings',{'reminder_enabled':True,'reminder_cadence':'weekly',
+                'utc_offset_minutes':180},'control')
+            enabled=run_configured_company(repository,now=now,run_id='configured-enabled')
+            self.assertEqual((enabled['outcome'],enabled['cadence'],enabled['cadence_id']),
+                ('success','weekly','2026-W40'))
+            self.assertEqual(enabled['sent'],1)
+            self.assertNotIn('company_id',enabled)
+            self.assertEqual(len(repository.list('notifications')),1)
+            other_company=Repository(connection,9)
+            isolated=run_configured_company(other_company,now=now,run_id='foreign-settings')
+            self.assertEqual((isolated['outcome'],isolated['sent']),('disabled',0))
+            self.assertEqual(other_company.list('notifications'),[])
         finally:connection.close()
 
 

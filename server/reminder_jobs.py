@@ -212,3 +212,25 @@ def run_scheduled_company(repository, *, enabled=False, cadence="daily",
                   duplicate=result["duplicate"], failed=result["failed"])
     repository.insert_once("reminder_job_runs", record, run_id)
     return {key: value for key, value in record.items() if key != "company_id"}
+
+
+def run_configured_company(repository, *, now=None, run_id=None):
+    """Run one explicitly scoped company using its saved opt-in settings.
+
+    Missing settings preserve the disabled-by-default contract. This is an
+    operator entry point, not a timer; the caller still owns scheduling and
+    supplies a transaction-scoped, tenant-bound repository.
+    """
+    company_id = getattr(repository, "company_id", None)
+    if type(company_id) is not int or company_id < 1:
+        raise PermissionError("An explicit company scope is required")
+    settings = repository.get("settings", "control", False) or {}
+    if not isinstance(settings, dict):
+        raise ValueError("Company reminder settings are invalid")
+    enabled = settings.get("reminder_enabled", False)
+    cadence = settings.get("reminder_cadence", "daily")
+    offset = settings.get("utc_offset_minutes", 0)
+    if type(enabled) is not bool:
+        raise ValueError("Company reminder enable flag must be explicit")
+    return run_scheduled_company(repository, enabled=enabled, cadence=cadence,
+                                 utc_offset_minutes=offset, now=now, run_id=run_id)

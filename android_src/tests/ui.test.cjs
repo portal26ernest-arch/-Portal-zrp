@@ -134,7 +134,7 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
       else if(stage3&&url.startsWith('/api/v3/invitations'))data.data={items:mock.invites.slice(),page:1,limit:50,total:mock.invites.length};
       else if(url==='/api/access-invites/accept')data.data={status:'pending_approval'};
       else if(stage3&&url==='/api/v3/company-access')data.data={active_users:1,user_limit:null,unlimited:true};
-      else if(stage3&&url==='/api/v3/settings')data.data={monday_time:'10:00',wednesday_time:'11:00',utc_offset_minutes:180,presence_heartbeat_seconds:60,presence_timeout_seconds:180};
+      else if(stage3&&url==='/api/v3/settings')data.data={monday_time:'10:00',wednesday_time:'11:00',utc_offset_minutes:180,presence_heartbeat_seconds:60,presence_timeout_seconds:180,reminder_enabled:false,reminder_cadence:'daily'};
       else if(stage3&&url.startsWith('/api/v3/audit'))data.data={items:[],page:1,limit:50,total:0};
       else if(stage3&&url==='/api/v3/permissions')data.data=[{id:1,display_name:'Тестовый пользователь',role:'admin',permissions:['work.write']}];
       if(url==='/api/ping')data.setup_required=false;
@@ -323,10 +323,16 @@ test('browser UI regression',async t=>{
       await director.page.waitForFunction(()=>document.querySelector('#content').textContent.includes('Правила сохранены')||document.querySelector('#content').textContent.includes('Понедельник'));
       assert.equal(await director.page.locator('#controlMonday').inputValue(),'10:00');
       assert.equal(await director.page.locator('#controlWednesday').inputValue(),'11:00');
+      assert.equal(await director.page.locator('#reminderEnabled').inputValue(),'false');
+      assert.equal(await director.page.locator('#reminderCadence').inputValue(),'daily');
       await director.page.locator('#controlMonday').fill('09:30');await director.page.locator('#controlForm [type=submit]').click();
       await director.page.waitForFunction(()=>mock.calls.some(c=>c.method==='POST'&&c.url==='/api/v3/settings'));
       const saved=await director.page.evaluate(()=>mock.calls.find(c=>c.method==='POST'&&c.url==='/api/v3/settings'));
       assert.equal(saved.body.monday_time,'09:30');assert.equal(saved.body.utc_offset_minutes,180);assert.equal(Object.hasOwn(saved.body,'company_id'),false);
+      await director.page.locator('#reminderEnabled').selectOption('true');await director.page.locator('#reminderCadence').selectOption('weekly');
+      await director.page.locator('#controlForm [type=submit]').click();await director.page.waitForFunction(()=>mock.calls.filter(c=>c.method==='POST'&&c.url==='/api/v3/settings').length===2);
+      const reminders=await director.page.evaluate(()=>mock.calls.filter(c=>c.method==='POST'&&c.url==='/api/v3/settings').at(-1).body);
+      assert.equal(reminders.reminder_enabled,true);assert.equal(reminders.reminder_cadence,'weekly');
       assert.deepEqual(director.errors,[]);await director.page.close();
       const manager=await fixture(browser,'manager',{width:390,height:844},true);
       await manager.page.evaluate(()=>mock.stage3Permissions=['work.write','tasks.read']);await login(manager.page);

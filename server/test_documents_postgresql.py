@@ -261,9 +261,13 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         # The PostgreSQL class shares one disposable database across tests;
         # unittest cleanup restores state even if an assertion below fails.
         self.addCleanup(lambda: self.post('settings',{'monday_time':'10:00','wednesday_time':'10:00',
-            'utc_offset_minutes':180,'presence_heartbeat_seconds':60,'presence_timeout_seconds':180},self.admin))
+            'utc_offset_minutes':180,'presence_heartbeat_seconds':60,'presence_timeout_seconds':180,
+            'reminder_enabled':False,'reminder_cadence':'daily'},self.admin))
         self.addCleanup(lambda: self.post('permissions',{'user_id':2,'permissions':{'work.write':True}},self.admin))
-        self.post('settings',{'monday_time':'11:30','utc_offset_minutes':240},self.admin)
+        self.post('settings',{'monday_time':'11:30','utc_offset_minutes':240,
+            'reminder_enabled':True,'reminder_cadence':'weekly'},self.admin)
+        configured=self.get('settings',self.admin)['data']
+        self.assertEqual((configured['reminder_enabled'],configured['reminder_cadence']),(True,'weekly'))
         self.post('permissions',{'user_id':2,'permissions':{'work.write':False}},self.admin)
         settings=self.get('audit?action=company.settings.updated',self.admin)['data']['items']
         capabilities=self.get('audit?action=user.permissions.updated',self.admin)['data']['items']
@@ -276,7 +280,8 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
             rows=Repository(conn,1).list('audit')
         events={row['event']:row for row in rows if row.get('event') in
                 ('company.settings.updated','user.permissions.updated')}
-        self.assertEqual(events['company.settings.updated']['fields'],['monday_time','utc_offset_minutes'])
+        self.assertEqual(events['company.settings.updated']['fields'],
+            ['monday_time','reminder_cadence','reminder_enabled','utc_offset_minutes'])
         self.assertEqual(events['user.permissions.updated']['fields'],['work.write'])
         serialized=json.dumps(events,ensure_ascii=False)
         for value in ('11:30','240','Synthetic packer 1','true'):
@@ -584,19 +589,20 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
     def test_postgresql_reminder_candidates_and_notification_sink_are_scoped_and_idempotent(self):
         from datetime import datetime, timedelta, timezone
         from production_repository import Repository
-        from reminder_jobs import run_scheduled_company
+        from reminder_jobs import run_configured_company
 
         now=datetime.now(timezone.utc)
         invoice_id='pg-reminder-invoice'
         with self.portal.tenants.company_scope(1),self.portal.db() as conn:
             repository=Repository(conn,1)
             repository.insert('invoices',dict(amount=100,due_at=(now.date()-timedelta(days=2)).isoformat(),work_ids=[]),invoice_id)
-            first=run_scheduled_company(repository,enabled=True,now=now,run_id='reminder-run-1')
+            repository.insert('settings',dict(reminder_enabled=True,reminder_cadence='weekly',utc_offset_minutes=180),'control')
+            first=run_configured_company(repository,now=now,run_id='reminder-run-1')
             conn.commit()
-        self.assertEqual((first['outcome'],first['failed']),('success',0))
+        self.assertEqual((first['outcome'],first['failed'],first['cadence']),('success',0,'weekly'))
         with self.portal.tenants.company_scope(1),self.portal.db() as conn:
             repository=Repository(conn,1)
-            second=run_scheduled_company(repository,enabled=True,now=now,run_id='reminder-run-2')
+            second=run_configured_company(repository,now=now,run_id='reminder-run-2')
             notices=repository.list('notifications')
             run_rows=repository.list('reminder_job_runs')
             conn.commit()

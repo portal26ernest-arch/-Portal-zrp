@@ -754,9 +754,12 @@ class Production:
 
     def settings(self,b=None):
         current=self.r.get('settings','control',False) or dict(monday_time='10:00',wednesday_time='10:00',utc_offset_minutes=180,
-                                                               presence_heartbeat_seconds=60,presence_timeout_seconds=180)
+                                                               presence_heartbeat_seconds=60,presence_timeout_seconds=180,
+                                                               reminder_enabled=False,reminder_cadence='daily')
         current.setdefault('presence_heartbeat_seconds',60)
         current.setdefault('presence_timeout_seconds',180)
+        current.setdefault('reminder_enabled',False)
+        current.setdefault('reminder_cadence','daily')
         if b is None: return current
         self.need('company.settings')
         for field in ('monday_time','wednesday_time'):
@@ -774,9 +777,17 @@ class Production:
             raise ValueError('Интервал активности должен быть 15–300 с, таймаут — не меньше двух интервалов и до 3600 с')
         current['presence_heartbeat_seconds']=heartbeat
         current['presence_timeout_seconds']=timeout
+        reminder_enabled=b.get('reminder_enabled',current['reminder_enabled'])
+        reminder_cadence=b.get('reminder_cadence',current['reminder_cadence'])
+        if type(reminder_enabled) is not bool: raise ValueError('Включение напоминаний должно быть явным значением да/нет')
+        if reminder_cadence not in ('daily','weekly'): raise ValueError('Допустимая периодичность напоминаний: daily или weekly')
+        current['reminder_enabled']=reminder_enabled
+        current['reminder_cadence']=reminder_cadence
         previous=self.r.get('settings','control',False) or dict(monday_time='10:00',wednesday_time='10:00',utc_offset_minutes=180,
-            presence_heartbeat_seconds=60,presence_timeout_seconds=180)
-        changed=sorted(key for key in ('monday_time','wednesday_time','utc_offset_minutes','presence_heartbeat_seconds','presence_timeout_seconds')
+            presence_heartbeat_seconds=60,presence_timeout_seconds=180,reminder_enabled=False,reminder_cadence='daily')
+        previous.setdefault('reminder_enabled',False)
+        previous.setdefault('reminder_cadence','daily')
+        changed=sorted(key for key in ('monday_time','wednesday_time','utc_offset_minutes','presence_heartbeat_seconds','presence_timeout_seconds','reminder_enabled','reminder_cadence')
             if current.get(key)!=previous.get(key))
         result=self.r.update('settings',current) if current.get('id') else self.r.insert('settings',current,'control')
         if changed:self.r.audit(self.u,'company.settings.updated','control',fields=changed)
