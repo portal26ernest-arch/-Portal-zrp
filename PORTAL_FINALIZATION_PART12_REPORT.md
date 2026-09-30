@@ -656,3 +656,11 @@ Current local evidence: full server discovery **274 run / 43 skipped / 0 failed*
 Money normalization item 105 remains 🟡; roadmap **75 ✅ / 32 🟡 / 7 ⏳ / 12 🔌**.
 
 **Exact NEXT:** push this source change and confirm Server and Web disposable PostgreSQL runs at its resulting SHA; then cover the Decimal binding and linked-fact reconciliation in PostgreSQL fixture tests. Keep existing REAL/NUMERIC history intact and do not convert production facts.
+
+## Focused report — disposable PostgreSQL money reconciliation test — 2026-09-30
+
+Added an opt-in integration case that creates synthetic work through the API and compares its linked legacy major-unit facts with the canonical integer-minor-unit ledger using the read-only company-scoped reconciler. The test reveals no business amounts and performs no writes through the reconciler.
+
+Local relevant suite: **77 run, 46 passed, 31 skipped, 0 failed**. The skipped cases require disposable PostgreSQL; `compileall` and `git diff --check` passed. The prior source SHA `059c567` passed Server 3.11/3.13 and Web including disposable PostgreSQL, but does not include the new test.
+
+**Exact NEXT:** push this integration test and verify the named Web `documents-postgresql` job at its resulting SHA. Do not infer a PostgreSQL pass from local skips. Money item 105 stays 🟡; roadmap counts remain **75 ✅ / 32 🟡 / 7 ⏳ / 12 🔌**. No production data/schema was touched and production cutover was not performed.

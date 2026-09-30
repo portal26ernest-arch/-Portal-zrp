@@ -786,3 +786,12 @@ Production cutover **NOT performed**.
 - At immediately preceding source SHA `3270d44`, GitHub Server Python 3.11/3.13, Web and its disposable PostgreSQL job all passed. The newly changed money binding is not included in those runs; current disposable PostgreSQL test file skips locally without DSN, so fresh CI for the next pushed source SHA remains necessary.
 - Item 105 remains 🟡; totals **75 ✅ / 32 🟡 / 7 ⏳ / 12 🔌**. The converter does not remove compatibility REAL affinity or prove deployed rows.
 - **Exact NEXT:** commit/push this tested boundary; await Server 3.11/3.13 and Web `documents-postgresql` on the new SHA and diagnose any failure. Then add PostgreSQL adapter-level coverage for Decimal binding plus linked work reconciliation under the existing disposable fixture. Preserve REAL SQLite compatibility and all historical values. Continue broader Client 360, Windows thin client/installer, and final release gates. No complete/blocked flag; no production cutover.
+
+## Focused continuation — disposable PostgreSQL money reconciliation test — 2026-09-30
+
+- Added `test_linked_legacy_and_canonical_money_reconcile_on_postgresql` to the existing isolated Documents PostgreSQL suite. It creates synthetic company-scoped work through the API, invokes the read-only linked-fact reconciliation under the tenant scope, and asserts linked facts and money-field checks without returning monetary values.
+- Local evidence before push: `test_money_units`, `test_migration_validation`, `test_migration_import`, `test_payroll_settlement`, and `test_documents_postgresql`: **77 run, 46 passed, 31 skipped, 0 failed**. All skips are PostgreSQL integration cases gated on an isolated DB DSN; they are not considered passes. `python -m compileall -q server` and `git diff --check` passed.
+- Previous code checkpoint `059c567` had successful GitHub Server Python 3.11/3.13 and Web/web plus disposable `documents-postgresql` jobs; this new integration test is not in that SHA and awaits its own CI execution.
+- Roadmap stays **75 ✅ / 32 🟡 / 7 ⏳ / 12 🔌**; money item 105 remains 🟡. No production facts or schema changed.
+
+**Exact NEXT:** commit/push this test checkpoint, then verify Web's named `documents-postgresql` job at the resulting SHA. Confirm the job includes the new test and teardown succeeds before updating the report. Keep canonical kopecks authoritative; no data conversion or production reconciliation.

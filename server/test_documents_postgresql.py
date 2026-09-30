@@ -376,6 +376,17 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.assertEqual(current[before['id']]['salary'],400)
         self.assertEqual((after['salary'],after['employee_rate']),(600,300))
 
+    def test_linked_legacy_and_canonical_money_reconcile_on_postgresql(self):
+        work=self.post('work',dict(client_id=1,operation_id=1,quantity=2,
+                                   request_id='pg-money-reconcile-work'),
+                       self.tokens['company_1_packer'])['data']
+        with self.portal.tenants.company_scope(1),self.portal.db() as conn:
+            from migration_validation import reconcile_linked_work_money
+            result=reconcile_linked_work_money(conn,conn,1,'postgresql','postgresql')
+        self.assertGreaterEqual(result['matched_work_count'],1)
+        self.assertGreaterEqual(result['money_fields_checked'],5)
+        self.assertGreaterEqual(result['unlinked_legacy_work_count'],0)
+
     def test_z_client_rename_history_aliases_are_company_scoped_on_postgresql(self):
         client_id=self.request('/api/admin/clients',self.admin,{'name':'Synthetic alias client'})['id']
         operation=self.request(f'/api/admin/clients/{client_id}/operations',self.admin,
