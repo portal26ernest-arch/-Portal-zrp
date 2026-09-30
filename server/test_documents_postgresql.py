@@ -324,7 +324,7 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         pin=secrets.token_urlsafe(24)
         salt,digest=self.portal.hash_pin(pin)
         with self.pg.connect(type(self).make_conninfo(self.admin_dsn,dbname=self.database),autocommit=True) as admin:
-            admin.execute('INSERT INTO platform_owners(id,username,display_name,pin_salt,pin_hash) VALUES(1,%s,%s,%s,%s)',
+            admin.execute('INSERT INTO platform_owners(id,username,display_name,pin_salt,pin_hash) VALUES(2,%s,%s,%s,%s)',
                           ('module-owner','Synthetic module owner',salt,digest))
         owner=self.request('/api/platform/login',body={'username':'module-owner','pin':pin})['token']
         self.assertEqual(self.request('/api/platform/companies/2',owner)['company']['module_toggles'],{})
