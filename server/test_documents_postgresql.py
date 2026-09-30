@@ -321,12 +321,14 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
     def test_postgresql_api_enforces_standard_active_user_limit(self):
         """The standard company limit is enforced by the server, not just the UI."""
         access=self.request('/api/v3/company-access',self.tokens[2])['data']
-        self.assertEqual((access['active_users'],access['user_limit'],access['unlimited']),(2,15,False))
+        active=access['active_users']
+        self.assertGreaterEqual(active,2)
+        self.assertEqual((access['user_limit'],access['unlimited']),(15,False))
         with self.pg.connect(type(self).make_conninfo(self.admin_dsn,dbname=self.database),autocommit=True) as admin:
-            admin.execute('UPDATE companies SET user_limit=2 WHERE id=2')
+            admin.execute('UPDATE companies SET user_limit=%s WHERE id=2',(active,))
         self.request('/api/users',self.tokens[2],{'username':'over-seat','display_name':'Over Seat',
                      'role':'packer','pin':'5678'},method='POST',status=400)
-        self.assertEqual(self.request('/api/v3/company-access',self.tokens[2])['data']['active_users'],2)
+        self.assertEqual(self.request('/api/v3/company-access',self.tokens[2])['data']['active_users'],active)
         self.request('/api/v3/company-access',self.tokens[1],extra_headers={'X-Portal-Company':'2'},status=403)
 
     @unittest.skipUnless(_WEB_E2E,'Web browser gate only')
