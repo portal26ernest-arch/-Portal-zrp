@@ -987,6 +987,12 @@ class Production:
 
     def query(self,action,params):
         if action=='today':return self.today()
+        if action=='client-name-history':
+            self.need('clients.read')
+            try:client_id=int(params.get('client_id',[None])[0])
+            except (TypeError,ValueError):raise ValueError('Укажите клиента')
+            self.client(client_id)
+            return [row for row in self.r.list('client_name_history') if row['client_id']==client_id]
         if action=='tasks':return self.task_rows()
         if action=='timers':
             if not {'tasks.read','work.write','tasks.manage'} & self.permissions:raise PermissionError('Нет доступа к работе')

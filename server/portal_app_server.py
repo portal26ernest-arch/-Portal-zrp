@@ -615,7 +615,7 @@ def write_catalogue(conn, table, values, item_id=None):
     return conn.execute(f"INSERT INTO {table}({','.join(values)}) VALUES({','.join('?' for _ in values)})", tuple(values.values())).lastrowid
 
 
-def save_client(body, client_id=None):
+def save_client(body, client_id=None, actor_id=None):
     if client_id is not None and client_id <= 0:
         raise ValueError("Некорректный ID клиента")
     with db() as conn:
@@ -628,7 +628,15 @@ def save_client(body, client_id=None):
         if conn.execute("SELECT 1 FROM portal_clients WHERE name=? COLLATE NOCASE AND id!=?", (name, client_id or 0)).fetchone():
             raise ValueError("Клиент с таким названием уже существует (включая архив)")
         if old and name != old["name"]:
-            rename_references(conn, old["name"], name)
+            repo=Repository(conn,tenants.COMPANY_ID.get())
+            if repo.ready():
+                repo.insert('client_name_history',dict(client_id=int(client_id),old_name=old['name'],
+                    new_name=name,event='renamed',actor_id=actor_id,occurred_at=now_text()))
+                repo.audit({'id':actor_id},'client.renamed',client_id)
+            else:
+                # Keep the legacy name-based compatibility path only before
+                # the stable-ID production ledger is enabled for this tenant.
+                rename_references(conn, old["name"], name)
         return write_catalogue(conn, "portal_clients", {"name": name, "active": active}, client_id)
 
 
@@ -730,7 +738,7 @@ def company_module_for_route(path):
             'payroll':'payroll','payroll-mine':'payroll','payroll-periods':'payrollPeriods',
             'payroll-settlements':'payrollPeriods',
             'chat':'teamChat','chat-attachments':'teamChat','chat-pins':'teamChat',
-            'clients':'clients','catalogue':'clients','operations':'clients','products':'clients',
+            'clients':'clients','catalogue':'clients','operations':'clients','products':'clients','client-name-history':'clients',
             'materials':'materials','usage':'materials',
             'invoices':'invoices','payments':'invoices','receivables':'invoices',
             'users':'users','invitations':'users','company-access':'users','presence':'users','activity':'users','audit':'users',
@@ -1189,9 +1197,9 @@ class Handler(BaseHTTPRequestHandler):
             if parts == ["api", "admin", "clients"]:
                 if method == "GET":
                     return self.send_json({"ok":True,"clients":get_clients(user,False)})
-                return self.send_json({"ok":True,"id":save_client(parse_body(self))})
+                return self.send_json({"ok":True,"id":save_client(parse_body(self),actor_id=user['id'])})
             if len(parts) == 4 and parts[:3] == ["api", "admin", "clients"] and method == "POST":
-                return self.send_json({"ok":True,"id":save_client(parse_body(self),int(parts[3]))})
+                return self.send_json({"ok":True,"id":save_client(parse_body(self),int(parts[3]),user['id'])})
             if len(parts) in (5, 6) and parts[:3] == ["api", "admin", "clients"] and parts[4] == "operations":
                 client_id = int(parts[3])
                 if method == "GET" and len(parts) == 5:

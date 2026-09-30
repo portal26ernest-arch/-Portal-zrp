@@ -66,6 +66,27 @@ class ProductionTest(unittest.TestCase):
         self.assertEqual(self.get('catalog')['data']['products'],[])
         self.post('batches',dict(client_id=1,product_id=created['id'],quantity=1),status=400)
 
+    def test_client_rename_keeps_stable_id_and_work_snapshot_and_appends_name_history(self):
+        with portal.tenants.company_scope(1),portal.db() as conn:
+            original=portal.get_client(conn,1)['name']
+            Repository(conn,1).insert('works',dict(client_id=1,client_name=original,operation_name='Packing',
+                quantity=1,salary=100,revenue=200,completed_at=utcnow()),'rename-history-work')
+            conn.commit()
+        response=self.request('/api/admin/clients/1',self.admin,{'name':'Canonical client rename'},method='POST')
+        renamed_id=response['id']
+        self.assertEqual(renamed_id,1)
+        with portal.tenants.company_scope(1),portal.db() as conn:
+            current=portal.get_client(conn,1)
+            work=Repository(conn,1).get('works','rename-history-work')
+            history=Repository(conn,1).list('client_name_history')
+            audit=Repository(conn,1).list('audit')
+        self.assertEqual(current['name'],'Canonical client rename')
+        self.assertEqual(work['client_name'],original)
+        self.assertEqual([(row['old_name'],row['new_name']) for row in history],[(original,'Canonical client rename')])
+        self.assertIn('client.renamed',[row['event'] for row in audit])
+        self.assertEqual(self.get('client-name-history?client_id=1')['data'],history)
+        self.assertEqual(self.get('client-name-history?client_id=1',self.other_admin)['data'],[])
+
     def test_chat_stickers_absence_validation_idempotency_and_tenant_scope(self):
         for key in ('accepted','in_progress','done','help','important','thanks'):
             item=self.post('chat',dict(subtype='sticker',sticker_key=key))['data']
