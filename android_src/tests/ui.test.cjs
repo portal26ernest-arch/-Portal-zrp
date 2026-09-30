@@ -621,13 +621,21 @@ test('browser UI regression',async t=>{
       assert.match(rendered,/Карточка загружена частично/);assert.match(rendered,/Не удалось загрузить: Отгрузки и возвраты/);
       assert.match(rendered,/Реквизиты и контакты/);assert.deepEqual(errors,[]);await page.close();
     });
-    await t.test('finance radar shows source-backed exact margins and monthly profitability newest first',async()=>{
+    await t.test('finance radar combines source-backed profitability, receivables and financial attention with capability gating',async()=>{
       const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);
-      await page.evaluate(()=>{mock.stage3Permissions=['finance.read'];mock.stage3Finance={clients:[{client_id:1,client_name:'Клиент прибыль',revenue:10000,salary:3000,materials:1000,other:500,profit:5500,margin:0.55,margin_bps:5500,average_batch_profit:2750}],months:{'2026-08':{revenue:8000,salary:3000,materials:1000,other:500,overhead:2000,profit:1500,margin_bps:1875},'2026-09':{revenue:10000,salary:4000,materials:1200,other:700,overhead:2500,profit:1600,margin_bps:1600}},totals:{revenue:10000,salary:3000,materials:1000,other:500},client_profit:5500,client_margin_bps:5500,company_overhead:1000,net_profit:4500,net_margin_bps:4500};});
+      await page.evaluate(()=>{mock.stage3Permissions=['finance.read','invoices.read'];mock.stage3Finance={clients:[{client_id:1,client_name:'Клиент прибыль',revenue:10000,salary:3000,materials:1000,other:500,profit:5500,margin:0.55,margin_bps:5500,average_batch_profit:2750},{client_id:2,client_name:'Клиент убыток',revenue:2000,salary:1800,materials:500,other:200,profit:-500,margin_bps:-2500,average_batch_profit:-500}],months:{'2026-08':{revenue:8000,salary:3000,materials:1000,other:500,overhead:2000,profit:1500,margin_bps:1875},'2026-09':{revenue:10000,salary:4000,materials:1200,other:700,overhead:2500,profit:1600,margin_bps:1600}},totals:{revenue:12000,salary:4800,materials:1500,other:700},client_profit:5000,client_margin_bps:4167,company_overhead:1000,net_profit:4000,net_margin_bps:3333};mock.stage3Today={date:'2026-09-30',mode:'management',tasks:[],attention:[{type:'payment_late',label:'Просрочен платёж',amount:4000},{type:'batch_late',label:'Просрочена партия'}]};});
       await login(page);await page.evaluate(()=>go('radar'));await page.waitForSelector('#content h2');
-      const rendered=await page.locator('#content').innerText();
-      for(const label of ['Прибыль клиентов','Общие расходы','Чистая прибыль','Динамика по месяцам','ФОТ','Материалы','Расходы по клиентам','Прибыль'])assert.ok(rendered.includes(label),`missing ${label}`);
-      assert.ok(rendered.indexOf('2026-09')<rendered.indexOf('2026-08'));assert.deepEqual(errors,[]);await page.close();
+      let rendered=await page.locator('#content').innerText();
+      for(const label of ['Прибыль клиентов','Общие расходы','Чистая прибыль','Убыточные клиенты','Открытая дебиторка','Просрочено','Открытые счета','Требует внимания','Просрочен платёж','Динамика по месяцам','ФОТ','Материалы','Расходы по клиентам','Прибыль'])assert.ok(rendered.includes(label),`missing ${label}`);
+      assert.match(rendered,/Убыточные клиенты\s+1/);assert.match(rendered,/Открытая дебиторка\s+125/);assert.match(rendered,/Просрочено\s+40/);
+      assert.doesNotMatch(rendered,/Просрочена партия/);assert.ok(rendered.indexOf('2026-09')<rendered.indexOf('2026-08'));
+      assert.equal(await page.evaluate(()=>mock.calls.some(c=>c.url.startsWith('/api/v3/receivables?'))),true);
+      await page.evaluate(()=>{S.me.permissions=S.me.permissions.filter(p=>p!=='invoices.read');mock.calls=[];mock.stage3Today={date:'2026-09-30',mode:'management',tasks:[],attention:[]};void go('radar');});
+      await page.waitForFunction(()=>document.querySelector('#content').textContent.includes('Финансовый радар')&&!document.querySelector('.loading'));
+      rendered=await page.locator('#content').innerText();
+      assert.doesNotMatch(rendered,/Открытая дебиторка|Просрочено|Открытые счета/);
+      assert.equal(await page.evaluate(()=>mock.calls.some(c=>c.url.startsWith('/api/v3/receivables?'))),false);
+      assert.deepEqual(errors,[]);await page.close();
     });
     await t.test('batch economics shows basis-point margins and per-unit profit without inventing zero',async()=>{
       const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);
