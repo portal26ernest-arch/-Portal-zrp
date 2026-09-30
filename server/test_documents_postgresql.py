@@ -131,7 +131,7 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
                      VALUES(?,3,'second-director','Synthetic second director','director',103,1,?,?,?,?)''',(1,salt,pin_hash,utcnow(),utcnow()))
                 cls.tokens['same_company_second_session']=cls.portal.create_session(conn,3)
             # Only the fixture administrator adjusts sequences after explicit IDs.
-            with psycopg.connect('dbname='+cls.database+' user=postgres host=/var/run/postgresql',autocommit=True) as admin:
+            with psycopg.connect(make_conninfo(cls.admin_dsn,dbname=cls.database),autocommit=True) as admin:
                 for table in ('app_users','portal_clients','portal_client_operations'):
                     admin.execute(sql.SQL("SELECT setval(pg_get_serial_sequence(%s,'id'),GREATEST((SELECT MAX(id) FROM {}),1),true)").format(sql.Identifier(table)),(table,))
             cls.http=cls.portal.ThreadingHTTPServer(('127.0.0.1',0),legacy.QuietHandler)
