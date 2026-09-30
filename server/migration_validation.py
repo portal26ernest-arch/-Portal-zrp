@@ -171,12 +171,16 @@ def reconcile_linked_work_money(legacy_conn, ledger_conn, company_id,
                 continue
             try:
                 major = Decimal(str(old_value))
-                if not major.is_finite() or type(new_value) is not int:
-                    raise InvalidOperation
+                if not major.is_finite():
+                    raise ValidationError('Invalid legacy work money field: ' + old_field)
+                if type(new_value) is not int:
+                    raise ValidationError('Invalid canonical minor-unit field: ' + old_field)
                 expected_minor = int((major * 100).quantize(Decimal('1'),
                                                          rounding=ROUND_HALF_UP))
+            except ValidationError:
+                raise
             except (InvalidOperation, TypeError, ValueError) as exc:
-                raise ValidationError('Invalid linked work money value') from exc
+                raise ValidationError('Invalid linked work money field: ' + old_field) from exc
             if expected_minor != new_value:
                 raise ValidationError('Legacy/canonical work money mismatch: ' + old_field)
             checked += 1
