@@ -331,6 +331,43 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.assertEqual(self.request('/api/v3/company-access',self.tokens[2])['data']['active_users'],active)
         self.request('/api/v3/company-access',self.tokens[1],extra_headers={'X-Portal-Company':'2'},status=403)
 
+    def test_payroll_settlement_role_scope_and_closed_snapshot_over_postgresql(self):
+        """Only an authorized same-company actor can append a payout; close snapshots stay immutable."""
+        from datetime import date, timedelta
+        from production_repository import Repository
+
+        work=self.post('work',dict(client_id=1,operation_id=1,quantity=2),self.tokens[1])['data']
+        anchor=date.today()-timedelta(days=180)
+        start=anchor.replace(day=1);end=anchor.replace(day=15)
+        historical=dict(work,id='pg-settlement-'+work['id'],
+                        completed_at=end.isoformat()+'T12:00:00.000000',
+                        created_at=end.isoformat()+'T12:00:00.000000')
+        with self.portal.tenants.company_scope(1),self.portal.db() as conn:
+            Repository(conn,1).insert('works',{k:v for k,v in historical.items() if k not in {'id','company_id'}},historical['id'])
+            conn.commit()
+        period=self.post('payroll-periods',dict(period_start=start.isoformat(),period_end=end.isoformat()),self.tokens[1])['data']
+        employee_id=period['snapshot']['employees'][0]['employee_id']
+        with self.portal.tenants.company_scope(1),self.portal.db() as conn:
+            repo=Repository(conn,1)
+            employee_id=repo.payroll_employee(employee_id,legacy=True)['employee_id']
+            snapshot_before=repo.get('payroll_periods',period['id'])['snapshot']
+
+        payout_body=dict(payroll_period_id=period['id'],employee_id=employee_id,
+                         entry_type='payout',amount='1.00',reason='Disposable PostgreSQL role-flow',
+                         request_id='pg-settlement-payout-once')
+        self.request('/api/v3/payroll-settlements',self.tokens['company_1_packer'],payout_body,method='POST',status=403)
+        payout=self.request('/api/v3/payroll-settlements',self.tokens[1],payout_body,method='POST')['data']
+        retry=self.request('/api/v3/payroll-settlements',self.tokens[1],payout_body,method='POST')['data']
+        self.assertEqual(payout['id'],retry['id'])
+        totals=self.request('/api/v3/payroll-settlements?payroll_period_id='+period['id'],self.tokens[1])['data']['totals']
+        self.assertEqual((totals['accrued'],totals['paid'],totals['balance']),(400,100,300))
+        self.request('/api/v3/payroll-settlements?payroll_period_id='+period['id'],self.tokens['company_1_packer'],status=403)
+        self.request('/api/v3/payroll-settlements?payroll_period_id='+period['id'],self.tokens[2],status=400)
+        with self.portal.tenants.company_scope(1),self.portal.db() as conn:
+            repo=Repository(conn,1)
+            self.assertEqual(repo.get('payroll_periods',period['id'])['snapshot'],snapshot_before)
+            self.assertEqual(conn.execute('SELECT COUNT(*),SUM(amount_minor),typeof(SUM(amount_minor)) FROM payroll_settlement_entries WHERE payroll_period_id=?',(period['id'],)).fetchone()[:],(1,100,'integer'))
+
     @unittest.skipUnless(_WEB_E2E,'Web browser gate only')
     def test_real_web_static_login_meta_and_company_scope_in_browser(self):
         """Use Chromium against this fixture's real loopback API; no API routes are mocked."""
