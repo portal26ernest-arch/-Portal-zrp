@@ -86,7 +86,7 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
     localStorage.clear();
     const user={id:1,username:role,display_name:'Тестовый пользователь',role,company_id:1,telegram_id:role==='platform_owner'?null:101};
     const client={id:1,name:'Клиент',active:1};
-    window.mock={calls:[],offline:false,rejectWrite:false,hold:false,held:[],update:{ok:true,configured:false},timer:null,stage3Today:null,stage3Permissions:null,presenceOnline:true,saved:null,previewMode:'ok',applyMode:'ok',payrollPaid:2000};
+    window.mock={calls:[],offline:false,rejectWrite:false,hold:false,held:[],update:{ok:true,configured:false},timer:null,stage3Today:null,stage3Permissions:null,presenceOnline:true,saved:null,previewMode:'ok',applyMode:'ok',payrollPaid:2000,invites:[]};
     const respond=(id,data)=>setTimeout(()=>window.PortalBridgeResult(id,JSON.stringify(data)),0);
     window.PortalNative={getServerUrl:()=> 'http://127.0.0.1:8765',getAppMetadata:()=>JSON.stringify(metadata),checkUpdates:id=>respond(id,mock.update),saveBase64FileAsync(id,filename,mime,file_b64){mock.saved={filename,mime,file_b64};respond(id,{ok:true,location:'Downloads/PORTAL/'+filename});},requestAsync(id,method,url,payload,token,company){
       mock.calls.push({method,url,body:payload?JSON.parse(payload):null,token,company});
@@ -119,8 +119,8 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
       else if(stage3&&url==='/api/v3/work'&&method==='POST')data.data={id:'work-free',salary:300,without_task:true};
       else if(stage3&&url==='/api/v3/presence')data.data=[{user_id:1,online:mock.presenceOnline,last_activity_at:new Date().toISOString(),active_sessions:mock.presenceOnline?1:0}];
       else if(stage3&&url==='/api/v3/activity')data.data=[{event:'login',result:'success',user_id:1,client_type:'Android',at:'2026-09-25T09:12:00'}];
-      else if(stage3&&url==='/api/v3/invitations'&&method==='POST')data.data={invite:{id:'invite-1',status:'pending'},token:'1.abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_',replay:false};
-      else if(stage3&&url.startsWith('/api/v3/invitations'))data.data={items:[],page:1,limit:50,total:0};
+      else if(stage3&&url==='/api/v3/invitations'&&method==='POST'){const action=JSON.parse(payload);if(action.action==='create'){const invite={id:'invite-1',status:'pending',display_name:action.display_name,username:action.username,role:action.role,expires_at:'2026-10-07'};mock.invites.unshift(invite);data.data={invite,token:'1.abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_',replay:false};}else{const invite=mock.invites.find(item=>item.id===action.invite_id);if(invite)invite.status=action.action==='approve'?'approved':action.action==='revoke'?'revoked':'rejected';data.data={invite};}}
+      else if(stage3&&url.startsWith('/api/v3/invitations'))data.data={items:mock.invites.slice(),page:1,limit:50,total:mock.invites.length};
       else if(url==='/api/access-invites/accept')data.data={status:'pending_approval'};
       else if(stage3&&url==='/api/v3/company-access')data.data={active_users:1,user_limit:null,unlimited:true};
       else if(stage3&&url.startsWith('/api/v3/audit'))data.data={items:[],page:1,limit:50,total:0};
@@ -287,6 +287,24 @@ test('browser UI regression',async t=>{
       assert.equal(await manager.page.locator('[data-action=createAccessInvite]').count(),0);
       assert.equal((await manager.page.evaluate(()=>mock.calls)).some(c=>c.url.startsWith('/api/v3/invitations')),false);
       assert.deepEqual(manager.errors,[]);await manager.page.close();
+    });
+    await t.test('admin approves pending access requests and revokes unused invitations',async()=>{
+      const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);
+      await page.evaluate(()=>{mock.stage3Permissions=['users.manage'];mock.invites=[
+        {id:'access-request-1',status:'accepted',display_name:'Новый запрос',username:'requester',role:'packer',expires_at:'2026-10-07'},
+        {id:'invite-pending-1',status:'pending',display_name:'Приглашённый',username:'invitee',role:'manager',expires_at:'2026-10-07'}
+      ];});await login(page);await page.evaluate(()=>go('users'));
+      await page.waitForFunction(()=>document.querySelector('#content').textContent.includes('Новый запрос'));
+      assert.ok(await page.locator('[data-action=decideAccessInvite][data-id=access-request-1][data-decision=approve]').count());
+      await page.locator('[data-action=decideAccessInvite][data-id=access-request-1][data-decision=approve]').click();
+      await page.waitForFunction(()=>mock.calls.some(c=>c.method==='POST'&&c.url==='/api/v3/invitations'&&c.body?.action==='approve'));
+      assert.equal((await page.evaluate(()=>mock.invites.find(i=>i.id==='access-request-1').status)),'approved');
+      await page.locator('[data-action=decideAccessInvite][data-id=invite-pending-1][data-decision=revoke]').click();
+      await page.waitForFunction(()=>mock.calls.some(c=>c.method==='POST'&&c.url==='/api/v3/invitations'&&c.body?.action==='revoke'));
+      assert.equal((await page.evaluate(()=>mock.invites.find(i=>i.id==='invite-pending-1').status)),'revoked');
+      assert.equal(await page.locator('[data-action=decideAccessInvite][data-id=access-request-1]').count(),0);
+      assert.equal(await page.locator('[data-action=decideAccessInvite][data-id=invite-pending-1]').count(),0);
+      assert.deepEqual(errors,[]);await page.close();
     });
     await t.test('manager records personal work; expired write session returns to login',async()=>{
       const {page,errors}=await fixture(browser);await login(page);await page.evaluate(()=>go('work'));
