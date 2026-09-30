@@ -296,15 +296,18 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
                      extra_headers={'X-Portal-Company':'2'})
 
     def test_dashboard_finance_and_receivables_use_company_scoped_postgresql_facts(self):
+        before=self.get('today',self.admin)['data']
         work=self.post('work',dict(client_id=1,operation_id=1,quantity=2,request_id='pg-dashboard-work'),
                        self.tokens['company_1_packer'])['data']
         due=(datetime.now(timezone.utc).date()-timedelta(days=1)).isoformat()
         self.post('invoices',dict(work_ids=[work['id']],due_at=due,request_id='pg-dashboard-invoice'),self.admin)
         today=self.get('today',self.admin)['data']
-        self.assertEqual((today['today_quantity'],today['month_quantity']),(2,2))
-        self.assertEqual(today['today_finance'],dict(revenue=1000,salary=400))
-        self.assertEqual((today['debt'],today['open_invoice_count'],today['overdue_invoice_count'],today['overdue_debt']),
-                         (1000,1,1,1000))
+        self.assertEqual((today['today_quantity']-before['today_quantity'],today['month_quantity']-before['month_quantity']),(2,2))
+        self.assertEqual((today['today_finance']['revenue']-before['today_finance']['revenue'],
+                          today['today_finance']['salary']-before['today_finance']['salary']),(1000,400))
+        self.assertEqual((today['debt']-before['debt'],today['open_invoice_count']-before['open_invoice_count'],
+                          today['overdue_invoice_count']-before['overdue_invoice_count'],
+                          today['overdue_debt']-before['overdue_debt']),(1000,1,1,1000))
         foreign=self.get('today',self.tokens[2])['data']
         self.assertEqual((foreign['today_quantity'],foreign['today_finance']['revenue'],foreign['open_invoice_count']),
                          (0,0,0))
