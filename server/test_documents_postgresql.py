@@ -187,6 +187,14 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
     @property
     def admin(self):return self.tokens[1]
 
+    def role_token(self, role, company_id=1):
+        """Create an ephemeral role account through the canonical PostgreSQL user path."""
+        username='pg-role-'+role+'-'+secrets.token_hex(4)
+        with self.portal.tenants.company_scope(company_id):
+            uid=self.portal.save_user(dict(username=username,display_name='PG '+role,pin=self.synthetic_pin,role=role))
+            with self.portal.db() as conn:
+                return self.portal.create_session(conn,uid)
+
     def assert_unique_legacy_work_links(self, stage):
         """Pinpoint duplicate canonical links without printing row identities."""
         with self.portal.tenants.company_scope(1),self.portal.db() as conn:
