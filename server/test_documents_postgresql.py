@@ -170,6 +170,8 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         if hasattr(cls,'tmp'):
             temp_path=cls.tmp.name;cls.tmp.cleanup()
             if os.path.exists(temp_path):raise RuntimeError('Disposable PostgreSQL fixture files were not cleaned')
+        if hasattr(cls,'admin_dsn'):
+            print('Disposable PostgreSQL cleanup verified: db=0 roles=0 temp=0')
 
     @classmethod
     def tearDownClass(cls):cls.cleanup()
