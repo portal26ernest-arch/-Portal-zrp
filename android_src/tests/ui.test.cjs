@@ -298,9 +298,11 @@ test('browser UI regression',async t=>{
       assert.ok(await page.locator('[data-action=decideAccessInvite][data-id=access-request-1][data-decision=approve]').count());
       await page.locator('[data-action=decideAccessInvite][data-id=access-request-1][data-decision=approve]').click();
       await page.waitForFunction(()=>mock.calls.some(c=>c.method==='POST'&&c.url==='/api/v3/invitations'&&c.body?.action==='approve'));
+      await page.waitForFunction(()=>document.querySelector('#content').textContent.includes('approved'));
       assert.equal((await page.evaluate(()=>mock.invites.find(i=>i.id==='access-request-1').status)),'approved');
       await page.locator('[data-action=decideAccessInvite][data-id=invite-pending-1][data-decision=revoke]').click();
       await page.waitForFunction(()=>mock.calls.some(c=>c.method==='POST'&&c.url==='/api/v3/invitations'&&c.body?.action==='revoke'));
+      await page.waitForFunction(()=>document.querySelector('#content').textContent.includes('revoked'));
       assert.equal((await page.evaluate(()=>mock.invites.find(i=>i.id==='invite-pending-1').status)),'revoked');
       assert.equal(await page.locator('[data-action=decideAccessInvite][data-id=access-request-1]').count(),0);
       assert.equal(await page.locator('[data-action=decideAccessInvite][data-id=invite-pending-1]').count(),0);
