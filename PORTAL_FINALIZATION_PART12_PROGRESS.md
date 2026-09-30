@@ -967,3 +967,11 @@ Production cutover **NOT performed**.
 - Item 46 remains 🟡 because the work source currently records no defects; quality cannot be measured until real defect facts are captured. Numbered roadmap counts remain **79 ✅ / 29 🟡 / 6 ⏳ / 12 🔌**. No production system was used.
 
 **Exact NEXT:** continue item 47 reminder scheduler. Review the existing disabled-by-default operator runner and persistent cadence/retry/idempotency tests; implement only the remaining safe software gap (a deterministic trusted timer/deployment artifact or operable run contract), and keep activation disabled unless explicitly configured. Then continue the still-partial Documents and access/settings role matrices. No complete/blocked flag is warranted.
+
+## VERIFIED — PORTAL Сегодня + Documents parity — `414a101` — 2026-09-30
+
+- Shared management dashboard now renders source-backed month work volume and capability-gated closed-period paid/balance in addition to existing day/month finance, debt, plan availability and productivity. When payroll visibility is absent the block is not rendered. Local shared UI regression passed 57/57; GitHub Web, Android UI and staging APK at `414a101` all succeeded.
+- Documents cross-session/history acceptance is now complete at software level: independent same-company sessions already proved create/list/metadata/download/archive on disposable PostgreSQL with tenant denial and cleanup; the shared UI exposes version/status plus «История версий», with regression for ordered revisions, archived/current labels and denied history access.
+- Roadmap items 44 and 68 are now ✅. Numbered counts: **81 ✅ / 27 🟡 / 6 ⏳ / 12 🔌**. Production rollout and physical-device checks remain tracked in their separate items and were not performed here.
+
+**Exact NEXT:** verify current tariff-role PostgreSQL CI at `5702b79` and manager admin-denial CI at `63a1f77`. If green, record those narrower role-matrix improvements without promoting still-external rollout gates; then continue only software-completable partials.

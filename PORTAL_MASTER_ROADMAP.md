@@ -55,7 +55,7 @@
 41. ✅ Базовая дебиторка: открытые/оплаченные суммы.
 42. ✅ Просрочка и расширенный контроль дебиторки: client-local aging buckets, частичные оплаты, фильтр клиента/периода, пагинация, kopeck reconciliation, timezone boundaries, role/tenant denial и PostgreSQL cleanup проверены Server/Web/disposable PostgreSQL CI на `22ce6f3`; legacy invoices без client link не приписываются клиенту.
 43. ✅ Выручка, себестоимость, маржа и прибыль по клиенту/партии: `finance` и batch `economy` используют source-backed выручку, ФОТ, материалы и attributable expenses; общие расходы компании остаются отдельными и не распределяются вымышленно. Маржа клиента/компании и партии считается точными basis points, деньги — в копейках; UI и disposable PostgreSQL reconciliation прошли на `42dd31f`.
-44. 🟡 «PORTAL Сегодня» показывает подтверждённые объём, выручку и начисления за день/месяц, выплаты закрытого периода и открытые счета; без плана прибыль отмечается как недоступная. Полный набор метрик и rollout ещё не закрыты.
+44. ✅ «PORTAL Сегодня»: подтверждённые объём за день/месяц, выручка и начисления за день/месяц, скорость команды, открытые/просроченные счета, плановая прибыль с честным состоянием «Недоступна» без плана и выплаты/остаток закрытых payroll-периодов. Payroll-блок показывается только когда backend вернул его по capability. Shared UI regression 57/57, Web, Android UI и APK на `414a101` прошли.
 45. 🟡 Финансовый радар показывает дебиторку, просрочку, требующие внимания записи и сигналы убыточности клиентов; помесячная сводка учитывает часовой пояс компании. Полный набор источников и rollout остаются открытыми.
 46. 🟡 Аналитика группирует выработку по команде, клиенту, товару, операции и партии; темп/разброс рассчитываются только по timed work, а без него UI честно показывает отсутствие данных. Manager assignment scope проверяется. Качество остаётся недоступно: в текущем источнике нет зафиксированных дефектов; оценка не выдумывается.
 47. 🟡 Источники напоминаний, tenant-scoped идемпотентная доставка, cadence/run/retry metadata и disabled-by-default операторский runner реализованы и проверены. Автоматический системный timer и постоянная настройка расписания ещё не подключены.
@@ -82,7 +82,7 @@
 65. ✅ Backend: дубли, неоднозначные identity, unique-конфликты и идемпотентный повтор import_id/checksum проверены, включая реальную PostgreSQL.
 66. ✅ Backend: явный apply к выбранной компании, атомарный rollback, неизменяемый результат и отчёт в Documents проверены в SQLite и одноразовой PostgreSQL. Production rollout не выполнялся.
 67. ✅ Payroll XLSX export и invoice/payroll PDF routes реализованы; реальный ReportLab renderer и PDF PostgreSQL E2E с tenant isolation/immutability подтверждены.
-68. 🟡 Общий Documents API и Web-скачивание доступны; независимые HTTP-сессии одной компании прошли create/list/metadata/download/archive E2E на disposable PostgreSQL (Part 12 Web #33 и #66; cleanup DB/roles/temp=0). Web #66 прогнал 20 PostgreSQL тестов (18 passed, 2 gated skips). Production rollout и revision/history UI parity не закрыты.
+68. ✅ Documents cross-session/history parity: независимые HTTP-сессии одной компании прошли create/list/metadata/download/archive E2E на disposable PostgreSQL с cleanup DB/roles/temp=0; общий Android/Web UI показывает revision/status и «История версий», а regression проверяет ordered version history, archived/current labels и denied history action. Production rollout отслеживается отдельно и не является software-блокером этого пункта.
 
 ## E. Внутренние коммуникации
 
