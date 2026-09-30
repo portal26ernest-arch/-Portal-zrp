@@ -251,6 +251,13 @@ Production cutover **NOT performed**.
 - Continue remaining A/B/C/D software gaps listed in the progress checkpoint. Roadmap counts remain **72 ✅ / 34 🟡 / 8 ⏳ / 12 🔌**; no status was promoted by this primitive.
 - No completion/blocked flag created. Production DB/service/configuration, DNS, signing secrets, real financial operations and phone were untouched. Production cutover **NOT performed**.
 
+## Platform Owner audit UI follow-up — SHA `1f3adc5`
+
+- Added Playwright coverage for the separate owner audit view and filters; `node --test android_src/tests/ui.test.cjs`: **22 passed, 0 failed, 0 skipped**.
+- GitHub Android UI workflow **#34 / 36650177640** and staging APK workflow **#48 / 36650177613** passed at this SHA.
+- Artifact `PORTAL_Android_3.5-dev_staging_a9b54f2b65b44ac806d4d46e995676f34200501a387df52f16bfe505197d928e`; APK SHA-256 `a9b54f2b65b44ac806d4d46e995676f34200501a387df52f16bfe505197d928e`; ZIP digest `sha256:cdae0e6c93bbe0d714c73a4f41e2fd910c7819bb9a75906073a367e00d0b38c8`. Metadata remains 3.5-dev-staging / versionCode 35 / build 3.5.
+- Server #49 and Web #26 passed at parent SHA `5df9dc0`; this follow-up changes browser tests only. Owner audit PostgreSQL/RLS and broader access policy tests remain open.
+
 ### Broader regression and source audit at code SHA `aa5cc64`
 
 - Full server unittest discovery: **212 pass / 0 fail / 20 skip**. All skips are opt-in integration gates; no disposable database or role was created by this run.

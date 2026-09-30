@@ -283,3 +283,12 @@ Production cutover **NOT performed**.
 - `python -m unittest test_reminder_jobs -v`: **5 passed, 0 failed**; compile and `git diff --check` passed. Follow-up committed/pushed as `5df9dc0ec52abc6245bf642b7ddad7c607094849` (`fix: make reminder dispatch contract atomic`).
 - Full Node regression at `5df9dc0`: `node --test` over all `*.test.cjs` — **42 passed, 0 failed, 0 skipped** (includes Playwright Chromium UI role, payroll, invite, Documents/Excel, and Web Share scenarios).
 - Full local server discovery result above belongs to `af29605` before this callback-contract-only follow-up. Latest-SHA GitHub server isolation suite now passed as listed above. Latest SHA Android source is unchanged.
+
+### A audit UI follow-up — SHA `1f3adc5`
+
+- Added Playwright coverage for the separate Platform Owner audit surface: it is entered from the owner companies view, shows owner-only safe-summary wording, and sends company/actor/event/date filters to `/api/platform/audit`.
+- `node --test android_src/tests/ui.test.cjs`: **22 passed, 0 failed, 0 skipped**.
+- Pushed commit `1f3adc5edbf19f37204fcc056bc467ea970ae62e` (`test: cover platform owner audit UI`). Android UI workflow **#34 / 36650177640** and staging APK workflow **#48 / 36650177613** both passed.
+- Latest artifact: `PORTAL_Android_3.5-dev_staging_a9b54f2b65b44ac806d4d46e995676f34200501a387df52f16bfe505197d928e`; APK SHA-256 `a9b54f2b65b44ac806d4d46e995676f34200501a387df52f16bfe505197d928e`; artifact ZIP digest `sha256:cdae0e6c93bbe0d714c73a4f41e2fd910c7819bb9a75906073a367e00d0b38c8`. Version `3.5-dev-staging`, versionCode 35, build 3.5.
+- Server #49 and Web #26 are green at parent `5df9dc0`; commit `1f3adc5` changes only browser tests. No production target changed.
+- Exact NEXT: continue actual A settings/owner policy enforcement and B catalog/batch/return workflows; finish C reminder persistence/candidates, profitability/productivity; run D independent-session Documents PostgreSQL E2E on a safe disposable runner and prove cleanup. Do not treat mocked browser or prior Parts 8–11 E2E as new Part 12 PostgreSQL evidence.
