@@ -201,7 +201,7 @@ class DocumentAPITest(unittest.TestCase):
             conn.execute('INSERT OR REPLACE INTO portal_company_requisites(company_id,id,legal_name,inn,kpp,ogrn,legal_address,settlement_account,bank_name,bik,correspondent_account,updated_at) VALUES(1,1,?,?,?,?,?,?,?,?,?,?)',requisites+('2026-09-29',))
             conn.execute('INSERT OR REPLACE INTO portal_client_requisites(company_id,client_id,legal_name,inn,kpp,ogrn,legal_address,settlement_account,bank_name,bik,correspondent_account,updated_at) VALUES(1,1,?,?,?,?,?,?,?,?,?,?)',('ООО Клиент','7700000001','770001002','ОГРН 1000000000001','Москва','40702810000000000003','Банк клиента','044525001','30101810000000000004','2026-09-29'))
         work=self.work();invoice=self.post('invoices',dict(work_ids=[work['id']]))['data']
-        generation=dict(document_type='invoice_xlsx',invoice_id=invoice['id'],request_id='invoice-xlsx-idempotent')
+        generation=dict(document_type='invoice_xlsx',invoice_id=invoice['id'],request_id='invoice-xlsx-idempotent-'+uuid.uuid4().hex)
         doc=self.post('document-generate',generation)['data']
         repeated=self.post('document-generate',generation)['data']
         self.post('document-generate',dict(document_type='invoice_xlsx',invoice_id=invoice['id']),self.other_admin,status=400)
