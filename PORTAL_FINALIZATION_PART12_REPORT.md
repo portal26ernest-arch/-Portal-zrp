@@ -228,6 +228,29 @@ Commits after the prior checkpoint: `0d477bf` tariff history query/view, `9bf376
 
 Production cutover **NOT performed**.
 
+## Automatic continuation update — code SHA `5df9dc0` (full suite ran at parent `af29605`)
+
+### DONE NOW
+
+- Added a disabled-by-default reminder scheduling primitive with explicit company scope, daily/weekly cadence keyed to a caller-provided UTC offset, idempotency keys, duplicate detection, and retry after failed delivery. The `dispatch_once` callback contract requires the notification and unique key be persisted atomically in the caller's tenant-scoped transaction. The module itself does not query business data, send external messages, start a production timer, or persist results.
+- Added five unit tests. `python -m unittest test_reminder_jobs -v`: **5 passed, 0 failed** at both `af29605` and the atomic callback follow-up `5df9dc0`.
+- Commits `af296054d61f8a08fa4f109bc050a8693a8c417b` and `5df9dc0ec52abc6245bf642b7ddad7c607094849` pushed to `codex-finalization-megapack-part12`.
+
+### REGRESSION / CI
+
+- Full server discovery at `af29605`: `python -m unittest discover -s . -p "test*.py" -q` — **218 passed, 20 skipped, 0 failed** (177.014 seconds). Skips are opt-in PostgreSQL/VPS gates; this run created no disposable DB/role. At `5df9dc0`, the changed reminder module's targeted tests and compile checks passed; full server discovery was not rerun after this small callback-contract change.
+- `python -m compileall -q reminder_jobs.py test_reminder_jobs.py` and `git diff --check` passed.
+- Full Node `*.test.cjs` suite on `5df9dc0`: **42 passed, 0 failed, 0 skipped**, including browser Playwright and invitation/payroll/Documents/Excel/Web Share flows.
+- GitHub Server Isolation run **#49 / 36649752281** and Web run **#26 / 36649752347** at `5df9dc0` both succeeded. Server matrix jobs on Python 3.11 and 3.13 each ran **218 tests, 19 skipped, 0 failed**. Android source did not change; latest successful Android UI/APK run remains `c09e44a`.
+- Staging APK was not rebuilt for this backend-only commit. Previously verified artifact remains version `3.5-dev-staging` / versionCode `35`, APK SHA-256 `73596aedbcf1cec9145df112478acced79f48a07150142eae1bdbe042d7cae35`.
+
+### NOT DONE / EXACT NEXT
+
+- Reminder roadmap item 47 remains ⏳. Add real source-backed selectors for overdue invoices/unbilled work, tenant-persistent attention/run state and operator timer wiring; then test persistence, retries and duplicate suppression end to end.
+- Run the real Documents independent-session E2E plus invite/RLS and settlement integration tests on disposable PostgreSQL and prove disposable DB/role/temp cleanup. Current environment has no `psql`, DSN or available isolated runner; production resources were not used.
+- Continue remaining A/B/C/D software gaps listed in the progress checkpoint. Roadmap counts remain **72 ✅ / 34 🟡 / 8 ⏳ / 12 🔌**; no status was promoted by this primitive.
+- No completion/blocked flag created. Production DB/service/configuration, DNS, signing secrets, real financial operations and phone were untouched. Production cutover **NOT performed**.
+
 ### Broader regression and source audit at code SHA `aa5cc64`
 
 - Full server unittest discovery: **212 pass / 0 fail / 20 skip**. All skips are opt-in integration gates; no disposable database or role was created by this run.

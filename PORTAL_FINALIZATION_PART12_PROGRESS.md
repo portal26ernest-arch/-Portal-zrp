@@ -227,3 +227,59 @@ Production cutover **NOT performed**.
 - `python -m unittest test_production -v` from `server/`: **32 passed, 0 failed** (includes the new audit test). Full server discovery immediately before this test-only addition was **212 passed, 20 skipped, 0 failed**.
 - GitHub server isolation and Web workflows for `2ca0ad0` were in progress at the last poll; Android source did not change. Do not claim those workflows green until checked.
 - Exact NEXT stays: disabled-by-default reminder runner and B product/name/batch workflow gaps; then complete A settings/owner-audit coverage and D disposable PostgreSQL cross-session proof. No test status or roadmap count was promoted by the mocked/test-fixture browser work.
+
+## AUTOMATIC CONTINUATION — verified checkpoint `c09e44a` (2026-09-30)
+
+### DONE NOW
+
+- `a8bfcdc` and `c09e44a`: shared Web UI coverage verifies director/admin invite controls can approve a pending access request and revoke an unused invite; test waits for server-state rerender before asserting action controls disappear.
+- `2ca0ad0`: server test covers company audit filters, safe summary, chronological pagination and company/role denial. `b9e8aca` fixed a nondeterministic security test that searched PIN digits as a substring across UUID/JSON; it now checks exact values and sensitive key names.
+- Payroll UI role-flow, audit UI filters, Web Share behavior, Documents/Excel and Android native source contracts remain covered. No production data/configuration/secrets were touched.
+
+### TESTS / CI
+
+- Full Node `*.test.cjs` suite at `c09e44a`: **42 passed, 0 failed, 0 skipped**. Browser `ui.test.cjs`: **21 passed**.
+- Web adapter/share/smoke set: **9 passed**. Payroll settlement server tests: **25 passed**; production API suite with new audit test: **32 passed**; activity suite: **4 passed**.
+- GitHub Server workflow run `36648295612` at `b9e8aca`: Python 3.11 **213 passed, 19 skipped**; Python 3.13 **213 passed, 19 skipped**. Both matrix jobs green. GitHub Web checks at `b9e8aca` green.
+- GitHub Android UI and staging APK build at `c09e44a` both green. APK versionName `3.5-dev-staging`, versionCode `35`, buildNumber `3.5`.
+- Staging artifact `PORTAL_Android_3.5-dev_staging_73596aedbcf1cec9145df112478acced79f48a07150142eae1bdbe042d7cae35`; APK SHA-256 `73596aedbcf1cec9145df112478acced79f48a07150142eae1bdbe042d7cae35`; GitHub artifact archive digest `sha256:37bdd26c826a39104f1d0752f0c71d260b8f36b3fa541a41fbbbd566cf7c1794`. Artifact run: https://github.com/portal26ernest-arch/-Portal-zrp/actions/runs/36648676231
+- The earlier server failure at `2ca0ad0` was a flaky substring assertion against `1234` in a session UUID; fixed and both CI matrix jobs pass at `b9e8aca`. The earlier Android UI failure at `a8bfcdc` was a rerender race in the new invite test; fixed and UI/APK pass at `c09e44a`.
+- Real disposable PostgreSQL Documents E2E, backup/restore VPS rehearsal, database cleanup proof: **not run**. This environment has no `psql`, test DSN or opt-in runner. No disposable DB/roles/temp fixture were created. Production DB/service remain untouched.
+
+### NOT DONE / EXACT NEXT
+
+- C: build the disabled-by-default company-scoped reminder runner with cadence, idempotency, injectable time, retry/run metadata; extend source-backed productivity/radar only where source facts support it.
+- D: execute the existing independent-session Documents E2E against a disposable PostgreSQL runner; capture list/download/archive consistency, other-company denial and cleanup proof; complete any remaining revision/history parity.
+- B: product CRUD, canonical rename/alias history, batch plan/fact and generic FBS/FBO/return lifecycle remain incomplete. A: company settings/limit owner/director UI matrix and owner-audit policy remain incomplete.
+- Legacy identity/money audit found active legacy `telegram_id` and float calculations; preserve columns/history and design an additive strategy only after full deployed schema/source reconciliation.
+- Roadmap counts remain **72 ✅ / 34 🟡 / 8 ⏳ / 12 🔌**. No completion/blocked flag is appropriate. Production cutover **NOT performed**.
+
+## AUTOMATIC CONTINUATION — checkpoint `af29605` (2026-09-30)
+
+### DONE NOW
+
+- Added `server/reminder_jobs.py`, an opt-in scheduler primitive: disabled by default, explicit company scope, daily/weekly cadence with configured UTC offset, stable per-company reminder keys, duplicate suppression through caller-provided tenant storage, and retry after failed delivery. Exception text and reminder payload are not logged by this module. It does not start a timer, query business records or enable production delivery.
+- Added 5 deterministic tests for disabled mode, scope validation, local-date cadence, idempotency, duplicate suppression and failed-delivery retry.
+- Committed/pushed as `af296054d61f8a08fa4f109bc050a8693a8c417b` (`feat: add opt-in reminder scheduling primitives`). No migrations were added.
+
+### TESTS / CI
+
+- `python -m unittest test_reminder_jobs -v` from `server/`: **5 passed, 0 failed**.
+- Full `python -m unittest discover -s . -p "test*.py" -q` from `server/`: **218 passed, 20 skipped, 0 failed** (177.014 seconds). Skips include opt-in PostgreSQL/VPS gates; this run created no database or role.
+- `python -m compileall -q reminder_jobs.py test_reminder_jobs.py` and `git diff --check`: passed.
+- GitHub Server Isolation run **#49 / 36649752281** at `5df9dc0` passed on Python 3.11 and 3.13; each job ran **218 tests, 19 skipped, 0 failed**. GitHub Web run **#26 / 36649752347** at the same SHA passed. Android source did not change; prior Android UI/APK green at `c09e44a` remains the last Android evidence.
+- Staging build remains `3.5-dev-staging` / versionCode 35 with previously reported APK hash `73596aedbcf1cec9145df112478acced79f48a07150142eae1bdbe042d7cae35`; no new APK was built for this backend-only change.
+
+### NOT DONE / EXACT NEXT
+
+- Reminder item 47 remains ⏳: add source-backed overdue-invoice/unbilled-work selectors, tenant-persistent run/attention records and operator timer wiring; then test the real persistence/retry path. The new framework is a tested primitive, not an enabled scheduler.
+- D: find/enable an isolated disposable PostgreSQL runner for the existing two-session Documents create/list/metadata/download/archive and cross-company denial test; prove DB/role/temp cleanup. No `psql`, DSN or VPS runner is available in this execution environment, and none was created.
+- Continue B product CRUD/aliases/batch plan-fact/returns and A owner/director settings plus owner-audit role coverage. Then complete C profitability/productivity/radar, real settlement PostgreSQL coverage, Android/Web final contracts, and broad CI/regression.
+- Roadmap counts remain **72 ✅ / 34 🟡 / 8 ⏳ / 12 🔌**. No status promotion and no autopilot flag. Production cutover **NOT performed**.
+
+### Follow-up fix — code SHA `5df9dc0`
+
+- Tightened the reminder callback contract after review: duplicate check and notification persistence must now occur atomically inside a tenant-scoped `dispatch_once(company_id, reminder, key)` callback. This avoids a check-then-send race between concurrent runners; failed callback attempts remain retryable. The runner does not claim to supply this database transaction itself.
+- `python -m unittest test_reminder_jobs -v`: **5 passed, 0 failed**; compile and `git diff --check` passed. Follow-up committed/pushed as `5df9dc0ec52abc6245bf642b7ddad7c607094849` (`fix: make reminder dispatch contract atomic`).
+- Full Node regression at `5df9dc0`: `node --test` over all `*.test.cjs` — **42 passed, 0 failed, 0 skipped** (includes Playwright Chromium UI role, payroll, invite, Documents/Excel, and Web Share scenarios).
+- Full local server discovery result above belongs to `af29605` before this callback-contract-only follow-up. Latest-SHA GitHub server isolation suite now passed as listed above. Latest SHA Android source is unchanged.
