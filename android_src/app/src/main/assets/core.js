@@ -28,6 +28,7 @@ globalThis.PortalCore = (() => {
   ];
   function can(page,user,company) {
     if (['about','settings'].includes(page)) return true;
+    if (company?.module_toggles?.[page] === false) return false;
     if (!user || !roles[user.role]) return false;
     if (Array.isArray(user.permissions) && (user.role!=='platform_owner'||company)) {
       if(page==='excelImport'){

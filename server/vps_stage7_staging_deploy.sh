@@ -133,7 +133,8 @@ for migration in \
   postgresql_stage4c.sql \
   postgresql_stage8_documents_excel.sql \
   postgresql_stage9_invoice_revisions.sql \
-  postgresql_stage10_access_invites.sql
+  postgresql_stage10_access_invites.sql \
+  postgresql_stage11_company_modules.sql
 do
   migration_file="$REPO/server/migrations/$migration"
   checksum="$(sha256sum "$migration_file" | awk '{print $1}')"

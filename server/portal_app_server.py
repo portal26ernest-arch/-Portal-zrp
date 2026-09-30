@@ -721,6 +721,40 @@ def audit_route(path):
     return "/" + "/".join("{id}" if p.isdecimal() else p for p in parts)
 
 
+def company_module_for_route(path):
+    """Return the company module that protects an API route, if any."""
+    if path.startswith('/api/v3/'):
+        action=path.removeprefix('/api/v3/').split('/',1)[0]
+        mapping={
+            'work':'work','timers':'work','links':'work',
+            'payroll':'payroll','payroll-mine':'payroll','payroll-periods':'payrollPeriods',
+            'payroll-settlements':'payrollPeriods',
+            'chat':'teamChat','chat-attachments':'teamChat','chat-pins':'teamChat',
+            'clients':'clients','catalogue':'clients','operations':'clients',
+            'materials':'materials','usage':'materials',
+            'invoices':'invoices','payments':'invoices','receivables':'invoices',
+            'users':'users','invitations':'users','company-access':'users','presence':'users','activity':'users','audit':'users',
+            'tasks':'jobs','batches':'batches','shipments':'batches',
+            'permissions':'permissions','tariffs':'tariffs','finance':'radar','expenses':'expenses',
+            'analytics':'analytics','settings':'control','documents':'documents',
+            'document-file':'documents','document-metadata':'documents','document-upload':'documents',
+            'document-archive':'documents','document-generate':'documents','document-template':'excelImport',
+            'document-template-blank':'excelImport','document-template-info':'excelImport',
+            'excel-import-preview':'excelImport','excel-import-apply':'excelImport','excel-import-result':'excelImport',
+            'marketplace-news':'news'
+        }
+        return mapping.get(action)
+    legacy={
+        '/api/work':'work','/api/work/mine':'work','/api/payroll':'payroll','/api/payroll/mine':'payroll',
+        '/api/invoices':'invoices','/api/clients':'clients','/api/materials':'materials','/api/users':'users',
+        '/api/jobs':'jobs','/api/admin':'clients'
+    }
+    for prefix,module in legacy.items():
+        if path==prefix or path.startswith(prefix+'/'):
+            return module
+    return None
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "PORTALAppServer/1.0"
 
@@ -887,6 +921,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"ok":True,"user":safe})
             if is_owner and selected is None:
                 raise PermissionError("Для технического доступа укажите X-Portal-Company")
+            module=company_module_for_route(path)
+            if module and tenants.decode_module_toggles(tenants.get_company(DB_PATH,company_id).get('module_toggles')).get(module) is False:
+                raise PermissionError('Модуль отключён для компании')
             with tenants.company_scope(company_id):
                 self.tenant_request = True
                 self.request_user = dict(identity, role="admin", company_id=company_id, telegram_id=None, technical_owner=True) if is_owner else identity
@@ -1057,7 +1094,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/platform/companies":
             if method == "GET":
                 with tenants.control(DB_PATH) as conn:
-                    companies = [dict(r) for r in conn.execute("SELECT * FROM companies ORDER BY id")]
+                    companies = [tenants.company_from_row(r) for r in conn.execute("SELECT * FROM companies ORDER BY id")]
                 return self.send_json({"ok":True,"companies":companies})
             return self.send_json({"ok":True,"id":tenants.save_company(DB_PATH, identity["id"], parse_body(self))})
         parts = path.strip("/").split("/")

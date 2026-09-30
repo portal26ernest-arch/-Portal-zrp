@@ -59,6 +59,8 @@ test('role capabilities and employee linkage',()=>{
   assert.equal(core.can('excelImport',{role:'admin',permissions:importPermissions},{id:1}),true);
   assert.equal(core.can('excelImport',{role:'admin',permissions:['company.settings']},{id:1}),false);
   assert.equal(core.can('excelImport',{role:'platform_owner',permissions:importPermissions},{id:2}),true);
+  assert.equal(core.can('work',{role:'manager',telegram_id:101},{id:1,module_toggles:{work:false}}),false);
+  assert.equal(core.can('work',{role:'manager',telegram_id:101},{id:1,module_toggles:{work:true}}),true);
 });
 test('updates: unconfigured, offline, current, newer and invalid manifests',()=>{
   const manifest={schemaVersion:1,...metadata,publishedAt:metadata.buildDate+'T12:00:00Z',changelog:'Исправления',apkUrl:`https://github.com/portal26ernest-arch/-Portal-zrp/releases/download/portal-android-v${metadata.versionName}/PORTAL_Android_${metadata.versionName}_release.apk`,sha256:'a'.repeat(64)};
@@ -130,7 +132,7 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
       else if(url==='/api/me')data.user=user;
       else if(url==='/api/company')data.company={id:1,name:'PORTAL'};
       else if(url.startsWith('/api/dashboard'))data.data={quantity:103,salary:206,revenue:515,debt:100,profit:300};
-      else if(url==='/api/platform/companies')data.companies=[{id:1,name:'PORTAL',status:'active'},{id:2,name:'Вторая компания',status:'active'}];
+      else if(url==='/api/platform/companies')data.companies=[{id:1,name:'PORTAL',status:'active',service_status:'active',monthly_price:0,demo_enabled:0,user_limit:null,module_toggles:{}},{id:2,name:'Вторая компания',status:'active',service_status:'active',monthly_price:0,demo_enabled:0,user_limit:15,module_toggles:{}}];
       else if(url.startsWith('/api/platform/audit'))Object.assign(data,{rows:[],page:1,limit:50,total:0});
       else if(url.endsWith('/operations'))Object.assign(data,{client,operations:[{id:1,name:'Упаковка',employee_rate:2,client_rate:5,active:1}]});
       else if(url==='/api/work')data.work={salary:8,warnings:[]};
@@ -350,6 +352,18 @@ test('browser UI regression',async t=>{
       const url=await page.evaluate(()=>mock.calls.filter(c=>c.url.startsWith('/api/platform/audit?')).at(-1).url);
       assert.match(url,/actor_id=1/);assert.match(url,/event=technical_access/);assert.match(url,/from=2026-09-01/);assert.match(url,/to=2026-09-30/);
       assert.match(await page.locator('#sheetContent').innerText(),/Запросы и секреты в журнал не включаются/);
+      assert.deepEqual(errors,[]);await page.close();
+    });
+    await t.test('platform owner module switches are explicit and submitted with company scope',async()=>{
+      const {page,errors}=await fixture(browser,'platform_owner');
+      await page.locator('#loginCompany').click();await page.locator('#sheetContent [data-action=technicalLogin]').click();await login(page);
+      await page.locator('[data-action=editPlatformCompany][data-id="2"]').click();
+      assert.equal(await page.locator('[data-platform-module]').count(),22);
+      await page.locator('#module-toggle-work').uncheck();
+      await page.locator('#platformCompanyForm [type=submit]').click();
+      await page.waitForFunction(()=>mock.calls.some(c=>c.method==='POST'&&c.url==='/api/platform/companies/2'));
+      const saved=await page.evaluate(()=>mock.calls.findLast(c=>c.method==='POST'&&c.url==='/api/platform/companies/2'));
+      assert.equal(saved.body.module_toggles.work,false);assert.equal(saved.company,'');
       assert.deepEqual(errors,[]);await page.close();
     });
     await t.test('Stage 3 timer, presence, activity and system information',async()=>{

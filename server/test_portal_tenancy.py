@@ -199,6 +199,25 @@ class CompanyIsolationTest(unittest.TestCase):
                              [(f"main{i}",f"Main {i}",portal.now_text(),portal.now_text()) for i in range(16)])
         self.request("/api/users",self.admin,body)
 
+    def test_platform_module_toggles_persist_and_enforce_on_server_routes(self):
+        company_path=f"/api/platform/companies/{self.other}"
+        original=self.request(company_path,self.owner)["company"]
+        self.assertEqual(original["module_toggles"],{})
+        self.request(company_path,self.owner,{"module_toggles":{"work":False,"radar":False}})
+        current=self.request(company_path,self.owner)["company"]
+        self.assertEqual(current["module_toggles"],{"radar":False,"work":False})
+        work_body={"client_id":1,"operation_id":1,"quantity":1}
+        self.request("/api/work",self.other_worker,work_body,status=403)
+        self.request("/api/v3/finance",self.other_admin,status=403)
+        self.request("/api/work",self.worker,work_body)
+        self.request(company_path,self.owner,{"module_toggles":{"work":True,"radar":True}})
+        self.request("/api/work",self.other_worker,work_body)
+        for invalid in ({"not-a-module":False},{"work":0},{"payroll":None},[]):
+            self.request(company_path,self.owner,{"module_toggles":invalid},status=400)
+        self.request("/api/platform/companies/1",self.owner,{"module_toggles":{"work":False}})
+        self.request("/api/work",self.worker,work_body,status=403)
+        self.request("/api/platform/companies/1",self.owner,{"module_toggles":{}})
+
     def test_company_status_demo_and_price_validation(self):
         self.request("/api/platform/companies/2",self.owner,{"status":"suspended"})
         self.request("/api/me",self.other_admin,status=401)

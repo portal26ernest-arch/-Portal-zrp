@@ -23,7 +23,7 @@ from unittest.mock import patch
 MIGRATIONS=('postgresql_core_stage4b.sql','postgresql_stage3.sql','postgresql_runtime.sql',
  'postgresql_rls_context.sql','postgresql_stage5_chat_retention.sql','postgresql_stage6_payroll_settlement.sql',
  'postgresql_stage4c.sql','postgresql_stage8_documents_excel.sql','postgresql_stage9_invoice_revisions.sql',
- 'postgresql_stage10_access_invites.sql')
+ 'postgresql_stage10_access_invites.sql','postgresql_stage11_company_modules.sql')
 
 _WEB_E2E=os.environ.get('PORTAL_WEB_PG_E2E')=='1'
 _DOCS_E2E=os.environ.get('PORTAL_DOCUMENTS_PG_INTEGRATION')=='1'
@@ -67,6 +67,7 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
             cls.migration('postgresql_stage8_documents_excel.sql')
             cls.migration('postgresql_stage9_invoice_revisions.sql')
             cls.migration('postgresql_stage10_access_invites.sql')
+            cls.migration('postgresql_stage11_company_modules.sql')
             with psycopg.connect(make_conninfo(cls.admin_dsn,dbname=cls.database),autocommit=True) as admin:
                 tenant=sql.Identifier(cls.roles['tenant']);control=sql.Identifier(cls.roles['control'])
                 for role in (tenant,control):
@@ -317,6 +318,23 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
                               extra_headers={'X-Portal-Company':'2'})['data']
         self.assertTrue(selected['token'].startswith('2.'))
         self.assertEqual(selected['invite']['company_id'],2)
+
+    def test_postgresql_platform_module_toggles_enforce_company_routes(self):
+        """Company module flags persist in PostgreSQL and gate real tenant HTTP requests."""
+        pin=secrets.token_urlsafe(24)
+        salt,digest=self.portal.hash_pin(pin)
+        with self.pg.connect(type(self).make_conninfo(self.admin_dsn,dbname=self.database),autocommit=True) as admin:
+            admin.execute('INSERT INTO platform_owners(id,username,display_name,pin_salt,pin_hash) VALUES(1,%s,%s,%s,%s)',
+                          ('module-owner','Synthetic module owner',salt,digest))
+        owner=self.request('/api/platform/login',body={'username':'module-owner','pin':pin})['token']
+        self.assertEqual(self.request('/api/platform/companies/2',owner)['company']['module_toggles'],{})
+        self.request('/api/platform/companies/2',owner,{'module_toggles':{'work':False}},method='POST')
+        saved=self.request('/api/platform/companies/2',owner)['company']
+        self.assertEqual(saved['module_toggles'],{'work':False})
+        self.request('/api/work',self.tokens[2],{'client_id':1,'operation_id':1,'quantity':1},method='POST',status=403)
+        self.request('/api/work',self.tokens[1],{'client_id':1,'operation_id':1,'quantity':1},method='POST')
+        self.request('/api/platform/companies/2',owner,{'module_toggles':{}},method='POST')
+        self.assertEqual(self.request('/api/platform/companies/2',owner)['company']['module_toggles'],{})
 
     def test_postgresql_api_enforces_standard_active_user_limit(self):
         """The standard company limit is enforced by the server, not just the UI."""

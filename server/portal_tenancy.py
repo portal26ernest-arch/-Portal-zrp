@@ -13,7 +13,11 @@ from pathlib import Path
 
 COMPANY_ID = ContextVar("portal_company_id", default=1)
 COMPANY_FIELDS = {"name", "status", "monthly_price", "demo_enabled", "demo_start",
-                  "demo_end", "user_limit", "service_status"}
+                  "demo_end", "user_limit", "service_status", "module_toggles"}
+MODULE_IDS = frozenset({"work", "payroll", "payrollPeriods", "teamChat", "clients", "materials",
+                        "invoices", "users", "jobs", "batches", "permissions", "tariffs", "radar",
+                        "expenses", "analytics", "control", "documents", "reports", "news",
+                        "excelImport", "wms", "notifications"})
 _CONFIG = None
 
 
@@ -135,6 +139,9 @@ def initialize_control(root):
         WHEN EXISTS(SELECT 1 FROM platform_audit WHERE id=NEW.id)
         BEGIN SELECT RAISE(ABORT,'platform audit is append-only'); END;
         """)
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(companies)")}
+        if "module_toggles" not in columns:
+            conn.execute("ALTER TABLE companies ADD COLUMN module_toggles TEXT NOT NULL DEFAULT '{}'")
         now = datetime.now().isoformat(timespec="seconds")
         conn.execute("INSERT OR IGNORE INTO companies(id,name,user_limit,created_at,updated_at) VALUES(1,'PORTAL',NULL,?,?)", (now, now))
 
@@ -144,7 +151,38 @@ def get_company(root, company_id):
         row = conn.execute("SELECT * FROM companies WHERE id=?", (company_id,)).fetchone()
     if row is None:
         raise PermissionError("Компания недоступна")
-    return dict(row)
+    return company_from_row(row)
+
+
+def decode_module_toggles(value):
+    if value in (None, ""):
+        return {}
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except (ValueError, TypeError):
+            raise RuntimeError("Настройки модулей компании повреждены") from None
+    if not isinstance(value, dict) or any(key not in MODULE_IDS or type(enabled) is not bool for key, enabled in value.items()):
+        raise RuntimeError("Настройки модулей компании повреждены")
+    return value
+
+
+def validate_module_toggles(value):
+    """Validate an owner-supplied module map as a client error, not DB corruption."""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except (ValueError, TypeError):
+            raise ValueError("Некорректные настройки модулей компании") from None
+    if not isinstance(value, dict) or any(key not in MODULE_IDS or type(enabled) is not bool for key, enabled in value.items()):
+        raise ValueError("Некорректные настройки модулей компании")
+    return value
+
+
+def company_from_row(row):
+    value = dict(row)
+    value["module_toggles"] = decode_module_toggles(value.get("module_toggles"))
+    return value
 
 
 def available(company):
@@ -189,10 +227,13 @@ def company_values(body, old=None):
     if set(body) - COMPANY_FIELDS:
         raise ValueError("Неизвестные параметры компании")
     values = {"name": "", "status": "active", "monthly_price": 0, "demo_enabled": 0,
-              "demo_start": None, "demo_end": None, "user_limit": 15, "service_status": "active"}
+              "demo_start": None, "demo_end": None, "user_limit": 15, "service_status": "active",
+              "module_toggles": {}}
     if old:
         values.update({k: old[k] for k in values})
+        values["module_toggles"] = decode_module_toggles(values["module_toggles"])
     values.update(body)
+    values["module_toggles"] = validate_module_toggles(values["module_toggles"])
     if not isinstance(values["name"], str) or not 1 <= len(values["name"].strip()) <= 200:
         raise ValueError("Название: от 1 до 200 символов")
     values["name"] = values["name"].strip()
@@ -266,16 +307,17 @@ def save_company(root, actor_id, body, company_id=None):
             raise ValueError("Компания не найдена")
         values = company_values(body, old)
         now = datetime.now().isoformat(timespec="seconds")
+        db_values = dict(values, module_toggles=json.dumps(values["module_toggles"], sort_keys=True))
         if old:
             with company_scope(company_id), tenant_connection(root) as data:
                 active = data.execute("SELECT COUNT(*) FROM app_users WHERE active=1").fetchone()[0]
             if values["user_limit"] is not None and active > values["user_limit"]:
                 raise ValueError("Лимит ниже количества активных пользователей")
-            conn.execute("UPDATE companies SET " + ",".join(k + "=?" for k in values) + ",updated_at=? WHERE id=?",
-                         (*values.values(), now, company_id))
+            conn.execute("UPDATE companies SET " + ",".join(k + "=?" for k in db_values) + ",updated_at=? WHERE id=?",
+                         (*db_values.values(), now, company_id))
         else:
-            company_id = conn.execute("INSERT INTO companies(" + ",".join(values) + ",created_at,updated_at) VALUES(" + ",".join("?" for _ in values) + ",?,?)",
-                                      (*values.values(), now, now)).lastrowid
+            company_id = conn.execute("INSERT INTO companies(" + ",".join(db_values) + ",created_at,updated_at) VALUES(" + ",".join("?" for _ in db_values) + ",?,?)",
+                                      (*db_values.values(), now, now)).lastrowid
             provision(root, company_id, conn) if is_postgresql() else provision(root, company_id)
         audit(conn, actor_id, company_id, "company_updated" if old else "company_created", "success", fields=sorted(body))
         return company_id
