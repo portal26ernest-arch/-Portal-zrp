@@ -897,3 +897,11 @@ Production cutover **NOT performed**.
 - Roadmap item 28 remains 🟡 while broader planned-source coverage is open; counts remain **76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌**. No production resources or secrets were used.
 
 **Exact NEXT:** commit/push the role-gated plan-cost API/UI regression and status docs; verify Server Python 3.11/3.13 and Web `documents-postgresql` against that exact SHA, including disposable resource cleanup. If green, record the narrower role boundary, keep item 28 🟡 for source completeness, then proceed to item 17's remaining Client 360 acceptance. Production rollout/cutover remains untouched; no completion/blocked flag.
+
+## VERIFIED — batch plan financial permission boundary — `968cbe2` — 2026-09-30
+
+- `968cbe2` passed GitHub Server isolation Python 3.11/3.13, Web, disposable PostgreSQL, Android UI and staging APK checks. The PostgreSQL job's test and container teardown steps both succeeded. No production release/cutover ran.
+- Local validation on code before the docs-only evidence update: targeted production tests **2/2**; Android/Web Node+Playwright **54/54**; Server discovery **297 tests / 47 skips / 0 failures**; `ops.test_infra_readiness` **8/8**; compileall, JS syntax and diff checks passed. Local PostgreSQL suite was environment-skipped (34 tests); CI supplies the PG evidence.
+- Item 28 stays 🟡 because wider plan-entry/source completeness remains open; counts stay **76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌**. No production or secret use.
+
+**Exact NEXT:** continue item 17 Client 360 from its open acceptance: inspect the current client profile UI/API and identify the next concrete, source-backed editable or linked block gap. Preserve tenant scoping and history; add service, browser and opt-in PostgreSQL assertions only for a real missing contract. Do not promote item 17 without full evidence. Part 12 remains open; no completion/blocked flag.
