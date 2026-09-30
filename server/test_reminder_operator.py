@@ -1,7 +1,10 @@
 import unittest
-from contextlib import contextmanager
+import io
+from contextlib import contextmanager, redirect_stdout
 from datetime import datetime, timezone
+from unittest.mock import patch
 
+import reminder_operator
 from reminder_operator import run_company_jobs
 
 
@@ -17,6 +20,16 @@ class Repository:
 
 
 class ReminderOperatorTest(unittest.TestCase):
+    def test_main_hides_exception_text_from_operator_output(self):
+        output=io.StringIO()
+        with patch.object(reminder_operator,'run_enabled_companies',
+                          side_effect=RuntimeError('private database credential details')):
+            with redirect_stdout(output):
+                status=reminder_operator.main()
+        self.assertEqual(status,1)
+        self.assertEqual(output.getvalue(),'{"error": "reminder operator failed"}\n')
+        self.assertNotIn('private database credential details',output.getvalue())
+
     def test_operator_scopes_enabled_companies_and_aggregates_sanitized_results(self):
         settings = {
             1: {"reminder_enabled": True, "reminder_cadence": "daily"},
