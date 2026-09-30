@@ -975,3 +975,12 @@ Production cutover **NOT performed**.
 - Roadmap items 44 and 68 are now ✅. Numbered counts: **81 ✅ / 27 🟡 / 6 ⏳ / 12 🔌**. Production rollout and physical-device checks remain tracked in their separate items and were not performed here.
 
 **Exact NEXT:** verify current tariff-role PostgreSQL CI at `5702b79` and manager admin-denial CI at `63a1f77`. If green, record those narrower role-matrix improvements without promoting still-external rollout gates; then continue only software-completable partials.
+
+## VERIFIED — financial radar + payroll capability UI — `fa680cd` — 2026-10-01
+
+- Director/admin dashboard payroll summary is capability-gated in both live and preview renderers: it appears only with `payroll.settlement.read` or `payroll.all`, shows accrued/paid/balance from the backend snapshot, and stays hidden after the capability is removed. Stage 3 navigation assertions now await the actual dashboard rerender, eliminating the prior full-suite race without weakening the checks.
+- Financial radar now combines only source-backed facts: profitability/months from `finance`, loss-client count from client profit, receivables/overdue only when `invoices.read` is present, and financial-only attention entries from `today`. It does not call receivables without permission and does not invent cost allocation.
+- Local merged validation: shared Android/Web UI **57/57**, infra readiness **8/8**, JS syntax and diff checks passed. GitHub at `fa680cd`: Web + disposable PostgreSQL run **153 SUCCESS**, Android UI run **76 SUCCESS**, APK run **90 SUCCESS**. Server isolation run **160 SUCCESS** at parent `0c9674c` covers the unchanged backend and the date-boundary regression fix.
+- Roadmap item 45 is now ✅. Numbered counts: **82 ✅ / 26 🟡 / 6 ⏳ / 12 🔌**. Production cutover was not performed.
+
+**Exact NEXT:** inspect item 19 effective-date tariff policy after `5702b79` plus successful descendant Server/Web CI. If no concrete software gap remains, record it as complete; otherwise add only the missing symmetric capability/tenant case. Then continue the remaining software-verifiable access/settings/audit partials without touching production-only gates.
