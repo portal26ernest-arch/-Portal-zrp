@@ -347,3 +347,26 @@ A–D and Part 12 are **not complete**. No production cutover was performed.
 - GitHub Web **#40 / 36654066963**: Web and PostgreSQL jobs successful; PG suite **10 tests, 8 passed, 2 skipped**, cleanup verified DB=0/roles=0/temp=0. GitHub Server **#62 / 36654067004**: Python 3.11 and 3.13 each **221 tests, 22 skipped, 0 failed**.
 - Targeted local invite role tests **2 passed**; local PG gate remains skipped because this workstation has no isolated PostgreSQL. `compileall` and `git diff --check` passed.
 - Roadmap counts stay **72 ✅ / 34 🟡 / 8 ⏳ / 12 🔌**. Existing-employee flow matrix, module toggles/director settings UI, Blocks B/C/D remainder and final Android/Web release checks remain. Production cutover **NOT performed**.
+# Automatic continuation addendum — 2026-09-30
+
+## Current checkpoint
+
+- Current code SHA: `042a6fb8e583a9325c307cdd779191c743ed2b56`; Server #67 and Web #45 are green.
+- Commits in this continuation: `f2b39cc` (stable invoice document retry request ID), `d64f965` (disposable PostgreSQL payroll settlement role flow), `042a6fb` (PostgreSQL-native minor-unit type assertion).
+- No application code, schema migration, Android source, release metadata, production service, or production database changed in these three commits; changes are test-only.
+
+## Evidence added
+
+- Server #66 at `f2b39cc`: Python 3.11 and 3.13 each ran 222 tests, with 23 skipped and 0 failures.
+- Web #43 at `f2b39cc`: Web and PostgreSQL jobs passed; disposable fixture ran 11 tests, 2 skipped; cleanup reported DB=0, roles=0, temp=0.
+- Web #45 at `042a6fb`: Web and PostgreSQL jobs passed; fixture ran 12 tests, 2 skipped; cleanup reported DB=0, roles=0, temp=0. The added HTTP/API test verifies authorized admin payout, packer and foreign-company denial, idempotent retry, exact minor-unit balance and unchanged closed payroll snapshot.
+- Server #67 at `042a6fb`: Python 3.11 and 3.13 each ran **223 tests, 24 skipped, 0 failed**.
+- Targeted local Documents/schema suite: 21 passed, 0 failed. Local server discovery/PG fixture did not create disposable resources. Compile and diff checks passed before pushes.
+- Failures fixed during this continuation: Server #64 had an unstable test request ID; Web #44 used SQLite `typeof()` against PostgreSQL. Both were test-only corrections, and no gate or application authorization was weakened.
+
+## Status and next
+
+- Roadmap counts remain 72 ✅ / 34 🟡 / 8 ⏳ / 12 🔌. Item 11 now notes that existing-employee invitation linking is verified on disposable PostgreSQL; broader role coverage remains open.
+- A–D and Part 12 are not complete. Continue first with Server #67 outcome, then A settings/module policy, B catalog/aliases/batches/internal workflows, C persistent reminders/profitability/radar/productivity, and D remaining Documents parity and Android/Web file contracts. Update evidence again after relevant tests.
+- Latest APK evidence remains the previously documented 3.5-dev-staging / versionCode 35 artifact at `1f3adc5`; it is not a build of the current SHA. No new APK was needed for these test-only commits.
+- No autopilot flag was created. Production cutover **NOT performed**.

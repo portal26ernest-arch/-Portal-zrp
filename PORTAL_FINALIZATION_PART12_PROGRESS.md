@@ -353,3 +353,31 @@ Production cutover **NOT performed**.
 - Targeted local invitation role tests: **2 passed**. The PostgreSQL fixture test is locally skipped (no local PostgreSQL); `python -m compileall -q .` and `git diff --check` passed.
 - GitHub Web **#40 / 36654066963** at `ea531c5`: Web and disposable PostgreSQL jobs success; fixture **10 tests, 8 passed, 2 skipped**, cleanup DB=0/roles=0/temp=0. Server **#62 / 36654067004**: Python 3.11/3.13 both **221 tests, 22 skipped, 0 failed**.
 - Exact next: complete remaining existing-employee invitation matrix and determine/implement company module-toggle model + director settings UI, then continue B and C software work. No roadmap status promotion or autopilot flag; production cutover **NOT performed**.
+
+## Automatic continuation — payroll PostgreSQL role coverage — 2026-09-30
+
+### DONE NOW
+
+- Starting state was clean and synchronized at `a3e380b`; continued on the existing Part 12 branch/worktree. No production resource was touched.
+- `f2b39cc` makes the invoice XLSX retry test reuse one request ID so it verifies an identical HTTP retry, not a new request with a randomly generated key. This fixes the single Server #64 failure without changing product code or security checks.
+- `d64f965` adds a real HTTP/PostgreSQL payroll settlement role-flow test: administrator payout on a closed period, packer write/read denial, foreign-company denial, same-request idempotency, exact accrued/paid/balance values, and closed-snapshot immutability.
+- `042a6fb` uses PostgreSQL `pg_typeof()` for the minor-unit storage assertion. The first run caught a test portability error (`typeof()` is SQLite-only); after correction, disposable PostgreSQL passed.
+- Updated roadmap wording for item 11 to record the existing-employee link proof without claiming the full invitation role matrix complete. Counts remain **72 ✅ / 34 🟡 / 8 ⏳ / 12 🔌**.
+
+### TESTS / CI
+
+- At `f2b39cc`, Server #66 / `36655075254`: Python 3.11 **222 tests, 23 skipped, 0 failed**; Python 3.13 **222 tests, 23 skipped, 0 failed**.
+- At `f2b39cc`, Web #43 / `36655075340`: Web and disposable PostgreSQL jobs succeeded; PostgreSQL fixture **11 tests, 2 skipped**, cleanup **DB=0 roles=0 temp=0**.
+- At `042a6fb`, Web #45 / `36655538735`: Web and disposable PostgreSQL jobs succeeded; PostgreSQL fixture **12 tests, 2 skipped**, cleanup **DB=0 roles=0 temp=0**. The two skips are the existing real-PDF and browser-in-fixture opt-in gates.
+- Targeted local Documents/schema tests: `python -m unittest test_documents_api test_portal_documents test_postgresql_documents_schema -q` — **21 passed, 0 failed**.
+- Local invocation of the new PG test is expected to skip without `PORTAL_DOCUMENTS_PG_INTEGRATION=1` and an isolated PostgreSQL DSN; it created no DB/role. `python -m compileall -q server` and `git diff --check` passed before pushes.
+- Server #67 / `36655538742` at `042a6fb`: Python 3.11 and 3.13 each **223 tests, 24 skipped, 0 failed**.
+- The `d64f965` Web #44 PostgreSQL job had one test-only failure because `typeof()` does not exist in PostgreSQL; fixture cleanup still confirmed **DB=0 roles=0 temp=0**. Corrected in `042a6fb` and verified by Web #45.
+
+### NOT DONE / EXACT NEXT
+
+- First confirm Server #67 / `36655538742` outcome and record both Python test counts. If it fails, diagnose/fix and rerun.
+- Commit/push this evidence-only documentation update after CI is settled; verify clean worktree and synchronized origin.
+- Continue software tasks: A module-toggle/server policy and director settings UI plus remaining invitation/audit role matrix; B product CRUD, aliases/rename, batch economics and managed internal returns/FBS/FBO; C persistent source-backed reminder candidates, profitability/radar/productivity; D remaining Documents revision/filter parity and Android/Web file/share contracts.
+- Existing same-company Documents cross-session E2E and invitations/seat-limit PostgreSQL proofs are already in prior Web jobs; do not describe them as newly unrun. Backup restore/VPS rehearsal and final Android build remain separate gates.
+- No roadmap status was promoted. No completion/blocked flag created. Production cutover **NOT performed**.
