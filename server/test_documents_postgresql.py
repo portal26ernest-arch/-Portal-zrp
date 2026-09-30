@@ -572,6 +572,7 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         first=self.upload(self.tokens[1],request_id='pg-doc-history-v1')
         second=self.upload(self.tokens[1],previous_id=first['id'],request_id='pg-doc-history-v2')
         independent_session=self.tokens['same_company_second_session']
+        self.get('document-history?id='+first['id'],self.tokens['company_1_packer'],status=403)
         versions=self.get('document-history?id='+first['id'],independent_session)['data']
         self.assertEqual([(row['id'],row['revision']) for row in versions],[(first['id'],1),(second['id'],2)])
         foreign=self.upload(self.tokens[2],request_id='pg-doc-history-foreign')

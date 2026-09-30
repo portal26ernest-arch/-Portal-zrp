@@ -97,7 +97,7 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
       let data={ok:true};
       if(stage3&&url==='/api/v3/meta')Object.assign(data,{ready:true,heartbeat_seconds:60,permissions:mock.stage3Permissions||['work.write','tasks.read','tasks.manage','batches.receive','finance.read','invoices.read','invoices.create','users.manage','access.history.read','payroll.own'],catalog:[{code:'work.write',group:'Работа',label:'Вносить свою выработку',recommended:['Сборщик']},{code:'access.history.read',group:'Сотрудники',label:'Просматривать историю входов сотрудников',recommended:['Управляющий','Администратор']}]});
       else if(stage3&&url.startsWith('/api/v3/documents?'))data.data={items:[{id:'doc-ready',title:'Готовый документ',document_type:'report_xlsx',category:'report',document_date:'2026-09-29',created_at:'2026-09-29T00:00:00Z',client_id:1,size_bytes:2048,status:'ready',revision:1},{id:'doc-archived',title:'Архивный документ',document_type:'report_pdf',category:'report',document_date:'2026-09-28',created_at:'2026-09-28T00:00:00Z',size_bytes:1024,status:'archived',revision:1}],total:2,page:1,limit:50};
-      else if(stage3&&url.startsWith('/api/v3/document-history?'))data.data=[{id:'doc-ready',title:'Готовый документ',created_at:'2026-09-29T00:00:00Z',status:'ready',revision:1},{id:'doc-older',title:'Старая версия',created_at:'2026-09-28T00:00:00Z',status:'archived',revision:2}];
+      else if(stage3&&url.startsWith('/api/v3/document-history?'))data.data=[{id:'doc-older',title:'Старая версия',created_at:'2026-09-28T00:00:00Z',status:'archived',revision:1},{id:'doc-ready',title:'Готовый документ',created_at:'2026-09-29T00:00:00Z',status:'ready',revision:2}];
       else if(stage3&&url.startsWith('/api/v3/document-file?id=')){const result=url.includes('result-');data.data=result?{filename:'PORTAL_import_result.json',mime_type:'application/json',file_b64:'e30='}:{filename:'PORTAL_report.xlsx',mime_type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',file_b64:'UEs='};}
       else if(stage3&&url==='/api/v3/document-archive'&&method==='POST')data.data={id:'doc-ready',status:'archived'};
       else if(stage3&&url==='/api/v3/document-template-info')data.data={template_version:'1.0',sheets:['Компания','Сотрудники','Клиенты','Операции_Тарифы']};
@@ -239,7 +239,24 @@ test('browser UI regression',async t=>{
       await restricted.page.evaluate(()=>mock.stage3Permissions=['documents.read']);await login(restricted.page);await restricted.page.evaluate(()=>go('documents'));
       await restricted.page.waitForFunction(()=>document.querySelector('#content').innerText.includes('Готовый документ'));
       assert.equal(await restricted.page.locator('#docClient').count(),0);assert.equal(await restricted.page.locator('#docEmployee').count(),0);
+      assert.equal(await restricted.page.locator('[data-action=showPortalDocumentHistory]').count(),2);
+      assert.equal(await restricted.page.locator('[data-action=archivePortalDocument]').count(),0);
+      await restricted.page.locator('[data-action=showPortalDocumentHistory]').first().click();
+      await restricted.page.waitForSelector('#sheetContent');
+      const readonlyHistory=await restricted.page.locator('#sheetContent').innerText();
+      assert.ok(readonlyHistory.indexOf('Версия 1')<readonlyHistory.indexOf('Версия 2'));
+      assert.match(readonlyHistory,/Старая версия[\s\S]*В архиве/);
+      assert.match(readonlyHistory,/Готовый документ[\s\S]*выбранная версия/);
+      assert.ok(await restricted.page.evaluate(()=>mock.calls.some(c=>c.url==='/api/v3/document-history?id=doc-ready')));
+      await restricted.page.locator('[data-action=closeSheet]').click();
       assert.deepEqual(restricted.errors,[]);await restricted.page.close();
+
+      const denied=await fixture(browser,'packer',{width:390,height:844},true);
+      await denied.page.evaluate(()=>mock.stage3Permissions=[]);await login(denied.page);
+      const deniedHistory=await denied.page.evaluate(async()=>{try{await actions.showPortalDocumentHistory({dataset:{id:'doc-ready'}});return '';}catch(error){return error.message;}});
+      assert.match(deniedHistory,/Нет права на просмотр документов/);
+      assert.equal((await denied.page.evaluate(()=>mock.calls.filter(c=>c.url.startsWith('/api/v3/document-history?')).length)),0);
+      await denied.page.close();
 
       const file={name:'PORTAL_test.xlsx',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',buffer:Buffer.from('PK-test')};
       await page.evaluate(()=>go('excelImport'));await page.waitForFunction(()=>document.querySelector('#content').innerText.includes('Шаблон PORTAL 1.0'));
