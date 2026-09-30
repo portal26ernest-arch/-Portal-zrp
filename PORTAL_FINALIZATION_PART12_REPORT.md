@@ -824,3 +824,12 @@ Item 46 remains 🟡 because this system does not yet record defects; quality re
 - Roadmap item 45 is now ✅. Numbered counts: **82 ✅ / 26 🟡 / 6 ⏳ / 12 🔌**. Production cutover was not performed.
 
 **Exact NEXT:** inspect item 19 effective-date tariff policy after `5702b79` plus successful descendant Server/Web CI. If no concrete software gap remains, record it as complete; otherwise add only the missing symmetric capability/tenant case. Then continue the remaining software-verifiable access/settings/audit partials without touching production-only gates.
+
+## VERIFIED — effective-date tariff policy matrix — `a80d3a3` — 2026-10-01
+
+- Inspection exposed a real response-redaction bug: tariff POST reused work redaction and could reveal inherited `employee_rate` to an actor holding `rates.client` plus `payroll.own`. The work path keeps its existing payroll visibility semantics; tariff responses now use tariff-specific capabilities only.
+- Tariff create and idempotent replay now expose `employee_rate` only with `rates.employee` and `client_rate` only with `rates.client`. The symmetric tests prove both read-history redaction and write denial/allow paths, while preserving duplicate-effective-time rejection and immutable historical work snapshots.
+- Local `test_production`: **51/51** passed. GitHub Server run **161**: Python 3.11 and 3.13 each **300 tests / 47 skipped / 0 failed**. Web/disposable PostgreSQL run **154**: **35 tests / 2 expected skips**, cleanup verified **db=0 roles=0 temp=0**.
+- Roadmap item 19 is now ✅. Numbered counts: **83 ✅ / 25 🟡 / 6 ⏳ / 12 🔌**. Production cutover was not performed.
+
+**Exact NEXT:** reconcile A items 10–12 and 15 against current evidence. Owner subscription/demo/state/seat/module controls and Director settings are already implemented/tested, so identify only a concrete missing role/policy case; do not keep stale blockers merely for production rollout, which is tracked separately.
