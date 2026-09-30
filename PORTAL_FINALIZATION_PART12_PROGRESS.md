@@ -835,5 +835,5 @@ Production cutover **NOT performed**.
 
 ### End-of-turn checkpoint
 
-- Current HEAD: `5e9ff095f0ce0452f00f60293cff891cf16eea95`; branch `codex-finalization-megapack-part12` is pushed and clean.
+- The code-tested SHA is `35db147`; following documentation-only commits carry the evidence/NEXT. Branch `codex-finalization-megapack-part12` is pushed and clean at its current tip.
 - The `employee_id` focused DoD is met: current audit P0=0 and all 50 P1 bridges remain enumerated/covered; this does not close Part 12. Next work is the duplicate-link origin above, followed by the broader pending software roadmap. No autopilot flag was created.
