@@ -366,7 +366,7 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         with self.portal.tenants.company_scope(1),self.portal.db() as conn:
             repo=Repository(conn,1)
             self.assertEqual(repo.get('payroll_periods',period['id'])['snapshot'],snapshot_before)
-            self.assertEqual(conn.execute('SELECT COUNT(*),SUM(amount_minor),typeof(SUM(amount_minor)) FROM payroll_settlement_entries WHERE payroll_period_id=?',(period['id'],)).fetchone()[:],(1,100,'integer'))
+            self.assertEqual(conn.execute('SELECT COUNT(*),SUM(amount_minor),pg_typeof(amount_minor)::text FROM payroll_settlement_entries WHERE payroll_period_id=? GROUP BY pg_typeof(amount_minor)',(period['id'],)).fetchone()[:],(1,100,'bigint'))
 
     @unittest.skipUnless(_WEB_E2E,'Web browser gate only')
     def test_real_web_static_login_meta_and_company_scope_in_browser(self):
