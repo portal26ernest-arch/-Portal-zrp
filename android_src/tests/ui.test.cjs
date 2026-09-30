@@ -483,6 +483,7 @@ test('browser UI regression',async t=>{
       await page.waitForFunction(()=>mock.calls.some(c=>c.url.startsWith('/api/v3/documents?')&&c.url.includes('client_id=1')));
       assert.equal(await page.locator('#docClient').inputValue(),'1');
       await page.evaluate(()=>actions.openClient({dataset:{id:'1'}}));await page.waitForSelector('[data-action=openClientReceivables]');
+      assert.equal(await page.locator('[data-action=openClientReceivables]').count(),1);
       await page.locator('[data-action=openClientReceivables]').last().click();
       await page.waitForFunction(()=>mock.calls.some(c=>c.url.startsWith('/api/v3/receivables?')&&c.url.includes('client_id=1')));
       assert.equal(await page.locator('#receivablesClient').inputValue(),'1');
