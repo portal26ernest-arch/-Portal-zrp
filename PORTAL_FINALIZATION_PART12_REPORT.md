@@ -764,3 +764,11 @@ The finance radar received only monthly profit and optional overhead even though
 Validation: focused UI **35/35**, full Android/Web Node+Playwright **56/56**, finance service tests **2/2**, infra readiness **8/8**, syntax and diff checks passed. The disposable PostgreSQL profitability reconciliation test could not run locally and was skipped for absent DB configuration. Item 43 remains 🟡, counts remain **76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌**, and current-SHA CI is pending.
 
 **Exact NEXT:** commit/push this source-backed radar view; check current-SHA Android UI/APK, Web and disposable PostgreSQL gates. Continue with the remaining payroll role/E2E or Documents PostgreSQL parity gaps; preserve clear source/tenant boundaries and do not mark incomplete/production-gated roadmap rows complete.
+
+## Payroll settlement role coverage — 2026-09-30
+
+Expanded the disposable PostgreSQL payroll HTTP test beyond packer denial/admin payout: manager payout is denied; accountant payout succeeds; replay/idempotency and closed payroll snapshot immutability remain covered. Assertions verify accrued/paid/balance arithmetic and PostgreSQL bigint minor-unit storage. Browser coverage checks the accountant can submit a payout while the manager has read-only access.
+
+Local validation: payroll settlement suite **25/25**, browser UI **35/35**, infra readiness **8/8**, compile/syntax/diff checks passed. The disposable PostgreSQL suite cannot run on this local host; current-SHA CI must establish the new role assertions. Item 38 remains 🟡 and counts are **76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌**.
+
+**Exact NEXT:** commit/push the new role cases and evidence; verify Web disposable PostgreSQL and teardown, Server checks, Android UI/APK. Then resume cross-session Documents or another remaining payroll E2E gap; do not claim production rollout readiness.

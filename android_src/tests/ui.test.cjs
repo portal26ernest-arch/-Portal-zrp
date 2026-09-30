@@ -309,6 +309,14 @@ test('browser UI regression',async t=>{
       const payout=await page.evaluate(()=>mock.calls.find(c=>c.method==='POST'&&c.url==='/api/v3/payroll-settlements'));
       assert.equal(payout.body.entry_type,'payout');assert.equal(payout.body.amount,'10');assert.equal(payout.body.employee_id,1);assert.equal(payout.body.payroll_period_id,'period-1');
       assert.match(await page.locator('#sheetContent').innerText(),/Первая выплата/);assert.deepEqual(errors,[]);await page.close();
+      const accountant=await fixture(browser,'accountant',{width:390,height:844},true);
+      await accountant.page.evaluate(()=>mock.stage3Permissions=['payroll.all','payroll.settlement.read','payroll.settlement.payout']);await login(accountant.page);
+      await accountant.page.evaluate(()=>go('payrollPeriods'));await accountant.page.locator('[data-action=payrollSettlement]').click();await accountant.page.waitForSelector('#sheetContent');
+      assert.equal(await accountant.page.locator('[data-action=payrollAddPayment]').count(),1);
+      await accountant.page.locator('[data-action=payrollAddPayment]').click();await accountant.page.locator('#payrollPaymentAmount').fill('5');
+      await accountant.page.locator('#payrollPaymentForm [type=submit]').click();await accountant.page.waitForFunction(()=>mock.calls.some(c=>c.method==='POST'&&c.url==='/api/v3/payroll-settlements'));
+      const accountantPayout=await accountant.page.evaluate(()=>mock.calls.find(c=>c.method==='POST'&&c.url==='/api/v3/payroll-settlements'));
+      assert.equal(accountantPayout.body.entry_type,'payout');assert.equal(accountantPayout.body.amount,'5');assert.deepEqual(accountant.errors,[]);await accountant.page.close();
       const manager=await fixture(browser,'manager',{width:390,height:844},true);
       await manager.page.evaluate(()=>mock.stage3Permissions=['payroll.all','payroll.settlement.read']);await login(manager.page);await manager.page.evaluate(()=>go('payrollPeriods'));
       await manager.page.locator('[data-action=payrollSettlement]').click();await manager.page.waitForSelector('#sheetContent');
@@ -580,9 +588,9 @@ test('browser UI regression',async t=>{
       assert.match(rendered,/Карточка загружена частично/);assert.match(rendered,/Не удалось загрузить: Отгрузки и возвраты/);
       assert.match(rendered,/Реквизиты и контакты/);assert.deepEqual(errors,[]);await page.close();
     });
-    await t.test('finance radar shows source-backed monthly profitability components newest first',async()=>{
+    await t.test('finance radar shows source-backed exact margins and monthly profitability newest first',async()=>{
       const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);
-      await page.evaluate(()=>{mock.stage3Permissions=['finance.read'];mock.stage3Finance={clients:[],months:{'2026-08':{revenue:8000,salary:3000,materials:1000,other:500,overhead:2000,profit:1500},'2026-09':{revenue:10000,salary:4000,materials:1200,other:700,overhead:2500,profit:1600}},client_profit:3100,company_overhead:4500,net_profit:-1400};});
+      await page.evaluate(()=>{mock.stage3Permissions=['finance.read'];mock.stage3Finance={clients:[{client_id:1,client_name:'Клиент прибыль',revenue:10000,salary:3000,materials:1000,other:500,profit:5500,margin:0.55,margin_bps:5500,average_batch_profit:2750}],months:{'2026-08':{revenue:8000,salary:3000,materials:1000,other:500,overhead:2000,profit:1500,margin_bps:1875},'2026-09':{revenue:10000,salary:4000,materials:1200,other:700,overhead:2500,profit:1600,margin_bps:1600}},totals:{revenue:10000,salary:3000,materials:1000,other:500},client_profit:5500,client_margin_bps:5500,company_overhead:1000,net_profit:4500,net_margin_bps:4500};});
       await login(page);await page.evaluate(()=>go('radar'));await page.waitForSelector('#content h2');
       const rendered=await page.locator('#content').innerText();
       for(const label of ['Прибыль клиентов','Общие расходы','Чистая прибыль','Динамика по месяцам','ФОТ','Материалы','Расходы по клиентам','Прибыль'])assert.ok(rendered.includes(label),`missing ${label}`);

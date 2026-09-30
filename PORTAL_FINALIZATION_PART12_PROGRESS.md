@@ -922,3 +922,12 @@ Production cutover **NOT performed**.
 - Roadmap item 43 remains 🟡 pending remaining source/role acceptance and current-SHA CI; counts remain **76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌**. No production systems touched.
 
 **Exact NEXT:** commit/push monthly profitability UI coverage and evidence; verify current-SHA Android UI/APK and Web disposable PostgreSQL (plus all triggered gates) and cleanup. Then continue next source-backed gap in priority order—payroll role/PostgreSQL coverage or Documents cross-session parity—without claiming the production-dependent items complete.
+
+## AUTOMATIC CONTINUATION — payroll settlement manager/accountant role coverage — 2026-09-30
+
+- Existing unit tests covered accountant payouts and manager denial, but the disposable PostgreSQL E2E only exercised packer denial and admin payout. Extended that E2E to prove a manager cannot append a payout and an accountant can append a second payout; the exact PostgreSQL totals become 400 accrued / 150 paid / 250 balance, both entries remain bigint minor units, and the closed snapshot is unchanged.
+- Extended the shared UI role-flow test: accountant sees and uses the payout action; manager remains read-only. No settlement ledger or authorization rule was weakened.
+- Local tests: `test_payroll_settlement` **25/25**; Playwright browser UI **35/35**; infra readiness **8/8**; compileall, JS syntax and diff check passed. Current test_documents_postgresql suite requires the CI disposable PostgreSQL service and will be verified after push. The previous `cc502e9` Android UI, APK and Web checks succeeded; this new extension is pending CI.
+- Roadmap item 38 remains 🟡 until expanded PG evidence and rollout; counts remain **76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌**.
+
+**Exact NEXT:** commit/push the payroll role E2E and UI regression plus evidence; verify Web `documents-postgresql` on that SHA, Server checks and all triggered Android gates. Confirm job teardown succeeds. Then inspect the remaining high-priority Documents cross-session/UI or payroll source-backed gap and update exact NEXT.

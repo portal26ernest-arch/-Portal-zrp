@@ -499,6 +499,11 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.assertEqual(after['client_profit']-before['client_profit'],expected_profit)
         self.assertEqual(after['company_overhead']-before['company_overhead'],overhead['amount'])
         self.assertEqual(after['net_profit']-before['net_profit'],expected_profit-overhead['amount'])
+        from production_service import margin_basis_points
+        self.assertEqual(after['totals'],{key:sum(row[key] for row in after['clients']) for key in ('revenue','salary','materials','other')})
+        self.assertEqual(after_client['margin_bps'],margin_basis_points(after_client['profit'],after_client['revenue']))
+        self.assertEqual(after['client_margin_bps'],margin_basis_points(after['client_profit'],after['totals']['revenue']))
+        self.assertEqual(after['net_margin_bps'],margin_basis_points(after['net_profit'],after['totals']['revenue']))
 
     def test_secure_invitation_lifecycle_uses_hash_and_tenant_scope(self):
         """Stage 10 invitations remain hash-only, one-time and tenant-scoped on PostgreSQL."""
@@ -918,17 +923,24 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
                          entry_type='payout',amount='1.00',reason='Disposable PostgreSQL role-flow',
                          request_id='pg-settlement-payout-once')
         self.request('/api/v3/payroll-settlements',self.tokens['company_1_packer'],payout_body,method='POST',status=403)
+        manager=self.role_token('manager')
+        self.request('/api/v3/payroll-settlements',manager,dict(payout_body,request_id='pg-settlement-manager-denied'),method='POST',status=403)
         payout=self.request('/api/v3/payroll-settlements',self.tokens[1],payout_body,method='POST')['data']
         retry=self.request('/api/v3/payroll-settlements',self.tokens[1],payout_body,method='POST')['data']
         self.assertEqual(payout['id'],retry['id'])
+        accountant=self.role_token('accountant')
+        accountant_payout=self.request('/api/v3/payroll-settlements',accountant,
+            dict(payout_body,amount='0.50',reason='Disposable PostgreSQL accountant role-flow',
+                 request_id='pg-settlement-accountant-once'),method='POST')['data']
+        self.assertEqual(accountant_payout['entry_type'],'payout')
         totals=self.request('/api/v3/payroll-settlements?payroll_period_id='+period['id'],self.tokens[1])['data']['totals']
-        self.assertEqual((totals['accrued'],totals['paid'],totals['balance']),(400,100,300))
+        self.assertEqual((totals['accrued'],totals['paid'],totals['balance']),(400,150,250))
         self.request('/api/v3/payroll-settlements?payroll_period_id='+period['id'],self.tokens['company_1_packer'],status=403)
         self.request('/api/v3/payroll-settlements?payroll_period_id='+period['id'],self.tokens[2],status=400)
         with self.portal.tenants.company_scope(1),self.portal.db() as conn:
             repo=Repository(conn,1)
             self.assertEqual(repo.get('payroll_periods',period['id'])['snapshot'],snapshot_before)
-            self.assertEqual(conn.execute('SELECT COUNT(*),SUM(amount_minor),pg_typeof(amount_minor)::text FROM payroll_settlement_entries WHERE payroll_period_id=? GROUP BY pg_typeof(amount_minor)',(period['id'],)).fetchone()[:],(1,100,'bigint'))
+            self.assertEqual(conn.execute('SELECT COUNT(*),SUM(amount_minor),pg_typeof(amount_minor)::text FROM payroll_settlement_entries WHERE payroll_period_id=? GROUP BY pg_typeof(amount_minor)',(period['id'],)).fetchone()[:],(2,150,'bigint'))
 
     @unittest.skipUnless(_WEB_E2E,'Web browser gate only')
     def test_real_web_static_login_meta_and_company_scope_in_browser(self):
