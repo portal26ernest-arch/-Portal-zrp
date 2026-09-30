@@ -152,15 +152,36 @@ class ProductionTest(unittest.TestCase):
             current=portal.get_client(conn,1)
             work=Repository(conn,1).get('works','rename-history-work')
             history=Repository(conn,1).list('client_name_history')
+            aliases=Repository(conn,1).list('client_aliases')
             audit=Repository(conn,1).list('audit')
         self.assertEqual(current['name'],'Canonical client rename')
         self.assertEqual(work['client_name'],original)
         self.assertEqual([(row['old_name'],row['new_name']) for row in history],[(original,'Canonical client rename')])
+        rename_alias=next(row for row in aliases if row['client_id']==1 and row['alias']==original)
+        self.assertEqual(rename_alias['source'],'rename')
         self.assertIn('client.renamed',[row['event'] for row in audit])
         self.assertEqual(self.get('client-name-history?client_id=1')['data'],history)
         self.assertEqual(self.get('client-name-history')['data'],history)
+        self.assertEqual(self.get('client-aliases?client_id=1')['data'],[row for row in aliases if row['client_id']==1])
         self.assertEqual(self.get('client-name-history',self.other_admin)['data'],[])
         self.assertEqual(self.get('client-name-history?client_id=1',self.other_admin)['data'],[])
+        self.assertEqual(self.get('client-aliases',self.other_admin)['data'],[])
+
+    def test_known_client_alias_is_persisted_without_rewriting_canonical_name(self):
+        from client_names import known_client_aliases
+        expected={'Борискин':('Борисенко',),'Варданян':('Вартанян',),'Вдовина':('Вдовин',),
+                  'Шульгина':('Шульгинова',),'Элегантика':('Эленгатика',),
+                  'Карягин':('Корягин','Коорягин'),'Чотчаева':('Чотчаев',)}
+        for canonical,aliases in expected.items():
+            self.assertEqual(known_client_aliases(canonical),aliases)
+        created=self.request('/api/admin/clients',self.admin,{'name':'Борискин'})
+        client_id=created['id']
+        aliases=self.get('client-aliases?client_id='+str(client_id))['data']
+        self.assertEqual([(row['alias'],row['source']) for row in aliases],[('Борисенко','knowledge')])
+        self.assertEqual(self.get('client-name-history?client_id='+str(client_id))['data'],[])
+        with portal.tenants.company_scope(1),portal.db() as conn:
+            self.assertEqual(portal.get_client(conn,client_id)['name'],'Борискин')
+        self.request('/api/v3/client-aliases',self.admin,status=403,extra_headers={'X-Portal-Company':'2'})
 
     def test_today_dashboard_has_company_date_volume_finance_and_open_invoice_counts(self):
         work=self.work()

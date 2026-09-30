@@ -23,6 +23,7 @@ from employee_identity import (account_directory, assigned_client_ids, canonical
     update_legacy_job_progress, write_user_account)
 import production_permissions as business_rights
 from production_migrations import migrate as migrate_production
+from client_names import persist_client_alias, persist_known_client_aliases
 import production_activity as activity
 from portal_config import load_config
 from pathlib import Path
@@ -595,8 +596,9 @@ def save_client(body, client_id=None, actor_id=None):
         active = active_value(body.get("active", old["active"] if old else 1))
         if conn.execute("SELECT 1 FROM portal_clients WHERE name=? COLLATE NOCASE AND id!=?", (name, client_id or 0)).fetchone():
             raise ValueError("Клиент с таким названием уже существует (включая архив)")
-        if old and name != old["name"]:
-            repo=Repository(conn,tenants.COMPANY_ID.get())
+        repo=Repository(conn,tenants.COMPANY_ID.get())
+        renamed=bool(old and name != old["name"])
+        if renamed:
             if repo.ready():
                 repo.insert('client_name_history',dict(client_id=int(client_id),old_name=old['name'],
                     new_name=name,event='renamed',actor_id=actor_id,occurred_at=now_text()))
@@ -605,7 +607,11 @@ def save_client(body, client_id=None, actor_id=None):
                 # Keep the legacy name-based compatibility path only before
                 # the stable-ID production ledger is enabled for this tenant.
                 rename_references(conn, old["name"], name)
-        return write_catalogue(conn, "portal_clients", {"name": name, "active": active}, client_id)
+        saved_id=write_catalogue(conn, "portal_clients", {"name": name, "active": active}, client_id)
+        if repo.ready():
+            if renamed: persist_client_alias(repo,int(saved_id),old["name"],'rename',name)
+            persist_known_client_aliases(repo,int(saved_id),name)
+        return saved_id
 
 
 def save_operation(body, client_id, operation_id=None):
@@ -707,7 +713,7 @@ def company_module_for_route(path):
             'payroll':'payroll','payroll-mine':'payroll','payroll-periods':'payrollPeriods',
             'payroll-settlements':'payrollPeriods',
             'chat':'teamChat','chat-attachments':'teamChat','chat-pins':'teamChat',
-            'clients':'clients','catalogue':'clients','operations':'clients','products':'clients','client-requisites':'clients','client-name-history':'clients',
+            'clients':'clients','catalogue':'clients','operations':'clients','products':'clients','client-requisites':'clients','client-name-history':'clients','client-aliases':'clients',
             'materials':'materials','usage':'materials',
             'invoices':'invoices','payments':'invoices','receivables':'invoices',
             'users':'users','invitations':'users','company-access':'users','presence':'users','activity':'users','audit':'users',

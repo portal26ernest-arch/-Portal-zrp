@@ -495,6 +495,11 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.assertGreaterEqual(result['unlinked_legacy_work_count'],0)
 
     def test_z_client_rename_history_aliases_are_company_scoped_on_postgresql(self):
+        known_id=self.request('/api/admin/clients',self.admin,{'name':'Борискин'})['id']
+        known=self.get('client-aliases?client_id='+str(known_id),self.admin)['data']
+        self.assertEqual([(row['alias'],row['source']) for row in known],[('Борисенко','knowledge')])
+        with self.portal.tenants.company_scope(1),self.portal.db() as conn:
+            self.assertEqual(self.portal.get_client(conn,known_id)['name'],'Борискин')
         client_id=self.request('/api/admin/clients',self.admin,{'name':'Synthetic alias client'})['id']
         operation=self.request(f'/api/admin/clients/{client_id}/operations',self.admin,
                                {'name':'Alias test packing','employee_rate':2,'client_rate':5})['id']
@@ -502,12 +507,17 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
                        self.tokens['company_1_packer'])['data']
         self.request(f'/api/admin/clients/{client_id}',self.admin,{'name':'Synthetic canonical client'},method='POST')
         history=self.get('client-name-history',self.admin)['data']
-        self.assertEqual([(row['old_name'],row['new_name']) for row in history],
+        self.assertEqual([(row['old_name'],row['new_name']) for row in history if row['client_id']==client_id],
                          [('Synthetic alias client','Synthetic canonical client')])
+        aliases=self.get('client-aliases?client_id='+str(client_id),self.admin)['data']
+        self.assertTrue(any(row['alias']=='Synthetic alias client' and row['source']=='rename' for row in aliases))
         saved_work=next(row for row in self.get('works',self.tokens['company_1_packer'])['data'] if row['id']==work['id'])
         self.assertEqual(saved_work['client_name'],'Synthetic alias client')
         self.assertEqual(self.get('client-name-history',self.tokens[2])['data'],[])
+        self.assertEqual(self.get('client-aliases',self.tokens[2])['data'],[])
         self.request('/api/v3/client-name-history',self.admin,status=403,
+                     extra_headers={'X-Portal-Company':'2'})
+        self.request('/api/v3/client-aliases',self.admin,status=403,
                      extra_headers={'X-Portal-Company':'2'})
 
     def test_productivity_breakdown_is_tenant_scoped_and_self_only_on_postgresql(self):
