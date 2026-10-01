@@ -14,6 +14,7 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import threading
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 from contextlib import closing
@@ -332,6 +333,25 @@ class PortalAPITest(unittest.TestCase):
         self.assertEqual(portal.audit_route('/api/v3/invitations'),'/api/v3/invitations')
         self.assertEqual(portal.audit_route('/api/v3/invitations/123'),'/api/v3/invitations/{id}')
         self.assertEqual(portal.audit_route('/api/v3/unlisted-secret-path'),'unknown')
+
+
+class PostgreSQLDatabaseNameValidationTest(unittest.TestCase):
+    def test_split_control_and_tenant_databases_are_supported(self):
+        with patch.object(portal, 'CONFIG', SimpleNamespace(environment='test')):
+            portal.validate_postgresql_database_names(
+                'portal_test_control_runtime', 'portal_test_company_runtime')
+            with self.assertRaises(RuntimeError):
+                portal.validate_postgresql_database_names(
+                    'portal_control_runtime', 'portal_test_company_runtime')
+            with self.assertRaises(RuntimeError):
+                portal.validate_postgresql_database_names(
+                    'portal_test_control_runtime', 'portal_company_runtime')
+        with patch.object(portal, 'CONFIG', SimpleNamespace(environment='production')):
+            portal.validate_postgresql_database_names(
+                'portal_prod_control', 'portal_prod_company_1')
+            # Preserve a rollback path for the legacy single-database deployment.
+            portal.validate_postgresql_database_names(
+                'portal_test_stage7_staging', 'portal_test_stage7_staging')
 
 
 if __name__ == "__main__":
