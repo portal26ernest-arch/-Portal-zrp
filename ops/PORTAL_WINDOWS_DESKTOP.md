@@ -12,7 +12,7 @@ GitHub Actions workflow `windows-desktop.yml` compiles the WPF app on `windows-l
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
-.\install_portal_desktop.ps1 -PackagePath .\PORTAL-Desktop-win-x64-3.7.0.zip -Version 3.7.0
+.\install_portal_desktop.ps1 -PackagePath .\PORTAL-Desktop-win-x64-3.8.0.zip -Version 3.8.0
 ```
 
 The checksum detects artifact corruption and mismatched files; by itself it does not authenticate the publisher. Do not install packages from untrusted runs or locations. Production signing, release publication, update-channel policy, and visual verification on a supported Windows machine remain release gates.
@@ -29,6 +29,6 @@ For isolated development, `http://localhost:PORT` or `http://127.0.0.1:PORT` is 
 
 The Desktop shell checks a same-origin `GET /api/desktop-update` manifest. The server advertises nothing unless all four secret-free environment values are configured: `PORTAL_DESKTOP_UPDATE_VERSION`, `PORTAL_DESKTOP_UPDATE_BUILD`, `PORTAL_DESKTOP_UPDATE_URL`, and `PORTAL_DESKTOP_UPDATE_SHA256`.
 
-From Desktop 3.7.0 onward the user does not manually download or unpack update archives. The **«Обновить PORTAL»** button downloads the official HTTPS ZIP in the background, rejects redirects and credentialed URLs, validates the 64-hex SHA-256, enforces package and expanded-size limits, extracts only safe archive paths into a new versioned directory, updates the Start Menu and Desktop shortcuts, launches the new `PORTAL.Desktop.exe`, and closes the old process. Previous version directories remain available for rollback.
+From Desktop 3.8.0 onward the user does not manually download or unpack update archives. The **«Обновить PORTAL»** button first asks the PORTAL server for a rollout manifest; if that endpoint is not configured, it falls back to the official public GitHub Releases feed for this repository. The client accepts only the exact versioned PORTAL Desktop asset name, follows redirects only from the official GitHub release URL to GitHub's HTTPS content hosts, validates the release SHA-256 digest, enforces package and expanded-size limits, extracts only safe archive paths into a new versioned directory, updates the Start Menu and Desktop shortcuts, launches the new `PORTAL.Desktop.exe`, and closes the old process. Previous version directories remain available for rollback.
 
 Tagged builds named `portal-desktop-vX.Y.Z` publish a stable public GitHub Release asset `PORTAL-Desktop-win-x64-X.Y.Z.zip` plus its SHA-256 sidecar. The server manifest then points clients to that immutable release asset. Plain HTTP is limited to loopback staging; production update URLs require HTTPS.

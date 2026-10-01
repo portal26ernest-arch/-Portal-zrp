@@ -7,10 +7,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>PORTAL.Desktop</AssemblyName>
     <RootNamespace>Portal.Desktop</RootNamespace>
-    <Version>3.7.0</Version>
-    <FileVersion>3.7.0.37</FileVersion>
-    <AssemblyVersion>3.7.0.0</AssemblyVersion>
-    <InformationalVersion>3.7-dev-staging</InformationalVersion>
+    <Version>3.8.0</Version>
+    <FileVersion>3.8.0.38</FileVersion>
+    <AssemblyVersion>3.8.0.0</AssemblyVersion>
+    <InformationalVersion>3.8-dev-staging</InformationalVersion>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <PublishSingleFile>false</PublishSingleFile>

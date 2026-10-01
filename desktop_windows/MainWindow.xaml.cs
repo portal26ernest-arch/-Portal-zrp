@@ -14,8 +14,9 @@ namespace Portal.Desktop;
 
 public partial class MainWindow : Window
 {
-    private const int CurrentBuild = 37;
+    private const int CurrentBuild = 38;
     private const long MaxInstallerBytes = 250L * 1024 * 1024;
+    private const string GithubRepository = "portal26ernest-arch/-Portal-zrp";
     private static readonly HttpClient Http = new(new HttpClientHandler { AllowAutoRedirect = false })
     {
         Timeout = TimeSpan.FromMinutes(5)
@@ -309,16 +310,7 @@ public partial class MainWindow : Window
         try
         {
             StatusText.Text = "Проверка версии…";
-            using var response = await Http.GetAsync(_serverOrigin + "/api/desktop-update");
-            if (response.StatusCode == HttpStatusCode.NotFound)
-            {
-                MessageBox.Show("Канал обновлений Desktop пока не настроен на этом сервере.", "PORTAL Desktop");
-                return;
-            }
-            response.EnsureSuccessStatusCode();
-            var manifest = await JsonSerializer.DeserializeAsync<DesktopUpdateManifest>(
-                await response.Content.ReadAsStreamAsync(),
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            var manifest = await LoadUpdateManifestAsync();
             if (manifest is null || manifest.Build <= CurrentBuild)
             {
                 MessageBox.Show("Установлена актуальная версия PORTAL Desktop.", "PORTAL Desktop");
@@ -340,6 +332,67 @@ public partial class MainWindow : Window
             StatusText.Text = Browser.Visibility == Visibility.Visible ? "Подключено" : "Требуется подключение";
         }
     }
+    private async Task<DesktopUpdateManifest?> LoadUpdateManifestAsync()
+    {
+        using var response = await Http.GetAsync(_serverOrigin + "/api/desktop-update");
+        if (response.StatusCode != HttpStatusCode.NotFound)
+        {
+            response.EnsureSuccessStatusCode();
+            return await JsonSerializer.DeserializeAsync<DesktopUpdateManifest>(
+                await response.Content.ReadAsStreamAsync(),
+                new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true,
+                    PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
+                });
+        }
+        return await LoadGithubUpdateManifestAsync();
+    }
+
+    private static async Task<DesktopUpdateManifest?> LoadGithubUpdateManifestAsync()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get,
+            $"https://api.github.com/repos/{GithubRepository}/releases?per_page=50");
+        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/3.8.0");
+        request.Headers.Accept.ParseAdd("application/vnd.github+json");
+        using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+        response.EnsureSuccessStatusCode();
+        using var document = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+        if (document.RootElement.ValueKind != JsonValueKind.Array) return null;
+
+        foreach (var release in document.RootElement.EnumerateArray())
+        {
+            if (release.TryGetProperty("draft", out var draft) && draft.GetBoolean()) continue;
+            if (release.TryGetProperty("prerelease", out var prerelease) && prerelease.GetBoolean()) continue;
+            if (!release.TryGetProperty("tag_name", out var tagNode)) continue;
+            var tag = tagNode.GetString() ?? string.Empty;
+            var match = Regex.Match(tag, @"^portal-desktop-v(\d+)\.(\d+)\.0$");
+            if (!match.Success || !int.TryParse(match.Groups[1].Value, out var major) ||
+                !int.TryParse(match.Groups[2].Value, out var minor) || minor is < 0 or > 9) continue;
+
+            int build;
+            try { build = checked(major * 10 + minor); }
+            catch (OverflowException) { continue; }
+            var version = $"{major}.{minor}.0";
+            var expectedName = $"PORTAL-Desktop-win-x64-{version}.zip";
+            if (!release.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array) continue;
+
+            foreach (var asset in assets.EnumerateArray())
+            {
+                if (!asset.TryGetProperty("name", out var nameNode) || nameNode.GetString() != expectedName) continue;
+                if (!asset.TryGetProperty("browser_download_url", out var urlNode) ||
+                    !asset.TryGetProperty("digest", out var digestNode)) continue;
+                var url = urlNode.GetString() ?? string.Empty;
+                var digest = digestNode.GetString() ?? string.Empty;
+                if (!digest.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase)) continue;
+                var sha256 = digest["sha256:".Length..];
+                if (!Regex.IsMatch(sha256, "^[0-9a-fA-F]{64}$")) continue;
+                return new DesktopUpdateManifest(build, version, url, sha256);
+            }
+        }
+        return null;
+    }
+
     private static bool ValidUpdateManifest(DesktopUpdateManifest manifest, out Uri downloadUri)
     {
         downloadUri = null!;
@@ -351,15 +404,58 @@ public partial class MainWindow : Window
         var secure = uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
         var localHttp = uri.IsLoopback && uri.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase);
         if (!secure && !localHttp) return false;
+        if (uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase))
+        {
+            var expectedPath = $"/{GithubRepository}/releases/download/portal-desktop-v{manifest.Version}/PORTAL-Desktop-win-x64-{manifest.Version}.zip";
+            if (!uri.AbsolutePath.Equals(expectedPath, StringComparison.Ordinal)) return false;
+        }
         downloadUri = uri;
         return true;
+    }
+
+    private static async Task<HttpResponseMessage> GetUpdateResponseAsync(Uri initial)
+    {
+        var current = initial;
+        for (var redirects = 0; redirects <= 5; redirects++)
+        {
+            var response = await Http.GetAsync(current, HttpCompletionOption.ResponseHeadersRead);
+            if ((int)response.StatusCode is >= 300 and < 400)
+            {
+                var location = response.Headers.Location;
+                response.Dispose();
+                if (location is null) throw new InvalidDataException("Обновление вернуло пустой redirect.");
+                var next = location.IsAbsoluteUri ? location : new Uri(current, location);
+                if (!AllowedUpdateRedirect(initial, next))
+                    throw new InvalidDataException("Обновление перенаправлено на недоверенный адрес.");
+                current = next;
+                continue;
+            }
+            response.EnsureSuccessStatusCode();
+            return response;
+        }
+        throw new InvalidDataException("Слишком много перенаправлений обновления.");
+    }
+
+    private static bool AllowedUpdateRedirect(Uri initial, Uri next)
+    {
+        var secure = next.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
+        var localHttp = next.IsLoopback && next.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase);
+        if (!secure && !localHttp) return false;
+
+        if (initial.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase))
+        {
+            return secure && (next.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase) ||
+                next.Host.EndsWith(".githubusercontent.com", StringComparison.OrdinalIgnoreCase));
+        }
+
+        return next.GetLeftPart(UriPartial.Authority)
+            .Equals(initial.GetLeftPart(UriPartial.Authority), StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task DownloadAndInstallUpdate(DesktopUpdateManifest manifest, Uri downloadUri)
     {
         StatusText.Text = "Загрузка обновления…";
-        using var response = await Http.GetAsync(downloadUri, HttpCompletionOption.ResponseHeadersRead);
-        response.EnsureSuccessStatusCode();
+        using var response = await GetUpdateResponseAsync(downloadUri);
         if (response.Content.Headers.ContentLength is long length && length > MaxInstallerBytes)
             throw new InvalidDataException("Пакет обновления слишком большой.");
 
@@ -369,8 +465,21 @@ public partial class MainWindow : Window
         await using (var input = await response.Content.ReadAsStreamAsync())
         await using (var output = File.Create(file))
         {
-            await input.CopyToAsync(output);
-            if (output.Length > MaxInstallerBytes) throw new InvalidDataException("Пакет обновления слишком большой.");
+            var buffer = new byte[81920];
+            long total = 0;
+            while (true)
+            {
+                var read = await input.ReadAsync(buffer);
+                if (read == 0) break;
+                total = checked(total + read);
+                if (total > MaxInstallerBytes)
+                {
+                    output.Close();
+                    File.Delete(file);
+                    throw new InvalidDataException("Пакет обновления слишком большой.");
+                }
+                await output.WriteAsync(buffer.AsMemory(0, read));
+            }
         }
 
         StatusText.Text = "Проверка обновления…";
