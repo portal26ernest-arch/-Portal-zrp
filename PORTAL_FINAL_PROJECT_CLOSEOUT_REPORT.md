@@ -8,7 +8,7 @@ Status: **SOFTWARE COMPLETE — external gates remain**
 - Starting SHA: `337d2399cd206f0029a171aa4e503e52c82ca0e9` (`feat: add self-service PIN change`).
 - Starting branch: `codex-finalization-megapack-part12`, tracking `origin/codex-finalization-megapack-part12`.
 - At start, tracked files were clean. Three user-provided untracked files were present: `CODEX_PORTAL_FINAL_PROJECT_CLOSEOUT.md`, `CODEX_PORTAL_FINAL_PROJECT_CLOSEOUT.run.err.log`, and `CODEX_PORTAL_FINAL_PROJECT_CLOSEOUT.run.jsonl`; preserved without edits.
-- Ending SHA: pending closeout documentation commit and push.
+- Ending SHA: `24d1d4e571129c40903a6e0cd88d9c3b2a02beee`, pushed to `origin/codex-finalization-megapack-part12`.
 - Android: `3.5-dev` / versionCode 35 (development staging; `android_src/release.properties`).
 - Windows Desktop: `3.5.2` (`desktop_windows/Portal.Desktop.csproj`).
 - Server: the server reports the HTTP identification string `PORTALAppServer/1.0`; no separate semantic Server release version is declared in source. Server CI runs on Python 3.11 and 3.13 (runtime versions, not product versions).
@@ -30,12 +30,14 @@ At starting SHA `337d2399cd206f0029a171aa4e503e52c82ca0e9`:
 - Android UI/Playwright: **37 passed, 0 failed** (`node --test android_src/tests/ui.test.cjs`).
 - `ops.test_infra_readiness`: **8 passed**.
 - `python -m compileall -q server ops`: passed.
-- `git diff --check`: passed before final documentation synchronization; rerun after edits and record below.
-- Disposable PostgreSQL was not available locally. CI disposable PostgreSQL evidence must be checked for the ending SHA; local skips are not treated as a pass.
-- Desktop .NET publish/install workflow was not runnable locally because `dotnet` and `pwsh` are absent. GitHub Windows workflow evidence for the ending SHA is pending push/Actions results.
-- Current documentation changes do not alter Android/server runtime or shared UI source, so their path-filtered workflows may not start on push. Only a workflow actually run on the ending SHA will be reported as ending-SHA evidence.
+- `git diff --check`: passed after final documentation synchronization.
+- Disposable PostgreSQL was not available locally. Prior successful Web CI on the exact starting/source SHA provides the disposable PostgreSQL evidence; no PostgreSQL run was triggered on the documentation-only ending SHA.
+- Desktop .NET publish/install workflow was not runnable locally because `dotnet` and `pwsh` are absent. Desktop code is unchanged in this closeout; no Windows workflow was triggered on the ending SHA.
+- Closeout changes are documentation-only; source-based Android, Server and Web workflows did not trigger on the push due their path filters.
 
-Known preceding SHA evidence supplied for starting SHA: Android APK run `36861242054`, Web run `36861242048`, Android UI run `36861242142`, and Server isolation run `36861242135`, all SUCCESS. These are not represented as ending-SHA runs.
+GitHub Actions at starting/source SHA `337d2399cd206f0029a171aa4e503e52c82ca0e9`: Android APK run `36861242054` — SUCCESS; Web run `36861242048` — SUCCESS; Android UI run `36861242142` — SUCCESS; Server isolation run `36861242135` — SUCCESS. These are not ending-SHA runs.
+
+At ending SHA `24d1d4e`, no workflow run was created by the documentation-only push because workflow path filters do not include these four closeout documents. Thus there are no ending-SHA Actions run IDs or conclusions to claim. Runtime source is unchanged from the tested starting SHA. A manual rerun/dispatch was not available in the local environment (`gh` is not installed); CI evidence above is intentionally identified as prior-source evidence.
 
 ## External/manual gates
 
