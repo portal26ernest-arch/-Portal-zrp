@@ -1,6 +1,7 @@
 using Microsoft.Web.WebView2.Core;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Net;
 using System.Net.Http;
 using System.Security.Cryptography;
@@ -13,7 +14,7 @@ namespace Portal.Desktop;
 
 public partial class MainWindow : Window
 {
-    private const int CurrentBuild = 36;
+    private const int CurrentBuild = 37;
     private const long MaxInstallerBytes = 250L * 1024 * 1024;
     private static readonly HttpClient Http = new(new HttpClientHandler { AllowAutoRedirect = false })
     {
@@ -326,9 +327,9 @@ public partial class MainWindow : Window
             if (!ValidUpdateManifest(manifest, out var downloadUri))
                 throw new InvalidDataException("Некорректный manifest обновления.");
             var answer = MessageBox.Show(
-                $"Доступна версия {manifest.Version} (build {manifest.Build}). Скачать и запустить проверенный установщик?",
+                $"Доступна версия {manifest.Version} (build {manifest.Build}). PORTAL сам скачает, проверит и установит обновление. Продолжить?",
                 "Обновление PORTAL Desktop", MessageBoxButton.YesNo, MessageBoxImage.Information);
-            if (answer == MessageBoxResult.Yes) await DownloadAndLaunchUpdate(manifest, downloadUri);
+            if (answer == MessageBoxResult.Yes) await DownloadAndInstallUpdate(manifest, downloadUri);
         }
         catch
         {
@@ -342,9 +343,11 @@ public partial class MainWindow : Window
     private static bool ValidUpdateManifest(DesktopUpdateManifest manifest, out Uri downloadUri)
     {
         downloadUri = null!;
-        if (manifest.Build <= 0 || string.IsNullOrWhiteSpace(manifest.Version) ||
+        if (manifest.Build <= 0 || !Regex.IsMatch(manifest.Version ?? string.Empty, @"^\d+\.\d+\.\d+$") ||
             !Regex.IsMatch(manifest.Sha256 ?? string.Empty, "^[0-9a-fA-F]{64}$") ||
             !Uri.TryCreate(manifest.DownloadUrl, UriKind.Absolute, out var uri)) return false;
+        if (!string.IsNullOrEmpty(uri.UserInfo) || !string.IsNullOrEmpty(uri.Query) || !string.IsNullOrEmpty(uri.Fragment) ||
+            !uri.AbsolutePath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) return false;
         var secure = uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
         var localHttp = uri.IsLoopback && uri.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase);
         if (!secure && !localHttp) return false;
@@ -352,32 +355,126 @@ public partial class MainWindow : Window
         return true;
     }
 
-    private async Task DownloadAndLaunchUpdate(DesktopUpdateManifest manifest, Uri downloadUri)
+    private async Task DownloadAndInstallUpdate(DesktopUpdateManifest manifest, Uri downloadUri)
     {
         StatusText.Text = "Загрузка обновления…";
         using var response = await Http.GetAsync(downloadUri, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();
         if (response.Content.Headers.ContentLength is long length && length > MaxInstallerBytes)
-            throw new InvalidDataException("Установщик слишком большой.");
+            throw new InvalidDataException("Пакет обновления слишком большой.");
 
         var dir = Path.Combine(Path.GetTempPath(), "PORTAL");
         Directory.CreateDirectory(dir);
-        var file = Path.Combine(dir, "PORTAL_Desktop_Update_Setup.exe");
+        var file = Path.Combine(dir, $"PORTAL-Desktop-{manifest.Version}.zip");
         await using (var input = await response.Content.ReadAsStreamAsync())
         await using (var output = File.Create(file))
         {
             await input.CopyToAsync(output);
-            if (output.Length > MaxInstallerBytes) throw new InvalidDataException("Установщик слишком большой.");
+            if (output.Length > MaxInstallerBytes) throw new InvalidDataException("Пакет обновления слишком большой.");
         }
-        await using var verify = File.OpenRead(file);
-        var actual = Convert.ToHexString(await SHA256.HashDataAsync(verify));
-        if (!actual.Equals(manifest.Sha256, StringComparison.OrdinalIgnoreCase))
+
+        StatusText.Text = "Проверка обновления…";
+        await using (var verify = File.OpenRead(file))
         {
-            File.Delete(file);
-            throw new InvalidDataException("SHA-256 установщика не совпадает.");
+            var actual = Convert.ToHexString(await SHA256.HashDataAsync(verify));
+            if (!actual.Equals(manifest.Sha256, StringComparison.OrdinalIgnoreCase))
+            {
+                File.Delete(file);
+                throw new InvalidDataException("SHA-256 пакета обновления не совпадает.");
+            }
         }
-        Process.Start(new ProcessStartInfo(file) { UseShellExecute = true });
+
+        StatusText.Text = "Установка обновления…";
+        var executable = InstallVerifiedPackage(file, manifest.Version);
+        File.Delete(file);
+        Process.Start(new ProcessStartInfo(executable) { UseShellExecute = true });
         Application.Current.Shutdown();
+    }
+
+    private static string InstallVerifiedPackage(string packagePath, string version)
+    {
+        const long maxExtractedBytes = 1024L * 1024 * 1024;
+        var installRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "PORTAL", "Desktop", "versions");
+        var target = Path.Combine(installRoot, version);
+        Directory.CreateDirectory(installRoot);
+
+        if (!Directory.Exists(target))
+        {
+            var staging = Path.Combine(installRoot, ".staging-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(staging);
+            try
+            {
+                using var archive = ZipFile.OpenRead(packagePath);
+                if (archive.Entries.Count > 10000) throw new InvalidDataException("Слишком много файлов в обновлении.");
+                var stagingRoot = Path.GetFullPath(staging).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                long extracted = 0;
+                foreach (var entry in archive.Entries)
+                {
+                    if (string.IsNullOrWhiteSpace(entry.FullName) || entry.FullName.Contains('\\') ||
+                        entry.FullName.StartsWith('/') || entry.FullName.Contains(':'))
+                        throw new InvalidDataException("Небезопасный путь в пакете обновления.");
+
+                    extracted = checked(extracted + entry.Length);
+                    if (extracted > maxExtractedBytes) throw new InvalidDataException("Распакованное обновление слишком большое.");
+
+                    var relative = entry.FullName.Replace('/', Path.DirectorySeparatorChar);
+                    var destination = Path.GetFullPath(Path.Combine(staging, relative));
+                    if (!destination.StartsWith(stagingRoot, StringComparison.OrdinalIgnoreCase))
+                        throw new InvalidDataException("Путь обновления выходит за каталог установки.");
+
+                    if (entry.FullName.EndsWith('/'))
+                    {
+                        Directory.CreateDirectory(destination);
+                        continue;
+                    }
+
+                    Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                    using var input = entry.Open();
+                    using var output = new FileStream(destination, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+                    input.CopyTo(output);
+                }
+
+                var stagedExecutable = Path.Combine(staging, "PORTAL.Desktop.exe");
+                if (!File.Exists(stagedExecutable))
+                    throw new InvalidDataException("Пакет не содержит PORTAL.Desktop.exe.");
+                Directory.Move(staging, target);
+            }
+            catch
+            {
+                if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true);
+                throw;
+            }
+        }
+
+        var executable = Path.Combine(target, "PORTAL.Desktop.exe");
+        if (!File.Exists(executable)) throw new InvalidDataException("Установленная версия PORTAL повреждена.");
+        UpdateDesktopShortcuts(executable, target, version);
+        return executable;
+    }
+
+    private static void UpdateDesktopShortcuts(string executable, string workingDirectory, string version)
+    {
+        var startMenu = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "Microsoft", "Windows", "Start Menu", "Programs", "PORTAL", "PORTAL Desktop.lnk");
+        WriteShortcut(startMenu, executable, workingDirectory, version);
+
+        var desktop = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "PORTAL Desktop.lnk");
+        WriteShortcut(desktop, executable, workingDirectory, version);
+    }
+
+    private static void WriteShortcut(string shortcutPath, string executable, string workingDirectory, string version)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(shortcutPath)!);
+        var shellType = Type.GetTypeFromProgID("WScript.Shell")
+            ?? throw new PlatformNotSupportedException("Не удалось создать ярлык PORTAL.");
+        dynamic shell = Activator.CreateInstance(shellType)
+            ?? throw new PlatformNotSupportedException("Не удалось создать ярлык PORTAL.");
+        dynamic shortcut = shell.CreateShortcut(shortcutPath);
+        shortcut.TargetPath = executable;
+        shortcut.WorkingDirectory = workingDirectory;
+        shortcut.Description = $"PORTAL Desktop {version}";
+        shortcut.Save();
     }
 
     private sealed record DesktopSettings(string ServerOrigin);

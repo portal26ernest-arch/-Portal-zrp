@@ -67,6 +67,13 @@ try {
     $shortcut.Description = "PORTAL Desktop $Version"
     $shortcut.Save()
     Move-Item -LiteralPath $temporaryShortcutPath -Destination $shortcutPath -Force
+
+    $desktopShortcutPath = Join-Path ([Environment]::GetFolderPath('Desktop')) 'PORTAL Desktop.lnk'
+    $desktopShortcut = $shell.CreateShortcut($desktopShortcutPath)
+    $desktopShortcut.TargetPath = Join-Path $target 'PORTAL.Desktop.exe'
+    $desktopShortcut.WorkingDirectory = $target
+    $desktopShortcut.Description = "PORTAL Desktop $Version"
+    $desktopShortcut.Save()
     Write-Output "Installed PORTAL Desktop $Version for the current Windows user. Previous versions remain available for rollback."
 } finally {
     if (Test-Path -LiteralPath $staging) { Remove-Item -LiteralPath $staging -Recurse -Force }

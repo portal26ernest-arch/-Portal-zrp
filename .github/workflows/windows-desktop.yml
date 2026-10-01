@@ -3,8 +3,11 @@ name: PORTAL Windows Desktop build
 on:
   push:
     branches: ["main", "assistant/**", "codex-finalization-megapack-part12", "codex/desktop-client-connection"]
+    tags: ["portal-desktop-v*"]
     paths:
       - "desktop_windows/**"
+      - "android_src/app/src/main/assets/**"
+      - "android_src/tests/desktop-shell.test.cjs"
       - "ops/install_portal_desktop.ps1"
       - "ops/test_portal_desktop_installer.ps1"
       - "ops/PORTAL_WINDOWS_DESKTOP.md"
@@ -12,6 +15,8 @@ on:
   pull_request:
     paths:
       - "desktop_windows/**"
+      - "android_src/app/src/main/assets/**"
+      - "android_src/tests/desktop-shell.test.cjs"
       - "ops/install_portal_desktop.ps1"
       - "ops/test_portal_desktop_installer.ps1"
       - "ops/PORTAL_WINDOWS_DESKTOP.md"
@@ -22,6 +27,8 @@ permissions:
 
 jobs:
   windows-desktop:
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
@@ -69,3 +76,29 @@ jobs:
             PORTAL-Desktop-win-x64-${{ steps.meta.outputs.version }}.zip.sha256
           if-no-files-found: error
           retention-days: 14
+
+  publish-release:
+    if: startsWith(github.ref, 'refs/tags/portal-desktop-v')
+    needs: windows-desktop
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: PORTAL-Desktop-win-x64-${{ needs.windows-desktop.outputs.version }}
+          path: release
+      - name: Validate tag and publish stable update package
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.windows-desktop.outputs.version }}
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = "portal-desktop-v${VERSION}"
+          package="PORTAL-Desktop-win-x64-${VERSION}.zip"
+          test -f "release/${package}"
+          test -f "release/${package}.sha256"
+          gh release create "${GITHUB_REF_NAME}" "release/${package}" "release/${package}.sha256" \
+            --title "PORTAL Desktop ${VERSION}" \
+            --notes "Официальное обновление PORTAL Desktop ${VERSION}. Устанавливается через кнопку «Обновить PORTAL» внутри приложения."

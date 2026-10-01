@@ -20,6 +20,8 @@ def _safe_download_url(value: str) -> bool:
         return False
     if parsed.username or parsed.password or parsed.query or parsed.fragment:
         return False
+    if not parsed.path.lower().endswith(".zip"):
+        return False
     if parsed.scheme == "https" and parsed.netloc:
         return True
     return parsed.scheme == "http" and parsed.hostname in {"127.0.0.1", "::1", "localhost"}
@@ -37,7 +39,7 @@ def load_manifest(environ) -> dict | None:
         raise RuntimeError("Desktop update build is invalid") from exc
     if build <= 0 or build > 2_147_483_647:
         raise RuntimeError("Desktop update build is invalid")
-    if len(values["version"]) > 40 or not re.fullmatch(r"[0-9A-Za-z._+-]+", values["version"]):
+    if not re.fullmatch(r"\d+\.\d+\.\d+", values["version"]):
         raise RuntimeError("Desktop update version is invalid")
     if not _SHA256.fullmatch(values["sha256"]):
         raise RuntimeError("Desktop update SHA-256 is invalid")

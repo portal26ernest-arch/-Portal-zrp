@@ -28,7 +28,7 @@
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                     <Button x:Name="BackButton" Content="←" Width="40" Height="34" Margin="0,0,8,0" Click="Back_Click" Background="#1AFFFFFF" Foreground="White" BorderBrush="#40FFFFFF"/>
                     <Button Content="Обновить страницу" Height="34" Margin="0,0,8,0" Padding="12,0" Click="Reload_Click" Background="#1AFFFFFF" Foreground="White" BorderBrush="#40FFFFFF"/>
-                    <Button Content="Проверить версию" Height="34" Margin="0,0,8,0" Padding="12,0" Click="CheckUpdate_Click" Background="#1AFFFFFF" Foreground="White" BorderBrush="#40FFFFFF"/>
+                    <Button Content="Обновить PORTAL" Height="34" Margin="0,0,8,0" Padding="12,0" Click="CheckUpdate_Click" Background="#1AFFFFFF" Foreground="White" BorderBrush="#40FFFFFF"/>
                     <Button Content="Сервер" Height="34" Padding="12,0" Click="Server_Click" Background="#1AFFFFFF" Foreground="White" BorderBrush="#40FFFFFF"/>
                 </StackPanel>
             </Grid>
