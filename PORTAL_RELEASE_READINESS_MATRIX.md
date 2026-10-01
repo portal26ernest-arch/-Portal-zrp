@@ -1,6 +1,6 @@
-# PORTAL release readiness matrix — Part 12 checkpoint `5695299` (client/employee name identity green)
+# PORTAL release readiness matrix — final closeout `337d239` baseline; documentation sync pending
 
-Statuses reflect the current roadmap and prior verified reports. `✅` means evidenced completion in the named baseline report/test; it does not mean production cutover is approved. Current numbered counts: **93 ✅ / 15 🟡 / 6 ⏳ / 12 🔌**. Item 47 is ✅ software-complete after the bounded dispatch regression; the trusted system timer and production activation remain open.
+Statuses reflect evidenced software completion and do not authorize production cutover. Final closeout count: **93 ✅ / 15 🟡 / 6 ⏳ / 12 🔌 (126 conceptual items)**. Item 47 is ✅ software-complete after the bounded dispatch regression; its trusted system timer and production activation remain external. Item 105 is 🟡 pending an authorized disposable SQLite-to-PostgreSQL import rehearsal.
 
 | Roadmap item | Feature | Status | Evidence commit/test | Remaining blocker | Owner action required |
 |---:|---|:---:|---|---|:---:|
@@ -99,3 +99,11 @@ The repaired no-client legacy invoice case passed the actual disposable PostgreS
 - C: 47 trusted system timer/owner production activation remains a separate external gate; 46 lacks a source-backed defect/QC stream; 77-79 official Ozon/WB adapter source and live production activation; 80 production Android cutover; 83 production signing Secrets/release; 85 production Windows publication/signing; 93 off-server backup; 105 imported SQLite snapshot rehearsal in a separately approved disposable environment; 125 domain/DNS/HTTPS. Items 83 and 85 also retain their B checks.
 
 Items 77-79 already have company-scoped reads, capability checks, honest empty/LIVE state, official HTTPS host allowlist, canonical external-key dedupe, bounded injected-adapter batches, escaping/validation, sanitized provider failure counters, tenant and forged-scope regression. No official public feed adapter exists in this repository. No live fetch or scheduler was enabled.
+
+## Final closeout reconciliation — 2026-10-01
+
+- Ending source baseline audited: `337d2399cd206f0029a171aa4e503e52c82ca0e9`; closeout artifact commit/Actions evidence is recorded in `PORTAL_FINAL_PROJECT_CLOSEOUT_REPORT.md`.
+- Current total: **93 ✅ / 15 🟡 / 6 ⏳ / 12 🔌 (126 conceptual items)**. Item 105's malformed status in the roadmap was corrected to 🟡 and now describes the exact uncompleted disposable-import gate.
+- The baseline includes Desktop 3.5.1 connection/WebView fixes, Desktop 3.5.2 compatibility package metadata and secret-free update contract, central storage status, and self-service PIN change. No status is promoted from these changes without evidence.
+- Local final sweep: Server 306 passed / 49 skipped; shared Android/Web Node 58/58; Android UI 37/37; infra 8/8; compileall and diff check passed. Local disposable PostgreSQL and Windows .NET/PowerShell toolchains were unavailable. Final-SHA GitHub results must be recorded in the report, with earlier run IDs kept explicitly separate.
+- External gates are listed only in `PORTAL_FINAL_EXTERNAL_BLOCKERS.md`; their complete B/C/D classification and required closeout evidence are in `PORTAL_FINAL_PROJECT_CLOSEOUT_REPORT.md`.

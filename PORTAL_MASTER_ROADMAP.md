@@ -136,7 +136,7 @@
 102. ✅ Runtime/API contracts используют employee_id; legacy telegram_id остаётся только в явно перечисленных adapter/import/schema/history bridges. Аудит: P0 external 0, P0 active identity 0, P1 50; disposable PostgreSQL/RLS проверка одинаковых legacy keys в двух компаниях прошла в Web run `36714999102` (`documents-postgresql`, 30 tests, 2 skipped, cleanup db=0/roles=0/temp=0). Отдельный Server Python 3.13 сбой invoice XLSX idempotency не относится к employee identity и остаётся в readiness.
 103. ✅ Защита от повторных записей/идемпотентность в критичных сценариях.
 104. ✅ Regression/unit/integration тесты и GitHub gates.
-105. ?? ???????? ??????: ???????????? ????? ???????? ? ????????; PostgreSQL legacy NUMERIC ???????? ?????? Decimal. Read-only linked-work ?????? ?????????? legacy major units ? canonical minor units, direct cost ? ?????? same-company `norm` usage, `additional_actual` ???????? append-only ledger. ???????? phone snapshot 28.09.2026 ???????? read-only: integrity ok, SHA-256 ????????? ? manifest, ??????????? legacy money columns ????????????? ????? SQLite affinity REAL; ????????? migration dry-run 01.10.2026 ????????? ?????? ? ??????? ???????. ??????? ????????? disposable PostgreSQL import/reconciliation rehearsal ???? ?????; production rows ?? ????????? ? ?? ????????????????.
+105. 🟡 Денежные типы и нормализация: runtime money хранится в integer minor units, PostgreSQL compatibility boundary — Decimal/NUMERIC. Read-only сверка связанной legacy-истории подтверждает согласованность major/minor units. Для подтверждённой копии SQLite зафиксированы integrity_check=ok, совпадение SHA-256 с manifest и воспроизводимый read-only migration dry-run; отдельная загрузка копии в disposable PostgreSQL и post-import reconciliation ещё не проведены. Production rows не читались и не изменялись.
 
 ## G1. Stage 7 staging — повторно проверено 28.09.2026
 
@@ -255,6 +255,16 @@
 - The Web disposable PostgreSQL run at `23bd46f` found a real edge case: historical invoices with no client link caused `receivables()` to raise `KeyError`. The `22ce6f3` correction excludes unlinked rows from the client-only aging report and adds regression assertions. Web and disposable PostgreSQL passed (33 PG tests, 2 gated skips, cleanup `db=0 roles=0 temp=0`); Server 3.11 and 3.13 each passed 294 tests/45 skips; `ops.test_infra_readiness` passed 8/8.
 - Item 42 is now ✅. Counts are **76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌**. No production data/service/DNS/cutover or secrets were touched; production cutover NOT performed.
 - Item 46 checkpoint `231e3c6`: API/UI expose employee/client/product/operation and batch/operation productivity from tenant-scoped timed work, with canonical labels and variability only after at least two timed samples. Manager assignment and employee self-only scope are tested; PostgreSQL E2E tests team/self/foreign-company scope and batch metrics. No defect source exists, so quality remains unavailable and item 46 stays 🟡. Server unit suite 51/51, browser UI 35/35, infra 8/8; Server 3.11/3.13, Web+PostgreSQL, Android UI and APK checks passed. Counts **79 ✅ / 29 🟡 / 6 ⏳ / 12 🔌**. No production target used.
+
+## K. Final project closeout — 2026-10-01 (baseline `337d239`)
+
+- Current source audit confirms self-service PIN change, central VPS document storage architecture, Desktop connection/WebView compatibility/update path, and bounded reminder dispatch. Desktop source version is 3.5.2; Android development staging is 3.5-dev/versionCode 35. No product semantic version is declared by `PORTALAppServer/1.0`; Server CI validates Python 3.11/3.13 runtimes.
+- Item 13 includes the tested case-insensitive login and self-service PIN flow: masked input, confirmation match, Platform Owner hidden state, preserved current session, revocation of other sessions, and audit without secrets. Existing Server and shared UI tests cover the flow.
+- Roadmap statuses are **93 ✅ / 15 🟡 / 6 ⏳ / 12 🔌 (126 conceptual items)**. Item 105 is 🟡; a verified legacy snapshot still requires a separately authorized disposable PostgreSQL import/reconciliation rehearsal. No production facts are used for this gate.
+- Remaining 🟡/⏳ statuses are classified in `PORTAL_FINAL_PROJECT_CLOSEOUT_REPORT.md` and contain only real device/browser, provider, production/data, or external migration gates. No software TODO remains.
+- Current-baseline local evidence: Server discovery 306 passed / 49 skipped; shared Node 58/58; Android UI 37/37; infra readiness 8/8; compileall and diff check passed. Local PostgreSQL is unavailable. GitHub workflows for the ending documentation SHA must be recorded in the closeout report after push; earlier SHA Actions evidence is not substituted.
+- Desktop Windows publish/install smoke requires Windows PowerShell 7/.NET 8 and GitHub Windows runner; those executables are unavailable in this local environment. No production DB/VPS/DNS/secrets/signing/cutover changed.
+- The final report and blockers document are `PORTAL_FINAL_PROJECT_CLOSEOUT_REPORT.md` and `PORTAL_FINAL_EXTERNAL_BLOCKERS.md`.
 
 
 ## Finalization Megapack closeout audit - 2026-10-01
