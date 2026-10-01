@@ -796,3 +796,22 @@ test('new employee creation is independent from existing employees',()=>{
   assert.match(source,/body\.create_employee=!existing/);
   assert.match(source,/Новый сотрудник получит собственную карточку и уникальный ID/);
 });
+
+test('self-service PIN change settings flow is masked, validates mismatch and hides for Platform Owner',async t=>{
+  if(!chromium){t.skip('Playwright is not installed in this environment');return;}
+  const browser=await chromium.launch({headless:true,...(process.env.PORTAL_BROWSER_PATH?{executablePath:process.env.PORTAL_BROWSER_PATH}:{})});
+  try{
+    const {page,errors}=await fixture(browser,'packer');await login(page);await page.evaluate(()=>go('settings'));
+    await page.waitForFunction(()=>document.querySelector('#content [data-action=changePin]'));
+    await page.locator('[data-action=changePin]').click();await page.waitForSelector('#changePinForm');
+    for(const id of ['currentPin','newPin','confirmPin'])assert.equal(await page.locator('#'+id).getAttribute('type'),'password');
+    await page.locator('#currentPin').fill('fixture-current');await page.locator('#newPin').fill('fixture-new');await page.locator('#confirmPin').fill('mismatch');await page.locator('#changePinForm [type=submit]').click();
+    await page.waitForFunction(()=>document.querySelector('#toast')?.textContent.includes('PIN'));
+    assert.equal(await page.evaluate(()=>mock.calls.some(c=>c.url==='/api/me/pin')),false);
+    await page.locator('#confirmPin').fill('fixture-new');await page.locator('#changePinForm [type=submit]').click();
+    await page.waitForFunction(()=>mock.calls.some(c=>c.url==='/api/me/pin'));
+    assert.deepEqual(await page.evaluate(()=>mock.calls.find(c=>c.url==='/api/me/pin').body),{current_pin:'fixture-current',new_pin:'fixture-new'});
+    await page.evaluate(()=>{S.me.role='platform_owner';screens.settings();});
+    assert.equal(await page.locator('[data-action=changePin]').count(),0);assert.deepEqual(errors,[]);await page.close();
+  }finally{await browser.close();}
+});

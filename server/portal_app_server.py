@@ -915,6 +915,32 @@ class Handler(BaseHTTPRequestHandler):
                         repo=Repository(conn,company_id)
                         if repo.ready(): safe['permissions']=sorted(business_rights.effective(repo,identity))
                 return self.send_json({"ok":True,"user":safe})
+            if path == "/api/me/pin" and method == "POST":
+                if is_owner:
+                    raise PermissionError("Для владельца платформы используется отдельный технический пароль")
+                body=parse_body(self)
+                if set(body)!={'current_pin','new_pin'}:
+                    raise ValueError("Передайте текущий и новый PIN")
+                current_pin=body.get('current_pin')
+                new_pin=body.get('new_pin')
+                if not isinstance(current_pin,str) or not isinstance(new_pin,str):
+                    raise ValueError("PIN должен быть строкой")
+                if not 4<=len(new_pin)<=128:
+                    raise ValueError("Новый PIN должен содержать от 4 до 128 символов")
+                if current_pin==new_pin:
+                    raise ValueError("Новый PIN должен отличаться от текущего")
+                with tenants.company_scope(company_id), db() as conn:
+                    account=conn.execute("SELECT id,pin_salt,pin_hash FROM app_users WHERE id=? AND active=1",(identity['id'],)).fetchone()
+                    if not account or not verify_pin(current_pin,account['pin_salt'],account['pin_hash']):
+                        raise ValueError("Текущий PIN указан неверно")
+                    salt,digest=hash_pin(new_pin)
+                    conn.execute("UPDATE app_users SET pin_salt=?,pin_hash=?,updated_at=? WHERE id=?",
+                                 (salt,digest,now_text(),identity['id']))
+                    conn.execute("DELETE FROM app_sessions WHERE user_id=? AND token<>?",(identity['id'],self.token()))
+                    repo=Repository(conn,company_id)
+                    if repo.ready():repo.audit(identity,'user.pin.changed',identity['id'])
+                    conn.commit()
+                return self.send_json({"ok":True})
             if is_owner and selected is None:
                 raise PermissionError("Для технического доступа укажите X-Portal-Company")
             module=company_module_for_route(path)
@@ -1006,7 +1032,7 @@ class Handler(BaseHTTPRequestHandler):
                 users={str(u['id']):u.get('display_name','') for u in repo.catalog('users')}
                 rows=conn.execute("SELECT id,payload,created_at FROM portal_production WHERE company_id=? AND kind='audit' ORDER BY created_at DESC,id DESC",(repo.company_id,)).fetchall()
                 items=[]
-                labels={'access_invite.created':'Создано приглашение','access_invite.accepted':'Принят запрос доступа','access_invite.approved':'Подтверждён доступ','access_invite.revoked':'Приглашение отозвано','access_invite.rejected':'Запрос отклонён','access_invite.expired':'Приглашение истекло','client.requisites.updated':'Обновлены реквизиты клиента','user.permissions.updated':'Изменены права сотрудника','company.settings.updated':'Изменены настройки компании'}
+                labels={'access_invite.created':'Создано приглашение','access_invite.accepted':'Принят запрос доступа','access_invite.approved':'Подтверждён доступ','access_invite.revoked':'Приглашение отозвано','access_invite.rejected':'Запрос отклонён','access_invite.expired':'Приглашение истекло','client.requisites.updated':'Обновлены реквизиты клиента','user.permissions.updated':'Изменены права сотрудника','user.pin.changed':'Сотрудник сменил PIN','company.settings.updated':'Изменены настройки компании'}
                 for row in rows:
                     payload=json.loads(row['payload']);at=row['created_at'][:10];actor_id=payload.get('actor_id')
                     if actor and str(actor_id)!=actor:continue

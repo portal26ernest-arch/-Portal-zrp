@@ -133,6 +133,32 @@ class PortalAPITest(unittest.TestCase):
         self.assertEqual(logged["user"]["username"],"worker")
         self.request("/api/users",self.admin,{"username":"WoRkEr","display_name":"Duplicate","pin":"4321","role":"packer"},status=400)
 
+    def test_self_service_pin_change_verifies_identity_revokes_other_sessions_and_preserves_current(self):
+        with portal.db() as conn:
+            other_session=portal.create_session(conn,self.worker_id)
+        with patch.object(portal.Repository,"ready",return_value=True), patch.object(portal.Repository,"audit") as audit:
+            self.assertEqual(self.request("/api/me/pin",self.worker,{"current_pin":"1234","new_pin":"5678"}),{"ok":True})
+        audit.assert_called_once()
+        audit_args,audit_kwargs=audit.call_args
+        self.assertEqual(audit_args[1:],("user.pin.changed",self.worker_id))
+        self.assertEqual(audit_kwargs,{})
+        self.assertIsNotNone(portal.user_from_token(self.worker))
+        self.assertIsNone(portal.user_from_token(other_session))
+        self.login("worker","1234",status=401)
+        self.assertEqual(self.login("worker","5678")["user"]["id"],self.worker_id)
+
+    def test_self_service_pin_change_rejects_wrong_same_invalid_and_targeted_payloads_without_mutation(self):
+        for payload in (
+            {"current_pin":"wrong","new_pin":"5678"},
+            {"current_pin":"1234","new_pin":"1234"},
+            {"current_pin":"1234","new_pin":"123"},
+            {"current_pin":"1234","new_pin":"x"*129},
+            {"current_pin":"1234","new_pin":"5678","user_id":self.admin_id},
+        ):
+            self.request("/api/me/pin",self.worker,payload,status=400)
+        self.login("worker","1234")
+        self.request("/api/me/pin",status=401,body={"current_pin":"1234","new_pin":"5678"})
+
     def test_desktop_update_manifest_is_public_and_fail_closed(self):
         keys = {
             "PORTAL_DESKTOP_UPDATE_VERSION": "",
