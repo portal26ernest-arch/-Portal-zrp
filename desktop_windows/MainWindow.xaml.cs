@@ -7,12 +7,13 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Windows;
+using System.Windows.Input;
 
 namespace Portal.Desktop;
 
 public partial class MainWindow : Window
 {
-    private const int CurrentBuild = 35;
+    private const int CurrentBuild = 36;
     private const long MaxInstallerBytes = 250L * 1024 * 1024;
     private static readonly HttpClient Http = new(new HttpClientHandler { AllowAutoRedirect = false })
     {
@@ -22,6 +23,7 @@ public partial class MainWindow : Window
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PORTAL");
     private string? _serverOrigin;
     private bool _browserEventsAttached;
+    private bool _webRecoveryPending;
 
     public MainWindow()
     {
@@ -185,9 +187,20 @@ public partial class MainWindow : Window
         {
             if (_serverOrigin is null || Browser.Visibility != Visibility.Visible) return;
             StatusText.Text = e.IsSuccess ? "Подключено" : "Ошибка подключения";
-            BackButton.IsEnabled = Browser.CanGoBack;
+            BackButton.IsEnabled = true;
+            _webRecoveryPending = false;
         };
-        Browser.CoreWebView2.ProcessFailed += (_, _) => StatusText.Text = "WebView остановлен — обновите страницу";
+        Browser.CoreWebView2.ProcessFailed += (_, _) =>
+        {
+            if (_webRecoveryPending || Browser.Visibility != Visibility.Visible) return;
+            _webRecoveryPending = true;
+            StatusText.Text = "Восстанавливаем интерфейс…";
+            _ = Dispatcher.InvokeAsync(async () =>
+            {
+                await Task.Delay(350);
+                if (Browser.Visibility == Visibility.Visible) Browser.Reload();
+            });
+        };
         _browserEventsAttached = true;
     }
 
@@ -241,9 +254,44 @@ public partial class MainWindow : Window
         StatusText.Text = "Требуется подключение";
     }
 
-    private void Back_Click(object sender, RoutedEventArgs e)
+    private async void Back_Click(object sender, RoutedEventArgs e)
     {
+        if (Browser.Visibility != Visibility.Visible || Browser.CoreWebView2 is null) return;
+        try
+        {
+            var handled = await Browser.ExecuteScriptAsync("Boolean(window.portalBack && window.portalBack())");
+            if (string.Equals(handled, "true", StringComparison.OrdinalIgnoreCase)) return;
+        }
+        catch { }
         if (Browser.CanGoBack) Browser.GoBack();
+    }
+
+    private async void Home_Click(object sender, RoutedEventArgs e)
+    {
+        if (Browser.Visibility != Visibility.Visible || Browser.CoreWebView2 is null)
+        {
+            if (_serverOrigin is not null) await ConnectAsync(_serverOrigin, persist: false);
+            return;
+        }
+        try
+        {
+            var handled = await Browser.ExecuteScriptAsync("Boolean(window.portalHome && window.portalHome())");
+            if (string.Equals(handled, "true", StringComparison.OrdinalIgnoreCase)) return;
+        }
+        catch { }
+        if (_serverOrigin is not null) Browser.Source = new Uri(_serverOrigin + "/web/");
+    }
+
+    private async void Browser_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (Browser.Visibility != Visibility.Visible || Browser.CoreWebView2 is null) return;
+        e.Handled = true;
+        try
+        {
+            var delta = -Math.Sign(e.Delta) * Math.Max(80, Math.Abs(e.Delta));
+            await Browser.ExecuteScriptAsync($"window.scrollBy({{top:{delta},left:0,behavior:'auto'}})");
+        }
+        catch { }
     }
 
     private void Reload_Click(object sender, RoutedEventArgs e)

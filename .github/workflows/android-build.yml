@@ -9,7 +9,7 @@ on:
         default: ""
         type: string
   push:
-    branches: [ "main", "portal-next-b003", "codex-documents-excel-part4", "codex-communications-news-part5", "assistant-release-3.4-candidate", "codex-finalization-megapack-part12" ]
+    branches: [ "main", "portal-next-b003", "codex-documents-excel-part4", "codex-communications-news-part5", "assistant-release-3.4-candidate", "assistant/**", "codex-finalization-megapack-part12" ]
     paths:
       - "android_src/**"
       - ".github/workflows/android-build.yml"
@@ -41,6 +41,8 @@ jobs:
         run: node android_src/tests/employee-create-mode.test.cjs
       - name: Verify native fullscreen shell
         run: node android_src/tests/native-shell.test.cjs
+      - name: Verify Desktop navigation and recovery contract
+        run: node android_src/tests/desktop-shell.test.cjs
       - name: Verify retired runtime boundary
         run: node android_src/tests/legacy-boundary.test.cjs
       - name: Verify documents and chat Android bridge
@@ -73,7 +75,10 @@ jobs:
           APK=$(find android_src/app/build/outputs/apk/staging -name '*.apk' -type f | head -n 1)
           test -n "$APK"
           BADGING=$("$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK")
-          grep -q "^package: name='ru.portal.app.staging'.*versionCode='35'.*versionName='3.5-dev-staging'" <<< "$BADGING"
+          VERSION=$(sed -n 's/^versionName=//p' android_src/release.properties | tr -d '\r')
+          VERSION_CODE=$(sed -n 's/^versionCode=//p' android_src/release.properties | tr -d '\r')
+          EXPECTED_STAGING_VERSION="${VERSION}-staging"
+          grep -q "^package: name='ru.portal.app.staging'.*versionCode='${VERSION_CODE}'.*versionName='${EXPECTED_STAGING_VERSION}'" <<< "$BADGING"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
       - name: Prepare named APK
         id: artifact
@@ -89,24 +94,28 @@ jobs:
           APK_SHA256=$(sha256sum "$NAME.apk" | awk '{print $1}')
           printf '%s  %s\n' "$APK_SHA256" "$NAME.apk" > "$NAME.apk.sha256"
           echo "artifact_name=${NAME}_${APK_SHA256}" >> "$GITHUB_OUTPUT"
+          VERSION_CODE=$(sed -n 's/^versionCode=//p' android_src/release.properties | tr -d '\r')
+          BUILD_NUMBER=$(sed -n 's/^buildNumber=//p' android_src/release.properties | tr -d '\r')
+          STAGING_VERSION="${VERSION}-staging"
           {
             echo "## PORTAL staging APK"
-            echo "- Version: 3.5-dev-staging (versionCode 35; build 3.5)"
+            echo "- Version: ${STAGING_VERSION} (versionCode ${VERSION_CODE}; build ${BUILD_NUMBER})"
             echo "- Artifact: $NAME"
             echo "- APK SHA-256: $APK_SHA256"
           } >> "$GITHUB_STEP_SUMMARY"
-          sed 's/^versionName=.*/versionName=3.5-dev-staging/' android_src/release.properties > "$NAME.version.properties"
+          sed "s/^versionName=.*/versionName=${STAGING_VERSION}/" android_src/release.properties > "$NAME.version.properties"
           cp PORTAL_PART12_CHANGELOG.md "$NAME.changelog.md"
-          cat > "$NAME.test-report.txt" <<'REPORT'
-          PORTAL 3.5-dev-staging artifact validation
+          cat > "$NAME.test-report.txt" <<REPORT
+          PORTAL ${STAGING_VERSION} artifact validation
           This report is emitted only after the workflow's set -e validation steps pass.
           Passed: node android_src/tests/build-security.test.cjs
           Passed: node android_src/tests/employee-create-mode.test.cjs
           Passed: node android_src/tests/native-shell.test.cjs
+          Passed: node android_src/tests/desktop-shell.test.cjs
           Passed: node android_src/tests/legacy-boundary.test.cjs
           Passed: node android_src/tests/documents-chat.test.cjs
           Passed: Gradle assembleStaging
-          Passed: Android package/version metadata check (ru.portal.app.staging, 3.5-dev-staging, 35)
+          Passed: Android package/version metadata check (ru.portal.app.staging, ${STAGING_VERSION}, ${VERSION_CODE})
           Passed: apksigner verify --verbose
           Detailed CI results are available in the GitHub Actions run containing this artifact.
           REPORT

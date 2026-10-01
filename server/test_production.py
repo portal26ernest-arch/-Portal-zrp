@@ -191,9 +191,10 @@ class ProductionTest(unittest.TestCase):
             Production(dashboard_repo,dashboard_user).today()
         data=self.get('today')['data']
         self.assertEqual(data['today_quantity'],2)
-        self.assertEqual(data['month_quantity'],4)
+        expected_month=(4,2000,800) if today.day>15 else (2,1000,400)
+        self.assertEqual(data['month_quantity'],expected_month[0])
         self.assertEqual(data['today_finance'],dict(revenue=1000,salary=400))
-        self.assertEqual((data['month_finance']['revenue'],data['month_finance']['salary']),(2000,800))
+        self.assertEqual((data['month_finance']['revenue'],data['month_finance']['salary']),expected_month[1:])
         self.assertEqual(data['today_productivity']['units'],2)
         self.assertIsNone(data['today_productivity']['units_per_hour'])
         self.assertEqual((data['open_invoice_count'],data['overdue_invoice_count'],data['overdue_debt']),(1,1,1000))

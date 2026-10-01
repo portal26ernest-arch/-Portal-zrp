@@ -21,7 +21,7 @@ globalThis.PortalCore = (() => {
     {id:'control',title:'Контроль PORTAL',icon:'bell',description:'Правила счетов и оплат',production:true},
     {id:'documents',title:'Документы',icon:'file',description:'Документы компании',production:true},
     {id:'reports',title:'Отчёты',icon:'grid',description:'Каталог управленческих отчётов',preview:true},
-    {id:'news',title:'Новости',icon:'bell',description:'Ozon и Wildberries',preview:true},
+    {id:'news',title:'Новости',icon:'bell',description:'Ozon и Wildberries',production:true},
     {id:'excelImport',title:'Импорт Excel',icon:'file',description:'Шаблон, проверка и загрузка',production:true},
     {id:'wms',title:'WMS / ТСД',icon:'box',description:'Сканирование и складские операции',preview:true},
     {id:'notifications',title:'Уведомления',icon:'bell',description:'Что требует внимания',preview:true}

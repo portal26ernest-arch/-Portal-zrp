@@ -1,0 +1,18 @@
+const fs=require('node:fs');
+const path=require('node:path');
+const assert=require('node:assert/strict');
+const repo=path.join(__dirname,'../..');
+const xaml=fs.readFileSync(path.join(repo,'desktop_windows/MainWindow.xaml'),'utf8');
+const code=fs.readFileSync(path.join(repo,'desktop_windows/MainWindow.xaml.cs'),'utf8');
+const app=fs.readFileSync(path.join(repo,'android_src/app/src/main/assets/app.js'),'utf8');
+assert.match(xaml,/x:Name="HomeButton"[^>]+Click="Home_Click"/);
+assert.match(xaml,/PreviewMouseWheel="Browser_PreviewMouseWheel"/);
+assert.match(code,/ExecuteScriptAsync\("Boolean\(window\.portalBack && window\.portalBack\(\)\)"\)/);
+assert.match(code,/ExecuteScriptAsync\("Boolean\(window\.portalHome && window\.portalHome\(\)\)"\)/);
+assert.match(code,/window\.scrollBy\(\{\{top:/);
+assert.match(code,/ProcessFailed[\s\S]+_webRecoveryPending[\s\S]+Browser\.Reload\(\)/);
+assert.match(app,/window\.portalBack=/);
+assert.match(app,/S\.history\.push\(S\.page\)/);
+assert.match(app,/window\.portalHome=/);
+assert.match(app,/autoCheckUpdates\(\)/);
+console.log('Desktop shell navigation and recovery checks: OK');

@@ -2,7 +2,7 @@ name: PORTAL Windows Desktop build
 
 on:
   push:
-    branches: ["main", "codex-finalization-megapack-part12", "codex/desktop-client-connection"]
+    branches: ["main", "assistant/**", "codex-finalization-megapack-part12", "codex/desktop-client-connection"]
     paths:
       - "desktop_windows/**"
       - "ops/install_portal_desktop.ps1"
@@ -29,6 +29,14 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "8.0.x"
+      - name: Resolve Desktop version
+        id: meta
+        shell: pwsh
+        run: |
+          $project = [xml](Get-Content -LiteralPath "desktop_windows/Portal.Desktop.csproj" -Raw)
+          $version = [string]$project.Project.PropertyGroup.Version
+          if ([string]::IsNullOrWhiteSpace($version)) { throw "Desktop version is missing" }
+          "version=$version" >> $env:GITHUB_OUTPUT
       - name: Validate installer PowerShell syntax
         shell: pwsh
         run: |
@@ -39,11 +47,11 @@ jobs:
           ) | Out-Null
           if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Error $_ }; exit 1 }
       - name: Publish self-contained Windows client
-        run: dotnet publish desktop_windows/Portal.Desktop.csproj --configuration Release --runtime win-x64 --self-contained true -p:Version=3.5.0 -p:InformationalVersion=3.5.0-ci -o artifacts/desktop
+        run: dotnet publish desktop_windows/Portal.Desktop.csproj --configuration Release --runtime win-x64 --self-contained true -p:Version=${{ steps.meta.outputs.version }} -p:InformationalVersion=${{ steps.meta.outputs.version }}-ci -o artifacts/desktop
       - name: Package and checksum CI artifact
         shell: pwsh
         run: |
-          $package = "PORTAL-Desktop-win-x64-3.5.0.zip"
+          $package = "PORTAL-Desktop-win-x64-${{ steps.meta.outputs.version }}.zip"
           Compress-Archive -Path "artifacts/desktop/*" -DestinationPath $package
           $hash = (Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash.ToLowerInvariant()
           Set-Content -LiteralPath "$package.sha256" -Value "$hash  $package" -NoNewline
@@ -52,12 +60,12 @@ jobs:
         run: .\ops\test_portal_desktop_installer.ps1 -InstallerPath .\ops\install_portal_desktop.ps1
       - name: Install packaged app into disposable per-user profile
         shell: pwsh
-        run: .\ops\install_portal_desktop.ps1 -PackagePath .\PORTAL-Desktop-win-x64-3.5.0.zip -Version 3.5.0
+        run: .\ops\install_portal_desktop.ps1 -PackagePath .\PORTAL-Desktop-win-x64-${{ steps.meta.outputs.version }}.zip -Version ${{ steps.meta.outputs.version }}
       - uses: actions/upload-artifact@v4
         with:
-          name: PORTAL-Desktop-win-x64-3.5.0
+          name: PORTAL-Desktop-win-x64-${{ steps.meta.outputs.version }}
           path: |
-            PORTAL-Desktop-win-x64-3.5.0.zip
-            PORTAL-Desktop-win-x64-3.5.0.zip.sha256
+            PORTAL-Desktop-win-x64-${{ steps.meta.outputs.version }}.zip
+            PORTAL-Desktop-win-x64-${{ steps.meta.outputs.version }}.zip.sha256
           if-no-files-found: error
           retention-days: 14

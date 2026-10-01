@@ -39,6 +39,28 @@ class TemplateTest(unittest.TestCase):
         out=io.BytesIO();book.save(out)
         self.assertEqual(parse_template(out.getvalue())['rows']['Клиенты'][0]['name'],'Тест')
 
+    def test_user_can_fill_and_resave_every_template_tab(self):
+        import openpyxl
+        book=openpyxl.load_workbook(io.BytesIO(workbook()))
+        samples={
+            'Компания':{'company_id':'1','name':'PORTAL','director':'Директор'},
+            'Сотрудники':{'employee_ref':'employee:new','full_name':'Новый сотрудник','profile_username':'new.user','role':'packer','active':'1'},
+            'Клиенты':{'client_ref':'client:new','name':'Новый клиент','active':'1','inn':'0012345678'},
+            'Операции_Тарифы':{'client_ref':'client:new','name':'Упаковка','employee_rate':'5.00','client_rate':'8.00','active':'1','effective_from':'2027-01-01T00:00:00Z'},
+        }
+        for sheet_name,values in samples.items():
+            sheet=book[sheet_name]
+            keys=[cell.value for cell in sheet[2]]
+            for key,value in values.items():
+                sheet.cell(row=4,column=keys.index(key)+1,value=value)
+        out=io.BytesIO();book.save(out)
+        parsed=parse_template(out.getvalue())['rows']
+        self.assertEqual(parsed['Компания'][0]['director'],'Директор')
+        self.assertEqual(parsed['Сотрудники'][0]['full_name'],'Новый сотрудник')
+        self.assertEqual(parsed['Клиенты'][0]['inn'],'0012345678')
+        self.assertEqual(parsed['Операции_Тарифы'][0]['employee_rate'],'5.00')
+        self.assertEqual(parsed['Операции_Тарифы'][0]['client_rate'],'8.00')
+
 class TemplateAPITest(unittest.TestCase):
     request=fixtures.DocumentAPITest.request
     tearDown=fixtures.DocumentAPITest.tearDown

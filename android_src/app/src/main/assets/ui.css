@@ -28,3 +28,28 @@
 @media(min-width:1000px){body{max-width:none}.main{width:min(1440px,calc(100% - 64px));margin-inline:auto;padding-top:28px}.top-inner{max-width:1440px;margin:auto}.nav{left:50%;right:auto;width:min(720px,calc(100% - 64px));transform:translateX(-50%)}.tiles{grid-template-columns:repeat(4,minmax(0,1fr))}.auth-content{max-width:520px}}
 
 .web-client [data-action="serverSettings"],.web-client [data-action="checkUpdates"],.web-client #updateButton,.web-client #updateState{display:none!important}.web-client .about::after{content:"Web-клиент обновляется автоматически";display:block;margin-top:16px;padding:14px;border-radius:12px;background:var(--soft);color:var(--muted)}
+
+/* PORTAL Desktop brand system */
+.web-client{--portal-blue:#0b5ed7;--portal-blue-dark:#0846a8;--portal-blue-soft:#eaf2ff;--accent:var(--portal-blue);--accent-soft:var(--portal-blue-soft);--bg:#f5f8fd;--soft:#edf3fb;--text:#172033;--muted:#66738a;--line:#dce5f2;--shadow:0 18px 56px #12386b14;--radius:16px}
+:root[data-theme=dark].web-client{--portal-blue:#2f80ff;--portal-blue-dark:#0e3572;--portal-blue-soft:#173866;--bg:#101722;--surface:#182231;--soft:#202d3f;--text:#f1f6ff;--muted:#a8b7cd;--line:#2a3b52;--accent:#6ea8ff;--accent-soft:#1d3f70;--accent-text:#07152a}
+.web-client .top{background:var(--portal-blue);border-bottom:0;color:#fff;box-shadow:0 8px 24px #0b4fbf22}
+.web-client .top .portal-symbol{background:#fff;color:var(--portal-blue)}
+.web-client .top .wordmark{color:#fff;font-size:18px;letter-spacing:3.2px}
+.web-client .top .company-name{color:#dceaff}
+.web-client .top .icon-button{background:#ffffff16;border-color:#ffffff35;color:#fff}
+.web-client .hero,.web-client .today-main{background:linear-gradient(135deg,var(--portal-blue),var(--portal-blue-dark))}
+.web-client .card,.web-client .item,.web-client .tile,.web-client .metric,.web-client .compact-panel,.web-client .money-card,.web-client .today-kpi{box-shadow:0 8px 28px #1c4f8a0c}
+.web-client .page-heading h1{color:#15345f}
+:root[data-theme=dark].web-client .page-heading h1{color:var(--text)}
+@media(min-width:900px){
+.web-client #app{min-height:100vh;padding-left:272px}
+.web-client .top{padding:14px 30px}.web-client .top-inner{max-width:none;margin:0}
+.web-client .main{width:auto;max-width:none;margin:0;padding:34px 38px 54px}
+.web-client .nav{position:fixed;inset:0 auto 0 0;width:272px;transform:none;z-index:35;display:flex;flex-direction:column;justify-content:flex-start;align-items:stretch;gap:4px;overflow-y:auto;background:linear-gradient(180deg,var(--portal-blue-dark),#063579);border:0;padding:22px 14px 18px;box-shadow:14px 0 36px #0b3b8017}
+.web-client .nav::before{content:"PORTAL";display:block;color:#fff;font-size:25px;font-weight:850;letter-spacing:4px;padding:3px 12px 22px;border-bottom:1px solid #ffffff26;margin-bottom:10px}
+.web-client .nav button{display:flex;flex-direction:row;align-items:center;justify-content:flex-start;gap:11px;flex:0 0 auto;max-width:none;width:100%;min-height:44px;padding:10px 12px;border-radius:11px;color:#dceaff;font-size:13px;text-align:left}
+.web-client .nav button:hover{background:#ffffff12;color:#fff}.web-client .nav button.active{background:#fff;color:var(--portal-blue-dark);font-weight:750;box-shadow:0 8px 22px #062a6033}
+.web-client .nav .icon{width:19px;height:19px}.web-client .nav-group{display:grid;gap:3px;margin-top:10px}.web-client .nav-group-title{padding:8px 12px 4px;color:#9fc2f5;font-size:10px;font-weight:800;letter-spacing:1.1px;text-transform:uppercase}
+.web-client .nav-spacer{flex:1;min-height:18px}.web-client .tiles{grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.web-client .tile{min-height:118px;border-radius:16px}.web-client .metrics{gap:14px}.web-client .sheet-backdrop{left:272px}.web-client .toast{bottom:28px;left:calc(272px + (100vw - 272px)/2)}
+.web-client .auth-shell{max-width:1120px;padding-inline:44px}.web-client .auth-content{max-width:520px;margin-inline:auto}.web-client .auth-top .portal-symbol{background:var(--portal-blue);color:#fff}.web-client .auth-top .wordmark{color:var(--portal-blue-dark)}
+}

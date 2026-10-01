@@ -37,6 +37,8 @@ test('marketplace news is live/empty, escaped and links only to official HTTPS h
   assert.match(preview,/u\.protocol==='https:'/);
   assert.match(preview,/!u\.port\|\|u\.port==='443'/);
   assert.match(preview,/seller\.ozon\.ru','seller\.wildberries\.ru/);
+  assert.match(preview,/href="https:\/\/seller\.ozon\.ru\/"[^>]*>Открыть Ozon Seller/);
+  assert.match(preview,/href="https:\/\/seller\.wildberries\.ru\/"[^>]*>Открыть Wildberries Seller/);
   assert.match(preview,/Открыть первоисточник/);
   assert.doesNotMatch(preview,/innerHTML\s*=\s*item\.body/);
 });
@@ -77,15 +79,24 @@ test('update install action is available only for verified available state and r
   assert.match(app,/u\.state==='available'\?btn\('Скачать и установить','installUpdate'/);
   assert.match(app,/state:'downloading',title:'Загружаем и проверяем…'/);
   assert.match(app,/state:'ready',title:'Готово к установке'/);
+  assert.match(app,/void autoCheckUpdates\(\);await checkServer\(\)/);
   assert.match(app,/S\.update\?\.state!=='available'\|\|!S\.update\.release/);
+});
+test('desktop web branding uses the PORTAL blue shell',()=>{
+  const css=fs.readFileSync(path.join(assets,'ui.css'),'utf8');
+  assert.match(css,/--portal-blue:#0b5ed7/);
+  assert.match(css,/\.web-client \.nav::before\{content:"PORTAL"/);
+  assert.match(css,/\.web-client \.top\{background:var\(--portal-blue\)/);
+  assert.match(css,/@media\(min-width:900px\)/);
 });
 
 // Emulate only the Java bridge transport; run the actual shipped UI and events.
-async function fixture(browser,role='manager',viewport={width:390,height:844},stage3=false){
+async function fixture(browser,role='manager',viewport={width:390,height:844},stage3=false,web=false){
   const page=await browser.newPage({viewport});
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
-  await page.addInitScript(({role,metadata,stage3})=>{
+  await page.addInitScript(({role,metadata,stage3,web})=>{
     localStorage.clear();
+    if(web)window.__PORTAL_WEB__=true;
     const user={id:1,username:role,display_name:'Тестовый пользователь',role,company_id:1,employee_id:role==='platform_owner'?null:101};
     const client={id:1,name:'Клиент',active:1};
     window.mock={calls:[],offline:false,rejectWrite:false,hold:false,held:[],update:{ok:true,configured:false},timer:null,stage3Today:null,stage3Batches:null,stage3Shipments:null,stage3Tasks:null,stage3Economy:null,stage3Permissions:null,stage3Invoices:null,clientNameHistory:[],clientRequisites:{legal_name:'ООО Тест',inn:'TEST-INN-001'},tariffHistory:[],presenceOnline:true,saved:null,previewMode:'ok',applyMode:'ok',payrollPaid:2000,invites:[],products:[]};
@@ -157,7 +168,7 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
       else if(url==='/api/clients/1')Object.assign(data,{client,stats:{},requisites:{}});
       if(mock.hold&&url.startsWith('/api/dashboard'))mock.held.push(()=>respond(id,data));else respond(id,data);
     }};
-  },{role,metadata,stage3});
+  },{role,metadata,stage3,web});
   await page.goto(pathToFileURL(path.join(assets,'index.html')).href);
   await page.waitForFunction(()=>document.querySelector('#serverState').textContent==='Подключение готово');
   return {page,errors};
@@ -210,6 +221,20 @@ test('browser UI regression',async t=>{
         for(const name of expected){await page.evaluate(name=>go(name),name);assert.doesNotMatch(await page.locator('#content').innerText(),/Не удалось загрузить/);}
         assert.deepEqual(errors,[]);await page.close();
       }
+    });
+    await t.test('desktop menu follows effective permissions and PORTAL branding',async()=>{
+      const director=await fixture(browser,'director',{width:1280,height:900},true,true);
+      await director.page.evaluate(()=>{mock.stage3Permissions=['work.write','tasks.read','tasks.manage','batches.receive','users.manage','access.history.read','payroll.own','payroll.all','payroll.close','chat.read','clients.read','clients.manage','rates.employee','rates.client','materials.read','materials.use','invoices.read','invoices.create','payments.record','finance.read','expenses.read','expenses.manage','analytics.read','documents.read','documents.manage','imports.manage','company.settings'];document.documentElement.classList.add('web-client');});
+      await login(director.page);const directorPages=await director.page.locator('#nav [data-page]').evaluateAll(nodes=>nodes.map(n=>n.dataset.page));
+      for(const pageName of ['dashboard','users','materials','payrollPeriods','expenses','excelImport'])assert.ok(directorPages.includes(pageName),pageName);
+      assert.equal(await director.page.evaluate(()=>getComputedStyle(document.querySelector('.top')).backgroundColor),'rgb(11, 94, 215)');
+      assert.deepEqual(director.errors,[]);await director.page.close();
+      const manager=await fixture(browser,'manager',{width:1280,height:900},true,true);
+      await manager.page.evaluate(()=>{mock.stage3Permissions=['work.write','tasks.read','tasks.manage','batches.receive','payroll.own','chat.read','clients.read','rates.client','invoices.read','invoices.create','analytics.read','documents.read'];document.documentElement.classList.add('web-client');});
+      await login(manager.page);const managerPages=await manager.page.locator('#nav [data-page]').evaluateAll(nodes=>nodes.map(n=>n.dataset.page));
+      for(const pageName of ['dashboard','work','clients','invoices','analytics','documents'])assert.ok(managerPages.includes(pageName),pageName);
+      for(const pageName of ['users','materials','payrollPeriods','expenses','excelImport'])assert.equal(managerPages.includes(pageName),false,pageName);
+      assert.deepEqual(manager.errors,[]);await manager.page.close();
     });
     await t.test('Documents and Excel live flow downloads, archives, previews, applies and rolls back',async()=>{
       const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);

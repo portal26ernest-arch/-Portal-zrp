@@ -3,38 +3,41 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         Title="PORTAL Desktop" Height="820" Width="1320" MinHeight="620" MinWidth="900"
-        WindowStartupLocation="CenterScreen" Background="#F4F6F8">
+        WindowStartupLocation="CenterScreen" Background="#F5F8FD">
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="56"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
-        <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E5E7EB" BorderThickness="0,0,0,1">
+        <Border Grid.Row="0" Background="#0B5ED7" BorderBrush="#0B5ED7" BorderThickness="0,0,0,1">
             <Grid Margin="16,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="PORTAL" FontSize="22" FontWeight="Bold"/>
-                    <TextBlock Text=" Desktop" FontSize="14" Margin="8,6,0,0" Foreground="#6B7280"/>
-                </StackPanel>
+                <Button x:Name="HomeButton" Click="Home_Click" Background="Transparent" BorderThickness="0" Foreground="White"
+                        Padding="0" ToolTip="На главную" Cursor="Hand" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="PORTAL" FontSize="22" FontWeight="Bold"/>
+                        <TextBlock Text=" Desktop" FontSize="14" Margin="8,6,0,0" Foreground="#DCEAFF"/>
+                    </StackPanel>
+                </Button>
                 <TextBlock x:Name="StatusText" Grid.Column="1" VerticalAlignment="Center"
-                           HorizontalAlignment="Center" Foreground="#6B7280" Text="Подготовка подключения…"/>
+                           HorizontalAlignment="Center" Foreground="#DCEAFF" Text="Подготовка подключения…"/>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button x:Name="BackButton" Content="←" Width="40" Height="34" Margin="0,0,8,0" Click="Back_Click"/>
-                    <Button Content="Обновить страницу" Height="34" Margin="0,0,8,0" Padding="12,0" Click="Reload_Click"/>
-                    <Button Content="Проверить версию" Height="34" Margin="0,0,8,0" Padding="12,0" Click="CheckUpdate_Click"/>
-                    <Button Content="Сервер" Height="34" Padding="12,0" Click="Server_Click"/>
+                    <Button x:Name="BackButton" Content="←" Width="40" Height="34" Margin="0,0,8,0" Click="Back_Click" Background="#1AFFFFFF" Foreground="White" BorderBrush="#40FFFFFF"/>
+                    <Button Content="Обновить страницу" Height="34" Margin="0,0,8,0" Padding="12,0" Click="Reload_Click" Background="#1AFFFFFF" Foreground="White" BorderBrush="#40FFFFFF"/>
+                    <Button Content="Проверить версию" Height="34" Margin="0,0,8,0" Padding="12,0" Click="CheckUpdate_Click" Background="#1AFFFFFF" Foreground="White" BorderBrush="#40FFFFFF"/>
+                    <Button Content="Сервер" Height="34" Padding="12,0" Click="Server_Click" Background="#1AFFFFFF" Foreground="White" BorderBrush="#40FFFFFF"/>
                 </StackPanel>
             </Grid>
         </Border>
 
         <Grid Grid.Row="1">
-            <wv2:WebView2 x:Name="Browser" Visibility="Collapsed"/>
+            <wv2:WebView2 x:Name="Browser" Visibility="Collapsed" PreviewMouseWheel="Browser_PreviewMouseWheel"/>
 
-            <Border x:Name="SetupPanel" Background="#F4F6F8">
+            <Border x:Name="SetupPanel" Background="#F5F8FD">
                 <Border Width="560" Padding="28" CornerRadius="14" Background="White"
                         BorderBrush="#E5E7EB" BorderThickness="1" HorizontalAlignment="Center"
                         VerticalAlignment="Center">
@@ -46,7 +49,7 @@
                         <TextBox x:Name="ServerUrlBox" Margin="0,8,0,12" Height="38" Padding="10,7"
                                  ToolTip="Например: https://portal.example.ru"/>
                         <TextBlock x:Name="SetupError" Foreground="#B91C1C" TextWrapping="Wrap" Margin="0,0,0,12"/>
-                        <Button x:Name="ConnectButton" Content="Подключиться" Height="40" Click="Connect_Click"/>
+                        <Button x:Name="ConnectButton" Content="Подключиться" Height="40" Click="Connect_Click" Background="#0B5ED7" Foreground="White" BorderBrush="#0B5ED7"/>
                         <TextBlock Margin="0,18,0,0" Foreground="#9CA3AF" TextWrapping="Wrap"
                                    Text="PORTAL Desktop не хранит пароль, PIN или API-секреты. Сохраняется только адрес выбранного сервера."/>
                     </StackPanel>
