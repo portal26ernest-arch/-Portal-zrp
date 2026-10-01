@@ -102,6 +102,12 @@ class PortalAPITest(unittest.TestCase):
         gc.collect()
         self.tmp.cleanup()
 
+    def test_readiness_checks_both_planes_without_disclosing_errors(self):
+        self.assertEqual(self.request('/api/ready'), {'ok': True, 'ready': True})
+        with patch.object(portal.tenants, 'control', side_effect=ConnectionError('secret-dsn')):
+            response = self.request('/api/ready', status=503)
+        self.assertNotIn('secret-dsn', json.dumps(response))
+
     def request(self,path,token=None,body=None,method=None,status=200,extra_headers=None):
         headers = {"Authorization":"Bearer "+token} if token else {}
         headers.update(extra_headers or {})
@@ -349,9 +355,33 @@ class PostgreSQLDatabaseNameValidationTest(unittest.TestCase):
         with patch.object(portal, 'CONFIG', SimpleNamespace(environment='production')):
             portal.validate_postgresql_database_names(
                 'portal_prod_control', 'portal_prod_company_1')
-            # Preserve a rollback path for the legacy single-database deployment.
-            portal.validate_postgresql_database_names(
-                'portal_test_stage7_staging', 'portal_test_stage7_staging')
+            for control, tenant in (
+                    ('portal_prod_control', 'portal_prod_control'),
+                    ('portal_test_control', 'portal_prod_company_1'),
+                    ('portal_prod_control', 'portal_test_company_1')):
+                with self.subTest(control=control, tenant=tenant), self.assertRaises(RuntimeError):
+                    portal.validate_postgresql_database_names(control, tenant)
+
+    def test_production_role_split_denies_cross_plane_access(self):
+        class FakeConnection:
+            def __init__(self, role, access):
+                self.role, self.access = role, access
+
+            def execute(self, sql):
+                return SimpleNamespace(fetchone=lambda: (self.role,) if 'current_user' in sql and
+                                       'has_table_privilege' not in sql else self.access)
+
+        control = FakeConnection('control', (True, True, False))
+        tenant = FakeConnection('tenant', (True, False, False))
+        portal.validate_postgresql_runtime_split(control, tenant)
+        for bad_control, bad_tenant in (
+                (FakeConnection('tenant', control.access), tenant),
+                (FakeConnection('control', (True, True, True)), tenant),
+                (control, FakeConnection('tenant', (True, True, False))),
+                (control, FakeConnection('tenant', (True, False, True))),
+                (control, FakeConnection('tenant', (False, False, False)))):
+            with self.subTest(control=bad_control.access, tenant=bad_tenant.access), self.assertRaises(RuntimeError):
+                portal.validate_postgresql_runtime_split(bad_control, bad_tenant)
 
 
 if __name__ == "__main__":

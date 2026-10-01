@@ -79,6 +79,29 @@ def validate_postgresql_database_names(control_database, tenant_database):
             not control_database.startswith('portal_test_')
             or not tenant_database.startswith('portal_test_')):
         raise RuntimeError('Test runtime accepts only portal_test_ PostgreSQL databases')
+    if CONFIG.environment == 'production' and (
+            control_database == tenant_database
+            or control_database.startswith('portal_test_')
+            or tenant_database.startswith('portal_test_')):
+        raise RuntimeError('Production requires separate non-test control and tenant databases')
+
+
+def validate_postgresql_runtime_split(registry, conn):
+    """Production roles must be distinct and confined to their own data plane."""
+    control_role = registry.execute('SELECT current_user').fetchone()[0]
+    tenant_role = conn.execute('SELECT current_user').fetchone()[0]
+    if control_role == tenant_role:
+        raise RuntimeError('Production control and tenant roles must differ')
+    control_access = registry.execute("""SELECT
+        has_table_privilege(current_user,'public.companies','SELECT'),
+        has_table_privilege(current_user,'public.portal_company_keys','SELECT'),
+        has_table_privilege(current_user,'public.app_users','SELECT')""").fetchone()
+    tenant_access = conn.execute("""SELECT
+        has_table_privilege(current_user,'public.app_users','SELECT'),
+        has_table_privilege(current_user,'public.companies','SELECT'),
+        has_table_privilege(current_user,'public.portal_company_keys','SELECT')""").fetchone()
+    if control_access != (True, True, False) or tenant_access != (True, False, False):
+        raise RuntimeError('Production PostgreSQL roles cross the control/tenant boundary')
 
 
 def ensure_schema():
@@ -92,6 +115,8 @@ def ensure_schema():
             control_database = registry.execute('SELECT current_database()').fetchone()[0]
             tenant_database = conn.execute('SELECT current_database()').fetchone()[0]
             validate_postgresql_database_names(control_database, tenant_database)
+            if CONFIG.environment == 'production':
+                validate_postgresql_runtime_split(registry, conn)
             required = {'companies','app_users','app_sessions','portal_clients','portal_client_operations',
                         'work_log','employees','portal_production','portal_production_migrations',
                         'work_material_consumption','portal_runtime_schema','portal_rls_context_schema',
@@ -163,6 +188,21 @@ def ensure_schema():
                 conn.execute(statement)
         tenants.stamp_schema(conn, 1)
     tenants.initialize_control(DB_PATH)
+
+
+def runtime_ready():
+    """Check both data planes without returning data or connection details."""
+    with tenants.control(DB_PATH) as registry:
+        if registry.execute('SELECT 1 FROM companies WHERE id=1').fetchone() is None:
+            return False
+    with tenants.company_scope(1), db() as conn:
+        if CONFIG.backend == 'postgresql':
+            return bool(
+                conn.execute('SELECT portal_current_company()').fetchone()[0] == 1
+                and conn.execute('SELECT 1 FROM portal_runtime_schema WHERE version=1').fetchone()
+                and conn.execute('SELECT 1 FROM portal_rls_context_schema WHERE version=1').fetchone()
+            )
+        return table_exists(conn, 'app_users') and table_exists(conn, 'work_log')
 
 
 def hash_pin(pin, salt=None):
@@ -885,6 +925,14 @@ class Handler(BaseHTTPRequestHandler):
                                     (hashlib.sha256(token.encode()).hexdigest(),god["id"],(datetime.now()+timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S")))
                     return self.send_json({"ok":True,"token":token,"user":{"id":god["id"],"username":god["username"],"role":GLOBAL_ROLE,"company_id":1}})
             return self.error_json("Неверный логин, PIN или компания",401)
+        if path == '/api/ready':
+            if method != 'GET':
+                return self.error_json('Метод не поддерживается', 405)
+            try:
+                ready = runtime_ready()
+            except Exception:
+                ready = False
+            return self.send_json({'ok': True, 'ready': True}) if ready else self.error_json('Сервис не готов', 503)
         if path in {"/api/ping", "/api/setup"}:
             with tenants.company_scope(1):
                 self.tenant_request = True

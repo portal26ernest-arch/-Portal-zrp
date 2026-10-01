@@ -163,6 +163,9 @@ class MigrationImportTest(unittest.TestCase):
         self.assertNotIn('postgresql://portal@localhost/portal', repr(config))
         with self.assertRaises(ValueError):
             load_config({'PORTAL_ENV': 'production', 'PORTAL_PUBLIC_API_URL': 'http://example.com'})
+        with self.assertRaisesRegex(ValueError, 'explicit PostgreSQL backend'):
+            load_config({'PORTAL_ENV': 'production',
+                         'PORTAL_PUBLIC_API_URL': 'https://portal.example.invalid'})
         with self.assertRaises(ValueError):
             load_config({'PORTAL_DB_BACKEND': 'postgresql'})
         production={'PORTAL_ENV': 'production', 'PORTAL_DB_BACKEND': 'postgresql',
@@ -175,6 +178,10 @@ class MigrationImportTest(unittest.TestCase):
         prod_config=load_config(production)
         self.assertEqual(prod_config.environment,'production')
         self.assertEqual(prod_config.host,'127.0.0.1')
+        for name in ('PORTAL_DATABASE_URL', 'PORTAL_CONTROL_DATABASE_URL'):
+            malformed = dict(production, **{name: 'sqlite:///portal.db'})
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                load_config(malformed)
 
 
 if __name__ == '__main__': unittest.main()
