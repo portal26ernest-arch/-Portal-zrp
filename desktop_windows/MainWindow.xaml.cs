@@ -12,7 +12,7 @@ namespace Portal.Desktop;
 
 public partial class MainWindow : Window
 {
-    private const int CurrentBuild = 36;
+    private const int CurrentBuild = 37;
     private const long MaxInstallerBytes = 250L * 1024 * 1024;
     private static readonly HttpClient Http = new(new HttpClientHandler { AllowAutoRedirect = false })
     {
@@ -22,11 +22,13 @@ public partial class MainWindow : Window
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PORTAL");
     private string? _serverOrigin;
     private bool _browserEventsAttached;
+    private readonly string _webViewDataDir = Path.Combine(Path.GetTempPath(), "PORTAL-WebView2", Environment.ProcessId.ToString());
 
     public MainWindow()
     {
         InitializeComponent();
         Loaded += MainWindow_Loaded;
+        Closed += MainWindow_Closed;
     }
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -106,11 +108,9 @@ public partial class MainWindow : Window
             if (Browser.CoreWebView2 is null)
             {
                 Directory.CreateDirectory(_settingsDir);
-                var env = await CoreWebView2Environment.CreateAsync(
-                    userDataFolder: Path.Combine(_settingsDir, "WebView2"));
-                var options = env.CreateCoreWebView2ControllerOptions();
-                options.IsInPrivateModeEnabled = true;
-                await Browser.EnsureCoreWebView2Async(env, options);
+                Directory.CreateDirectory(_webViewDataDir);
+                var env = await CoreWebView2Environment.CreateAsync(userDataFolder: _webViewDataDir);
+                await Browser.EnsureCoreWebView2Async(env);
                 ConfigureBrowser();
             }
             _serverOrigin = origin;
@@ -118,6 +118,7 @@ public partial class MainWindow : Window
             SetupPanel.Visibility = Visibility.Collapsed;
             Browser.Visibility = Visibility.Visible;
             Browser.Source = new Uri(origin + "/web/");
+            _ = WatchNavigationAsync(origin);
         }
         catch (WebView2RuntimeNotFoundException)
         {
@@ -184,11 +185,38 @@ public partial class MainWindow : Window
         Browser.CoreWebView2.NavigationCompleted += (_, e) =>
         {
             if (_serverOrigin is null || Browser.Visibility != Visibility.Visible) return;
-            StatusText.Text = e.IsSuccess ? "Подключено" : "Ошибка подключения";
+            if (!e.IsSuccess)
+            {
+                ShowSetup($"WebView2 не смог открыть PORTAL: {e.WebErrorStatus}. Проверьте WebView2 Runtime и сеть.");
+                return;
+            }
+            StatusText.Text = "Подключено";
             BackButton.IsEnabled = Browser.CanGoBack;
         };
-        Browser.CoreWebView2.ProcessFailed += (_, _) => StatusText.Text = "WebView остановлен — обновите страницу";
+        Browser.CoreWebView2.ProcessFailed += (_, _) =>
+        {
+            StatusText.Text = "Ошибка WebView2";
+            ShowSetup("Встроенный браузер WebView2 остановился. Перезапустите PORTAL Desktop или откройте сервер в Microsoft Edge.");
+        };
         _browserEventsAttached = true;
+    }
+
+    private async Task WatchNavigationAsync(string origin)
+    {
+        await Task.Delay(TimeSpan.FromSeconds(15));
+        if (_serverOrigin != origin || Browser.Visibility != Visibility.Visible) return;
+        if (StatusText.Text != "Подключение…") return;
+        ShowSetup("Сервер доступен, но встроенный WebView2 не завершил загрузку за 15 секунд. Установите/обновите Microsoft Edge WebView2 Runtime и повторите запуск.");
+    }
+
+    private void MainWindow_Closed(object? sender, EventArgs e)
+    {
+        try { Browser.Dispose(); } catch { }
+        try
+        {
+            if (Directory.Exists(_webViewDataDir)) Directory.Delete(_webViewDataDir, recursive: true);
+        }
+        catch { }
     }
 
     private static bool SameOrigin(Uri target, string origin) =>

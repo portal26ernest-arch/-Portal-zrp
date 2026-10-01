@@ -2,7 +2,7 @@
 
 The Windows client is a thin WPF/WebView2 shell over the canonical same-origin `/web/` application. Source, documentation, and CI packages live in GitHub; company records live in central PostgreSQL behind the PORTAL API. The shell stores only the user-selected server origin under the current Windows user's Local AppData. It contains no API keys, passwords, company database, signing material, or hard-coded production endpoint. HTTPS is required; HTTP is accepted only for loopback development.
 
-WebView2 starts with an InPrivate profile, so authentication and browsing data are not kept across app restarts. WebView2 may still create technical profile files on disk; files deliberately downloaded by the user remain where the user saved them. Switching servers clears the active WebView2 browsing data before another login. The same WebView2 instance is reused when reconnecting.
+WebView2 uses a per-process temporary profile for compatibility with older Evergreen Runtime builds, so authentication and browsing data are not intentionally persisted across app restarts. The temporary profile is deleted on normal exit when possible; stale temporary files remain non-authoritative and may be removed on the next maintenance pass. Files deliberately downloaded by the user remain where the user saved them. Switching servers clears the active WebView2 browsing data before another login. The same WebView2 instance is reused when reconnecting.
 
 The package is a self-contained `win-x64` .NET 8 publish output. It requires the Microsoft Edge WebView2 Evergreen Runtime to be present on the Windows machine; the runtime is not bundled. The installer is a non-elevated, current-user PowerShell script. It verifies the SHA-256 sidecar before writing, rejects archive path traversal, installs into a new versioned directory, and then updates a Start Menu shortcut. Previous version directories are retained for rollback. The script does not download packages or contact a server.
 
@@ -12,7 +12,7 @@ GitHub Actions workflow `windows-desktop.yml` compiles the WPF app on `windows-l
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
-.\install_portal_desktop.ps1 -PackagePath .\PORTAL-Desktop-win-x64-3.5.1.zip -Version 3.5.1
+.\install_portal_desktop.ps1 -PackagePath .\PORTAL-Desktop-win-x64-3.5.2.zip -Version 3.5.2
 ```
 
 The checksum detects artifact corruption and mismatched files; by itself it does not authenticate the publisher. Do not install packages from untrusted runs or locations. Production signing, release publication, update-channel policy, and visual verification on a supported Windows machine remain release gates.
