@@ -16,6 +16,7 @@ from documents_api import require_import
 from excel_template import catalog,REQUISITES,TEMPLATE_VERSION
 from portal_excel_workbook import parse_template
 from production_repository import utcnow
+from employee_identity import account_directory
 import production_permissions as rights
 
 LOG=logging.getLogger('portal.import.audit')
@@ -59,7 +60,7 @@ class ExcelImport:
 
     def state(self):
         result=catalog(self.s,self.company)
-        result['_users']=self.r.catalog('users')
+        result['_users']=account_directory(self.r.conn,self.r.company_id)
         result['_employees']=self.r.employee_catalog()
         result['_tariffs']=self.r.list('tariffs')
         result['_company_access']={k:self.company.get(k) for k in ('status','service_status','user_limit')}
@@ -89,7 +90,7 @@ class ExcelImport:
         users={u['id']:u for u in state['_users']}
         operations={o['operation_id']:o for o in state['Операции_Тарифы']}
         refs={};output=[];seen={name:set() for name in parsed['sheets']};seen_names={'Клиенты':set(),'Сотрудники':set()}
-        employee_ids_seen=set();client_ids_seen=set();user_ids_seen=set()
+        employee_ids_seen=set();client_ids_seen=set();user_ids_seen=set();new_access_usernames=set()
         normalized_clients={};now=self.s.clock()
 
         def issue(row,code,classification='invalid'):
@@ -135,10 +136,20 @@ class ExcelImport:
                         if eid is None and (name.casefold() in seen_names[sheet] or any((e['full_name'] or '').casefold()==name.casefold() for e in state['_employees'])):
                             issue(row,'employee_identity_ambiguous','conflict')
                         seen_names[sheet].add(name.casefold())
-                        role=value['role'];enabled=active(value['active'],None)
+                        role=value['role'];enabled=active(value['active'],None);pin=value.get('initial_pin','')
                         if role and role not in ROLES:raise ValueError('invalid_role')
-                        if uid is None and (role or enabled is not None):raise ValueError('access_requires_existing_user_id')
-                        if uid is not None:
+                        create_access=uid is None and bool(role or pin or value['active'])
+                        if uid is None and create_access:
+                            username=clean_text(value['profile_username'],128)
+                            if not role:raise ValueError('new_access_requires_role')
+                            if not pin or not 4<=len(pin)<=128:raise ValueError('new_access_requires_valid_pin')
+                            enabled=1 if enabled is None else enabled
+                            if rights.defaults(role)-self.s.permissions:raise ValueError('role_escalation')
+                            username_key=username.casefold()
+                            if username_key in new_access_usernames or any((u.get('username') or '').casefold()==username_key for u in users.values()):raise ValueError('access_username_conflict')
+                            new_access_usernames.add(username_key)
+                        elif uid is not None:
+                            if pin:raise ValueError('pin_change_requires_access_api')
                             user=users.get(uid)
                             mapping=self.r.payroll_employee(eid) if eid is not None else None
                             user_identity=user.get('employee_id') if user else None
@@ -147,11 +158,12 @@ class ExcelImport:
                             if rights.defaults(role)-self.s.permissions or rights.effective(self.r,user)-self.s.permissions:raise ValueError('role_escalation')
                             if (role!=user['role'] or enabled!=user['active']) and uid==self.u['id'] and not self.u.get('technical_owner'):raise ValueError('own_access_change_requires_access_api')
                             if enabled and not user['active']:raise ValueError('activation_requires_access_api')
-                        normalized=dict(employee_ref=ref,employee_id=eid,full_name=name,profile_username=value['profile_username'],user_id=uid,role=role,active=enabled)
-                        if before and uid is None:
+                        normalized=dict(employee_ref=ref,employee_id=eid,full_name=name,profile_username=value['profile_username'],user_id=uid,role=role,active=enabled,create_access=create_access,initial_pin=pin)
+                        if before and uid is None and not create_access:
                             # Omitted account fields mean a profile edit, never an access edit.
                             before={k:v for k,v in before.items() if k not in ('user_id','role','active')}
-                        if not row['errors']:row['classification']='unchanged' if before and same(before,normalized,['full_name','profile_username','user_id','role','active']) else 'update' if before else 'new'
+                        compare=['full_name','profile_username','user_id','role','active']
+                        if not row['errors']:row['classification']='unchanged' if before and not create_access and same(before,normalized,compare) else 'update' if before else 'new'
                     else:
                         cid=identifier(value['client_id'],True);oid=identifier(value['operation_id'],True);ref=value['client_ref']
                         target=refs.get(ref) if ref else None
@@ -180,20 +192,30 @@ class ExcelImport:
                         normalized['append_tariff']=changed_rates or not before
                         if not row['errors']:row['classification']='update' if before and (changed_rates or normalized['name']!=before['name'] or normalized['active']!=before['active']) else 'unchanged' if before else 'new'
                     row['normalized']=normalized;row['before']=before
-                    row['changes']={key:dict(before=before.get(key),after=value) for key,value in normalized.items() if key not in ('client_ref','employee_ref','append_tariff') and before.get(key)!=value}
+                    row['changes']={key:dict(before=before.get(key),after=value) for key,value in normalized.items() if key not in ('client_ref','employee_ref','append_tariff','create_access','initial_pin') and before.get(key)!=value}
                 except (ValueError,PermissionError) as error:
                     # Validation codes deliberately omit cross-company object data.
                     code=str(error) if re.fullmatch(r'[a-z_]+',str(error)) else 'invalid_text_or_reference'
                     issue(row,code)
-        # A simultaneous workbook edit must not disable the last administrator.
-        resulting={uid:dict(u) for uid,u in users.items()}
+        # A simultaneous workbook edit must not disable the last administrator
+        # and must respect the active-user limit when creating access in bulk.
+        resulting={uid:dict(u) for uid,u in users.items()};new_access_rows=[]
         for row in output:
             value=row['normalized']
-            if row['sheet']=='Сотрудники' and not row['errors'] and value.get('user_id'):
+            if row['sheet']!='Сотрудники' or row['errors']:continue
+            if value.get('user_id'):
                 resulting[value['user_id']].update(role=value['role'],active=value['active'])
-        if not any(u['role']=='admin' and u['active'] for u in resulting.values()):
+            elif value.get('create_access'):
+                key='new:'+value['employee_ref'];resulting[key]=dict(role=value['role'],active=value['active'])
+                new_access_rows.append(row)
+        limit=state['_company_access'].get('user_limit')
+        if limit is not None and sum(bool(u.get('active')) for u in resulting.values())>int(limit):
+            for row in new_access_rows:
+                if row['normalized'].get('active'):issue(row,'user_limit_exceeded','conflict')
+        if not any(u.get('role')=='admin' and u.get('active') for u in resulting.values()):
             for row in output:
-                if row['sheet']=='Сотрудники' and row['normalized'].get('user_id'):issue(row,'last_admin_conflict','conflict')
+                value=row['normalized']
+                if row['sheet']=='Сотрудники' and (value.get('user_id') or value.get('create_access')):issue(row,'last_admin_conflict','conflict')
         counts={key:sum(row['classification']==key for row in output) for key in ('new','update','unchanged','conflict','invalid')}
         return dict(rows=output,summary=counts,can_apply=not(counts['conflict'] or counts['invalid']),snapshot_sha256=digest(state))
 
@@ -206,4 +228,10 @@ class ExcelImport:
         claims=dict(company_id=self.r.company_id,actor_id=self.u['id'],actor_kind=self.actor_kind(),import_id=import_id,
                     checksum=parsed['checksum_sha256'],snapshot=plan['snapshot_sha256'],plan=digest(plan),expires=int(time.time())+1800)
         LOG.info(canonical(dict(event='import_preview_created',company_id=self.r.company_id,actor_id=self.u['id'],import_id=import_id,summary=plan['summary'])))
-        return dict(plan,import_id=import_id,template_version=TEMPLATE_VERSION,checksum=parsed['checksum_sha256'],preview_token=self.token(claims),expires_at=claims['expires'])
+        public_rows=[]
+        for source in plan['rows']:
+            item=dict(source);normalized=dict(item.get('normalized') or {})
+            if normalized.get('initial_pin'):normalized['initial_pin']='***'
+            item['normalized']=normalized;public_rows.append(item)
+        public_plan=dict(plan,rows=public_rows)
+        return dict(public_plan,import_id=import_id,template_version=TEMPLATE_VERSION,checksum=parsed['checksum_sha256'],preview_token=self.token(claims),expires_at=claims['expires'])

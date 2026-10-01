@@ -19,7 +19,7 @@ from employee_identity import (account_directory, assigned_client_ids, canonical
     create_employee_card, create_invited_account, employee_exists, employee_id_for_user,
     employee_work_summary, insert_unlinked_user, legacy_employee_id, legacy_employee_id_for_user,
     insert_legacy_work_values, legacy_paid_period, personal_payroll_totals, personal_work_rows, public_user_record,
-    update_legacy_job_progress, write_user_account)
+    hash_access_pin, update_legacy_job_progress, write_user_account)
 import production_permissions as business_rights
 from production_migrations import migrate as migrate_production
 import production_activity as activity
@@ -156,9 +156,7 @@ def ensure_schema():
 
 
 def hash_pin(pin, salt=None):
-    salt_b = base64.b64decode(salt) if salt else secrets.token_bytes(16)
-    digest = hashlib.pbkdf2_hmac("sha256", pin.encode("utf-8"), salt_b, 180000)
-    return base64.b64encode(salt_b).decode(), base64.b64encode(digest).decode()
+    return hash_access_pin(pin,salt)
 
 
 def verify_pin(pin, salt, expected):
