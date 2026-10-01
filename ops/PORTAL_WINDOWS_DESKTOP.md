@@ -12,7 +12,7 @@ GitHub Actions workflow `windows-desktop.yml` compiles the WPF app on `windows-l
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
-.\install_portal_desktop.ps1 -PackagePath .\PORTAL-Desktop-win-x64-3.5.0.zip -Version 3.5.0
+.\install_portal_desktop.ps1 -PackagePath .\PORTAL-Desktop-win-x64-3.5.1.zip -Version 3.5.1
 ```
 
 The checksum detects artifact corruption and mismatched files; by itself it does not authenticate the publisher. Do not install packages from untrusted runs or locations. Production signing, release publication, update-channel policy, and visual verification on a supported Windows machine remain release gates.

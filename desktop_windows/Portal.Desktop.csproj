@@ -7,10 +7,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>PORTAL.Desktop</AssemblyName>
     <RootNamespace>Portal.Desktop</RootNamespace>
-    <Version>3.5.0</Version>
-    <FileVersion>3.5.0.35</FileVersion>
-    <AssemblyVersion>3.5.0.0</AssemblyVersion>
-    <InformationalVersion>3.5-dev-staging</InformationalVersion>
+    <Version>3.5.1</Version>
+    <FileVersion>3.5.1.36</FileVersion>
+    <AssemblyVersion>3.5.1.0</AssemblyVersion>
+    <InformationalVersion>3.5.1-desktop-hotfix</InformationalVersion>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <PublishSingleFile>false</PublishSingleFile>

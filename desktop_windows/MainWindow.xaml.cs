@@ -12,7 +12,7 @@ namespace Portal.Desktop;
 
 public partial class MainWindow : Window
 {
-    private const int CurrentBuild = 35;
+    private const int CurrentBuild = 36;
     private const long MaxInstallerBytes = 250L * 1024 * 1024;
     private static readonly HttpClient Http = new(new HttpClientHandler { AllowAutoRedirect = false })
     {
