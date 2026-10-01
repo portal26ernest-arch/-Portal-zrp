@@ -282,3 +282,10 @@ No defect/QC source or official Ozon/Wildberries feed was found in the repositor
 Current roadmap counts are **93 ✅ / 15 🟡 / 6 ⏳ / 12 🔌**. Current-SHA Server run `36818033879` (#164) and Web run `36818033902` (#157) passed; Server totals are 304/48 skipped on both Python versions, PostgreSQL totals are 36/2 gated skips and teardown confirms `db=0 roles=0 temp=0`.
 
 **Exact NEXT:** no software-completable item remains open. Complete the listed B/C gates when their real device, provider, disposable snapshot or production evidence is available; keep production activation off until owner action.
+
+## L. Production cutover checkpoint — 2026-10-02
+
+- `portal-production.service` is active/enabled on a separate control database (`portal_prod_control`) and company database (`portal_prod_company_1`). The pinned API source is `af663a8`; `/api/ready` checks both data planes. The publicly reachable `sslip.io` hostname is a temporary technical endpoint, not the owned production domain.
+- Fresh custom-format dumps of both split databases passed SHA-256, `pg_restore --list`, isolated restore and row-count checks. The existing daily backup timer now uses the versioned `ops/portal_central_backup.sh`, covers both split databases, previous databases and document storage, and applies 14-day retention only to daily artifacts. Independent off-server backup remains open (item 93).
+- Read-only comparison of Company 1 in the previous VPS database with the split tenant matches full rows for employees, clients, operations, tariffs, work and products. Accounts differ: 5 prior users versus 4 split users, including one fewer admin. The prior VPS database is not established as the final canonical source; no fresh post-freeze phone snapshot was supplied. See `PORTAL_PRODUCTION_RECONCILIATION.json` and `PORTAL_PRODUCTION_CUTOVER_REPORT.md`.
+- Items 94–99 and 125 stay open. No final write freeze, final import, client switch, signed production APK or production cutover has occurred. Do not promote release readiness from the running service or from the temporary HTTPS hostname alone.

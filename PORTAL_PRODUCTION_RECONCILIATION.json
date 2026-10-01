@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "checked_at_utc": "2026-10-01",
+  "status": "blocked",
+  "canonical_source_confirmed": false,
+  "final_phone_write_freeze_snapshot_available": false,
+  "comparison": "portal_production company_id=1 versus portal_prod_company_1; legacy VPS database is a comparison candidate, not an approved source of truth",
+  "rows": [
+    {"entity": "employees", "candidate_source": 4, "split_production": 4, "difference": 0, "full_row_hash_match": true},
+    {"entity": "app_users", "candidate_source": 5, "split_production": 4, "difference": -1, "full_row_hash_match": false},
+    {"entity": "clients", "candidate_source": 39, "split_production": 39, "difference": 0, "full_row_hash_match": true},
+    {"entity": "operations", "candidate_source": 78, "split_production": 78, "difference": 0, "full_row_hash_match": true},
+    {"entity": "tariff_versions", "candidate_source": 403, "split_production": 403, "difference": 0, "full_row_hash_match": true},
+    {"entity": "work_log", "candidate_source": 8, "split_production": 8, "difference": 0, "full_row_hash_match": true},
+    {"entity": "products", "candidate_source": 47, "split_production": 47, "difference": 0, "full_row_hash_match": true},
+    {"entity": "payroll_closures", "candidate_source": 0, "split_production": 0, "difference": 0},
+    {"entity": "payroll_settlements", "candidate_source": 0, "split_production": 0, "difference": 0},
+    {"entity": "materials", "candidate_source": 0, "split_production": 0, "difference": 0},
+    {"entity": "material_movements", "candidate_source": 0, "split_production": 0, "difference": 0},
+    {"entity": "invoices", "candidate_source": 0, "split_production": 0, "difference": 0},
+    {"entity": "documents_metadata", "candidate_source": 0, "split_production": 0, "difference": 0}
+  ],
+  "split_database_integrity": {
+    "case_insensitive_duplicate_logins": 0,
+    "orphan_client_operations": 0,
+    "legacy_work_employee_orphans": 0,
+    "forced_rls_tables": 48
+  },
+  "backup_restore": {
+    "control_database": "portal_prod_control",
+    "tenant_database": "portal_prod_company_1",
+    "fresh_custom_format_dumps": true,
+    "sha256_verified": true,
+    "isolated_restore_verified": true,
+    "control_counts_matched": true,
+    "tenant_counts_matched": true,
+    "restore_rls_table_count_matched": true,
+    "temporary_restore_databases_removed": true
+  },
+  "blocker": "One admin account in the older VPS comparison database has no proven counterpart in the split tenant database; a fresh canonical source snapshot and independent reconciliation are required before cutover."
+}

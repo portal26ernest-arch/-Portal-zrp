@@ -1,0 +1,209 @@
+Ты работаешь над проектом PORTAL — Android + Server + PostgreSQL.
+ЦЕЛЬ: полностью закрыть логический этап PORTAL → production-ready VPS/PostgreSQL cutover.
+После завершения VPS должен стать главным серверным и информационным контуром, PostgreSQL — master DB, Android — тонким клиентом через production API.
+Новые продуктовые функции сейчас НЕ разрабатывать: чат, Ozon/WB, TalAnt/WMS, ТСД, новые отчёты, новые UX-функции, будущий Desktop/Web и косметику не трогать.
+Сначала полностью закрыть production cutover.
+
+# 0. КРИТИЧЕСКИЕ ПРАВИЛА
+Рабочий репозиторий: C:\Users\darta\Documents\PORTAL-Android
+Текущая ветка: assistant/god-global-role-20261002
+Наблюдавшийся HEAD: 458a0c8
+В рабочем дереве уже есть НЕЗАКОММИЧЕННЫЕ изменения.
+НЕ выполнять destructive reset / clean / checkout / rebase, который может уничтожить существующие изменения.
+Сначала: git status → изучить diff → определить происхождение изменений → сохранить и интегрировать их → только потом продолжать.
+Не удалять существующую работу пользователя/предыдущих этапов.
+
+# 1. ТЕКУЩИЙ КРИТИЧЕСКИЙ PRODUCTION-БЛОКЕР
+На VPS уже существует portal-production.service.
+Он падал с RuntimeError: Control and tenant roles must use one isolated test database
+Ошибка идёт из server/portal_app_server.py, ensure_schema()/проверки DATABASE_URL.
+Это правило допустимо для старого test-контура, но не должно запрещать production, где control DB и tenant/company DB разделены.
+Исправить архитектурно, НЕ удаляя security-check вслепую.
+Нужно: разделить test/production requirements; валидировать production DB roles; не допустить tenant→чужая company DB; запретить accidental SQLite fallback; fail closed при неверной конфигурации.# 2. PRODUCTION DATABASE ARCHITECTURE
+Довести схему до production-ready.
+Control plane: отдельная PostgreSQL DB/роль для companies, subscriptions, company status, Platform Owner, company mapping, tenant routing, глобальных owner-функций.
+Tenant/company plane: изолированные данные конкретной компании.
+Для PORTAL должен существовать корректный production tenant.
+Никогда не принимать company_id от клиента как доказательство доступа.
+Компания определяется только authenticated identity + server-side memberships/roles + authorization.
+Проверить все соответствующие API.
+
+# 3. PRODUCTION CONFIGURATION
+Проверить и довести: production .env/EnvironmentFile, systemd service, Python env, PostgreSQL connection, control DB, tenant DB, migrations/schema, working directory, restart policy, logs, permissions.
+portal-production.service должен запускаться автоматически после reboot; проверить systemctl enable и restart/reboot-safe сценарий.
+
+# 4. СЕКРЕТЫ
+Провести security audit: DB passwords, API/JWT/session secrets, signing secrets, VPS credentials, private keys, .env, keystore passwords.
+Ни один production secret не должен быть в Git, Android source/APK assets, JS, test fixtures, логах и отчётах.
+Секреты только в защищённой server environment/config. Реальные значения в отчёт не выводить.
+
+# 5. DOMAIN + HTTPS
+Проверить существующую VPS/domain конфигурацию.
+Если production domain/API domain уже есть: reverse proxy, HTTPS, сертификат, HTTP→HTTPS, TLS, production API endpoint.
+Если домен/DNS не предоставлен: НЕ придумывать домен; подготовить всё остальное и оставить точный внешний блокер с нужными DNS-записями/действиями.
+Временный IPv4/IPv6 relay не считать production-решением.# 6. ANDROID → PRODUCTION API
+Android APK должна быть тонким клиентом.
+Проверить: master DB не внутри APK; production credentials отсутствуют; API URL не localhost/test relay; release использует production API; debug/test endpoint не может попасть в release; корректные ошибки сети; auth и company isolation идут через VPS.
+Не хранить мастер-копию данных компании на телефоне; допустим только cache, если предусмотрен.
+
+# 7. MIGRATION / CUTOVER DATA
+Перед любым изменением production данных — backup.
+Найти актуальный источник данных; не считать автоматически старую SQLite канонической.
+Проверить phone/local exports, PostgreSQL data, migration files, previous imports, snapshots.
+Определить canonical source.
+До переноса сформировать reconciliation counts минимум по companies, users/accounts, employees, clients, operations, tariffs/rates, work logs, payroll-related data, materials/warehouse, invoices/accounts, documents metadata — если соответствующие модули уже в backend.
+Не создавать дубли.
+
+# 8. BACKUP BEFORE CUTOVER
+Сделать PostgreSQL backup и ОБЯЗАТЕЛЬНО restore-test на отдельной временной БД.
+Ежедневный backup, retention 14 дней, автоматическое удаление старше retention, логирование успеха/ошибки.
+Не считать backup рабочим только потому, что файл создался.
+Имена и логи backup не должны раскрывать secrets.
+
+# 9. MIGRATIONS
+Schema changes должны быть versioned, повторяемыми, безопасными для существующих данных и идемпотентными там, где нужно.
+Никаких destructive migrations без backup.
+Production startup не должен молча пересоздавать/уничтожать таблицы.# 10. AUTHENTICATION / AUTHORIZATION
+Сохранить case-insensitive логины.
+Проверить Platform Owner, Director, Manager, employee/packer (если реализован), disabled company, disabled user, wrong PIN/password, invalid/expired session, cross-company access.
+Platform Owner ≠ company admin.
+Director: полный доступ только внутри своей компании.
+Manager: только разрешённые функции своей компании.
+
+# 11. TENANT ISOLATION E2E — RELEASE BLOCKER
+Использовать минимум две test tenant companies.
+Автотестами доказать, что Company A не может читать/менять Company B, получать employee/client/work/material/invoice/document данные B, подставлять company_id B или использовать чужие object IDs.
+Проверить GET/POST/PATCH/DELETE где endpoints существуют.
+Любой cross-tenant leak = STOP RELEASE.
+
+# 12. PRODUCTION SERVICE
+Исправить multi-DB блокер и добиться portal-production.service = active (running).
+Проверить restart, repeated restart, startup, DB reconnect, временное отсутствие PostgreSQL, восстановление после DB availability, отсутствие crash loop.
+Финальный статус снять без секретов.
+
+# 13. HEALTH / READINESS
+Добавить/проверить безопасный health endpoint: API alive, PostgreSQL reachable, required DB/schema ready.
+Не раскрывать credentials, connection strings, secrets и private filesystem paths.
+
+# 14. LOGGING
+Логи не должны содержать PIN, passwords, JWT, Authorization headers, DB passwords, secrets, private keys.
+Проверить тестами/поиском. Настроить rotation/retention при необходимости.# 15. FIREWALL / NETWORK
+Проверить listening ports.
+Публично доступны только необходимые сервисы.
+PostgreSQL не открывать всему интернету; предпочтительно localhost/private interface.
+Публично обычно нужны 80/443 и существующий безопасный SSH.
+SSH-доступ не ломать.
+
+# 16. PRODUCTION TEST SUITE
+Прогнать весь backend test suite и исправить regressions.
+Добавить тесты для: production control/tenant split, wrong/same DB misconfiguration, missing production env, tenant isolation, auth, migration safety, backup logic где возможно, release config.
+Warnings проанализировать.
+ResourceWarnings об открытых SQLite connections закрыть, если относятся к текущему коду.
+Не скрывать failing tests.
+
+# 17. ANDROID TESTS
+Прогнать Android tests, UI tests, JS tests, build validation, production API config verification.
+Если доступен Gradle/Android build — собрать release candidate.
+
+# 18. CI/GITHUB
+Проверить GitHub Actions.
+Production-ready checks минимум: backend tests, tenant isolation, Android/UI tests, build, secret/dangerous-file checks если workflow предусмотрен.
+Не ломать существующие workflows.
+
+# 19. VERSIONING
+Правило: 3.0 → 3.1 → 3.2 … → 3.9 → 4.0.
+Определить фактическую текущую версию.
+Если всё ещё 3.1 — production-cutover оформить как 3.2.
+Если версия уже выше — не понижать; увеличить по правилу.
+Обновить version/build references согласованно.# 20. ROLLBACK PLAN
+Без rollback production cutover не завершён.
+Документировать/по возможности автоматизировать: остановка API, возврат предыдущего release, восстановление PostgreSQL из проверенного backup, возврат предыдущей конфигурации, health/auth verification.
+Rollback не должен удалять свежие backup.
+
+# 21. CUTOVER
+Когда backup проверен, migrations готовы, production DB готова, service работает, tests зелёные, isolation подтверждён — выполнить production cutover.
+После cutover: health; auth smoke; Platform Owner; company user; clients; operations; безопасная тестовая read/write; cross-company isolation; restart service; повторный health.
+
+# 22. DATA RECONCILIATION
+До/после переноса создать машинно-читаемое сравнение source_count → production_count → difference.
+Для критических таблиц по возможности: IDs, checksums/hash, orphan detection, duplicate detection.
+При необъяснённом расхождении cutover НЕ считать завершённым.
+
+# 23. DOCUMENTATION
+Создать PORTAL_PRODUCTION_CUTOVER_REPORT.md.
+Включить:
+A. Final status: production ready YES/NO; cutover YES/NO; HTTPS YES/NO; Android production YES/NO; PostgreSQL master YES/NO; tenant isolation YES/NO; backup restore YES/NO.
+B. VPS architecture без секретов.
+C. Control + tenant DB architecture.
+D. Migration summary.
+E. Reconciliation table.
+F. Tests: точные passed/failed/skipped/warnings.
+G. Backup/restore evidence.
+H. Security checks.
+I. Android production status.
+J. Rollback instructions.
+K. Remaining blockers — только реальные внешние блокеры.# 24. ROADMAP
+Обновить PORTAL_MASTER_ROADMAP.md.
+Production/VPS migration пункты переводить в DONE только при доказательствах.
+Не отмечать незавершённое как выполненное.
+Остальные продуктовые функции оставить на следующий этап.
+
+# 25. GIT
+Аккуратно работать с существующими незакоммиченными изменениями.
+В конце: git diff; исключить secrets; логичные commits; push в отдельную production-cutover branch либо текущую рабочую ветку, если безопасно; указать commit SHA.
+Не force-push без необходимости.
+
+# 26. ЗАПРЕЩЕНО
+Не уничтожать production данные.
+Не делать git reset --hard поверх чужой работы.
+Не удалять незнакомые файлы «для чистоты».
+Не хранить secrets в Git.
+Не отключать tenant security ради тестов.
+Не переводить PostgreSQL обратно на SQLite.
+Не оставлять temporary relay production endpoint.
+Не объявлять production-ready при падающем service.
+Не объявлять production-ready без restore-tested backup.
+Не объявлять production-ready при failing tenant isolation.
+Не писать новые продуктовые функции вместо закрытия cutover.
+
+# DEFINITION OF DONE
+1. Production API на VPS стабильно работает.
+2. portal-production.service active/running.
+3. PostgreSQL — master DB.
+4. Control и tenant DB корректно разделены.
+5. Multi-company isolation подтверждён E2E.
+6. Production auth работает.
+7. Production migration завершена или доказано, что нужные данные уже в production.
+8. Reconciliation пройдена.
+9. Backup существует.
+10. Restore backup реально проверен.
+11. Daily backup + 14-day retention настроены.
+12. Android release использует production API.
+13. Temporary relay не production dependency.
+14. Все необходимые тесты зелёные.
+15. Secrets audit чист.
+16. Rollback подготовлен.
+17. PORTAL_PRODUCTION_CUTOVER_REPORT.md создан.
+18. PORTAL_MASTER_ROADMAP.md обновлён.
+19. Git зафиксирован и final commit SHA указан.Если отсутствующий домен/DNS — единственный внешний блокер, не симулировать его наличие. Закрыть всё остальное и указать точное действие от владельца домена.
+
+## ФИНАЛЬНЫЙ ОТВЕТ CODEX
+Не присылай длинный рассказ процесса.
+В конце дай компактный отчёт:
+- PRODUCTION READY: YES/NO
+- CUTOVER: YES/NO
+- version/build
+- branch
+- final commit SHA
+- VPS service status
+- HTTPS status
+- PostgreSQL status
+- control/tenant isolation
+- migration/reconciliation result
+- backup + restore result
+- backend tests
+- Android/UI tests
+- CI status
+- remaining blockers, если есть
+
+Если что-то не удалось — напиши точную техническую причину и оставь систему в безопасном состоянии.
