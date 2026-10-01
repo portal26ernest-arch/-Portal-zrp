@@ -14,7 +14,7 @@ namespace Portal.Desktop;
 
 public partial class MainWindow : Window
 {
-    private const int CurrentBuild = 39;
+    private const int CurrentBuild = 40;
     private const long MaxInstallerBytes = 250L * 1024 * 1024;
     private const string GithubRepository = "portal26ernest-arch/-Portal-zrp";
     private static readonly HttpClient Http = new(new HttpClientHandler { AllowAutoRedirect = false })
@@ -302,11 +302,6 @@ public partial class MainWindow : Window
     }
     private async void CheckUpdate_Click(object sender, RoutedEventArgs e)
     {
-        if (_serverOrigin is null)
-        {
-            MessageBox.Show("Сначала подключитесь к серверу PORTAL.", "PORTAL Desktop");
-            return;
-        }
         try
         {
             StatusText.Text = "Проверка версии…";
@@ -334,30 +329,33 @@ public partial class MainWindow : Window
     }
     private async Task<DesktopUpdateManifest?> LoadUpdateManifestAsync()
     {
-        try
+        if (_serverOrigin is not null)
         {
-            using var response = await Http.GetAsync(_serverOrigin + "/api/desktop-update");
-            if (response.StatusCode != HttpStatusCode.NotFound)
+            try
             {
-                response.EnsureSuccessStatusCode();
-                return await JsonSerializer.DeserializeAsync<DesktopUpdateManifest>(
-                    await response.Content.ReadAsStreamAsync(),
-                    new JsonSerializerOptions
-                    {
-                        PropertyNameCaseInsensitive = true,
-                        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
-                    });
+                using var response = await Http.GetAsync(_serverOrigin + "/api/desktop-update");
+                if (response.StatusCode != HttpStatusCode.NotFound)
+                {
+                    response.EnsureSuccessStatusCode();
+                    return await JsonSerializer.DeserializeAsync<DesktopUpdateManifest>(
+                        await response.Content.ReadAsStreamAsync(),
+                        new JsonSerializerOptions
+                        {
+                            PropertyNameCaseInsensitive = true,
+                            PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
+                        });
+                }
             }
-        }
-        catch (HttpRequestException)
-        {
-            // The application server may be temporarily unavailable while the
-            // public tunnel/domain is being recovered. GitHub Releases remains
-            // a secret-free, checksum-verified update source.
-        }
-        catch (TaskCanceledException)
-        {
-            // Treat a network timeout like an unavailable update endpoint.
+            catch (HttpRequestException)
+            {
+                // The application server may be temporarily unavailable while
+                // its public route is being recovered. Fall through to the
+                // checksum-verified GitHub Releases channel.
+            }
+            catch (TaskCanceledException)
+            {
+                // Treat a network timeout like an unavailable update endpoint.
+            }
         }
         return await LoadGithubUpdateManifestAsync();
     }
@@ -366,7 +364,7 @@ public partial class MainWindow : Window
     {
         using var request = new HttpRequestMessage(HttpMethod.Get,
             $"https://api.github.com/repos/{GithubRepository}/releases?per_page=50");
-        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/3.9.0");
+        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/4.0.0");
         request.Headers.Accept.ParseAdd("application/vnd.github+json");
         using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();
