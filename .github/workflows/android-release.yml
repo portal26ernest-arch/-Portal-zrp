@@ -7,6 +7,9 @@ on:
         description: "Что изменилось в этой версии"
         required: false
         type: string
+  push:
+    tags:
+      - "portal-android-v*"
 
 permissions:
   contents: write
@@ -18,7 +21,7 @@ jobs:
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-      PORTAL_PUBLIC_API_URL: ${{ secrets.PORTAL_PUBLIC_API_URL }}
+      PORTAL_PUBLIC_API_URL: ${{ secrets.PORTAL_PUBLIC_API_URL || 'https://2a03-6f00-a--1-f426.sslip.io' }}
       PORTAL_ANDROID_STORE_PASSWORD: ${{ secrets.PORTAL_ANDROID_STORE_PASSWORD }}
       PORTAL_ANDROID_KEY_ALIAS: ${{ secrets.PORTAL_ANDROID_KEY_ALIAS }}
       PORTAL_ANDROID_KEY_PASSWORD: ${{ secrets.PORTAL_ANDROID_KEY_PASSWORD }}
@@ -26,10 +29,15 @@ jobs:
       PORTAL_ANDROID_KEYSTORE_TYPE: PKCS12
       PORTAL_RELEASE_NOTES: ${{ inputs.release_notes }}
     steps:
-      - name: Require main branch
+      - name: Require main branch or signed release tag
         shell: bash
         run: |
-          test "$GITHUB_REF" = "refs/heads/main"
+          if [[ "$GITHUB_REF" == refs/tags/portal-android-v* ]]; then
+            VERSION=$(sed -n 's/^versionName=//p' android_src/release.properties | tr -d '\r')
+            test "$GITHUB_REF_NAME" = "portal-android-v$VERSION"
+          else
+            test "$GITHUB_REF" = "refs/heads/main"
+          fi
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
