@@ -74,6 +74,18 @@ test('updates: unconfigured, offline, current, newer and invalid manifests',()=>
   const wrongVersionUrl=manifest.apkUrl.replace('portal-android-v'+metadata.versionName,'portal-android-v'+metadata.versionName+'-wrong');
   for(const patch of [{channel:'other'},{applicationId:'other'},{versionCode:'4'},{publishedAt:'invalid'},{changelog:null},{apkUrl:'http://example.test/app.apk'},{apkUrl:'https://user@example.test/app.apk'},{apkUrl:wrongVersionUrl},{sha256:'bad'}])assert.equal(state({...manifest,...patch}),'error');
 });
+test('login screen exposes update check before authentication and uses blue PORTAL accent',()=>{
+  const index=fs.readFileSync(path.join(assets,'index.html'),'utf8');
+  const app=fs.readFileSync(path.join(assets,'app.js'),'utf8');
+  const css=fs.readFileSync(path.join(assets,'ui.css'),'utf8');
+  assert.match(index,/id="authUpdateButton"[^>]+data-action="checkUpdates"/);
+  assert.match(index,/id="authUpdateState"/);
+  assert.match(app,/\['updateState','authUpdateState'\]/);
+  assert.match(app,/Вход в аккаунт для обновления не требуется/);
+  assert.match(css,/--accent:#0b5ed7/);
+  assert.doesNotMatch(css,/--accent:#23695d/);
+});
+
 test('update install action is available only for verified available state and renders progress',()=>{
   const app=fs.readFileSync(path.join(assets,'app.js'),'utf8');
   assert.match(app,/u\.state==='available'\?btn\('Скачать и установить','installUpdate'/);

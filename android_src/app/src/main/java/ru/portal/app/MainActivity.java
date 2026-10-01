@@ -527,9 +527,25 @@ public class MainActivity extends Activity {
 
         void close() { closed = true; executor.shutdownNow(); }
 
+        private boolean isLegacyLocalServer(String value) {
+            if (value == null || value.trim().isEmpty()) return true;
+            try {
+                URL url = new URL(value.trim());
+                String host = url.getHost() == null ? "" : url.getHost().toLowerCase(Locale.ROOT);
+                return "127.0.0.1".equals(host) || "localhost".equals(host) || "portal.invalid".equals(host);
+            } catch (Exception ignored) {
+                return true;
+            }
+        }
+
         @JavascriptInterface
         public String getServerUrl() {
-            return prefs.getString("server_url", DEFAULT_URL);
+            String saved = prefs.getString("server_url", "");
+            if (isLegacyLocalServer(saved) && DEFAULT_URL != null && DEFAULT_URL.startsWith("https://")) {
+                prefs.edit().remove("server_url").apply();
+                return DEFAULT_URL;
+            }
+            return saved == null || saved.trim().isEmpty() ? DEFAULT_URL : saved;
         }
 
         @JavascriptInterface
