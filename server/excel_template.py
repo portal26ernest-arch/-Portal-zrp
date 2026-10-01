@@ -7,7 +7,7 @@ from report_xlsx import XML, _cell, _column
 from portal_excel_workbook import deterministic_zip
 from document_domain import XLSX_MIME
 
-TEMPLATE_VERSION='1.0'
+TEMPLATE_VERSION='1.1'
 REQUISITES=('legal_name','inn','kpp','ogrn','legal_address','settlement_account','bank_name','bik','correspondent_account','phone','email','tax_info')
 LABELS={'legal_name':'Юридическое наименование','inn':'ИНН','kpp':'КПП','ogrn':'ОГРН','legal_address':'Юридический адрес',
         'settlement_account':'Расчётный счёт','bank_name':'Банк','bik':'БИК','correspondent_account':'Корреспондентский счёт',
@@ -15,7 +15,8 @@ LABELS={'legal_name':'Юридическое наименование','inn':'И
 SHEETS={
  'Компания':[('company_id','ID компании (не менять)'),('name','Название компании (не менять)')]+[(k,LABELS[k]) for k in REQUISITES]+[('director',LABELS['director'])],
  'Сотрудники':[('employee_ref','Ключ строки сотрудника'),('employee_id','ID сотрудника PORTAL'),('full_name','ФИО'),
-               ('profile_username','Профиль: имя пользователя'),('user_id','ID существующего доступа'),('role','Роль доступа'),('active','Доступ активен (1/0)')],
+               ('profile_username','Логин / имя профиля'),('user_id','ID существующего доступа'),('role','Роль доступа'),
+               ('active','Доступ активен (1/0)'),('initial_pin','PIN нового доступа (4–128 символов)')],
  'Клиенты':[('client_ref','Ключ клиента в книге'),('client_id','ID клиента PORTAL'),('name','Название клиента'),('active','Активен (1/0)')]+
             [(k,LABELS[k]) for k in REQUISITES]+[('contact_person',LABELS['contact_person'])],
  'Операции_Тарифы':[('client_ref','Ключ клиента в книге'),('client_id','ID клиента PORTAL'),('operation_id','ID операции PORTAL'),

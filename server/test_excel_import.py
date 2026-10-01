@@ -12,7 +12,7 @@ from xml.etree import ElementTree as ET
 from unittest.mock import patch
 
 import test_documents_api as fixtures
-from excel_template import workbook
+from excel_template import TEMPLATE_VERSION,workbook
 from portal_excel_workbook import NS,parse_template
 from excel_import import ExcelImport
 from employee_names import employee_name_key
@@ -155,7 +155,7 @@ class ImportAPITest(unittest.TestCase):
         payload=self.payload()
         cases=[b'not ZIP',
                change_zip(payload,'xl/workbook.xml',lambda raw:raw.replace('Компания'.encode(),'Wrong'.encode())),
-               change_zip(payload,'xl/worksheets/sheet1.xml',lambda raw:raw.replace(b'<t>1.0</t>',b'<t>99</t>')),
+               change_zip(payload,'xl/worksheets/sheet1.xml',lambda raw:raw.replace(('<t>'+TEMPLATE_VERSION+'</t>').encode(),b'<t>99</t>')),
                change_zip(payload,'xl/worksheets/sheet2.xml',lambda raw:raw.replace(b'employee_id',b'bad_key')),
                change_zip(payload,'xl/worksheets/sheet2.xml',lambda raw:raw.replace(b'<c r="A1"',b'<c r="A1"').replace(b'<is><t>PORTAL_TEMPLATE_VERSION</t></is>',b'<f>1+1</f><v>2</v>')),
                change_zip(payload,'[Content_Types].xml',lambda raw:raw.replace(b'spreadsheetml.sheet.main',b'spreadsheetml.sheet.macroEnabled.main')),
@@ -201,6 +201,32 @@ class ImportAPITest(unittest.TestCase):
             self.assertEqual(conn.execute('SELECT COUNT(*) FROM app_sessions WHERE user_id=?',(uid,)).fetchone()[0],0)
             self.assertEqual(Repository(conn,1).payroll_employee(101,legacy=True)['employee_id'],eid)
         self.get('catalog',target,status=401)
+
+    def test_new_employee_can_create_login_role_and_pin_in_one_import(self):
+        row=dict(employee_ref='new-login',full_name='Новый упаковщик',profile_username='new.packer',
+                 role='packer',active=1,initial_pin='4826')
+        payload=self.payload({'Сотрудники':[row]});preview=self.preview(payload)
+        self.assertTrue(preview['can_apply'],preview['summary'])
+        self.assertEqual(preview['rows'][0]['normalized']['initial_pin'],'***')
+        result=self.apply(payload,preview);self.assertEqual(result['status'],'applied')
+        with portal.db() as conn:
+            user=conn.execute("SELECT username,role,active,pin_salt,pin_hash,telegram_id FROM app_users WHERE lower(username)=lower('new.packer')").fetchone()
+            self.assertIsNotNone(user);self.assertEqual(tuple(user[:3]),('new.packer','packer',1))
+            self.assertTrue(portal.verify_pin('4826',user[3],user[4]))
+            self.assertLess(user[5],0)
+            employee=conn.execute('SELECT full_name FROM employees WHERE telegram_id=?',(user[5],)).fetchone()
+            self.assertEqual(employee[0],'Новый упаковщик')
+
+    def test_new_access_requires_role_pin_and_unique_login(self):
+        base=dict(employee_ref='new-login',full_name='Новый сотрудник',profile_username='new.login')
+        plan=self.preview(self.payload({'Сотрудники':[dict(base,role='packer',active=1)]}))
+        self.assertIn('new_access_requires_valid_pin',plan['rows'][0]['errors'])
+        plan=self.preview(self.payload({'Сотрудники':[dict(base,initial_pin='4826',active=1)]}))
+        self.assertIn('new_access_requires_role',plan['rows'][0]['errors'])
+        self.role_token('manager')
+        duplicate=dict(base,profile_username='manager',role='packer',active=1,initial_pin='4826')
+        plan=self.preview(self.payload({'Сотрудники':[duplicate]}))
+        self.assertIn('access_username_conflict',plan['rows'][0]['errors'])
 
     def test_access_activation_self_change_and_last_admin_are_rejected(self):
         target=self.role_token('shift')

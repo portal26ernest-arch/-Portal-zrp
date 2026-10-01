@@ -7,6 +7,10 @@ fail closed for unmapped IDs. Older schemas retain a temporary compatibility
 mode until the additive Stage 6 migration is applied.
 """
 
+import base64
+import hashlib
+import secrets
+
 from money_units import legacy_major_currency
 
 
@@ -220,17 +224,36 @@ def update_employee_card(connection, company_id, employee_id, display_name, user
     return employee_id
 
 
+def hash_access_pin(pin, salt=None):
+    if not isinstance(pin,str) or not 4 <= len(pin) <= 128:
+        raise ValueError('PIN должен содержать от 4 до 128 символов')
+    salt_b=base64.b64decode(salt) if salt else secrets.token_bytes(16)
+    digest=hashlib.pbkdf2_hmac('sha256',pin.encode('utf-8'),salt_b,180000)
+    return base64.b64encode(salt_b).decode(),base64.b64encode(digest).decode()
+
+
 def write_user_account(connection, company_id, user_id, values, salt, digest, updated_at):
     employee_id=values.get('employee_id')
     legacy=legacy_employee_id(connection,company_id,employee_id)
     if employee_id is not None and legacy is None:raise ValueError('Сотрудник employee_id не найден в этой компании')
+    cols=_columns(connection,'app_users');scoped='company_id' in cols
     if user_id:
-        connection.execute('UPDATE app_users SET username=?,display_name=?,role=?,telegram_id=?,active=?,pin_salt=?,pin_hash=?,updated_at=? WHERE id=?', # employee_id adapter
-            (values['username'],values['display_name'],values['role'],legacy,values['active'],salt,digest,updated_at,user_id))
-        connection.execute('DELETE FROM app_sessions WHERE user_id=?',(user_id,))
+        sql='UPDATE app_users SET username=?,display_name=?,role=?,telegram_id=?,active=?,pin_salt=?,pin_hash=?,updated_at=? WHERE id=?'
+        params=(values['username'],values['display_name'],values['role'],legacy,values['active'],salt,digest,updated_at,user_id)
+        if scoped:sql+=' AND company_id=?';params+=(company_id,)
+        connection.execute(sql,params)
+        session_cols=_columns(connection,'app_sessions')
+        if 'company_id' in session_cols:connection.execute('DELETE FROM app_sessions WHERE user_id=? AND company_id=?',(user_id,company_id))
+        else:connection.execute('DELETE FROM app_sessions WHERE user_id=?',(user_id,))
     else:
-        user_id=connection.execute('INSERT INTO app_users(username,display_name,role,telegram_id,active,pin_salt,pin_hash,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)', # employee_id adapter
-            (values['username'],values['display_name'],values['role'],legacy,values['active'],salt,digest,updated_at,updated_at)).lastrowid
+        record=dict(username=values['username'],display_name=values['display_name'],role=values['role'],telegram_id=legacy,
+                    active=values['active'],pin_salt=salt,pin_hash=digest,created_at=updated_at,updated_at=updated_at)
+        if scoped:record['company_id']=company_id
+        sql='INSERT INTO app_users('+','.join(record)+') VALUES('+','.join('?' for _ in record)+')'
+        dialect=getattr(connection,'dialect','sqlite')
+        if dialect=='postgresql':sql+=' RETURNING id'
+        cursor=connection.execute(sql,tuple(record.values()))
+        user_id=cursor.fetchone()[0] if dialect=='postgresql' else cursor.lastrowid
     return user_id
 
 
