@@ -7,7 +7,7 @@ Status: **SOFTWARE COMPLETE — external gates remain**
 
 - Starting SHA: `337d2399cd206f0029a171aa4e503e52c82ca0e9` (`feat: add self-service PIN change`).
 - Starting branch: `codex-finalization-megapack-part12`, tracking `origin/codex-finalization-megapack-part12`.
-- At start, tracked files were clean. Three user-provided untracked files were present: `CODEX_PORTAL_FINAL_PROJECT_CLOSEOUT.md`, `CODEX_PORTAL_FINAL_PROJECT_CLOSEOUT.run.err.log`, and `CODEX_PORTAL_FINAL_PROJECT_CLOSEOUT.run.jsonl`; preserved without edits.
+- At start, git status was clean.
 - Ending source SHA: `337d2399cd206f0029a171aa4e503e52c82ca0e9`. No application source changed in this closeout; the pushed branch adds only the closeout documentation recorded here.
 - Android: `3.5-dev` / versionCode 35 (development staging; `android_src/release.properties`).
 - Windows Desktop: `3.5.2` (`desktop_windows/Portal.Desktop.csproj`).
@@ -26,18 +26,21 @@ Roadmap count, counting conceptual numbered items (including grouped ranges): **
 At starting SHA `337d2399cd206f0029a171aa4e503e52c82ca0e9`:
 
 - Full Server `python -m unittest discover -s server -p 'test_*.py'`: **306 passed, 49 skipped, 0 failed** (Python 3.13 local). Skips include PostgreSQL integration tests because no local disposable PostgreSQL service was configured.
-- Shared Android/Web Node tests: **58 passed, 0 failed** (`node --test android_src/tests/*.test.cjs`).
+- Shared Android/Web Node suite: **58 passed, 0 failed** (node --test android_src/tests/*.test.cjs).
 - Android UI/Playwright: **37 passed, 0 failed** (`node --test android_src/tests/ui.test.cjs`).
 - `ops.test_infra_readiness`: **8 passed**.
+- Targeted Server tests (portal_app_server, production, reminder jobs/operator, money units): **87 passed, 0 failed**.
+- All shipped JavaScript assets and CJS tests passed node --check; workflow YAML parsing and Windows installer safety contracts passed.
 - `python -m compileall -q server ops`: passed.
 - `git diff --check`: passed after final documentation synchronization.
 - Disposable PostgreSQL was not available locally. Prior successful Web CI on the exact starting/source SHA provides the disposable PostgreSQL evidence; no PostgreSQL run was triggered on the documentation-only ending SHA.
-- Desktop .NET publish/install workflow was not runnable locally because `dotnet` and `pwsh` are absent. Desktop code is unchanged in this closeout; no Windows workflow was triggered on the ending SHA.
+- Windows installer safety contracts passed locally under Windows PowerShell: checksum, versioned install, shortcut, duplicate-version rejection, and archive traversal rejection. WPF/.NET publish was unavailable because dotnet is absent. No Windows workflow run ID was supplied for the ending source SHA.
 - Closeout changes are documentation-only; source-based Android, Server and Web workflows did not trigger on the push due their path filters.
 
-GitHub Actions at starting/source SHA `337d2399cd206f0029a171aa4e503e52c82ca0e9`: Android APK run `36861242054` — SUCCESS; Web run `36861242048` — SUCCESS; Android UI run `36861242142` — SUCCESS; Server isolation run `36861242135` — SUCCESS. These are not ending-SHA runs.
+GitHub Actions at tested runtime source SHA 337d2399cd206f0029a171aa4e503e52c82ca0e9: Android APK run 36861242054 — SUCCESS; Web run 36861242048 — SUCCESS; Android UI run 36861242142 — SUCCESS; Server isolation run 36861242135 — SUCCESS. This is also the ending source SHA; subsequent commits only synchronize documentation.
 
-The ending source SHA is the same tested source SHA `337d2399cd206f0029a171aa4e503e52c82ca0e9`; its four listed Actions runs are the exact-SHA source evidence. The later documentation-only pushes did not create Actions runs because workflow path filters do not include these closeout documents. A manual rerun/dispatch was not available in the local environment (`gh` is not installed). The pushed documentation commits do not change the tested runtime tree.
+No production database, VPS configuration, DNS, production secrets, signing material, or cutover state was changed. No credentials or customer financial facts were added to Git.
+The documentation-only pushes did not trigger path-filtered source workflows. gh is unavailable locally, so no manual rerun/dispatch was possible. The tested runtime tree is identical to the ending source SHA above.
 
 ## External/manual gates
 
