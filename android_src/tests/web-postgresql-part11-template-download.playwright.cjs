@@ -56,7 +56,7 @@ async function downloadTemplate(page, kind) {
   assert(bytes.length > 1000, kind + ' XLSX is unexpectedly small');
   assert.equal(bytes[0], 0x50);
   assert.equal(bytes[1], 0x4b);
-  assert.match(download.suggestedFilename(), /^PORTAL_template_v1\.xlsx$/);
+  assert.match(download.suggestedFilename(), /^PORTAL_template_v1\.1\.xlsx$/);
   return {bytes, digest: sha(bytes)};
 }
 
@@ -92,8 +92,8 @@ async function main() {
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     assert.equal(prefillApi.body.data.mime_type,
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    assert.equal(blankApi.body.data.template_version, '1.0');
-    assert.equal(prefillApi.body.data.template_version, '1.0');
+    assert.equal(blankApi.body.data.template_version, '1.1');
+    assert.equal(prefillApi.body.data.template_version, '1.1');
 
     const forged = await serverTemplate(
       page, token, 'document-template',

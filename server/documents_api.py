@@ -22,7 +22,7 @@ def template_route(service,storage,action,method,values,company):
     if action=='document-template-info':return {'template_version':TEMPLATE_VERSION,'sheets':list(SHEETS),'mapping':{n:[{'key':k,'header':h} for k,h in cols] for n,cols in SHEETS.items()}}
     if action=='document-template':require_import(service)
     data=catalog(service,company) if action=='document-template' else {}
-    payload=workbook(data);filename='PORTAL_template_v1.xlsx'
+    payload=workbook(data);filename=f'PORTAL_template_v{TEMPLATE_VERSION}.xlsx'
     if method=='POST':
         return Documents(service,storage).register(payload,dict(values,document_type='import_template_xlsx',original_filename=filename,mime_type=XLSX_MIME,
                  title='Стандартный шаблон PORTAL',metadata={'template_version':TEMPLATE_VERSION}),'generated')
