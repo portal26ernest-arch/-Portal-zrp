@@ -11,6 +11,7 @@ from employee_identity import create_invited_account, create_employee_card
 from employee_names import persist_known_employee_aliases
 
 TABLE = 'portal_access_invites'
+SYSTEM_ACTOR_ID = 9223372036854775807
 ROLES = {'admin', 'director', 'manager', 'packer', 'shift', 'accountant'}
 PUBLIC = ('id', 'company_id', 'created_by', 'created_at', 'expires_at', 'status',
           'role', 'username', 'display_name', 'employee_id', 'user_id', 'accepted_at',
@@ -31,7 +32,10 @@ def _row(cursor, company_id, identity):
 
 
 def safe(row):
-    return {key: row[key] for key in PUBLIC}
+    result={key: row[key] for key in PUBLIC}
+    for key in ('created_by','decided_by'):
+        if result.get(key)==SYSTEM_ACTOR_ID:result[key]=None
+    return result
 
 
 def _stamp(value):
@@ -80,7 +84,7 @@ def create(conn, repo, actor, body, company):
     conn.execute('''INSERT INTO portal_access_invites
       (company_id,id,token_hash,created_by,created_at,expires_at,status,role,username,display_name,employee_id,request_id)
       VALUES(?,?,?,?,?,?,'pending',?,?,?,?,?)''',
-      (repo.company_id, identity, digest, actor['id'], utcnow(), expiry, role, username,
+      (repo.company_id, identity, digest, SYSTEM_ACTOR_ID if actor.get('technical_owner') else actor['id'], utcnow(), expiry, role, username,
        display_name, employee_id, request_id))
     if not actor.get('technical_owner'):
         repo.audit(actor, 'access_invite.created', identity, actor_kind='user')
@@ -132,7 +136,7 @@ def list_invites(conn, company_id, page=1, limit=50, status='all'):
     total=conn.execute('SELECT COUNT(*) FROM '+TABLE+' WHERE '+where, tuple(args)).fetchone()[0]
     rows=conn.execute('SELECT '+','.join(PUBLIC)+' FROM '+TABLE+' WHERE '+where+
                        ' ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?',tuple(args+[limit,(page-1)*limit])).fetchall()
-    return dict(items=[dict(zip(PUBLIC,row)) for row in rows],page=page,limit=limit,total=total)
+    return dict(items=[safe(dict(zip(PUBLIC,row))) for row in rows],page=page,limit=limit,total=total)
 
 
 def decide(conn, repo, actor, identity, action):
@@ -155,7 +159,7 @@ def decide(conn, repo, actor, identity, action):
             raise ValueError('Приглашение уже обработано')
         status='revoked' if action=='revoke' else 'rejected'
     conn.execute('UPDATE '+TABLE+' SET status=?,decided_at=?,decided_by=? WHERE company_id=? AND id=?',
-                 (status, utcnow(), actor['id'], repo.company_id, identity))
+                 (status, utcnow(), SYSTEM_ACTOR_ID if actor.get('technical_owner') else actor['id'], repo.company_id, identity))
     if not actor.get('technical_owner'):
         repo.audit(actor, 'access_invite.'+status, identity, actor_kind='user')
     return safe(_row(conn, repo.company_id, identity))

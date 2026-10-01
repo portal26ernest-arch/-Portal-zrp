@@ -157,7 +157,33 @@ class CompanyIsolationTest(unittest.TestCase):
         self.request("/api/invoices",director)
         self.request("/api/materials",director)
 
-    def test_owner_explicit_technical_access_is_audited_without_secrets(self):
+    def test_god_uses_normal_login_and_never_appears_in_company_users(self):
+        result=self.request("/api/login",body={"username":"owner","pin":"Owner-secret-canary-123","company_id":1})
+        self.assertTrue(result['token'].startswith('p.'))
+        self.assertEqual(result['user']['role'],'platform_owner')
+        me=self.request('/api/me',result['token'])['user']
+        self.assertEqual(me['role_label'],'God')
+        company_users=self.request('/api/users',self.admin)['users']
+        self.assertNotIn('owner',{row['username'] for row in company_users})
+        with tenants.control(portal.DB_PATH) as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM platform_owners WHERE username='owner'").fetchone()[0],1)
+        with portal.db() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM app_users WHERE username='owner'").fetchone()[0],0)
+
+    def test_company_audit_hides_god_actor(self):
+        from production_repository import Repository
+        from production_migrations import migrate
+        with tenants.company_scope(1),portal.db() as conn:
+            migrate(conn,1)
+            repo=Repository(conn,1)
+            repo.audit({'id':self.owner_id,'technical_owner':True},'god.hidden.test','x')
+            conn.commit()
+        tenant_view=self.request('/api/v3/audit?action=god.hidden.test',self.admin)['data']
+        self.assertEqual(tenant_view['total'],0)
+        god_view=self.request('/api/v3/audit?action=god.hidden.test',self.owner,extra_headers={'X-Portal-Company':'1'})['data']
+        self.assertEqual(god_view['total'],1)
+
+    def test_god_explicit_company_access_is_audited_without_secrets(self):
         self.request("/api/dashboard",self.owner,status=403)
         selected={"X-Portal-Company":str(self.other)}
         self.assertEqual(self.request("/api/dashboard",self.owner,extra_headers=selected)["data"]["quantity"],700)
@@ -168,19 +194,19 @@ class CompanyIsolationTest(unittest.TestCase):
         encoded=json.dumps(rows)
         for secret in ("Owner-secret-canary-123","PIN-canary-8976","bad-password-canary",self.owner,self.other_admin):
             self.assertNotIn(secret,encoded)
-        self.assertTrue(any(r["event"]=="owner_login" and r["outcome"]=="denied" for r in rows))
-        self.assertTrue(any(r["event"]=="technical_access" and r["company_id"]==self.other for r in rows))
+        self.assertTrue(any(r["event"]=="god_login" and r["outcome"]=="denied" for r in rows))
+        self.assertTrue(any(r["event"]=="god_access" and r["company_id"]==self.other for r in rows))
         self.assertTrue(any(r["event"]=="company_updated" for r in rows))
-        sample=next(r for r in rows if r["event"]=="technical_access" and r["company_id"]==self.other)
+        sample=next(r for r in rows if r["event"]=="god_access" and r["company_id"]==self.other)
         filtered=self.request('/api/platform/audit?company_id='+str(self.other)+'&actor_id='+str(sample['actor_id'])+
-                              '&event=technical_access&from='+sample['created_at'][:10]+'&to='+sample['created_at'][:10]+
+                              '&event=god_access&from='+sample['created_at'][:10]+'&to='+sample['created_at'][:10]+
                               '&page=1&limit=1',self.owner)
         self.assertGreaterEqual(filtered['total'],1)
         self.assertEqual((filtered['page'],filtered['limit'],len(filtered['rows'])),(1,1,1))
         self.assertEqual(filtered['rows'][0]['id'],sample['id'])
         if filtered['total']>1:
             next_page=self.request('/api/platform/audit?company_id='+str(self.other)+'&actor_id='+str(sample['actor_id'])+
-                                   '&event=technical_access&from='+sample['created_at'][:10]+'&to='+sample['created_at'][:10]+
+                                   '&event=god_access&from='+sample['created_at'][:10]+'&to='+sample['created_at'][:10]+
                                    '&page=2&limit=1',self.owner)
             self.assertEqual((next_page['page'],len(next_page['rows'])),(2,1))
             self.assertNotEqual(next_page['rows'][0]['id'],sample['id'])
@@ -264,11 +290,11 @@ class CompanyIsolationTest(unittest.TestCase):
         with tenants.company_scope(self.other),portal.db() as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM app_users WHERE active=1").fetchone()[0],3)
 
-    def test_owner_rejected_target_is_audited_and_no_target_is_implicit(self):
+    def test_god_rejected_target_is_audited_and_no_target_is_implicit(self):
         for target in ("99999","../secret-canary", "0"):
             self.request("/api/dashboard",self.owner,status=403,extra_headers={"X-Portal-Company":target})
         rows=self.request("/api/platform/audit",self.owner)["rows"]
-        denied=[r for r in rows if r["event"]=="technical_access" and r["outcome"]=="failed"]
+        denied=[r for r in rows if r["event"]=="god_access" and r["outcome"]=="failed"]
         self.assertEqual(len(denied),3)
         self.assertTrue(all(json.loads(r["details"])["status"]==403 for r in denied))
         self.assertNotIn("secret-canary",json.dumps(rows))

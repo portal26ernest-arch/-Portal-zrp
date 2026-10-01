@@ -6,7 +6,7 @@
 
 ## A. Платформа, компании, сотрудники и права
 
-1. ✅ Platform Owner и управление несколькими компаниями.
+1. ✅ God — отдельный глобальный аккаунт управления всеми компаниями; не входит в списки пользователей компаний, не отображается сотрудникам/директорам/администраторам и используется отдельно от обычного рабочего аккаунта сотрудника.
 2. ✅ Изоляция компаний на сервере и PostgreSQL RLS.
 3. ✅ Роли admin, director, manager, packer, shift, accountant.
 4. ✅ Директор: полные бизнес-права только внутри своей компании.
@@ -16,11 +16,11 @@
 8. ✅ Логин/PIN, сессии, отзыв старых сессий после смены доступа.
 9. ✅ История входов, Online/Offline, heartbeat.
 10. ✅ Безопасный одноразовый invite/access-request lifecycle и Android/Web create/list/accept/approve/revoke UI: hash-at-rest, one-time token, expiry/revoke, idempotency, tenant scope, Manager/Packer denial и Director/Admin decision paths подтверждены Server/Web/disposable PostgreSQL и shared UI. Production cutover отслеживается отдельно.
-11. ✅ Безопасная ссылка/одноразовая выдача токена и одобрение директором/admin: логин/PIN не передаются в URL; Platform Owner без выбранной компании получает отказ, с явной компанией работает в её scope; existing-employee привязывается без создания дубля. Роль/tenant/idempotency/audit matrix и UI acceptance подтверждены.
-12. ✅ Серверный лимит активных пользователей, concurrency lock, unlimited PORTAL, Platform Owner fee/demo/status/limit/module-toggle controls и Director permission-gated company settings реализованы. PostgreSQL подтверждает persistence/validation/audit, стандартный seat limit, PORTAL unlimited, forged-company denial и Manager/Packer denial. Production rollout отслеживается отдельно.
+11. ✅ Безопасная ссылка/одноразовая выдача токена и одобрение директором/admin: логин/PIN не передаются в URL; God без выбранной компании получает отказ, с явной компанией работает в её scope; existing-employee привязывается без создания дубля. Роль/tenant/idempotency/audit matrix и UI acceptance подтверждены.
+12. ✅ Серверный лимит активных пользователей, concurrency lock, unlimited PORTAL, God fee/demo/status/limit/module-toggle controls и Director permission-gated company settings реализованы. PostgreSQL подтверждает persistence/validation/audit, стандартный seat limit, PORTAL unlimited, forged-company denial и Manager/Packer denial. Production rollout отслеживается отдельно.
 13. ✅ Уникальность логинов; с 3.1 вход должен быть без учёта регистра.
 14. ✅ Активность/отключение пользователя без удаления истории.
-15. ✅ Company/owner audit views разделены и имеют фильтры/пагинацию; company audit доступен авторизованным ролям своей компании, Platform Owner support-audit — только Owner. Actor/event/entity/date filters, role/tenant denial и value-free redaction подтверждены shared UI, Server и disposable PostgreSQL.
+15. ✅ Company/God audit views разделены и имеют фильтры/пагинацию; company audit доступен авторизованным ролям своей компании, God support-audit — только God. Actor/event/entity/date filters, role/tenant denial и value-free redaction подтверждены shared UI, Server и disposable PostgreSQL.
 
 ## B. Клиенты, тарифы и производство
 
@@ -71,7 +71,7 @@
 54. ✅ Blob и document metadata разделены, company-scoped storage и FORCE RLS подтверждены; PDF-specific PostgreSQL E2E с реальным renderer прошёл в одноразовой test DB с cleanup.
 55. ✅ Filters/paging Documents API и общий Web list/search UI: client/employee filters capability-gated, company-scoped на сервере и проверены Playwright/PostgreSQL, включая cross-company denial и paging/search scope.
 56. ✅ Общий Web-экран Documents и серверные права/archive/download/history покрыты backend, shared browser regression и disposable PostgreSQL; deployment/cutover отслеживается отдельными release-пунктами.
-57. ✅ Стандартный Excel-шаблон PORTAL v1.0: четыре русских листа, blank/prefill API для директора и выбранной компании Platform Owner; openpyxl round trip и изоляция проверены.
+57. ✅ Стандартный Excel-шаблон PORTAL v1.0: четыре русских листа, blank/prefill API для директора и выбранной компании God; openpyxl round trip и изоляция проверены.
 58. ✅ Web blank/prefilled Excel template download подтверждён реальным Chromium → HTTP API → disposable PostgreSQL E2E: реальные browser downloads, XLSX signature, MIME/filename, SHA-256 совпадение с server payload, разные blank/prefill contents и cross-company HTTP 403.
 59. 🟡 Android bridge сохраняет поддерживаемые файлы в Downloads через system picker/MediaStore; source/UI tests есть, Java compile и проверка на устройстве открыты.
 60. 🟡 Web Share API с безопасным download fallback реализован; фактическое поведение Share в целевых браузерах ещё нужно проверить.
@@ -114,7 +114,7 @@
 83. 🟡 Release workflow проверяет подпись и pin сертификата, APK package/version metadata и соответствие manifest артефакту. Production signing key и резервная копия существуют и совпадают; staging CI run 24 на commit c46917f успешно собрал и проверил installable signed staging APK. Открыты production GitHub Secrets/manual release gate и доказательство установки/обновления на физическом устройстве.
 84. ✅ Первый функциональный Web-клиент подтверждён реальным Chromium → HTTP API → disposable PostgreSQL staging E2E: login/meta, Documents, archive/download, Excel preview/apply/result, cross-company denial и logout/revocation.
 85. 🟡 Windows thin client собран как WPF/WebView2 поверх общего `/web/`; GitHub Windows CI на `38e93bd` успешно собрал self-contained win-x64 artifact и прогнал checksum/versioned-install/rollback-safe installer contracts. Добавлен same-origin update-manifest contract с SHA-256, HTTPS/loopback policy, лимитом размера и запретом redirect. Открыты production publication/signing policy и обычная установка/обновление на целевой Windows-машине.
-86. 🟡 Core UI и permission model общие для Android/Web; реальный Chromium → HTTP API → disposable PostgreSQL E2E подтверждён для admin/director/manager/packer и Platform Owner, включая явный выбор компании и cross-company scope. Открытой остаётся только физическая Android user-flow/parity проверка готовой APK без технических прогонов на телефоне.
+86. 🟡 Core UI и permission model общие для Android/Web; реальный Chromium → HTTP API → disposable PostgreSQL E2E подтверждён для admin/director/manager/packer и God, включая явный выбор компании и cross-company scope. Открытой остаётся только физическая Android user-flow/parity проверка готовой APK без технических прогонов на телефоне.
 87. ✅ Десятичная нумерация сборок 3.0 → 3.1 → … → 3.9 → 4.0.
 88. ✅ GitHub CI: серверные тесты, Android UI и сборка APK, отдельные Web/Playwright checks.
 
@@ -179,17 +179,17 @@
 - ✅ Найден и исправлен production-дефект недетерминированных PDF: ReportLab `invariant=1`, повторная генерация возвращает тот же scoped Document.
 - ✅ Финальная локальная регрессия Part 8: Python 199 OK / 19 skipped, Node 31/31 PASS, compileall/node-check/diff-check OK.
 - ✅ После VPS-тестов: disposable DB/roles и временные ReportLab dependencies удалены; production Stage 7/production DB не менялись.
-- 🟡 Platform Owner/Packer browser scopes закрыты Part 10; Web download blank/prefill template закрыт Part 11. Открыты Android user-flow/parity готовой APK, production rollout и Windows installer.
+- 🟡 God/Packer browser scopes закрыты Part 10; Web download blank/prefill template закрыт Part 11. Открыты Android user-flow/parity готовой APK, production rollout и Windows installer.
 - Полный отчёт: `PORTAL_WEB_POSTGRES_PART8_REPORT.md`.
 
 ## G5. Web + Invoice revisions Part 10 — реальные role/revision gates (29.09.2026)
 
-- ✅ Реальный Chromium → HTTP API → disposable PostgreSQL E2E подтверждён для Director, Manager, Packer и Platform Owner.
+- ✅ Реальный Chromium → HTTP API → disposable PostgreSQL E2E подтверждён для Director, Manager, Packer и God.
 - ✅ Director через Web сформировал и скачал `invoice_xlsx`, затем перевёл счёт `finalized → editing`.
 - ✅ Manager через Web изменил разрешённую строку счёта и сохранил `revision 2`; итоговое состояние снова `finalized`.
 - ✅ Packer не видит раздел счетов и получает HTTP 403 при прямом запросе invoices API.
-- ✅ Platform Owner до выбора компании получает HTTP 403, после явного выбора компании A работает в её scope, а компания B возвращает пустой список счетов.
-- ✅ Owner audit за тестовый сценарий: 16 записей; чужая компания: 0 счетов.
+- ✅ God до выбора компании получает HTTP 403, после явного выбора компании A работает в её scope, а компания B возвращает пустой список счетов.
+- ✅ God audit за тестовый сценарий: 16 записей; чужая компания: 0 счетов.
 - ✅ Финальный результат: `BROWSER_EXIT=0`, `FIXTURE_VERIFIED=True`, `INVOICE_REVISION=2`, `INVOICE_XLSX_DOCUMENTS=1`, `PART10_REAL_WEB_PG_E2E=PASS`.
 - ✅ Cleanup доказан: после теста disposable DB = 0, disposable roles = 0; production DB/service не изменялись.
 - ✅ GitHub Web и Server CI для ветки Part 10 прошли; локально targeted server 28/28 и Web/Playwright 4/4.
@@ -259,7 +259,7 @@
 ## K. Final project closeout — 2026-10-01 (baseline `337d239`)
 
 - Current source audit confirms self-service PIN change, central VPS document storage architecture, Desktop connection/WebView compatibility/update path, and bounded reminder dispatch. Desktop source version is 3.5.2; Android development staging is 3.5-dev/versionCode 35. No product semantic version is declared by `PORTALAppServer/1.0`; Server CI validates Python 3.11/3.13 runtimes.
-- Item 13 includes the tested case-insensitive login and self-service PIN flow: masked input, confirmation match, Platform Owner hidden state, preserved current session, revocation of other sessions, and audit without secrets. Existing Server and shared UI tests cover the flow.
+- Item 13 includes the tested case-insensitive login and self-service PIN flow: masked input, confirmation match, God hidden state, preserved current session, revocation of other sessions, and audit without secrets. Existing Server and shared UI tests cover the flow.
 - Roadmap statuses are **93 ✅ / 15 🟡 / 6 ⏳ / 12 🔌 (126 conceptual items)**. Item 105 is 🟡; a verified legacy snapshot still requires a separately authorized disposable PostgreSQL import/reconciliation rehearsal. No production facts are used for this gate.
 - Remaining 🟡/⏳ statuses are classified in `PORTAL_FINAL_PROJECT_CLOSEOUT_REPORT.md` and contain only real device/browser, provider, production/data, or external migration gates. No software TODO remains.
 - Current-baseline local evidence: Server discovery 306 passed / 49 skipped; shared Node 58/58; Android UI 37/37; infra readiness 8/8; compileall and diff check passed. Local PostgreSQL is unavailable. GitHub workflows for the ending documentation SHA must be recorded in the closeout report after push; earlier SHA Actions evidence is not substituted.
