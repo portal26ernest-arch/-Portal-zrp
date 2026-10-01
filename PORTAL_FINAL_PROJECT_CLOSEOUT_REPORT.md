@@ -8,7 +8,7 @@ Status: **SOFTWARE COMPLETE — external gates remain**
 - Starting SHA: `337d2399cd206f0029a171aa4e503e52c82ca0e9` (`feat: add self-service PIN change`).
 - Starting branch: `codex-finalization-megapack-part12`, tracking `origin/codex-finalization-megapack-part12`.
 - At start, tracked files were clean. Three user-provided untracked files were present: `CODEX_PORTAL_FINAL_PROJECT_CLOSEOUT.md`, `CODEX_PORTAL_FINAL_PROJECT_CLOSEOUT.run.err.log`, and `CODEX_PORTAL_FINAL_PROJECT_CLOSEOUT.run.jsonl`; preserved without edits.
-- Ending SHA: `24d1d4e571129c40903a6e0cd88d9c3b2a02beee`, pushed to `origin/codex-finalization-megapack-part12`.
+- Ending source SHA: `337d2399cd206f0029a171aa4e503e52c82ca0e9`. No application source changed in this closeout; the pushed branch adds only the closeout documentation recorded here.
 - Android: `3.5-dev` / versionCode 35 (development staging; `android_src/release.properties`).
 - Windows Desktop: `3.5.2` (`desktop_windows/Portal.Desktop.csproj`).
 - Server: the server reports the HTTP identification string `PORTALAppServer/1.0`; no separate semantic Server release version is declared in source. Server CI runs on Python 3.11 and 3.13 (runtime versions, not product versions).
@@ -37,7 +37,7 @@ At starting SHA `337d2399cd206f0029a171aa4e503e52c82ca0e9`:
 
 GitHub Actions at starting/source SHA `337d2399cd206f0029a171aa4e503e52c82ca0e9`: Android APK run `36861242054` — SUCCESS; Web run `36861242048` — SUCCESS; Android UI run `36861242142` — SUCCESS; Server isolation run `36861242135` — SUCCESS. These are not ending-SHA runs.
 
-At ending SHA `24d1d4e`, no workflow run was created by the documentation-only push because workflow path filters do not include these four closeout documents. Thus there are no ending-SHA Actions run IDs or conclusions to claim. Runtime source is unchanged from the tested starting SHA. A manual rerun/dispatch was not available in the local environment (`gh` is not installed); CI evidence above is intentionally identified as prior-source evidence.
+The ending source SHA is the same tested source SHA `337d2399cd206f0029a171aa4e503e52c82ca0e9`; its four listed Actions runs are the exact-SHA source evidence. The later documentation-only pushes did not create Actions runs because workflow path filters do not include these closeout documents. A manual rerun/dispatch was not available in the local environment (`gh` is not installed). The pushed documentation commits do not change the tested runtime tree.
 
 ## External/manual gates
 
