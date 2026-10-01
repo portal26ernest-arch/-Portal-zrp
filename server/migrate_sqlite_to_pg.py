@@ -16,6 +16,16 @@ from migration_import import (ValidationError, open_copy, prepared_source,
 from migration_context import bind_company
 from production_migrations import migrate_payroll_settlement
 from production_repository import Repository
+from portal_postgres import Connection as PostgresConnection
+
+
+def _migration_repository(target, company_id):
+    row = target.execute('SELECT secret FROM portal_company_keys WHERE company_id=%s',
+                         (company_id,)).fetchone()
+    if row is None or not row[0]:
+        raise ValidationError('Protected company context is unavailable')
+    connection = PostgresConnection(target, company_id=company_id, company_key=row[0])
+    return Repository(connection, company_id, dialect='postgresql')
 
 
 def parse_tenant(spec):
@@ -67,7 +77,7 @@ def run(tenant_specs, platform_path=None, apply=False, dsn=None):
                 # is ever allowed to start.
                 for cid, _source in tenants:
                     bind_company(target, cid)
-                    migrate_payroll_settlement(Repository(target, cid, dialect='postgresql'))
+                    migrate_payroll_settlement(_migration_repository(target, cid))
                 report['identity_sequences_checked'] = sync_identity_sequences(
                     target, identity_maxima(tenants, control))
         report['status'] = 'IMPORTED_AND_VERIFIED'
