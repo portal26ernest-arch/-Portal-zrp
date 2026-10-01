@@ -33,11 +33,9 @@ jobs:
         shell: bash
         run: |
           if [[ "$GITHUB_REF" == refs/tags/portal-android-v* ]]; then
-            VERSION=$(sed -n 's/^versionName=//p' android_src/release.properties | tr -d '\r')
-            test "$GITHUB_REF_NAME" = "portal-android-v$VERSION"
-          else
-            test "$GITHUB_REF" = "refs/heads/main"
+            exit 0
           fi
+          test "$GITHUB_REF" = "refs/heads/main"
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
@@ -58,6 +56,9 @@ jobs:
           test -n "$PORTAL_ANDROID_CERT_SHA256"
           VERSION=$(sed -n 's/^versionName=//p' android_src/release.properties | tr -d '\r')
           VERSION_CODE=$(sed -n 's/^versionCode=//p' android_src/release.properties | tr -d '\r')
+          if [[ "$GITHUB_REF" == refs/tags/portal-android-v* ]]; then
+            test "$GITHUB_REF_NAME" = "portal-android-v$VERSION"
+          fi
           CHANNEL=$(sed -n 's/^channel=//p' android_src/release.properties | tr -d '\r')
           UPDATE_MANIFEST_URL=$(sed -n 's/^updateManifestUrl=//p' android_src/release.properties | tr -d '\r')
           [[ "$VERSION" != *-dev* ]]
