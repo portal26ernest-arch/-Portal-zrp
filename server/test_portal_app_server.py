@@ -156,14 +156,14 @@ class PortalAPITest(unittest.TestCase):
         with patch.dict(os.environ, keys, clear=False):
             self.request("/api/desktop-update", status=404)
         configured = {
-            "PORTAL_DESKTOP_UPDATE_VERSION": "3.6",
-            "PORTAL_DESKTOP_UPDATE_BUILD": "36",
-            "PORTAL_DESKTOP_UPDATE_URL": "https://downloads.example.test/PORTAL_Setup.exe",
+            "PORTAL_DESKTOP_UPDATE_VERSION": "3.7.0",
+            "PORTAL_DESKTOP_UPDATE_BUILD": "37",
+            "PORTAL_DESKTOP_UPDATE_URL": "https://downloads.example.test/PORTAL-Desktop-win-x64-3.7.0.zip",
             "PORTAL_DESKTOP_UPDATE_SHA256": "a" * 64,
         }
         with patch.dict(os.environ, configured, clear=False):
             data = self.request("/api/desktop-update")
-            self.assertEqual(data["build"], 36)
+            self.assertEqual(data["build"], 37)
             self.assertNotIn("token", data)
             self.request("/api/desktop-update", body={}, status=405)
 
