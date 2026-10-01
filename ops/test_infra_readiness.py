@@ -110,9 +110,9 @@ class InfraReadinessTest(unittest.TestCase):
 
     def test_production_unit_override_pins_reviewed_source_without_secrets(self):
         text = (ROOT / 'ops/systemd/portal-production-cutover.conf').read_text(encoding='utf-8')
-        self.assertIn('WorkingDirectory=/srv/portal-production/releases/41b56b0-cutover/server', text)
+        self.assertIn('WorkingDirectory=/srv/portal-production/releases/af663a8-cutover/server', text)
         self.assertIn('ExecStart=\nExecStart=/srv/portal-production/venv/bin/python -B', text)
-        self.assertIn('ReadOnlyPaths=/srv/portal-production/releases/41b56b0-cutover', text)
+        self.assertIn('ReadOnlyPaths=/srv/portal-production/releases/af663a8-cutover', text)
         self.assertNotIn('Environment=', text)
         self.assertNotIn('password=', text.lower())
 
