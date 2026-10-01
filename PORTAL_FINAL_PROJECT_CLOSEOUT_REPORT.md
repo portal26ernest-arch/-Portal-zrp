@@ -1,6 +1,6 @@
 # PORTAL Final Project Closeout
 
-Date: 2026-10-01  
+Date: 2026-10-01
 Status: **SOFTWARE COMPLETE — external gates remain**
 
 ## Baseline and ending state
