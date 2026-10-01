@@ -107,6 +107,7 @@ class PortalAPITest(unittest.TestCase):
         with patch.object(portal.tenants, 'control', side_effect=ConnectionError('secret-dsn')):
             response = self.request('/api/ready', status=503)
         self.assertNotIn('secret-dsn', json.dumps(response))
+        self.assertEqual(self.request('/api/ready'), {'ok': True, 'ready': True})
 
     def request(self,path,token=None,body=None,method=None,status=200,extra_headers=None):
         headers = {"Authorization":"Bearer "+token} if token else {}
