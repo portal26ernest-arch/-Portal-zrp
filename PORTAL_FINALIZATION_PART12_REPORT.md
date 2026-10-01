@@ -879,3 +879,20 @@ Item 46 remains 🟡 because this system does not yet record defects; quality re
 - Roadmap item 33 is now ✅. Numbered counts: **92 ✅ / 16 🟡 / 6 ⏳ / 12 🔌**. No production DB/VPS/DNS changes, signing-key use, scheduler activation, release cutover or physical-device action occurred.
 
 **Exact NEXT:** the remaining 🟡 items are now dominated by explicit data/device/external-production gates: item 46 has no defect source and must stay unavailable; item 47 requires trusted timer/production activation; 59/60/61/63 require real device/browser checks; 77–79 require live official-source ingestion/scheduler enablement; 80/83/85/86/93/105/125 require release, production, backup, snapshot or physical-environment evidence. Re-check for any concrete source-code defect before changing those statuses; do not invent missing external evidence.
+
+
+## Finalization Megapack audit checkpoint - 2026-10-01 - `7264d9b`
+
+Starting SHA `f2a1ac0fb9ad21cf3886b3b72f8a7492237d2287`; ending source SHA `7264d9bd2f83c167eb0c97a2dcc939e82170ef83`. New commit: `7264d9b fix: bound reminder dispatch batches`. Item 33 was already complete at the starting SHA and was not reworked.
+
+A concrete item 47 gap was fixed: the internal reminder runner now dispatches at most 500 candidates per invocation and carries processed/deferred counts into sanitized run metadata. This does not install or activate a timer. Local checks: `test_reminder_jobs` + `test_reminder_operator` **15/15**; `test_production` **52/52**; `test_money_units` **4/4**; `python -m compileall -q .` passed; `git diff --check` passed. Existing `utcnow()` deprecation warnings were emitted by tests, with no failures. No new PostgreSQL schema/tenant query was introduced; no PostgreSQL disposable test was run for this bounded in-process change.
+
+Item 46 remains partial because no canonical defect/QC source exists; quality remains unavailable, with defects null/unavailable. Items 77-79 boundary is software-present (company-scoped API, role checks, honest empty state, official HTTPS hosts, per-company canonical dedupe, injected bounded adapter batches, sanitization and provider failure counters); repository inspection found no official feed adapters. Live fetch and scheduler remain disabled. Item 105 read-only inventory confirms canonical minor-unit money and Decimal compatibility binding; source SQLite affinity/data remain unknown without a separately approved disposable snapshot, and no production rows were read.
+
+**A/B/C classification of the 16 remaining yellow rows:** A: 47 implementation is locally verified; current-SHA Server/Web CI still needs confirmation. B: 59 Android native chooser/save, 60 target-browser Share, 61 Android email intent, 63 Android/WebView Excel, 86 physical Android parity, 85 target-PC install/update. C: 46 real quality source; 47 trusted system timer and owner activation; 77-79 official feed source and any production live activation; 80 production Android cutover; 83 signing Secrets/manual release; 85 production Windows publication/signing; 93 off-server backup; 105 authorized disposable imported-SQLite snapshot rehearsal; 125 domain/DNS/HTTPS. Items 83/85 combine B and C.
+
+Current counts remain **92 complete / 16 partial / 6 pending / 12 integration** pending item 47 CI evidence. `gh` is not installed and direct GitHub API access is unavailable; public Actions view did not show runs for `7264d9b`, so no new run ID, PG count, or cleanup result is claimed. Relevant prior current-source evidence remains recorded above; no new disposable PostgreSQL run was performed.
+
+Git status was clean immediately after source push; documentation synchronization is the current working change. Production DB/VPS/DNS, production secrets/signing keys, scheduler, main/tag/release, and physical phone were not touched.
+
+**Exact NEXT:** obtain and verify Server and Web/disposable PostgreSQL CI results for `7264d9b`, including cleanup (`db=0 roles=0 temp=0`). If green, update item 47 to ? and recalculate counts. Then address only any remaining category A gaps.
