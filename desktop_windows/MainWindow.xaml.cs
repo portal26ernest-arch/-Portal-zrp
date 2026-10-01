@@ -31,15 +31,16 @@ public partial class MainWindow : Window
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
-        var candidate = Environment.GetEnvironmentVariable("PORTAL_SERVER_URL") ?? LoadStoredOrigin();
-        if (TryNormalizeOrigin(candidate, out var origin, out _))
+        var configured = Environment.GetEnvironmentVariable("PORTAL_SERVER_URL");
+        var candidate = string.IsNullOrWhiteSpace(configured) ? LoadStoredOrigin() : configured;
+        if (TryNormalizeOrigin(candidate, out var origin, out var error))
         {
             ServerUrlBox.Text = origin;
             await ConnectAsync(origin, persist: false);
             return;
         }
 
-        ShowSetup();
+        ShowSetup(candidate is null ? null : error);
     }
 
     private string? LoadStoredOrigin()
@@ -94,12 +95,24 @@ public partial class MainWindow : Window
     {
         try
         {
+            StatusText.Text = "Проверка сервера…";
+            var problem = await ProbePortalWebAsync(origin);
+            if (problem is not null)
+            {
+                ShowSetup(problem);
+                return;
+            }
             StatusText.Text = "Подключение…";
-            Directory.CreateDirectory(_settingsDir);
-            var env = await CoreWebView2Environment.CreateAsync(
-                userDataFolder: Path.Combine(_settingsDir, "WebView2"));
-            await Browser.EnsureCoreWebView2Async(env);
-            ConfigureBrowser();
+            if (Browser.CoreWebView2 is null)
+            {
+                Directory.CreateDirectory(_settingsDir);
+                var env = await CoreWebView2Environment.CreateAsync(
+                    userDataFolder: Path.Combine(_settingsDir, "WebView2"));
+                var options = env.CreateCoreWebView2ControllerOptions();
+                options.IsInPrivateModeEnabled = true;
+                await Browser.EnsureCoreWebView2Async(env, options);
+                ConfigureBrowser();
+            }
             _serverOrigin = origin;
             if (persist) SaveOrigin(origin);
             SetupPanel.Visibility = Visibility.Collapsed;
@@ -110,10 +123,33 @@ public partial class MainWindow : Window
         {
             ShowSetup("Не найден Microsoft Edge WebView2 Runtime. Установите официальный WebView2 Runtime и повторите запуск.");
         }
+        catch (OperationCanceledException)
+        {
+            ShowSetup("Сервер PORTAL не ответил за 12 секунд. Проверьте сеть и адрес.");
+        }
+        catch (HttpRequestException)
+        {
+            ShowSetup("Не удалось установить соединение с сервером. Проверьте сеть, HTTPS и сертификат.");
+        }
         catch
         {
             ShowSetup("Не удалось открыть PORTAL. Проверьте адрес сервера и соединение.");
         }
+    }
+
+    private static async Task<string?> ProbePortalWebAsync(string origin)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+        using var response = await Http.GetAsync(origin + "/web/", HttpCompletionOption.ResponseHeadersRead,
+            timeout.Token);
+        if ((int)response.StatusCode is >= 300 and < 400)
+            return "Сервер перенаправляет /web/. Укажите окончательный HTTPS-адрес PORTAL.";
+        if (response.StatusCode != HttpStatusCode.OK)
+            return $"Сервер ответил HTTP {(int)response.StatusCode} на /web/. Проверьте адрес и настройку PORTAL Web.";
+        if (!string.Equals(response.Content.Headers.ContentType?.MediaType, "text/html",
+                StringComparison.OrdinalIgnoreCase))
+            return "По адресу /web/ сервер не отдаёт интерфейс PORTAL (HTML).";
+        return null;
     }
 
     private void ConfigureBrowser()
@@ -126,7 +162,12 @@ public partial class MainWindow : Window
         if (_browserEventsAttached) return;
         Browser.CoreWebView2.NavigationStarting += (_, e) =>
         {
-            if (_serverOrigin is null || !Uri.TryCreate(e.Uri, UriKind.Absolute, out var target)) return;
+            if (e.Uri == "about:blank") return;
+            if (_serverOrigin is null || !Uri.TryCreate(e.Uri, UriKind.Absolute, out var target))
+            {
+                e.Cancel = true;
+                return;
+            }
             if (SameOrigin(target, _serverOrigin)) return;
             e.Cancel = true;
             OpenExternalHttps(target);
@@ -142,6 +183,7 @@ public partial class MainWindow : Window
         };
         Browser.CoreWebView2.NavigationCompleted += (_, e) =>
         {
+            if (_serverOrigin is null || Browser.Visibility != Visibility.Visible) return;
             StatusText.Text = e.IsSuccess ? "Подключено" : "Ошибка подключения";
             BackButton.IsEnabled = Browser.CanGoBack;
         };
@@ -168,7 +210,27 @@ public partial class MainWindow : Window
         await ConnectAsync(origin, persist: true);
     }
 
-    private void Server_Click(object sender, RoutedEventArgs e) => ShowSetup();
+    private async void Server_Click(object sender, RoutedEventArgs e)
+    {
+        ShowSetup();
+        if (Browser.CoreWebView2 is null) return;
+        ConnectButton.IsEnabled = false;
+        StatusText.Text = "Очистка сеанса…";
+        _serverOrigin = null;
+        try
+        {
+            Browser.CoreWebView2.Navigate("about:blank");
+            await Browser.CoreWebView2.Profile.ClearBrowsingDataAsync();
+            SetupError.Text = "Локальный сеанс очищен. Выберите сервер и войдите снова.";
+            ConnectButton.IsEnabled = true;
+            StatusText.Text = "Требуется подключение";
+        }
+        catch
+        {
+            SetupError.Text = "Не удалось очистить локальный сеанс. Перезапустите PORTAL Desktop.";
+            StatusText.Text = "Требуется перезапуск";
+        }
+    }
 
     private void ShowSetup(string? error = null)
     {

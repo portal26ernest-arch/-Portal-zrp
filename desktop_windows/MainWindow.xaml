@@ -46,7 +46,7 @@
                         <TextBox x:Name="ServerUrlBox" Margin="0,8,0,12" Height="38" Padding="10,7"
                                  ToolTip="Например: https://portal.example.ru"/>
                         <TextBlock x:Name="SetupError" Foreground="#B91C1C" TextWrapping="Wrap" Margin="0,0,0,12"/>
-                        <Button Content="Подключиться" Height="40" Click="Connect_Click"/>
+                        <Button x:Name="ConnectButton" Content="Подключиться" Height="40" Click="Connect_Click"/>
                         <TextBlock Margin="0,18,0,0" Foreground="#9CA3AF" TextWrapping="Wrap"
                                    Text="PORTAL Desktop не хранит пароль, PIN или API-секреты. Сохраняется только адрес выбранного сервера."/>
                     </StackPanel>
