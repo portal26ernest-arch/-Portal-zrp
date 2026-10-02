@@ -22,6 +22,8 @@ from employee_identity import (account_directory, assigned_client_ids, canonical
     hash_access_pin, update_legacy_job_progress, write_user_account)
 import production_permissions as business_rights
 from production_migrations import migrate as migrate_production
+from client_names import persist_client_alias, persist_known_client_aliases
+from employee_names import persist_known_employee_aliases
 import production_activity as activity
 from portal_config import load_config
 from pathlib import Path
@@ -482,7 +484,11 @@ def validate_employee(conn, value):
 
 
 def create_internal_employee(conn, display_name, username):
-    return create_employee_card(conn,tenants.COMPANY_ID.get(),display_name,username)
+    company_id=tenants.COMPANY_ID.get()
+    employee_id=create_employee_card(conn,company_id,display_name,username)
+    repo=Repository(conn,company_id)
+    if repo.ready():persist_known_employee_aliases(repo,employee_id,display_name)
+    return employee_id
 
 
 def save_user(body, user_id=None):
@@ -592,8 +598,9 @@ def save_client(body, client_id=None, actor_id=None):
         active = active_value(body.get("active", old["active"] if old else 1))
         if conn.execute("SELECT 1 FROM portal_clients WHERE name=? COLLATE NOCASE AND id!=?", (name, client_id or 0)).fetchone():
             raise ValueError("Клиент с таким названием уже существует (включая архив)")
-        if old and name != old["name"]:
-            repo=Repository(conn,tenants.COMPANY_ID.get())
+        repo=Repository(conn,tenants.COMPANY_ID.get())
+        renamed=bool(old and name != old["name"])
+        if renamed:
             if repo.ready():
                 repo.insert('client_name_history',dict(client_id=int(client_id),old_name=old['name'],
                     new_name=name,event='renamed',actor_id=actor_id,occurred_at=now_text()))
@@ -602,7 +609,11 @@ def save_client(body, client_id=None, actor_id=None):
                 # Keep the legacy name-based compatibility path only before
                 # the stable-ID production ledger is enabled for this tenant.
                 rename_references(conn, old["name"], name)
-        return write_catalogue(conn, "portal_clients", {"name": name, "active": active}, client_id)
+        saved_id=write_catalogue(conn, "portal_clients", {"name": name, "active": active}, client_id)
+        if repo.ready():
+            if renamed: persist_client_alias(repo,int(saved_id),old["name"],'rename',name)
+            persist_known_client_aliases(repo,int(saved_id),name)
+        return saved_id
 
 
 def save_operation(body, client_id, operation_id=None):
@@ -706,10 +717,10 @@ def company_module_for_route(path):
             'payroll':'payroll','payroll-mine':'payroll','payroll-periods':'payrollPeriods',
             'payroll-settlements':'payrollPeriods',
             'chat':'teamChat','chat-attachments':'teamChat','chat-pins':'teamChat',
-            'clients':'clients','catalogue':'clients','operations':'clients','products':'clients','client-requisites':'clients','client-name-history':'clients',
+            'clients':'clients','catalogue':'clients','operations':'clients','products':'clients','client-requisites':'clients','client-name-history':'clients','client-aliases':'clients',
             'materials':'materials','usage':'materials',
             'invoices':'invoices','payments':'invoices','receivables':'invoices',
-            'users':'users','invitations':'users','company-access':'users','presence':'users','activity':'users','audit':'users',
+            'users':'users','invitations':'users','company-access':'users','presence':'users','activity':'users','audit':'users','employee-name-history':'users','employee-aliases':'users',
             'tasks':'jobs','batches':'batches','shipments':'batches','returns':'batches',
             'permissions':'permissions','tariffs':'tariffs','finance':'radar','expenses':'expenses',
             'analytics':'analytics','settings':'control','documents':'documents',
@@ -903,6 +914,32 @@ class Handler(BaseHTTPRequestHandler):
                         repo=Repository(conn,company_id)
                         if repo.ready(): safe['permissions']=sorted(business_rights.effective(repo,identity))
                 return self.send_json({"ok":True,"user":safe})
+            if path == "/api/me/pin" and method == "POST":
+                if is_owner:
+                    raise PermissionError("Для владельца платформы используется отдельный технический пароль")
+                body=parse_body(self)
+                if set(body)!={'current_pin','new_pin'}:
+                    raise ValueError("Передайте текущий и новый PIN")
+                current_pin=body.get('current_pin')
+                new_pin=body.get('new_pin')
+                if not isinstance(current_pin,str) or not isinstance(new_pin,str):
+                    raise ValueError("PIN должен быть строкой")
+                if not 4<=len(new_pin)<=128:
+                    raise ValueError("Новый PIN должен содержать от 4 до 128 символов")
+                if current_pin==new_pin:
+                    raise ValueError("Новый PIN должен отличаться от текущего")
+                with tenants.company_scope(company_id), db() as conn:
+                    account=conn.execute("SELECT id,pin_salt,pin_hash FROM app_users WHERE id=? AND active=1",(identity['id'],)).fetchone()
+                    if not account or not verify_pin(current_pin,account['pin_salt'],account['pin_hash']):
+                        raise ValueError("Текущий PIN указан неверно")
+                    salt,digest=hash_pin(new_pin)
+                    conn.execute("UPDATE app_users SET pin_salt=?,pin_hash=?,updated_at=? WHERE id=?",
+                                 (salt,digest,now_text(),identity['id']))
+                    conn.execute("DELETE FROM app_sessions WHERE user_id=? AND token<>?",(identity['id'],self.token()))
+                    repo=Repository(conn,company_id)
+                    if repo.ready():repo.audit(identity,'user.pin.changed',identity['id'])
+                    conn.commit()
+                return self.send_json({"ok":True})
             if is_owner and selected is None:
                 raise PermissionError("Для технического доступа укажите X-Portal-Company")
             module=company_module_for_route(path)
@@ -994,7 +1031,7 @@ class Handler(BaseHTTPRequestHandler):
                 users={str(u['id']):u.get('display_name','') for u in repo.catalog('users')}
                 rows=conn.execute("SELECT id,payload,created_at FROM portal_production WHERE company_id=? AND kind='audit' ORDER BY created_at DESC,id DESC",(repo.company_id,)).fetchall()
                 items=[]
-                labels={'access_invite.created':'Создано приглашение','access_invite.accepted':'Принят запрос доступа','access_invite.approved':'Подтверждён доступ','access_invite.revoked':'Приглашение отозвано','access_invite.rejected':'Запрос отклонён','access_invite.expired':'Приглашение истекло','client.requisites.updated':'Обновлены реквизиты клиента','user.permissions.updated':'Изменены права сотрудника','company.settings.updated':'Изменены настройки компании'}
+                labels={'access_invite.created':'Создано приглашение','access_invite.accepted':'Принят запрос доступа','access_invite.approved':'Подтверждён доступ','access_invite.revoked':'Приглашение отозвано','access_invite.rejected':'Запрос отклонён','access_invite.expired':'Приглашение истекло','client.requisites.updated':'Обновлены реквизиты клиента','user.permissions.updated':'Изменены права сотрудника','user.pin.changed':'Сотрудник сменил PIN','company.settings.updated':'Изменены настройки компании'}
                 for row in rows:
                     payload=json.loads(row['payload']);at=row['created_at'][:10];actor_id=payload.get('actor_id')
                     if actor and str(actor_id)!=actor:continue

@@ -157,21 +157,44 @@ class ProductionTest(unittest.TestCase):
             current=portal.get_client(conn,1)
             work=Repository(conn,1).get('works','rename-history-work')
             history=Repository(conn,1).list('client_name_history')
+            aliases=Repository(conn,1).list('client_aliases')
             audit=Repository(conn,1).list('audit')
         self.assertEqual(current['name'],'Canonical client rename')
         self.assertEqual(work['client_name'],original)
         self.assertEqual([(row['old_name'],row['new_name']) for row in history],[(original,'Canonical client rename')])
+        rename_alias=next(row for row in aliases if row['client_id']==1 and row['alias']==original)
+        self.assertEqual(rename_alias['source'],'rename')
         self.assertIn('client.renamed',[row['event'] for row in audit])
         self.assertEqual(self.get('client-name-history?client_id=1')['data'],history)
         self.assertEqual(self.get('client-name-history')['data'],history)
+        self.assertEqual(self.get('client-aliases?client_id=1')['data'],[row for row in aliases if row['client_id']==1])
         self.assertEqual(self.get('client-name-history',self.other_admin)['data'],[])
         self.assertEqual(self.get('client-name-history?client_id=1',self.other_admin)['data'],[])
+        self.assertEqual(self.get('client-aliases',self.other_admin)['data'],[])
+
+    def test_known_client_alias_is_persisted_without_rewriting_canonical_name(self):
+        from client_names import known_client_aliases
+        expected={'Борискин':('Борисенко',),'Варданян':('Вартанян',),'Вдовина':('Вдовин',),
+                  'Шульгина':('Шульгинова',),'Элегантика':('Эленгатика',),
+                  'Карягин':('Корягин','Коорягин'),'Чотчаева':('Чотчаев',)}
+        for canonical,aliases in expected.items():
+            self.assertEqual(known_client_aliases(canonical),aliases)
+        created=self.request('/api/admin/clients',self.admin,{'name':'Борискин'})
+        client_id=created['id']
+        aliases=self.get('client-aliases?client_id='+str(client_id))['data']
+        self.assertEqual([(row['alias'],row['source']) for row in aliases],[('Борисенко','knowledge')])
+        self.assertEqual(self.get('client-name-history?client_id='+str(client_id))['data'],[])
+        with portal.tenants.company_scope(1),portal.db() as conn:
+            self.assertEqual(portal.get_client(conn,client_id)['name'],'Борискин')
+        self.request('/api/v3/client-aliases',self.admin,status=403,extra_headers={'X-Portal-Company':'2'})
 
     def test_today_dashboard_has_company_date_volume_finance_and_open_invoice_counts(self):
         work=self.work()
         self.post('invoices',dict(work_ids=[work['id']],due_at='2020-01-01'))
-        today=datetime.utcnow().date()
+        today=datetime.fromisoformat(self.get('today')['data']['date']).date()
         closed_payroll=None
+        expected_month_quantity=2
+        expected_month_finance=(1000,400)
         if today.day>15:
             start=today.replace(day=1).isoformat();end=today.replace(day=15).isoformat()
             with portal.tenants.company_scope(1),portal.db() as conn:
@@ -185,16 +208,17 @@ class ProductionTest(unittest.TestCase):
             self.post('payroll-settlements',dict(payroll_period_id=period['id'],employee_id=employee,
                 entry_type='payout',amount='1.00',reason='Dashboard test',request_id='dashboard-paid-once'))
             closed_payroll=(400,100,300)
+            expected_month_quantity=4
+            expected_month_finance=(2000,800)
         with portal.tenants.company_scope(1),portal.db() as conn:
             dashboard_repo=Repository(conn,1)
             dashboard_user=next(user for user in dashboard_repo.catalog('users') if user['id']==self.admin_id)
             Production(dashboard_repo,dashboard_user).today()
         data=self.get('today')['data']
         self.assertEqual(data['today_quantity'],2)
-        expected_month=(4,2000,800) if today.day>15 else (2,1000,400)
-        self.assertEqual(data['month_quantity'],expected_month[0])
+        self.assertEqual(data['month_quantity'],expected_month_quantity)
         self.assertEqual(data['today_finance'],dict(revenue=1000,salary=400))
-        self.assertEqual((data['month_finance']['revenue'],data['month_finance']['salary']),expected_month[1:])
+        self.assertEqual((data['month_finance']['revenue'],data['month_finance']['salary']),expected_month_finance)
         self.assertEqual(data['today_productivity']['units'],2)
         self.assertIsNone(data['today_productivity']['units_per_hour'])
         self.assertEqual((data['open_invoice_count'],data['overdue_invoice_count'],data['overdue_debt']),(1,1,1000))
@@ -270,12 +294,14 @@ class ProductionTest(unittest.TestCase):
     def test_invite_revoke_and_role_capability_denials(self):
         manager=self.role_token('manager')
         body={'action':'create','role':'packer','username':'manager-invite','display_name':'Candidate','request_id':'manager-invite'}
+        self.request('/api/v3/invitations?status=all',manager,status=403)
         self.request('/api/v3/invitations',manager,body,method='POST',status=403)
         director=self.role_token('director')
         body['username']='director-invite';body['request_id']='director-invite'
         director_invite=self.request('/api/v3/invitations',director,body,method='POST')['data']
         self.request('/api/v3/invitations',director,body,method='POST',extra_headers={'X-Portal-Company':'2'},status=403)
         director_invite_id=director_invite['invite']['id']
+        self.request('/api/v3/invitations',manager,{'action':'approve','invite_id':director_invite_id},method='POST',status=403)
         self.request('/api/v3/invitations',manager,{'action':'revoke','invite_id':director_invite_id},method='POST',status=403)
         revoked=self.request('/api/v3/invitations',director,{'action':'revoke','invite_id':director_invite_id},method='POST')['data']
         revoke_replay=self.request('/api/v3/invitations',director,{'action':'revoke','invite_id':director_invite_id},method='POST')['data']
@@ -444,6 +470,15 @@ class ProductionTest(unittest.TestCase):
         manager_history=self.get('tariff-history?operation_id=1',self.worker)['data']
         self.assertNotIn('employee_rate',manager_history[0])
         self.assertIn('client_rate',manager_history[0])
+        client_future=(datetime.utcnow()+timedelta(days=2)).isoformat()
+        self.post('tariffs',dict(client_id=1,operation_id=1,employee_rate=7,effective_from=client_future),self.worker,status=403)
+        client_body=dict(client_id=1,operation_id=1,client_rate=7,effective_from=client_future,request_id='tariff-client-only-idempotent')
+        client_version=self.post('tariffs',client_body,self.worker)['data']
+        client_replay=self.post('tariffs',client_body,self.worker)['data']
+        self.assertEqual(client_version['client_rate'],700)
+        self.assertEqual(client_replay['id'],client_version['id'])
+        self.assertNotIn('employee_rate',client_version)
+        self.assertNotIn('employee_rate',client_replay)
         self.post('tariffs',dict(client_id=1,operation_id=1,employee_rate=1,effective_from='2020-01-01'),status=400)
 
     def test_tariff_effective_boundary_preserves_prior_work_and_rejects_duplicate_interval(self):
@@ -502,6 +537,22 @@ class ProductionTest(unittest.TestCase):
         finance=self.get('finance')['data']['clients'][0];self.assertEqual(finance['profit'],-500)
         self.get('finance',self.worker,status=403)
 
+    def test_task_plan_other_cost_requires_finance_read_capability(self):
+        batch=self.batch()
+        manager=self.role_token('manager')
+        # Tasks may be delegated to a worker, but creating an explicit financial
+        # plan cost still requires the finance capability.
+        body=dict(batch_id=batch['id'],operation_id=1,quantity=10,assignees=[self.worker_id],other_cost='1.25')
+        self.request('/api/v3/tasks',manager,dict(body,request_id='manager-plan-cost-forbidden'),method='POST',status=403)
+        with portal.tenants.company_scope(1),portal.db() as conn:
+            repository=Repository(conn,1)
+            self.assertFalse(any(task['batch_id']==batch['id'] for task in repository.list('tasks')))
+        director=self.role_token('director')
+        created=self.request('/api/v3/tasks',director,dict(body,request_id='director-plan-cost-allowed'),method='POST')['data']
+        economy=self.get('economy?batch_id='+batch['id'],director)['data']
+        self.assertEqual(economy['plan']['other'],125)
+        self.assertEqual(created['batch_id'],batch['id'])
+
     def test_batch_economy_marks_missing_plan_unavailable_instead_of_zero(self):
         batch=self.batch()
         economy=self.get('economy?batch_id='+batch['id'])['data']
@@ -538,9 +589,14 @@ class ProductionTest(unittest.TestCase):
         before=self.get('finance')['data'];base=before['clients'][0]['profit']
         self.post('expenses',dict(category_code='rent',amount=10,incurred_at=datetime.now().date().isoformat(),note='Склад'))
         data=self.get('finance')['data']
+        from production_service import margin_basis_points
         self.assertEqual(data['clients'][0]['profit'],base)
         self.assertEqual(data['company_overhead'],1000)
         self.assertEqual(data['net_profit'],base-1000)
+        self.assertEqual(data['totals'],{key:sum(row[key] for row in data['clients']) for key in ('revenue','salary','materials','other')})
+        self.assertEqual(data['clients'][0]['margin_bps'],margin_basis_points(data['clients'][0]['profit'],data['clients'][0]['revenue']))
+        self.assertEqual(data['client_margin_bps'],margin_basis_points(data['client_profit'],data['totals']['revenue']))
+        self.assertEqual(data['net_margin_bps'],margin_basis_points(data['net_profit'],data['totals']['revenue']))
         self.assertEqual(self.get('expenses')['data'][0]['category_code'],'rent')
         self.post('expenses',dict(category_code='unknown',amount=1),status=400)
         self.post('expenses',dict(category_code='rent',amount=1),self.worker,status=403)
@@ -649,10 +705,37 @@ class ProductionTest(unittest.TestCase):
         self.work();data=self.get('analytics',self.worker)['data']
         self.assertFalse(data['ranking']);self.assertIsNone(data['groups'][0]['units_per_hour'])
         self.assertEqual(data['groups'][0]['user_id'],self.worker_id)
+        self.assertTrue(data['groups'][0]['user_name']);self.assertTrue(data['groups'][0]['client_name']);self.assertTrue(data['groups'][0]['operation_name'])
+        self.assertEqual(data['quality'],dict(available=False,recorded_units=0,defects=None));self.assertEqual(data['batch_groups'],[])
         b=self.batch();t=self.task(b)
         self.post('work',dict(task_id=t['id'],quantity=2,started_at=(datetime.utcnow()-timedelta(hours=1)).isoformat()),self.worker)
-        forecast=self.get('analytics',self.worker)['data']['forecasts'][0]
+        updated=self.get('analytics',self.worker)['data'];forecast=updated['forecasts'][0]
+        batch_group=next(group for group in updated['batch_groups'] if group['batch_id']==b['id'] and group['operation_id']==1)
+        self.assertEqual(batch_group['client_id'],1);self.assertTrue(batch_group['batch_number']);self.assertGreater(batch_group['units_per_hour'],0)
         self.assertGreater(forecast['units_per_hour'],0);self.assertIsNotNone(forecast['estimated_completion'])
+
+    def test_analytics_manager_sees_team_only_for_assigned_clients(self):
+        manager=self.role_token('manager');manager_user=self.request('/api/me',manager)['user']
+        with portal.tenants.company_scope(1),portal.db() as conn:
+            legacy_id=conn.execute('SELECT telegram_id FROM app_users WHERE id=?',(manager_user['id'],)).fetchone()[0]
+            conn.execute('INSERT INTO manager_client_assignments(telegram_id,client_id,active) VALUES(?,1,1)',(legacy_id,))
+            conn.commit()
+            hidden_client=portal.save_client({'name':'Analytics unassigned client'})
+            hidden_operation=portal.save_operation({'name':'Hidden operation','employee_rate':2,'client_rate':5},hidden_client)
+        self.work()
+        self.post('work',dict(client_id=1,operation_id=1,quantity=2),self.admin)
+        self.post('work',dict(client_id=hidden_client,operation_id=hidden_operation,quantity=3),self.worker)
+
+        team=self.get('analytics',manager)['data']
+        self.assertEqual({group['user_id'] for group in team['groups'] if group['client_id']==1},{self.worker_id,self.admin_id})
+        self.assertNotIn(hidden_client,{group['client_id'] for group in team['groups']})
+        self.assertTrue(all(group['client_name']=='Client' and group['operation_name']=='Packing'
+                            for group in team['groups']))
+        self.assertEqual(team['quality'],dict(available=False,recorded_units=0,defects=None))
+
+        self_only=self.get('analytics',self.worker)['data']
+        self.assertEqual({group['user_id'] for group in self_only['groups']},{self.worker_id})
+        self.assertEqual(sum(group['quantity'] for group in self_only['groups']),5)
 
     def test_analytics_period_comparison_uses_company_dates_and_valid_timing_only(self):
         with portal.tenants.company_scope(1),portal.db() as conn:
@@ -692,6 +775,7 @@ class ProductionTest(unittest.TestCase):
         self.post('settings',dict(reminder_cadence='hourly'),director,status=400)
         self.get('settings',manager,status=403)
         self.post('settings',dict(monday_time='09:00'),manager,status=403)
+        self.get('audit',manager,status=403)
         self.request('/api/v3/settings',self.admin,extra_headers={'X-Portal-Company':'2'},status=403)
         with portal.db() as conn:
             r=Repository(conn,1);u=next(u for u in r.catalog('users') if u['id']==self.admin_id)
@@ -719,10 +803,9 @@ class ProductionTest(unittest.TestCase):
 
     def test_payroll_period_close_blocks_closed_dates_and_creates_document_snapshot(self):
         current=self.work()
-        today=datetime.utcnow().date()
-        if today.day>15:start=today.replace(day=1).isoformat();end=today.replace(day=15).isoformat()
-        else:
-            previous=(today.replace(day=1)-timedelta(days=1));start=previous.replace(day=16).isoformat();end=previous.isoformat()
+        today=datetime.fromisoformat(self.get('today')['data']['date']).date()
+        historical_month=(today-timedelta(days=60)).replace(day=1)
+        start=historical_month.isoformat();end=historical_month.replace(day=15).isoformat()
         with portal.db() as conn:
             r=Repository(conn,1);old=dict(current,id=str(uuid.uuid4()),completed_at=end+'T12:00:00.000000',created_at=end+'T12:00:00.000000')
             r.insert('works',{k:v for k,v in old.items() if k not in {'id','company_id'}},old['id']);conn.commit()

@@ -1,15 +1,19 @@
-# PORTAL final external blockers
+# PORTAL final external and manual gates
 
-This list contains owner/provider actions that cannot be established or authorized by repository changes.
+Scope: gates that require real devices, owners, providers, production resources, or a separate integration. There are no remaining software-completable items in the Part 12 closeout scope. Roadmap **93 ✅ / 15 🟡 / 6 ⏳ / 12 🔌**; see `PORTAL_FINAL_PROJECT_CLOSEOUT_REPORT.md`.
 
-| External action | Why it remains external | Owner action required |
+| Class | Item(s) | External evidence/action required |
 |---|---|---|
-| Approve and provide the production domain/DNS and network path | Stage 7 report records that the temporary HTTPS path is not a permanent domain and HTTP-01 on TCP/80 did not complete. No DNS or firewall changes were made. | Yes |
-| Configure/verify protected production release and service secrets, then explicitly approve release/cutover | Production secrets are intentionally not inspected or printed; Part 12 does not authorize production release/import/cutover. | Yes |
-| Perform ordinary user validation on a physical Android device using the CI APK | System picker, installer, and real device display behavior require the owner's device; this is a manual usability check, not an automated build gate. | Yes |
-| Supply an official, stable, publicly accessible Ozon/Wildberries news feed or API, if one is available | Repository/configuration contains no proven official public feed; private auth and scraping are out of scope. | Yes (only if a source exists) |
-| Supply official TalAnt API documentation, sandbox, and authorized credentials | TalAnt integration is an external API boundary and excluded from Part 12 implementation without provider access. | Yes |
-| Select/provision an approved off-server backup provider and credentials | No configured secondary target is evidenced in the repository; a generic backup mechanism cannot prove an external copy exists. | Yes |
-| Provide a Windows code-signing certificate / trusted publication target if signed production distribution is required | The WPF/WebView2 thin client and per-user installer pipeline are implemented and Windows CI is green, but no publisher signing identity or approved production download endpoint is configured. | Yes, for signed/trusted distribution |
+| B | 59, 61, 63, 86 | Physical Android smoke for native save/chooser, email intent, Excel/WebView flow, and shared UI parity using the final CI APK. |
+| B | 60 | Share behavior in the target supported browser. |
+| B/C | 85 | Ordinary install/update validation on a supported Windows PC with WebView2 Evergreen Runtime; for distribution, owner/provider must also supply trusted publication and any required signing identity. |
+| C | 46 | Supply a canonical QC/defect source before exposing a quality metric. Until then quality remains unavailable. |
+| C | 47 | Configure and verify a trusted production system timer and owner-authorized activation. Reminder dispatch stays disabled absent deployment evidence. |
+| C | 77–79 | Provide an official public marketplace feed/API and authorized production activation. No scraping or invented provider data. |
+| C | 80, 83 | Owner-authorized Android production cutover and protected signing secrets/manual release approval. |
+| C | 93 | Select/configure an independent off-server backup target and perform an isolated restore rehearsal. |
+| C | 105 | Separately authorize importing the verified SQLite copy into a disposable PostgreSQL target and complete post-import read-only reconciliation. Production rows remain untouched. |
+| C | 94–99, 125 | Supply owned domain, DNS/network path and certificate; authorize final import, controlled cutover and rollback rehearsal. Temporary HTTPS tunnel is not a production domain. |
+| D | 106–117 | TalAnt/WMS/ТСД remains a separate official-API integration. Requires provider API documentation, authorized sandbox/credentials, agreed scope, and device evidence. No TalAnt database access or code modification. |
 
-Production cutover has **not** been performed.
+No production DB/VPS/DNS/secrets/signing/cutover action has been performed by this closeout. No external gate is marked green without its evidence.

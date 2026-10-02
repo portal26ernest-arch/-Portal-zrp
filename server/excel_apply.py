@@ -8,6 +8,7 @@ from excel_import import canonical,digest,LOG
 from portal_excel_workbook import parse_template
 from production_repository import utcnow
 from employee_identity import create_employee_card,hash_access_pin,update_employee_card,write_user_account
+from employee_names import persist_employee_rename,persist_known_employee_aliases
 
 JOB_COLUMNS=('company_id','import_id','template_version','checksum','actor_id','actor_kind','created_at','status',
              'preview_summary','applied_at','result_counts','error_report','result_document_id')
@@ -66,8 +67,12 @@ def _apply_row(importer,row,refs):
         identity=value['employee_id']
         if identity is None:
             identity=create_employee_card(r.conn,r.company_id,value['full_name'],value['profile_username'])
+            persist_known_employee_aliases(r,identity,value['full_name'])
         else:
+            before_employee=next((employee for employee in r.employee_catalog() if employee['employee_id']==identity),None)
+            if before_employee is None:raise ValueError('employee_id не найден в этой компании')
             update_employee_card(r.conn,r.company_id,identity,value['full_name'],value['profile_username'])
+            persist_employee_rename(r,identity,before_employee['full_name'],value['full_name'])
         if value['user_id']:
             old=r.sql('SELECT role,active FROM app_users WHERE company_id=? AND id=?',(r.company_id,value['user_id'])).fetchone()
             if (old[0],old[1])!=(value['role'],value['active']):

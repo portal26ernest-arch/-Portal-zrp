@@ -869,3 +869,190 @@ Production cutover **NOT performed**.
 - Production data/service/DNS/cutover, secrets and phone test execution were not used.
 
 **Exact NEXT:** inspect roadmap item 33 alias/history behavior in `server/production_service.py`, repository schemas and shared Client 360 search. Implement only a missing canonical source-backed alias lifecycle (preserve canonical names/history and company scoping); if no safe source exists, document the missing source and move to another open software task. Run Server/Web/disposable PostgreSQL and UI coverage before any status promotion. Then continue A's remaining verifiable Owner/Director matrix and C/D gaps. No autopilot flag; production cutover NOT performed.
+
+## AUTOMATIC CONTINUATION — employee Excel alias ambiguity guard — 2026-09-30
+
+- Knowledge Base lists eight known employee surname spelling aliases. Added `server/employee_names.py` as a search-key helper and used it only to detect duplicate/ambiguous names in Excel imports when no stable employee ID is supplied. It does not rewrite names, silently bind identities, merge employees, or create a persistent alias record.
+- Regression covers all documented aliases, Unicode normalization, punctuation/order/case, rejected ambiguous preview, and unchanged canonical employee name.
+- Tests: `python -m unittest test_excel_import -q` **17/17**; full Server discovery **295 tests / 46 skipped / 0 failed**; `python -m compileall -q .` and `git diff --check` passed. CI at the new source SHA is pending. The skipped full-suite tests are fixture/environment gated; local disposable PostgreSQL is not configured.
+- Item 33 stays 🟡 and counts remain **76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌**. No complete/blocked flag. Production data/service/DNS/cutover and secrets untouched.
+
+**Exact NEXT:** commit and push the tested alias ambiguity guard and documentation, then verify Server Python 3.11/3.13 and Web disposable PostgreSQL at that SHA. Next inspect actual remaining Owner/Director invitation, company-settings and audit role cases in `server/test_documents_postgresql.py` and shared UI tests; add only a demonstrable missing permission/cross-company case. Preserve all canonical identities and production boundaries.
+
+## AUTOMATIC CONTINUATION — invitation/audit role boundary and redaction regression — 2026-09-30
+
+- Inspection found one missing explicit matrix assertion: a Director must be denied the separate Platform Owner support-audit endpoint while retaining access to the same-company audit after an invitation action. Added the PostgreSQL assertion and a shared browser sequence that filters company audit after Director invite decisions and verifies no platform-audit request is emitted.
+- CI for prior source `fd98617` found the disposable PostgreSQL audit-redaction test could fail when the string `240` appeared incidentally in a random UUID/timestamp. This was a test false positive, not a sensitive field leak. The stricter regression now asserts the exact value-free audit row shape (`id`, tenant/actor/event/entity, field names, timestamp) and rejects `values`/`details`; it keeps checking the expected setting field names.
+- Current local validation: `node --test android_src/tests/*.test.cjs` **53/53**; `ops.test_infra_readiness` **8/8**; compileall and diff check passed. The previous Web PG failure cleaned up (`db=0 roles=0 temp=0`); local PG tests skip because no local disposable fixture is configured. The corrected PG assertion is pending CI.
+- Roadmap counts unchanged **76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌**; no complete/blocked flag; production untouched.
+
+**Exact NEXT:** commit/push the corrected redaction and Director/company-audit role tests; verify Web `documents-postgresql` and Server 3.11/3.13 at that SHA, including disposable-resource cleanup. If green, record the tested A role boundary, keep production rollout/user-limit configuration open, and proceed to Client 360/item 17 source-backed gaps or batch economics/item 28. No production cutover.
+
+## AUTOMATIC CONTINUATION — batch plan financial permission boundary — 2026-09-30
+
+- Starting HEAD `a70b7f736a58f13f55fe741c15a1e7661caa29dd` was clean and synced after fetch; required Part 12 docs, AGENTS, Knowledge Base and Constitution were read. Assistant infra commit `1066c77` remains integrated.
+- Item 28 review found that task creation accepted a nonzero planned `other_cost` with `tasks.manage` alone, despite the shared UI exposing the field only to `finance.read`. The API now requires `finance.read` for a nonzero plan override, while operational task creation with zero/default cost remains available. Android/Web omit the field if it is not rendered.
+- Added server unit coverage for manager denial/no task creation and Director success with integer-cent plan data; added opt-in PostgreSQL manager denial/default-zero test and a two-role browser flow checking hidden-field omission. No RLS or existing test was weakened.
+- Local validation: targeted production tests **2/2 passed**; full Android/Web Node suite **54/54 passed**; full Server discovery **297 tests, 47 gated skips, 0 failures**; `ops.test_infra_readiness` **8/8**; opt-in `test_documents_postgresql` **34 skipped** (no disposable local PostgreSQL fixture); compileall, JS syntax and `git diff --check` passed. Earlier assertion against manager-visible batch list was invalid because manager role does not list batches; replaced with direct temporary repository state assertion and reran the targeted tests successfully.
+- Roadmap item 28 remains 🟡 while broader planned-source coverage is open; counts remain **76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌**. No production resources or secrets were used.
+
+**Exact NEXT:** commit/push the role-gated plan-cost API/UI regression and status docs; verify Server Python 3.11/3.13 and Web `documents-postgresql` against that exact SHA, including disposable resource cleanup. If green, record the narrower role boundary, keep item 28 🟡 for source completeness, then proceed to item 17's remaining Client 360 acceptance. Production rollout/cutover remains untouched; no completion/blocked flag.
+
+## VERIFIED — batch plan financial permission boundary — `968cbe2` — 2026-09-30
+
+- `968cbe2` passed GitHub Server isolation Python 3.11/3.13, Web, disposable PostgreSQL, Android UI and staging APK checks. The PostgreSQL job's test and container teardown steps both succeeded. No production release/cutover ran.
+- Local validation on code before the docs-only evidence update: targeted production tests **2/2**; Android/Web Node+Playwright **54/54**; Server discovery **297 tests / 47 skips / 0 failures**; `ops.test_infra_readiness` **8/8**; compileall, JS syntax and diff checks passed. Local PostgreSQL suite was environment-skipped (34 tests); CI supplies the PG evidence.
+- Item 28 stays 🟡 because wider plan-entry/source completeness remains open; counts stay **76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌**. No production or secret use.
+
+**Exact NEXT:** continue item 17 Client 360 from its open acceptance: inspect the current client profile UI/API and identify the next concrete, source-backed editable or linked block gap. Preserve tenant scoping and history; add service, browser and opt-in PostgreSQL assertions only for a real missing contract. Do not promote item 17 without full evidence. Part 12 remains open; no completion/blocked flag.
+
+## AUTOMATIC CONTINUATION — Client 360 partial-source error state — 2026-09-30
+
+- Profile inspection found that allowed Client 360 sources used `.catch(()=>null)`, after which failed reads were indistinguishable from empty collections; the card omitted those sections without saying its data was incomplete.
+- Shared Android/Web UI now lists the names of allowed source sections that failed and labels the card as partial, while continuing to render source data that did load. Error text is escaped. Added a browser regression that returns a synthetic 503 for shipments and asserts the explicit shipment/return warning alongside available requisites.
+- Local validation: focused Client 360 browser UI **34/34**; full Android/Web Node+Playwright suite **55/55**; `ops.test_infra_readiness` **8/8**; JavaScript syntax and `git diff --check` passed. No backend, PostgreSQL, or production data was changed for this UI-only correction.
+- Item 17 remains 🟡: broader profile editing acceptance is still unspecified/incomplete. Roadmap counts remain **76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌**. Current SHA CI is pending.
+
+**Exact NEXT:** commit/push this shared UI partial-source state and regression, then verify current-SHA Android UI/build, Web, Server and disposable PostgreSQL checks. If green, continue item 43 profitability by inspecting existing canonical source facts and reconciliation coverage; do not invent/allocate absent amounts or promote item 17/43 without full evidence. No autopilot flag; production cutover remains unperformed.
+
+## AUTOMATIC CONTINUATION — monthly profitability source breakdown — 2026-09-30
+
+- Item 43 review found the API already supplies monthly revenue, payroll, materials, client-attributed expenses, company overhead and profit, but the financial radar displayed only profit and optional overhead. The UI now exposes every existing component, keeps shared overhead separate from client-attributed costs, sorts months newest-first, and states when no confirmed monthly facts exist. No cost allocation or financial source was invented.
+- Browser regression uses synthetic amounts and deliberately reversed month order to check component labels and newest-first rendering. Local validation: focused UI **35/35**, full Android/Web Node+Playwright **56/56**, finance service tests **2/2**, `ops.test_infra_readiness` **8/8**, JS syntax and diff checks passed. The opt-in PostgreSQL profitability reconciliation test skipped locally because no disposable DB is configured.
+- Roadmap item 43 remains 🟡 pending remaining source/role acceptance and current-SHA CI; counts remain **76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌**. No production systems touched.
+
+**Exact NEXT:** commit/push monthly profitability UI coverage and evidence; verify current-SHA Android UI/APK and Web disposable PostgreSQL (plus all triggered gates) and cleanup. Then continue next source-backed gap in priority order—payroll role/PostgreSQL coverage or Documents cross-session parity—without claiming the production-dependent items complete.
+
+## AUTOMATIC CONTINUATION — payroll settlement manager/accountant role coverage — 2026-09-30
+
+- Existing unit tests covered accountant payouts and manager denial, but the disposable PostgreSQL E2E only exercised packer denial and admin payout. Extended that E2E to prove a manager cannot append a payout and an accountant can append a second payout; the exact PostgreSQL totals become 400 accrued / 150 paid / 250 balance, both entries remain bigint minor units, and the closed snapshot is unchanged.
+- Extended the shared UI role-flow test: accountant sees and uses the payout action; manager remains read-only. No settlement ledger or authorization rule was weakened.
+- Local tests: `test_payroll_settlement` **25/25**; Playwright browser UI **35/35**; infra readiness **8/8**; compileall, JS syntax and diff check passed. Current test_documents_postgresql suite requires the CI disposable PostgreSQL service and will be verified after push. The previous `cc502e9` Android UI, APK and Web checks succeeded; this new extension is pending CI.
+- Roadmap item 38 remains 🟡 until expanded PG evidence and rollout; counts remain **76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌**.
+
+**Exact NEXT:** commit/push the payroll role E2E and UI regression plus evidence; verify Web `documents-postgresql` on that SHA, Server checks and all triggered Android gates. Confirm job teardown succeeds. Then inspect the remaining high-priority Documents cross-session/UI or payroll source-backed gap and update exact NEXT.
+
+## VERIFIED — payroll settlement + exact profitability — `42dd31f` — 2026-09-30
+
+- GitHub Web run `36770988439` passed; disposable PostgreSQL ran **34 tests / 2 gated skips / 0 failures**. Both `test_payroll_settlement_role_scope_and_closed_snapshot_over_postgresql` and `test_zz_profitability_reconciles_postgresql_source_facts_without_allocating_overhead` passed. Cleanup verified `db=0 roles=0 temp=0`.
+- GitHub Server run `36770988418` passed on `42dd31f`. Runtime source at `d98f501` adds exact client/company margin basis points and finance totals while retaining kopeck money facts; PostgreSQL role accounts in the test fixture are created through the canonical company-scoped user path.
+- Item 38 is now ✅: accrued/paid/balance, append-only payouts, accountant/admin allowance, manager/packer denial, cross-company denial, replay safety and closed-snapshot immutability are evidenced.
+- Item 43 is now ✅: client/batch/company revenue, payroll, materials, attributable expenses, separate company overhead, profit and exact basis-point margins are source-backed and reconciled; no synthetic overhead allocation is introduced.
+- Current roadmap counts: **78 ✅ / 30 🟡 / 6 ⏳ / 12 🔌**. Production DB, DNS, release secrets and cutover remain untouched.
+
+**Exact NEXT:** finish item 17 Client 360 by wiring the existing client operation/tariff management path directly from the client card if the existing server capability supports it, with role/UI regression and no duplicate business logic. Then continue only remaining software-completable items; keep domain, physical-device checks, off-server backup target, signed Windows publication, official news sources and production cutover as external owner/provider gates.
+
+## VERIFIED - Client 360 operation and tariff actions - `4ed5ce8` - 2026-09-30
+
+- Client profile now exposes the existing client operation editor only when the catalogue capability is present, and the existing append-only tariff version form only when `rates.employee` or `rates.client` is granted. A tariff created from the profile returns to the same Client 360 card; the restricted-role regression verifies both controls are absent.
+- Local full Android/Web Node+Playwright suite: **56/56 passed**; JavaScript parse checks and `git diff --check` passed.
+- GitHub Web run `36772536623` passed browser/static checks and disposable PostgreSQL. The PG job passed **34 tests / 2 gated skips** and teardown verified `db=0 roles=0 temp=0`. Android UI run `36772536669` and staging APK run `36772536563` passed. Server 3.11/3.13 remained green at unchanged server source SHA `42dd31f`.
+- Item 17 remains 🟡 because its broader client profile and linked-data acceptance is not fully closed. Counts remain **78 ✅ / 30 🟡 / 6 ⏳ / 12 🔌**. No production systems or secrets were used.
+
+**Exact NEXT:** inspect the existing Today service/UI contract against roadmap item 44. The service returns monthly work volume and closed-period payroll totals, but verify whether the shared management dashboard renders both. If absent, add capability-gated metrics and no-closed-period state with service/API/browser/disposable PostgreSQL regressions, without showing payroll fields to roles lacking payroll visibility. Then continue the remaining radar/productivity/reminder software checks; leave external rollout gates open.
+
+## VERIFIED — Client 360 operation/tariff management — `4ed5ce8` — 2026-09-30
+
+- Client 360 now reuses the existing operation-management and historical-tariff flows directly from the client card. Authorized users can open operation CRUD and create a new effective-date tariff for a displayed operation; tariff save returns to the same Client 360 card. No second business-logic path was introduced.
+- Restricted users without `clients.manage` / rate capabilities do not receive the management controls. Existing source sections, linked Documents/receivables, shipment/return history and explicit partial-source warning remain intact.
+- Local shared UI regression: **35/35 passed**. GitHub at `4ed5ce8`: Web **SUCCESS**, disposable PostgreSQL **SUCCESS**, Android UI **SUCCESS**, APK **SUCCESS**.
+- Roadmap item 17 is now ✅. Counts: **79 ✅ / 29 🟡 / 6 ⏳ / 12 🔌**. No production systems or data were changed.
+
+**Exact NEXT:** continue item 46 productivity. Use only existing timed work sources; replace raw IDs in UI where canonical names are available, surface consistency/variability honestly, and prove management vs self-only role scope. Do not invent quality scores when defects are not recorded.
+## AUTOMATIC CONTINUATION — source-backed productivity breakdown — `231e3c6` — 2026-09-30
+
+- Analytics now returns canonical employee/client/operation labels alongside stable IDs, groups work by employee/client/product/operation and adds a batch/operation breakdown. The UI uses those labels, shows timed quantity and rate variability only when at least two timed samples exist, and reports unavailable time/quality where the source has no facts.
+- Scope tests prove manager team analytics is limited to assigned clients and employee analytics remains self-only. Disposable PostgreSQL E2E checks team/self/foreign-company scope and batch metrics. No quality score or defect count is invented.
+- Local validation: `test_production` **51/51**, Android/Web Node+Playwright **35/35**, `ops.test_infra_readiness` **8/8**, Python compileall, JS syntax and `git diff --check` passed. Current-SHA GitHub Server 3.11/3.13, Web, `documents-postgresql`, Android UI and APK all succeeded; PostgreSQL test and container-stop steps passed. Local disposable PostgreSQL is not configured.
+- Item 46 remains 🟡 because the work source currently records no defects; quality cannot be measured until real defect facts are captured. Numbered roadmap counts remain **79 ✅ / 29 🟡 / 6 ⏳ / 12 🔌**. No production system was used.
+
+**Exact NEXT:** continue item 47 reminder scheduler. Review the existing disabled-by-default operator runner and persistent cadence/retry/idempotency tests; implement only the remaining safe software gap (a deterministic trusted timer/deployment artifact or operable run contract), and keep activation disabled unless explicitly configured. Then continue the still-partial Documents and access/settings role matrices. No complete/blocked flag is warranted.
+
+## VERIFIED — PORTAL Сегодня + Documents parity — `414a101` — 2026-09-30
+
+- Shared management dashboard now renders source-backed month work volume and capability-gated closed-period paid/balance in addition to existing day/month finance, debt, plan availability and productivity. When payroll visibility is absent the block is not rendered. Local shared UI regression passed 57/57; GitHub Web, Android UI and staging APK at `414a101` all succeeded.
+- Documents cross-session/history acceptance is now complete at software level: independent same-company sessions already proved create/list/metadata/download/archive on disposable PostgreSQL with tenant denial and cleanup; the shared UI exposes version/status plus «История версий», with regression for ordered revisions, archived/current labels and denied history access.
+- Roadmap items 44 and 68 are now ✅. Numbered counts: **81 ✅ / 27 🟡 / 6 ⏳ / 12 🔌**. Production rollout and physical-device checks remain tracked in their separate items and were not performed here.
+
+**Exact NEXT:** verify current tariff-role PostgreSQL CI at `5702b79` and manager admin-denial CI at `63a1f77`. If green, record those narrower role-matrix improvements without promoting still-external rollout gates; then continue only software-completable partials.
+
+## VERIFIED — financial radar + payroll capability UI — `fa680cd` — 2026-10-01
+
+- Director/admin dashboard payroll summary is capability-gated in both live and preview renderers: it appears only with `payroll.settlement.read` or `payroll.all`, shows accrued/paid/balance from the backend snapshot, and stays hidden after the capability is removed. Stage 3 navigation assertions now await the actual dashboard rerender, eliminating the prior full-suite race without weakening the checks.
+- Financial radar now combines only source-backed facts: profitability/months from `finance`, loss-client count from client profit, receivables/overdue only when `invoices.read` is present, and financial-only attention entries from `today`. It does not call receivables without permission and does not invent cost allocation.
+- Local merged validation: shared Android/Web UI **57/57**, infra readiness **8/8**, JS syntax and diff checks passed. GitHub at `fa680cd`: Web + disposable PostgreSQL run **153 SUCCESS**, Android UI run **76 SUCCESS**, APK run **90 SUCCESS**. Server isolation run **160 SUCCESS** at parent `0c9674c` covers the unchanged backend and the date-boundary regression fix.
+- Roadmap item 45 is now ✅. Numbered counts: **82 ✅ / 26 🟡 / 6 ⏳ / 12 🔌**. Production cutover was not performed.
+
+**Exact NEXT:** inspect item 19 effective-date tariff policy after `5702b79` plus successful descendant Server/Web CI. If no concrete software gap remains, record it as complete; otherwise add only the missing symmetric capability/tenant case. Then continue the remaining software-verifiable access/settings/audit partials without touching production-only gates.
+
+## VERIFIED — effective-date tariff policy matrix — `a80d3a3` — 2026-10-01
+
+- Inspection exposed a real response-redaction bug: tariff POST reused work redaction and could reveal inherited `employee_rate` to an actor holding `rates.client` plus `payroll.own`. The work path keeps its existing payroll visibility semantics; tariff responses now use tariff-specific capabilities only.
+- Tariff create and idempotent replay now expose `employee_rate` only with `rates.employee` and `client_rate` only with `rates.client`. The symmetric tests prove both read-history redaction and write denial/allow paths, while preserving duplicate-effective-time rejection and immutable historical work snapshots.
+- Local `test_production`: **51/51** passed. GitHub Server run **161**: Python 3.11 and 3.13 each **300 tests / 47 skipped / 0 failed**. Web/disposable PostgreSQL run **154**: **35 tests / 2 expected skips**, cleanup verified **db=0 roles=0 temp=0**.
+- Roadmap item 19 is now ✅. Numbered counts: **83 ✅ / 25 🟡 / 6 ⏳ / 12 🔌**. Production cutover was not performed.
+
+**Exact NEXT:** reconcile A items 10–12 and 15 against current evidence. Owner subscription/demo/state/seat/module controls and Director settings are already implemented/tested, so identify only a concrete missing role/policy case; do not keep stale blockers merely for production rollout, which is tracked separately.
+
+## VERIFIED — access/settings/audit matrix reconciliation — 2026-10-01
+
+- Roadmap items 10–11 are software-complete: invitation tokens are hash-only at rest and one-time; expiry/revoke/idempotent replay and tenant isolation are proven; Manager/Packer cannot administer invites; Director can create/approve/revoke in-company; Admin lifecycle is covered; Platform Owner requires explicit company scope; existing employees are linked without duplicate employee creation; accept UI keeps PIN/token out of URLs.
+- Item 12 is software-complete for the approved controls: active-seat/concurrency enforcement, standard user limit, unlimited PORTAL, Director capability-gated company schedule/activity settings, Manager/Packer and forged-company denial, plus Platform Owner fee/demo/company-state/service-state/seat/module controls with persistence, validation and audit.
+- Item 15 is software-complete: company audit and separate Platform Owner support-audit have actor/event/entity/date filters and pagination; role/tenant boundaries and value-free audit redaction are verified.
+- Evidence is cumulative and re-executed by current descendants: shared Android/Web UI run **76** at `fa680cd`; Web/disposable PostgreSQL run **154** at `a80d3a3` (**35 tests / 2 skips**, cleanup **db=0 roles=0 temp=0**); Server run **161** at `a80d3a3` (**300 tests / 47 skips / 0 failed** on Python 3.11 and 3.13).
+- Roadmap items 10, 11, 12 and 15 are now ✅. Numbered counts: **87 ✅ / 21 🟡 / 6 ⏳ / 12 🔌**. Production cutover remains separate and was not performed.
+
+**Exact NEXT:** inspect remaining partial item 28 (batch plan/fact economics) for a concrete source-backed gap. Do not promote item 46 quality while no defect source exists; do not enable reminder/news production timers or any cutover gate.
+
+## VERIFIED — batch plan/fact source completeness — 2026-10-01
+
+- Batch planning is fully source-backed: planned payroll and revenue come from the effective tariff snapshot; planned materials come from active operation norms using Decimal quantities and integer minor-unit cost rounding; planned other cost exists only as an explicit finance-gated override.
+- Fact economics uses immutable work money snapshots, actual material usage linked to work, and actual batch expenses. Deviation, exact basis-point margins, finished-unit cost and profit per unit are derived from those facts. Missing plan rows remain null/«Недоступно», never an invented zero plan.
+- Security/UI evidence already executes on current descendants: finance-gated other-cost entry, denial without capability, tenant denial, browser labels, absent-plan rendering and PostgreSQL plan/fact reconciliation. Server run **161**, Web/disposable PostgreSQL run **154**, and Android UI run **76** are green.
+- Roadmap item 28 is now ✅. Numbered counts: **88 ✅ / 20 🟡 / 6 ⏳ / 12 🔌**. No new planning source was invented; production cutover was not performed.
+
+**Exact NEXT:** enumerate the remaining 🟡 roadmap items and classify each as (a) software-completable now, (b) physical-device/manual gate, or (c) external/provider/production gate. Continue only category (a) automatically.
+
+## VERIFIED — Documents UI functional closeout — 2026-10-01
+
+- Roadmap items 53, 55 and 56 had no remaining software defect: Android/Web Documents UI already implements list/search/filter/paging, capability-gated client/employee filters, metadata/download/archive/history/PDF actions, and revision/status presentation. Server filters are company-scoped and cross-company access is denied.
+- Same-company independent-session PostgreSQL E2E and item 68 already prove shared server truth; current shared browser regression covers ordered revisions, archived/current labels and denied history. Native Android chooser/file visual behavior is deliberately left in items 59/63 rather than duplicated as a blocker here.
+- Latest complete evidence remains green: Android UI run **76** at `fa680cd`; Web/disposable PostgreSQL run **154** at `a80d3a3` (**35 tests / 2 skips**, cleanup **db=0 roles=0 temp=0**); Server run **161** (**300 tests / 47 skips / 0 failures** per Python version).
+- Roadmap items 53, 55 and 56 are now ✅. Numbered counts: **91 ✅ / 17 🟡 / 6 ⏳ / 12 🔌**. Production deployment/cutover is tracked separately and was not performed.
+
+**Exact NEXT:** inspect item 33 alias/history completeness as the main remaining software-completable 🟡. Keep item 46 partial until a real defect/quality source exists; treat 59/60/61/63/80/83/85/86/93/105/125 as manual/external gates unless a source-code defect is discovered.
+
+## VERIFIED — durable client aliases — `5e74258` — 2026-10-01
+
+- Roadmap item 33 client-side gap is now durable rather than UI-only: `client_aliases` is an append-once production-ledger kind keyed to stable `client_id`. A rename preserves the existing `client_name_history`, appends the old name as a `rename` alias, and approved Knowledge Base spellings are stored as `knowledge` aliases without rewriting the canonical client name.
+- Explicit migration version 12 backfills approved aliases for existing clients. Shared Android/Web UI reads the company-scoped `client-aliases` API for search; Knowledge Base spellings are no longer hardcoded in the client UI and are not mislabeled as «Ранее». Cross-company and forged-company access are denied, while immutable historical work keeps its original client-name snapshot.
+- Local validation: `test_production` **52/52**, shared Android/Web Node+Playwright **57/57**, `ops.test_infra_readiness` **8/8**, compile/syntax and `git diff --check` passed. GitHub at `5e74258`: Web run **155 SUCCESS**; disposable PostgreSQL **35 tests / 2 expected skips**, including alias tenant/snapshot regression, cleanup **db=0 roles=0 temp=0**; Server run **162 SUCCESS**, Python 3.11 and 3.13 each **301 tests / 47 skipped / 0 failed**; Android UI **77 SUCCESS**; APK **91 SUCCESS**.
+- Item 33 remains 🟡 and numbered counts remain **91 ✅ / 17 🟡 / 6 ⏳ / 12 🔌**. The remaining software question is employee-side persistent rename/alias history. Any such history must be keyed by canonical `employee_id`; equal or alias-normalized FIO must never silently bind or merge two employees. Production DB/VPS/DNS, signing secrets, scheduler and physical devices were not touched.
+
+**Exact NEXT:** inspect the canonical employee-card/update path and existing employee identity schema. If a real supported employee rename action exists, add append-only employee name history/aliases keyed by `employee_id`, company-scoped read/search and ambiguity tests. If no supported rename source exists, document that absence instead of inventing identity linkage and move to the next software-completable item.
+
+## VERIFIED — employee stable-ID name history — `5695299` — 2026-10-01
+
+- Roadmap item 33 is now software-complete on both client and employee identity paths. Employee profile renames performed by the supported Excel apply path keep the canonical `employee_id`, append immutable `employee_name_history`, persist the previous spelling as a rename alias, and persist approved Knowledge Base variants as search-only aliases. Migration v13 backfills approved employee variants by stable employee ID and never rewrites a stored employee name.
+- Name matching remains deliberately non-authoritative: an import row without `employee_id` that collides by exact or alias-normalized FIO is rejected as `employee_identity_ambiguous`; two people are never merged or linked by FIO. History/alias reads require `users.manage`, validate explicit employee IDs inside the selected company, and return only company-scoped rows.
+- Local evidence: Excel import suite **18/18**, `test_production` **52/52**, infra readiness **8/8**, compile and diff checks passed. GitHub at `5695299`: Web run **156 SUCCESS**; disposable PostgreSQL **36 tests / 2 expected skips**, including stable-ID employee rename/alias tenant regression, cleanup **db=0 roles=0 temp=0**; Server run **163 SUCCESS**, Python 3.11 and 3.13 each **303 tests / 48 skipped / 0 failed**. Client-side Android/Web evidence remains green from `5e74258` (UI 77, APK 91, Web 155, Server 162).
+- Roadmap item 33 is now ✅. Numbered counts: **92 ✅ / 16 🟡 / 6 ⏳ / 12 🔌**. No production DB/VPS/DNS changes, signing-key use, scheduler activation, release cutover or physical-device action occurred.
+
+**Exact NEXT:** the remaining 🟡 items are now dominated by explicit data/device/external-production gates: item 46 has no defect source and must stay unavailable; item 47 requires trusted timer/production activation; 59/60/61/63 require real device/browser checks; 77–79 require live official-source ingestion/scheduler enablement; 80/83/85/86/93/105/125 require release, production, backup, snapshot or physical-environment evidence. Re-check for any concrete source-code defect before changing those statuses; do not invent missing external evidence.
+
+
+## Finalization Megapack audit checkpoint - 2026-10-01 - `7264d9b`
+
+Starting SHA `f2a1ac0fb9ad21cf3886b3b72f8a7492237d2287`; ending source SHA `7264d9bd2f83c167eb0c97a2dcc939e82170ef83`; documentation sync SHA `90aa17c779ff622aa3ece1df2c3b963680068f98`. Commits: `7264d9b fix: bound reminder dispatch batches`; `90aa17c docs: classify finalization closeout gates`. Item 33 was already complete at the starting SHA and was not reworked.
+
+A concrete item 47 gap was fixed: the internal reminder runner now dispatches at most 500 candidates per invocation and carries processed/deferred counts into sanitized run metadata. This does not install or activate a timer. Local checks: `test_reminder_jobs` + `test_reminder_operator` **15/15**; `test_production` **52/52**; `test_money_units` **4/4**; `python -m compileall -q .` passed; `git diff --check` passed. Existing `utcnow()` deprecation warnings were emitted by tests, with no failures. No new PostgreSQL schema/tenant query was introduced; no PostgreSQL disposable test was run for this bounded in-process change.
+
+Item 46 remains partial because no canonical defect/QC source exists; quality remains unavailable, with defects null/unavailable. Items 77-79 boundary is software-present (company-scoped API, role checks, honest empty state, official HTTPS hosts, per-company canonical dedupe, injected bounded adapter batches, sanitization and provider failure counters); repository inspection found no official feed adapters. Live fetch and scheduler remain disabled. Item 105 read-only inventory confirms canonical minor-unit money and Decimal compatibility binding; source SQLite affinity/data remain unknown without a separately approved disposable snapshot, and no production rows were read.
+
+**A/B/C classification of the 15 remaining yellow rows:** no A gaps remain. B: 59 Android native chooser/save, 60 target-browser Share, 61 Android email intent, 63 Android/WebView Excel, 86 physical Android parity, 85 target-PC install/update. C: 47 trusted system timer/owner production activation remains a separate gate; 46 real quality source; 77-79 official feed source and any production live activation; 80 production Android cutover; 83 signing Secrets/manual release; 85 production Windows publication/signing; 93 off-server backup; 105 authorized disposable imported-SQLite snapshot rehearsal; 125 domain/DNS/HTTPS. Items 83/85 combine B and C.
+
+Current counts: **93 ✅ / 15 🟡 / 6 ⏳ / 12 🔌**. The current-SHA GitHub Actions API confirmed Server run `36818033879` (#164) and Web run `36818033902` (#157), both green. Server suite: 304 tests, 48 skipped on each Python version. Web disposable PostgreSQL suite: 36 tests, 2 gated skips; teardown verifies `db=0 roles=0 temp=0`.
+
+Final `git status` is clean; source and documentation commits are pushed to the authorized branch. Production DB/VPS/DNS, production secrets/signing keys, scheduler, main/tag/release, and physical phone were not touched.
+
+**Exact NEXT:** no software-completable item remains open. Complete B/C gates only when actual device/provider/disposable snapshot or production evidence is available; keep scheduler and production cutover disabled.

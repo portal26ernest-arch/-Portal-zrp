@@ -1,5 +1,7 @@
 """Explicit opt-in migration. Never called by normal server startup."""
 from production_repository import Repository, utcnow
+from client_names import persist_known_client_aliases
+from employee_names import persist_known_employee_aliases
 from decimal import Decimal, ROUND_HALF_UP
 
 DDL = [
@@ -22,6 +24,8 @@ def migrate(conn, company_id, dialect=None):
         migrate_invoice_revisions(r)
         migrate_access_invites(r)
         migrate_products(r)
+        migrate_client_aliases(r)
+        migrate_employee_aliases(r)
         return
     # Current catalog baseline, not a reconstruction or recalculation of history.
     for operation in r.catalog('operations'):
@@ -42,6 +46,8 @@ def migrate(conn, company_id, dialect=None):
     migrate_payroll_settlement(r)
     migrate_invoice_revisions(r)
     migrate_access_invites(r)
+    migrate_client_aliases(r)
+    migrate_employee_aliases(r)
 
 def migrate_access_invites(r):
     """Version 10 adds the hashed-token invitation table; login secrets are never stored here."""
@@ -93,6 +99,21 @@ def migrate_products(r):
         if not row or "'products'" not in row[0]:
             raise RuntimeError('Apply PostgreSQL product catalog migration with the migration operator first')
     r.sql('INSERT INTO portal_production_migrations(company_id,version,applied_at) VALUES(?,11,?)',(r.company_id,utcnow()))
+
+def migrate_client_aliases(r):
+    """Version 12 backfills approved search aliases without rewriting canonical client names."""
+    if r.sql('SELECT 1 FROM portal_production_migrations WHERE company_id=? AND version=12',(r.company_id,)).fetchone(): return
+    for client in r.catalog('clients'):
+        persist_known_client_aliases(r,client['id'],client['name'])
+    r.sql('INSERT INTO portal_production_migrations(company_id,version,applied_at) VALUES(?,12,?)',(r.company_id,utcnow()))
+
+def migrate_employee_aliases(r):
+    """Version 13 backfills approved employee spelling aliases by stable employee_id."""
+    if r.sql('SELECT 1 FROM portal_production_migrations WHERE company_id=? AND version=13',(r.company_id,)).fetchone(): return
+    for employee in r.employee_catalog():
+        persist_known_employee_aliases(r,employee['employee_id'],employee['full_name'])
+    r.sql('INSERT INTO portal_production_migrations(company_id,version,applied_at) VALUES(?,13,?)',(r.company_id,utcnow()))
+
 
 def migrate_activity(r):
     """Version 4 augments the existing session table; no old session is falsified."""

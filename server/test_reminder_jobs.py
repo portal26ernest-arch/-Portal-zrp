@@ -2,7 +2,7 @@ import unittest
 import sqlite3
 from datetime import datetime, timezone
 
-from reminder_jobs import (Reminder, ReminderRunner, persist_once, source_candidates,
+from reminder_jobs import (MAX_REMINDERS_PER_RUN, Reminder, ReminderRunner, persist_once, source_candidates,
                            run_scheduled_company, run_configured_company, next_run_at)
 from production_repository import Repository
 
@@ -53,6 +53,17 @@ class ReminderRunnerTests(unittest.TestCase):
         self.assertEqual(deliveries[1][1], deliveries[2][1])
         self.assertEqual(deliveries[1][0], 4)
         self.assertEqual(deliveries[2][0], 5)
+
+    def test_enabled_runner_bounds_dispatch_and_reports_deferred_candidates(self):
+        runner = ReminderRunner(enabled=True, clock=lambda: datetime(2026, 9, 30, tzinfo=timezone.utc))
+        candidates = [Reminder("work_unbilled", str(index), "Unbilled work")
+                      for index in range(MAX_REMINDERS_PER_RUN + 7)]
+        dispatched = []
+        result = runner.run(8, candidates,
+                            dispatch_once=lambda company, item, key: dispatched.append(key) or True)
+        self.assertEqual(len(dispatched), MAX_REMINDERS_PER_RUN)
+        self.assertEqual((result["processed"], result["deferred"]), (MAX_REMINDERS_PER_RUN, 7))
+        self.assertEqual(result["sent"], MAX_REMINDERS_PER_RUN)
 
     def test_weekly_cadence_and_timezone_boundaries(self):
         runner = ReminderRunner(enabled=True, cadence="weekly")
