@@ -204,12 +204,6 @@
       ${btn('Открыть макет расчётного листа','previewFeature','data-title="Расчётный лист A4" data-text="Компания · период · ФИО · итог · дата · подписи: Управляющий компанией → Управляющий подразделением → Сотрудник."','secondary block')}</section>`);
   };
 
-  screens.invoices=async()=>{
-    await liveInvoices();
-    $('content')?.insertAdjacentHTML('beforeend',`<section class="preview-extension"><div class="row between"><div><h2>Счёт на оплату</h2><p class="meta">Расширенная форма по утверждённому шаблону PORTAL.</p></div>${previewBadge}</div>
-      ${btn('Открыть макет счёта','previewInvoice','','secondary block')}</section>`);
-  };
-  actions.previewInvoice=()=>previewSheet('Счёт на оплату',`<div class="stack"><div class="preview-form-row"><span>Исполнитель</span><b>Реквизиты компании PORTAL</b></div><div class="preview-form-row"><span>Клиент</span><b>ИНН · БИК · р/с · к/с</b></div><div class="preview-table"><div><b>Операция</b><b>Кол-во</b><b>Цена</b><b>Сумма</b></div><div><span>Выбирается из тарифов клиента</span><span>—</span><span>—</span><span>—</span></div></div><div class="row between"><b>Итого</b><strong>— ₽</strong></div><div class="notice">После формирования документ блокируется. Директор/администратор сможет отправить его менеджеру на редактирование.</div></div>`);
   screens.materials=async()=>{
     await liveMaterials();
     $('content')?.insertAdjacentHTML('beforeend',`<section class="preview-extension"><div class="section-label"><h2>Операции склада</h2>${previewBadge}</div><div class="mini-actions">

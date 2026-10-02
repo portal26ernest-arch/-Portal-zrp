@@ -49,7 +49,12 @@ def invoice_xlsx(company,client,invoice):
             raise ValueError('Сумма строки счёта не совпадает с количеством и ценой')
     if type(invoice.get('amount')) is not int or sum(line['amount'] for line in invoice['lines'])!=invoice['amount']:
         raise ValueError('Итог счёта не совпадает с суммой строк')
-    book,sheet=_base('Счёт');sheet.append(['Счёт на оплату'])
+    book,sheet=_base('Счёт')
+    number=str(invoice.get('number') or invoice.get('id') or '')
+    issued=str(invoice.get('created_at',''))[:10]
+    title='Счёт на оплату'+((' № '+number) if number else '')+((' от '+issued) if issued else '')
+    sheet.append([title])
+    sheet.merge_cells('A1:D1')
     sheet['A1'].font=Font(bold=True,size=18,color='24476B')
     row=_requisites(sheet,3,'Исполнитель',company);row=_requisites(sheet,row+1,'Клиент',client)
     sheet.cell(row,1,'Дата');sheet.cell(row,2,str(invoice.get('created_at',''))[:10]);row+=1

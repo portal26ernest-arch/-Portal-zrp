@@ -710,7 +710,7 @@ def company_module_for_route(path):
             'chat':'teamChat','chat-attachments':'teamChat','chat-pins':'teamChat',
             'clients':'clients','catalogue':'clients','operations':'clients','products':'clients','client-requisites':'clients','client-name-history':'clients',
             'materials':'materials','usage':'materials',
-            'invoices':'invoices','payments':'invoices','receivables':'invoices',
+            'invoices':'invoices','invoice-template':'invoices','invoice-import-preview':'invoices','payments':'invoices','receivables':'invoices',
             'users':'users','invitations':'users','company-access':'users','presence':'users','activity':'users','audit':'users',
             'tasks':'jobs','batches':'batches','shipments':'batches','returns':'batches',
             'permissions':'permissions','tariffs':'tariffs','finance':'radar','expenses':'expenses',
@@ -1057,6 +1057,17 @@ class Handler(BaseHTTPRequestHandler):
                     except ValueError:item['url']=None
                     items.append(item)
                 return self.send_json(dict(ok=True,data=items,next_offset=offset+len(rows) if len(rows)==limit else None))
+            if action in ('invoice-template','invoice-import-preview'):
+                import invoice_exchange
+                service=Production(repo,self.request_user)
+                if action=='invoice-template' and method=='GET':
+                    query=parse_qs(urlparse(self.path).query)
+                    try:client_id=int(query.get('client_id',[''])[0])
+                    except (TypeError,ValueError):raise ValueError('Выберите клиента')
+                    return self.send_json(dict(ok=True,data=invoice_exchange.template(service,client_id)))
+                if action=='invoice-import-preview' and method=='POST':
+                    return self.send_json(dict(ok=True,data=invoice_exchange.preview(service,parse_body(self))))
+                raise ValueError('Метод обмена Excel счёта не поддерживается')
             if (action in documents_api.DOCUMENT_ACTIONS and repo.has_table('portal_documents')) or action in documents_api.TEMPLATE_ACTIONS:
                 if method=='POST':repo.lock()
                 service=Production(repo,self.request_user)
