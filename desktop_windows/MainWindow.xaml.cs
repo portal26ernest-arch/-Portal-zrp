@@ -12,7 +12,7 @@ namespace Portal.Desktop;
 
 public partial class MainWindow : Window
 {
-    private const int CurrentBuild = 37;
+    private const int CurrentBuild = 38;
     private const long MaxInstallerBytes = 250L * 1024 * 1024;
     private static readonly HttpClient Http = new(new HttpClientHandler { AllowAutoRedirect = false })
     {
@@ -22,10 +22,12 @@ public partial class MainWindow : Window
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PORTAL");
     private string? _serverOrigin;
     private bool _browserEventsAttached;
-    private readonly string _webViewDataDir = Path.Combine(Path.GetTempPath(), "PORTAL-WebView2", Environment.ProcessId.ToString());
+    private readonly string _webViewDataDir;
+    private DesktopCacheBridge? _cacheBridge;
 
     public MainWindow()
     {
+        _webViewDataDir = Path.Combine(_settingsDir, "WebView2");
         InitializeComponent();
         Loaded += MainWindow_Loaded;
         Closed += MainWindow_Closed;
@@ -114,6 +116,7 @@ public partial class MainWindow : Window
                 ConfigureBrowser();
             }
             _serverOrigin = origin;
+            ConfigureDesktopCache(origin);
             if (persist) SaveOrigin(origin);
             SetupPanel.Visibility = Visibility.Collapsed;
             Browser.Visibility = Visibility.Visible;
@@ -160,6 +163,7 @@ public partial class MainWindow : Window
         Browser.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
         Browser.CoreWebView2.Settings.IsStatusBarEnabled = false;
         Browser.CoreWebView2.Settings.IsPasswordAutosaveEnabled = false;
+        Browser.CoreWebView2.Settings.AreHostObjectsAllowed = true;
         if (_browserEventsAttached) return;
         Browser.CoreWebView2.NavigationStarting += (_, e) =>
         {
@@ -209,14 +213,17 @@ public partial class MainWindow : Window
         ShowSetup("Сервер доступен, но встроенный WebView2 не завершил загрузку за 15 секунд. Установите/обновите Microsoft Edge WebView2 Runtime и повторите запуск.");
     }
 
+    private void ConfigureDesktopCache(string origin)
+    {
+        if (Browser.CoreWebView2 is null) return;
+        try { Browser.CoreWebView2.RemoveHostObjectFromScript("portalDesktopCache"); } catch { }
+        _cacheBridge = new DesktopCacheBridge(_settingsDir, origin);
+        Browser.CoreWebView2.AddHostObjectToScript("portalDesktopCache", _cacheBridge);
+    }
+
     private void MainWindow_Closed(object? sender, EventArgs e)
     {
         try { Browser.Dispose(); } catch { }
-        try
-        {
-            if (Directory.Exists(_webViewDataDir)) Directory.Delete(_webViewDataDir, recursive: true);
-        }
-        catch { }
     }
 
     private static bool SameOrigin(Uri target, string origin) =>
@@ -249,7 +256,8 @@ public partial class MainWindow : Window
         {
             Browser.CoreWebView2.Navigate("about:blank");
             await Browser.CoreWebView2.Profile.ClearBrowsingDataAsync();
-            SetupError.Text = "Локальный сеанс очищен. Выберите сервер и войдите снова.";
+            _cacheBridge?.ClearAll();
+            SetupError.Text = "Локальный сеанс и кэш компании очищены. Выберите сервер и войдите снова.";
             ConnectButton.IsEnabled = true;
             StatusText.Text = "Требуется подключение";
         }
