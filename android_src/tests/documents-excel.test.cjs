@@ -26,9 +26,18 @@ test('Excel API contract validates files, shows classifications and requires exp
   assert.match(source,/state\.busy\) return/);
   assert.match(source,/terminal\?\.status === 'failed'/);
   assert.match(source,/terminal\?\.status === 'applied'/);
-  assert.match(source,/Preview устарел или справочники изменились/);
+  assert.match(source,/Результат предварительной проверки устарел или справочники изменились/);
   assert.match(source,/result_document_id/);
   assert.match(source,/validateExcelFile/);
+});
+
+test('Document types, categories and import statuses are shown in Russian while API codes stay unchanged',()=>{
+  for(const label of ['Расчёт зарплаты (Excel)','Расчётный лист (PDF)','Счёт на оплату (Excel)','Отчёт (PDF)','Шаблон импорта Excel','Результат импорта','Зарплата','Счета','Отчёты','Импорт Excel','Новая запись','Без изменений','Конфликт','Ошибка'])assert.ok(source.includes(label),label);
+  assert.match(source,/Object\.entries\(DOCUMENT_TYPE_LABELS\)/);
+  assert.match(source,/Object\.entries\(DOCUMENT_CATEGORY_LABELS\)/);
+  assert.match(source,/importClassificationLabel\(row\.classification\)/);
+  assert.match(source,/value="\$\{h\(value\)\}"/);
+  assert.doesNotMatch(source,/<option>\$\{x\}<\/option>/);
 });
 
 test('Downloads use the system picker, private MediaStore save and a strict MIME allowlist',()=>{

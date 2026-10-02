@@ -8,6 +8,36 @@
   const JSON_MIME = 'application/json';
   const MAX_XLSX = 10 * 1024 * 1024;
   const SHEETS = ['Компания', 'Сотрудники', 'Клиенты', 'Операции_Тарифы'];
+  const DOCUMENT_TYPE_LABELS = Object.freeze({
+    payroll_xlsx: 'Расчёт зарплаты (Excel)',
+    payroll_slip_xlsx: 'Расчётный лист (Excel)',
+    payroll_slip_pdf: 'Расчётный лист (PDF)',
+    invoice_xlsx: 'Счёт на оплату (Excel)',
+    invoice_pdf: 'Счёт на оплату (PDF)',
+    report_xlsx: 'Отчёт (Excel)',
+    report_pdf: 'Отчёт (PDF)',
+    import_template_xlsx: 'Шаблон импорта Excel',
+    import_result: 'Результат импорта'
+  });
+  const DOCUMENT_CATEGORY_LABELS = Object.freeze({
+    payroll: 'Зарплата',
+    invoice: 'Счета',
+    report: 'Отчёты',
+    imports: 'Импорт Excel',
+    company: 'Компания',
+    clients: 'Клиенты',
+    employees: 'Сотрудники'
+  });
+  const documentTypeLabel = value => DOCUMENT_TYPE_LABELS[value] || value || 'Без типа';
+  const documentCategoryLabel = value => DOCUMENT_CATEGORY_LABELS[value] || value || 'Без категории';
+  const IMPORT_CLASSIFICATION_LABELS = Object.freeze({
+    new: 'Новая запись',
+    update: 'Изменение',
+    unchanged: 'Без изменений',
+    conflict: 'Конфликт',
+    invalid: 'Ошибка'
+  });
+  const importClassificationLabel = value => IMPORT_CLASSIFICATION_LABELS[value] || value || 'Неизвестный статус';
 
   const state = {
     page: 1,
@@ -113,9 +143,9 @@
       return `<article class="item ${archived ? 'archived-document' : ''}" data-document-id="${h(d.id)}">
         <div class="row between">
           <b class="grow">${h(d.title || d.original_filename)}</b>
-          <span class="badge ${archived ? 'amber' : 'green'}">${archived ? 'В архиве' : h(d.status || 'готов')}</span>
+          <span class="badge ${archived ? 'amber' : 'green'}">${archived ? 'В архиве' : 'Готов'}</span>
         </div>
-        <p class="meta">${h(d.document_type)} · ${h(d.category)} · ${h((d.document_date || d.created_at || '').slice(0, 10))}</p>
+        <p class="meta">${h(documentTypeLabel(d.document_type))} · ${h(documentCategoryLabel(d.category))} · ${h((d.document_date || d.created_at || '').slice(0, 10))}</p>
         <p class="meta">${d.client_id ? `Клиент #${h(d.client_id)} · ` : ''}${d.employee_id ? `Сотрудник #${h(d.employee_id)} · ` : ''}${size} · версия ${h(d.revision || 1)} · ${archived ? 'архивная запись' : 'текущая версия'}</p>
         <div class="item-actions">
           ${!archived && d.status === 'ready' ? btn('Скачать', 'downloadPortalDocument', `data-id="${h(d.id)}"`, 'secondary') : ''}
@@ -128,7 +158,7 @@
     const folders = new Map();
     for (const d of state.rows) {
       const month = (d.document_date || d.created_at || '').slice(0, 7) || 'без даты';
-      const folder = [d.category || 'Без категории', d.document_type || 'Без типа', month,
+      const folder = [documentCategoryLabel(d.category), documentTypeLabel(d.document_type), month,
         d.client_id ? `клиент #${d.client_id}` : 'компания', d.employee_id ? `сотрудник #${d.employee_id}` : ''].filter(Boolean).join(' / ');
       if (!folders.has(folder)) folders.set(folder, []);
       folders.get(folder).push(d);
@@ -147,14 +177,14 @@
         <label class="field"><span>Поиск</span><input id="docQuery" type="search" maxlength="200" value="${h(state.query)}" placeholder="Название или имя файла"></label>
         <div class="filter-grid">
           ${selectField('docType', 'Тип документа', '<option value="">Все типы</option>' +
-            ['payroll_xlsx','payroll_slip_xlsx','payroll_slip_pdf','invoice_xlsx','invoice_pdf','report_xlsx','report_pdf','import_template_xlsx','import_result']
-              .map(x => `<option>${x}</option>`).join(''))}
+            Object.entries(DOCUMENT_TYPE_LABELS)
+              .map(([value, label]) => `<option value="${h(value)}">${h(label)}</option>`).join(''))}
           ${selectField('docCategory', 'Категория', '<option value="">Все категории</option>' +
-            ['payroll','invoice','report','imports','company','clients','employees']
-              .map(x => `<option>${x}</option>`).join(''))}
+            Object.entries(DOCUMENT_CATEGORY_LABELS)
+              .map(([value, label]) => `<option value="${h(value)}">${h(label)}</option>`).join(''))}
           ${selectField('docStatus', 'Статус', '<option value="all">Все</option><option value="ready">Готов</option><option value="archived">В архиве</option>')}
-          ${allowed('clients.read') || allowed('clients.manage') ? field('docClient', 'Клиент ID', state.filters.client_id || '', 'number', 'min="1" step="1"') : ''}
-          ${allowed('users.manage') || allowed('payroll.all') ? field('docEmployee', 'Сотрудник ID', state.filters.employee_id || '', 'number', 'min="1" step="1"') : ''}
+          ${allowed('clients.read') || allowed('clients.manage') ? field('docClient', 'ID клиента', state.filters.client_id || '', 'number', 'min="1" step="1"') : ''}
+          ${allowed('users.manage') || allowed('payroll.all') ? field('docEmployee', 'ID сотрудника', state.filters.employee_id || '', 'number', 'min="1" step="1"') : ''}
           ${field('docFrom', 'С даты', '', 'date')}
           ${field('docTo', 'По дату', '', 'date')}
         </div>
@@ -307,7 +337,7 @@
       `<article class="item">
         <div class="row between">
           <b>${h(row.sheet)} · строка ${h(row.row)}</b>
-          <span class="badge ${['conflict','invalid'].includes(row.classification) ? 'amber' : 'green'}">${h(row.classification)}</span>
+          <span class="badge ${['conflict','invalid'].includes(row.classification) ? 'amber' : 'green'}">${h(importClassificationLabel(row.classification))}</span>
         </div>
         ${row.errors?.length ? `<p class="meta">${row.errors.map(e => h(typeof e === 'string' ? e : (e.code || 'Проверьте строку'))).join(' · ')}</p>` : ''}
         ${row.changes ? `<details><summary>Изменения</summary><pre class="safe-diff">${h(JSON.stringify(row.changes, null, 2))}</pre></details>` : ''}
@@ -315,7 +345,7 @@
     ).join('');
 
     return summaryHtml(preview.summary) +
-      `<p class="meta">Шаблон ${h(preview.template_version)} · файл подтверждается checksum. Preview действует ограниченное время.</p>
+      `<p class="meta">Шаблон ${h(preview.template_version)} · файл подтверждается контрольной суммой. Результат предварительной проверки действует ограниченное время.</p>
        <div class="list">${rows || '<p class="empty">Изменений нет</p>'}</div>
        ${preview.can_apply && state.file ? btn(state.busy ? 'Применяем…' : 'Применить изменения', 'applyExcelImport', '', 'block') : ''}`;
   }
@@ -342,7 +372,7 @@
       </div>
       ${extra}
       ${preview ? `<section class="card">
-        <div class="row between"><h3>Результат проверки</h3>${btn('Отменить preview', 'clearExcelPreview', '', 'text')}</div>
+        <div class="row between"><h3>Результат проверки</h3>${btn('Отменить проверку', 'clearExcelPreview', '', 'text')}</div>
         ${previewHtml(preview)}
       </section>` : ''}`
     );
@@ -506,8 +536,8 @@
       const stale = /preview|token|срок|справочник|изменил/i.test(error.message || '');
       renderImport(
         `<div class="notice warning">${h(stale
-          ? 'Preview устарел или справочники изменились. Выберите файл и выполните проверку заново.'
-          : (error.message || 'Не удалось применить импорт. Выполните новый preview.'))}</div>`
+          ? 'Результат предварительной проверки устарел или справочники изменились. Выберите файл и выполните проверку заново.'
+          : (error.message || 'Не удалось применить импорт. Выполните новую предварительную проверку.'))}</div>`
       );
     }
   };
