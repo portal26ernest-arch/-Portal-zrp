@@ -332,3 +332,17 @@ No defect/QC source or official Ozon/Wildberries feed was found in the repositor
 Current roadmap counts are **93 ✅ / 15 🟡 / 6 ⏳ / 12 🔌**. Current-SHA Server run `36818033879` (#164) and Web run `36818033902` (#157) passed; Server totals are 304/48 skipped on both Python versions, PostgreSQL totals are 36/2 gated skips and teardown confirms `db=0 roles=0 temp=0`.
 
 **Exact NEXT:** no software-completable item remains open. Complete the listed B/C gates when their real device, provider, disposable snapshot or production evidence is available; keep production activation off until owner action.
+
+
+## L. Production cutover follow-up — 2026-10-02
+
+- ✅ Расхождение `app_users` 5→4 классифицировано: лишняя запись старого server candidate — legacy bootstrap `admin`, а не потерянный сотрудник.
+- ✅ В сохранённых телефонных/source snapshots рабочие tenant-аккаунты Company 1: Ernest, V.Belov, E.Miroshnichenko, N.Asafova; live split tenant содержит эти 4 аккаунта.
+- ✅ Control DB содержит отдельного Platform Owner; его нельзя считать tenant-пользователем компании.
+- ✅ Core counts совпадают между проверенным candidate и split tenant: employees 4, clients 39, operations 78, tariff_versions 403, work_log 8, products 47.
+- ✅ Live VPS на 2026-10-02: production service/PostgreSQL/backup timer active; 48 FORCE RLS; daily backup success; retention 14 days.
+- ✅ Central snapshot, supplement и final snapshot SHA-256 повторно проверены.
+- 🟡 Независимый off-server backup/restore остаётся открытым (item 93).
+- ⏳ Свежий post-write-freeze SQLite snapshot после 01.10 не подтверждён (item 96).
+- ⏳ Production domain/HTTPS, финальная lineage/reconciliation, signed Android release и authenticated cutover smoke остаются release gates.
+- 📄 Evidence: `PORTAL_PRODUCTION_RECONCILIATION.json` schema v2 и `PORTAL_PRODUCTION_FOLLOWUP_20261002.md`.
