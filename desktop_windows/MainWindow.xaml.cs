@@ -14,7 +14,7 @@ namespace Portal.Desktop;
 
 public partial class MainWindow : Window
 {
-    private const int CurrentBuild = 41;
+    private const int CurrentBuild = 42;
     private const long MaxInstallerBytes = 250L * 1024 * 1024;
     private const string GithubRepository = "portal26ernest-arch/-Portal-zrp";
     private const string WebViewCompatibilityArguments = "--disable-gpu --disable-gpu-compositing";
@@ -195,12 +195,13 @@ public partial class MainWindow : Window
                 else OpenExternalHttps(target);
             }
         };
-        Browser.CoreWebView2.NavigationCompleted += (_, e) =>
+        Browser.CoreWebView2.NavigationCompleted += async (_, e) =>
         {
             if (_serverOrigin is null || Browser.Visibility != Visibility.Visible) return;
             StatusText.Text = e.IsSuccess ? "Подключено" : "Ошибка подключения";
             BackButton.IsEnabled = true;
             _webRecoveryPending = false;
+            if (e.IsSuccess) await ApplyDesktopExperienceAsync();
         };
         Browser.CoreWebView2.ProcessFailed += (_, _) =>
         {
@@ -214,6 +215,58 @@ public partial class MainWindow : Window
             });
         };
         _browserEventsAttached = true;
+    }
+
+    private async Task ApplyDesktopExperienceAsync()
+    {
+        if (Browser.CoreWebView2 is null) return;
+        const string css = """
+.web-client{--portal-blue:#0b5ed7;--portal-blue-dark:#0846a8;--portal-blue-soft:#eaf2ff;--accent:var(--portal-blue);--accent-soft:var(--portal-blue-soft);--bg:#f5f8fd;--soft:#edf3fb;--text:#172033;--muted:#66738a;--line:#dce5f2}
+.web-client .top{background:var(--portal-blue)!important;border-bottom:0!important;color:#fff!important;box-shadow:0 8px 24px #0b4fbf22}
+.web-client .top .portal-symbol{background:#fff!important;color:var(--portal-blue)!important}.web-client .top .wordmark{color:#fff!important}.web-client .top .company-name{color:#dceaff!important}
+.web-client .hero,.web-client .today-main{background:linear-gradient(135deg,var(--portal-blue),var(--portal-blue-dark))!important}
+@media(min-width:900px){
+.web-client #app{min-height:100vh;padding-left:272px}.web-client .main{width:auto;max-width:none;margin:0;padding:34px 38px 54px}
+.web-client .nav{position:fixed;inset:0 auto 0 0;width:272px;transform:none;z-index:35;display:flex;flex-direction:column;justify-content:flex-start;align-items:stretch;gap:4px;overflow-y:auto;background:linear-gradient(180deg,var(--portal-blue-dark),#063579);border:0;padding:22px 14px 18px;box-shadow:14px 0 36px #0b3b8017}
+.web-client .nav::before{content:"PORTAL";display:block;color:#fff;font-size:25px;font-weight:850;letter-spacing:4px;padding:3px 12px 22px;border-bottom:1px solid #ffffff26;margin-bottom:10px}
+.web-client .nav button{display:flex;flex-direction:row;align-items:center;justify-content:flex-start;gap:11px;flex:0 0 auto;max-width:none;width:100%;min-height:44px;padding:10px 12px;border-radius:11px;color:#dceaff;font-size:13px;text-align:left}
+.web-client .nav button:hover{background:#ffffff12;color:#fff}.web-client .nav button.active{background:#fff;color:var(--portal-blue-dark);font-weight:750}
+.web-client .nav .icon{width:19px;height:19px}.web-client .nav-group{display:grid;gap:3px;margin-top:10px}.web-client .nav-group-title{padding:8px 12px 4px;color:#9fc2f5;font-size:10px;font-weight:800;letter-spacing:1.1px;text-transform:uppercase}
+.web-client .nav-spacer{flex:1;min-height:18px}.web-client .tiles{grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.web-client .sheet-backdrop{left:272px}
+}
+""";
+        var cssJson = JsonSerializer.Serialize(css);
+        await Browser.ExecuteScriptAsync($"""
+(() => {{
+  if(!document.documentElement.classList.contains('web-client')) return false;
+  let style=document.getElementById('portal-desktop-42-style');
+  if(!style){{style=document.createElement('style');style.id='portal-desktop-42-style';document.head.appendChild(style);}}
+  style.textContent={cssJson};
+  return true;
+}})()
+""");
+
+        const string sidebarScript = """
+(() => {
+  if(!document.documentElement.classList.contains('web-client')) return false;
+  if(window.__portalDesktop42Patched){ if(typeof buildNav==='function') buildNav(); return true; }
+  if(typeof buildNav!=='function') return false;
+  const original=buildNav, mq=matchMedia('(min-width:900px)');
+  const navButton=(id,i,title)=>'<button data-action="go" data-page="'+id+'" class="'+(S.page===id?'active':'')+'" '+(S.page===id?'aria-current="page"':'')+'>'+icon(i)+'<span>'+esc(title)+'</span></button>';
+  const desktopBuild=()=>{
+    if(!mq.matches || typeof S==='undefined' || !S.me || typeof PortalCore==='undefined' || typeof can!=='function') return original();
+    const nav=document.getElementById('nav'); if(!nav) return;
+    if(typeof isOwner==='function' && isOwner() && !S.company){nav.innerHTML=navButton('companies','clients','Компании')+'<div class="nav-spacer"></div>'+navButton('settings','settings','Настройки');return;}
+    const byId=Object.fromEntries(PortalCore.modules.map(m=>[m.id,m]));
+    const groups=[['Работа',['work','jobs','batches','teamChat','notifications']],['Управление',['clients','users','permissions','tariffs']],['Учёт и финансы',['payroll','payrollPeriods','materials','invoices','expenses','documents','excelImport']],['Аналитика',['radar','analytics','reports','news']],['Система',['control','wms']]];
+    let html=navButton('dashboard','home','Главная');
+    for(const [title,ids] of groups){const allowed=ids.map(id=>byId[id]).filter(m=>m&&can(m.id));if(!allowed.length)continue;html+='<div class="nav-group"><div class="nav-group-title">'+esc(title)+'</div>'+allowed.map(m=>navButton(m.id,m.icon,m.title)).join('')+'</div>';}
+    nav.innerHTML=html+'<div class="nav-spacer"></div>'+navButton('settings','settings','Настройки');
+  };
+  buildNav=desktopBuild; mq.addEventListener?.('change',desktopBuild); window.__portalDesktop42Patched=true; desktopBuild(); return true;
+})()
+""";
+        await Browser.ExecuteScriptAsync(sidebarScript);
     }
 
     private static bool SameOrigin(Uri target, string origin) =>
@@ -339,6 +392,7 @@ public partial class MainWindow : Window
     }
     private async Task<DesktopUpdateManifest?> LoadUpdateManifestAsync()
     {
+        DesktopUpdateManifest? serverManifest = null;
         if (_serverOrigin is not null)
         {
             try
@@ -347,7 +401,7 @@ public partial class MainWindow : Window
                 if (response.StatusCode != HttpStatusCode.NotFound)
                 {
                     response.EnsureSuccessStatusCode();
-                    return await JsonSerializer.DeserializeAsync<DesktopUpdateManifest>(
+                    serverManifest = await JsonSerializer.DeserializeAsync<DesktopUpdateManifest>(
                         await response.Content.ReadAsStreamAsync(),
                         new JsonSerializerOptions
                         {
@@ -356,25 +410,25 @@ public partial class MainWindow : Window
                         });
                 }
             }
-            catch (HttpRequestException)
-            {
-                // The application server may be temporarily unavailable while
-                // its public route is being recovered. Fall through to the
-                // checksum-verified GitHub Releases channel.
-            }
-            catch (TaskCanceledException)
-            {
-                // Treat a network timeout like an unavailable update endpoint.
-            }
+            catch (HttpRequestException) { }
+            catch (TaskCanceledException) { }
         }
-        return await LoadGithubUpdateManifestAsync();
+
+        DesktopUpdateManifest? githubManifest = null;
+        try { githubManifest = await LoadGithubUpdateManifestAsync(); }
+        catch (HttpRequestException) { }
+        catch (TaskCanceledException) { }
+
+        if (githubManifest is not null && (serverManifest is null || githubManifest.Build > serverManifest.Build))
+            return githubManifest;
+        return serverManifest ?? githubManifest;
     }
 
     private static async Task<DesktopUpdateManifest?> LoadGithubUpdateManifestAsync()
     {
         using var request = new HttpRequestMessage(HttpMethod.Get,
             $"https://api.github.com/repos/{GithubRepository}/releases?per_page=50");
-        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/4.1.0");
+        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/4.2.0");
         request.Headers.Accept.ParseAdd("application/vnd.github+json");
         using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();
