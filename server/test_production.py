@@ -776,6 +776,9 @@ class ProductionTest(unittest.TestCase):
             kept=r.insert('chat_messages',dict(room='general',sender_user_id=self.worker_id,sender_name='Pinned',
                                                 text='Сохранить',created_at='2020-01-01T00:00:00.000000'))
             r.insert('chat_pins',dict(message_id=kept['id'],room='general',pinned=True,actor_id=self.admin_id))
+            for index in range(1000):
+                r.insert('chat_messages',dict(room='general',sender_user_id=self.worker_id,sender_name='Новый',
+                    text=f'Сообщение {index}',created_at=f'2026-10-02T12:{index//60:02d}:{index%60:02d}.000000'))
             conn.commit()
         visible=self.get('chat')['data'];ids={x['id'] for x in visible}
         self.assertNotIn(expired['id'],ids);self.assertIn(kept['id'],ids)
@@ -812,6 +815,9 @@ class ProductionTest(unittest.TestCase):
             r=Repository(conn,1)
             old=r.insert('chat_messages',dict(room='general',sender_user_id=self.worker_id,sender_name='Old',text='',created_at='2020-01-01T00:00:00.000000'))
             old_file=r.insert('chat_attachments',dict(message_id=old['id'],room='general',original_name='old.txt',filename='PORTAL_chat_old.txt',mime_type='text/plain',size_bytes=1,sha256=hashlib.sha256(b'x').hexdigest(),file_b64='eA==',created_at='2020-01-01T00:00:00.000000'))
+            for index in range(1000):
+                r.insert('chat_messages',dict(room='general',sender_user_id=self.worker_id,sender_name='Новый',
+                    text=f'Сообщение {index}',created_at=f'2026-10-02T13:{index//60:02d}:{index%60:02d}.000000'))
             conn.commit()
         self.get('chat',self.worker)
         with portal.db() as conn:
@@ -824,3 +830,37 @@ class ProductionTest(unittest.TestCase):
         result=self.request('/api/v3/meta',self.owner,extra_headers={'X-Portal-Company':'1'})
         self.assertTrue(result['ready'])
         self.request('/api/v3/work',self.owner,dict(request_id='owner-work',client_id=1,operation_id=1,quantity=1),status=400,extra_headers={'X-Portal-Company':'1'})
+
+    def test_desktop_organizer_hierarchy_recurrence_and_company_isolation(self):
+        director=self.role_token('director');manager=self.role_token('manager')
+        with portal.tenants.company_scope(1):
+            manager2_id=portal.save_user({'username':'manager2','pin':'4321','role':'manager'})
+            with portal.db() as conn:manager2=portal.create_session(conn,manager2_id)
+        director_id=self.request('/api/me',director)['user']['id']
+        manager_id=self.request('/api/me',manager)['user']['id']
+        due=(datetime.now()+timedelta(days=2)).replace(second=0,microsecond=0).isoformat(timespec='minutes')
+        remind=(datetime.now()+timedelta(days=1)).replace(second=0,microsecond=0).isoformat(timespec='minutes')
+
+        users=self.get('organizer-users',director)['data']
+        self.assertEqual({u['role'] for u in users},{'director','admin','manager'})
+        to_admin=self.post('organizer',dict(mode='create',assignee_user_id=self.admin_id,title='Проверить оплату',
+            due_at=due,remind_at=remind,priority='important',repeat_rule='daily'),director)['data']
+        self.assertEqual((to_admin['created_by'],to_admin['assignee_user_id']),(director_id,self.admin_id))
+        self.post('organizer',dict(mode='create',assignee_user_id=manager2_id,title='Задача менеджеру',due_at=due),self.admin)
+        self.post('organizer',dict(mode='create',assignee_user_id=manager2_id,title='Коллеге',due_at=due),manager)
+        self.post('organizer',dict(mode='create',assignee_user_id=self.admin_id,title='Наверх нельзя',due_at=due),manager,status=403)
+        self.post('organizer',dict(mode='create',assignee_user_id=director_id,title='Наверх нельзя',due_at=due),self.admin,status=403)
+
+        incoming=self.get('organizer?scope=incoming',self.admin)['data']
+        task=next(t for t in incoming if t['id']==to_admin['id'])
+        self.assertTrue(task['can_change_status']);self.assertFalse(task['can_edit'])
+        self.post('organizer',dict(mode='status',task_id=task['id'],status='done'),self.admin)
+        repeated=[t for t in self.get('organizer?scope=incoming',self.admin)['data'] if t.get('recurrence_of')==task['id']]
+        self.assertEqual(len(repeated),1);self.assertEqual(repeated[0]['created_by'],director_id)
+
+        peer=self.get('organizer?scope=incoming',manager2)['data']
+        self.assertTrue(any(t['created_by']==manager_id for t in peer))
+        self.get('organizer',self.worker,status=403)
+        other=self.post('organizer',dict(mode='create',assignee_user_id=self.request('/api/me',self.other_admin)['user']['id'],
+            title='Чужая компания',due_at=due),self.other_admin)['data']
+        self.assertNotIn(other['id'],{t['id'] for t in self.get('organizer?scope=company',director)['data']})

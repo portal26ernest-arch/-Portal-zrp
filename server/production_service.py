@@ -14,6 +14,12 @@ from production_repository import utcnow
 from report_xlsx import payroll_xlsx
 import production_permissions as rights
 
+ORGANIZER_ROLE_LABELS={'director':'Директор','admin':'Управляющий','manager':'Менеджер'}
+ORGANIZER_ASSIGNABLE={'director':{'admin','manager'},'admin':{'manager'},'manager':{'manager'}}
+ORGANIZER_PRIORITIES={'normal','important','urgent'}
+ORGANIZER_REPEATS={'none','daily','weekly','monthly'}
+ORGANIZER_STATUSES={'new','in_progress','done','cancelled'}
+
 def text(value, name='Название', optional=False):
     if optional and value in (None,''): return ''
     if not isinstance(value,str) or not value.strip() or len(value)>1000: raise ValueError(name+': укажите текст до 1000 символов')
@@ -600,11 +606,17 @@ class Production:
     def chat_cleanup(self):
         self.need('chat.read');pins=self.r.list('chat_pins');latest={}
         for event in pins:latest[event['message_id']]=event
-        cutoff=(datetime.fromisoformat(self.clock())-timedelta(days=14)).isoformat()
-        removed=0
-        attachments=self.r.list('chat_attachments')
-        for message in list(self.r.list('chat_messages')):
-            if message['created_at']>=cutoff or bool(latest.get(message['id'],{}).get('pinned')):continue
+        removed=0;attachments=self.r.list('chat_attachments')
+        messages=list(self.r.list('chat_messages'))
+        rooms={message['room'] for message in messages}
+        remove_ids=set()
+        for room in rooms:
+            ordinary=[message for message in messages
+                      if message['room']==room and not bool(latest.get(message['id'],{}).get('pinned'))]
+            ordinary.sort(key=lambda message:(message.get('created_at',''),str(message['id'])))
+            remove_ids.update(message['id'] for message in ordinary[:-1000])
+        for message in messages:
+            if message['id'] not in remove_ids:continue
             for attachment in [a for a in attachments if a['message_id']==message['id']]:self.r.delete('chat_attachments',attachment['id'])
             for event in [p for p in pins if p['message_id']==message['id']]:self.r.delete('chat_pins',event['id'])
             self.r.delete('chat_messages',message['id']);removed+=1
@@ -622,7 +634,7 @@ class Production:
         for message in self.r.list('chat_messages'):
             if message['room']!=room:continue
             result.append(dict(message,pinned=bool(latest.get(message['id'],{}).get('pinned')),attachment=attachments.get(message['id'])))
-        return result[-200:]
+        return result
 
     def chat_file(self,identity):
         self.need('chat.read');attachment=self.entity('chat_attachments',identity)
@@ -813,6 +825,150 @@ class Production:
         result=self.r.update('settings',current) if current.get('id') else self.r.insert('settings',current,'control')
         if changed:self.r.audit(self.u,'company.settings.updated','control',fields=changed)
         return result
+
+    def organizer_users(self):
+        self.need('organizer.read')
+        users=[u for u in self.r.catalog('users') if u.get('active')]
+        allowed={'director','admin','manager'} if self.u.get('technical_owner') else ORGANIZER_ASSIGNABLE.get(self.u.get('role'),set())
+        rows=[]
+        for u in users:
+            if u['id']!=self.u['id'] and u.get('role') not in allowed:continue
+            rows.append(dict(id=u['id'],display_name=u.get('display_name') or u.get('username') or 'Сотрудник',
+                role=u.get('role'),role_label=ORGANIZER_ROLE_LABELS.get(u.get('role'),'Сотрудник'),self=u['id']==self.u['id']))
+        return sorted(rows,key=lambda x:(not x['self'],x['role_label'],x['display_name'].casefold()))
+
+    def organizer_moment(self,value,label,optional=False):
+        if optional and value in (None,''):return None
+        if not isinstance(value,str):raise ValueError(label+': укажите дату и время')
+        try:parsed=datetime.fromisoformat(value)
+        except ValueError:raise ValueError(label+': укажите корректную дату и время')
+        if parsed.tzinfo is not None:raise ValueError(label+': часовой пояс определяется компанией')
+        return parsed.isoformat(timespec='minutes')
+
+    def organizer_visible(self,task):
+        return 'organizer.manage' in self.permissions or task.get('assignee_user_id')==self.u['id'] or task.get('created_by')==self.u['id']
+
+    def organizer_can_edit(self,task):
+        if self.u.get('technical_owner') or task.get('created_by')==self.u['id']:return True
+        if self.u.get('role')=='director':return True
+        if self.u.get('role')=='admin':
+            users={u['id']:u for u in self.r.catalog('users')};creator=users.get(task.get('created_by'),{})
+            return creator.get('role') in {'admin','manager'} and task.get('assignee_role')=='manager'
+        return False
+
+    def organizer_public(self,task):
+        users={u['id']:u for u in self.r.catalog('users')}
+        creator=users.get(task.get('created_by'),{});assignee=users.get(task.get('assignee_user_id'),{})
+        item=dict(task,created_by_name=creator.get('display_name') or task.get('created_by_name') or 'Сотрудник',
+            assignee_name=assignee.get('display_name') or task.get('assignee_name') or 'Сотрудник',
+            assignee_role_label=ORGANIZER_ROLE_LABELS.get(assignee.get('role') or task.get('assignee_role'),'Сотрудник'))
+        item['can_edit']=self.organizer_can_edit(task)
+        item['can_change_status']=item['can_edit'] or task.get('assignee_user_id')==self.u['id']
+        return item
+
+    def organizer_event(self,task,event,detail=''):
+        self.r.insert('organizer_events',dict(task_id=task['id'],event=event,actor_id=self.u['id'],
+            actor_name=self.u.get('display_name') or self.u.get('username') or 'Сотрудник',detail=detail,occurred_at=self.clock()))
+
+    def organizer_next_due(self,value,repeat_rule):
+        due=datetime.fromisoformat(value)
+        if repeat_rule=='daily':return (due+timedelta(days=1)).isoformat(timespec='minutes')
+        if repeat_rule=='weekly':return (due+timedelta(days=7)).isoformat(timespec='minutes')
+        if repeat_rule=='monthly':
+            year=due.year+(1 if due.month==12 else 0);month=1 if due.month==12 else due.month+1
+            return due.replace(year=year,month=month,day=min(due.day,calendar.monthrange(year,month)[1])).isoformat(timespec='minutes')
+        return None
+
+    def organizer_create(self,b,recurrence_of=None):
+        self.need('organizer.assign');allowed={u['id']:u for u in self.organizer_users()}
+        assignee=b.get('assignee_user_id',self.u['id'])
+        if type(assignee) is not int or assignee not in allowed:raise PermissionError('Нельзя поставить задачу этому сотруднику')
+        title=text(b.get('title'),'Название задачи')
+        if len(title)>200:raise ValueError('Название задачи: до 200 символов')
+        description=b.get('description','')
+        if not isinstance(description,str) or len(description.strip())>4000:raise ValueError('Описание: до 4000 символов')
+        due=self.organizer_moment(b.get('due_at'),'Срок');remind=self.organizer_moment(b.get('remind_at'),'Напоминание',True)
+        if remind and remind>due:raise ValueError('Напоминание должно быть не позже срока задачи')
+        priority=b.get('priority','normal');repeat=b.get('repeat_rule','none')
+        if priority not in ORGANIZER_PRIORITIES:raise ValueError('Неизвестный приоритет задачи')
+        if repeat not in ORGANIZER_REPEATS:raise ValueError('Неизвестное правило повтора')
+        linked_type=b.get('linked_type') or '';linked_id=str(b.get('linked_id') or '').strip()
+        if linked_type not in {'','client','invoice','document'} or linked_type and not linked_id:raise ValueError('Проверьте связь задачи')
+        target=allowed[assignee]
+        task=self.r.insert('organizer_tasks',dict(title=title,description=description.strip(),assignee_user_id=assignee,
+            assignee_name=target['display_name'],assignee_role=target['role'],created_by=self.u['id'],
+            created_by_name=self.u.get('display_name') or self.u.get('username') or 'Сотрудник',due_at=due,remind_at=remind,
+            priority=priority,repeat_rule=repeat,linked_type=linked_type,linked_id=linked_id,status='new',
+            completed_at=None,recurrence_of=recurrence_of,next_task_id=None))
+        self.organizer_event(task,'created','Задача создана');return task
+
+    def organizer(self,b):
+        mode=b.get('mode','create')
+        if mode=='create':return self.organizer_create(b)
+        self.need('organizer.read');task=self.r.get('organizer_tasks',str(b.get('task_id') or ''))
+        if not self.organizer_visible(task):raise PermissionError('Задача недоступна')
+        can_edit=self.organizer_can_edit(task)
+        can_status=can_edit or task.get('assignee_user_id')==self.u['id']
+        if mode=='status':
+            if not can_status:raise PermissionError('Нельзя изменить статус этой задачи')
+            status=b.get('status')
+            if status not in ORGANIZER_STATUSES:raise ValueError('Неизвестный статус задачи')
+            if status=='cancelled' and not can_edit:raise PermissionError('Отменить задачу может постановщик или руководитель')
+            previous=task.get('status','new');task['status']=status;task['completed_at']=self.clock() if status=='done' else None
+            self.r.update('organizer_tasks',task);self.organizer_event(task,'status',previous+' → '+status)
+            if status=='done' and task.get('repeat_rule') in ORGANIZER_REPEATS-{'none'} and not task.get('next_task_id'):
+                next_due=self.organizer_next_due(task['due_at'],task['repeat_rule'])
+                follow=dict(title=task['title'],description=task.get('description',''),assignee_user_id=task['assignee_user_id'],
+                    due_at=next_due,priority=task.get('priority','normal'),repeat_rule=task['repeat_rule'],
+                    linked_type=task.get('linked_type',''),linked_id=task.get('linked_id',''))
+                if task.get('remind_at'):
+                    delta=datetime.fromisoformat(task['due_at'])-datetime.fromisoformat(task['remind_at'])
+                    follow['remind_at']=(datetime.fromisoformat(next_due)-delta).isoformat(timespec='minutes')
+                created=self.r.insert('organizer_tasks',dict(title=task['title'],description=task.get('description',''),
+                    assignee_user_id=task['assignee_user_id'],assignee_name=task.get('assignee_name','Сотрудник'),
+                    assignee_role=task.get('assignee_role'),created_by=task['created_by'],created_by_name=task.get('created_by_name','Сотрудник'),
+                    due_at=follow['due_at'],remind_at=follow.get('remind_at'),priority=task.get('priority','normal'),
+                    repeat_rule=task['repeat_rule'],linked_type=task.get('linked_type',''),linked_id=task.get('linked_id',''),
+                    status='new',completed_at=None,recurrence_of=task['id'],next_task_id=None))
+                self.organizer_event(created,'created','Следующая повторяющаяся задача создана автоматически')
+                task['next_task_id']=created['id'];self.r.update('organizer_tasks',task)
+            return task
+        if mode=='reschedule':
+            if not can_edit:raise PermissionError('Изменить срок может постановщик или руководитель')
+            old=task['due_at'];task['due_at']=self.organizer_moment(b.get('due_at'),'Срок')
+            task['remind_at']=self.organizer_moment(b.get('remind_at'),'Напоминание',True)
+            if task['remind_at'] and task['remind_at']>task['due_at']:raise ValueError('Напоминание должно быть не позже срока задачи')
+            self.r.update('organizer_tasks',task);self.organizer_event(task,'rescheduled',old+' → '+task['due_at']);return task
+        if mode=='edit':
+            if not can_edit:raise PermissionError('Изменить задачу может постановщик или руководитель')
+            if 'title' in b:
+                task['title']=text(b.get('title'),'Название задачи')
+                if len(task['title'])>200:raise ValueError('Название задачи: до 200 символов')
+            if 'description' in b:
+                if not isinstance(b['description'],str) or len(b['description'].strip())>4000:raise ValueError('Описание: до 4000 символов')
+                task['description']=b['description'].strip()
+            if 'priority' in b:
+                if b['priority'] not in ORGANIZER_PRIORITIES:raise ValueError('Неизвестный приоритет задачи')
+                task['priority']=b['priority']
+            self.r.update('organizer_tasks',task);self.organizer_event(task,'edited','Задача изменена');return task
+        raise ValueError('Неизвестное действие органайзера')
+
+    def organizer_rows(self,params):
+        self.need('organizer.read');scope=(params.get('scope',['mine'])[0] or 'mine')
+        if scope not in {'mine','incoming','assigned_by_me','company'}:raise ValueError('Неизвестный режим просмотра органайзера')
+        if scope=='company' and 'organizer.manage' not in self.permissions:raise PermissionError('Общий список доступен руководителю')
+        rows=[self.organizer_public(t) for t in self.r.list('organizer_tasks') if self.organizer_visible(t)]
+        if scope=='incoming':rows=[t for t in rows if t['assignee_user_id']==self.u['id']]
+        elif scope=='assigned_by_me':rows=[t for t in rows if t['created_by']==self.u['id']]
+        elif scope=='mine' and 'organizer.manage' in self.permissions:
+            rows=[t for t in rows if t['assignee_user_id']==self.u['id'] or t['created_by']==self.u['id']]
+        return sorted(rows,key=lambda t:(t.get('status') in {'done','cancelled'},t.get('due_at') or '9999',t.get('created_at') or ''))
+
+    def organizer_events(self,params):
+        self.need('organizer.read');identity=str(params.get('task_id',[''])[0] or '')
+        task=self.r.get('organizer_tasks',identity)
+        if not self.organizer_visible(task):raise PermissionError('Задача недоступна')
+        return [e for e in self.r.list('organizer_events') if e.get('task_id')==identity]
 
     def scoped(self,kind): return [x for x in self.r.list(kind) if 'client_id' not in x or self.visible(x['client_id'])]
 
@@ -1116,7 +1272,7 @@ class Production:
 
     def command(self,action,body):
         if 'company_id' in body and (type(body['company_id']) is not int or body['company_id']!=self.r.company_id):raise PermissionError('Компания определяется сессией')
-        methods={'batches':self.batch,'products':self.product,'client-requisites':self.save_client_requisites,'tasks':self.task,'work':self.work,'timers':self.timer,'links':self.link,'tariffs':self.create_tariff,'permissions':self.set_permissions,'usage':self.usage,'expenses':self.expense,'invoices':self.invoice,'payments':self.payment,'settings':self.settings,'shipments':self.ship,'returns':self.return_batch,'payroll-periods':self.payroll_period,'payroll-settlements':self.payroll_settlement,'chat':self.chat_command,'documents':self.document}
+        methods={'batches':self.batch,'products':self.product,'client-requisites':self.save_client_requisites,'tasks':self.task,'work':self.work,'timers':self.timer,'links':self.link,'tariffs':self.create_tariff,'permissions':self.set_permissions,'usage':self.usage,'expenses':self.expense,'invoices':self.invoice,'payments':self.payment,'settings':self.settings,'shipments':self.ship,'returns':self.return_batch,'payroll-periods':self.payroll_period,'payroll-settlements':self.payroll_settlement,'chat':self.chat_command,'documents':self.document,'organizer':self.organizer}
         if action not in methods: raise ValueError('Действие не поддерживается')
         authorization={'batches':'batches.receive','products':'clients.manage','client-requisites':'clients.manage','tasks':'tasks.manage','work':'work.write','timers':'work.write','links':'work.link','permissions':'users.manage','usage':'materials.use','expenses':'expenses.manage','invoices':'invoices.create','payments':'payments.record','settings':'company.settings','shipments':'batches.receive','returns':'batches.receive','payroll-periods':'payroll.close','chat':'chat.write','documents':'documents.manage'}
         if action in authorization:self.need(authorization[action])
@@ -1167,6 +1323,9 @@ class Production:
 
     def query(self,action,params):
         if action=='today':return self.today()
+        if action=='organizer':return self.organizer_rows(params)
+        if action=='organizer-users':return self.organizer_users()
+        if action=='organizer-events':return self.organizer_events(params)
         if action=='client-requisites':return self.client_requisites(params)
         if action=='client-name-history':
             self.need('clients.read')

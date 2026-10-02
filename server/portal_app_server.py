@@ -38,8 +38,8 @@ PORT = CONFIG.port
 SESSION_HOURS = 24 * 30
 
 ROLE_LABELS = {
-    "admin": "Администратор",
-    "director": "Директор / управляющий",
+    "admin": "Управляющий",
+    "director": "Директор",
     "manager": "Менеджер",
     "accountant": "Бухгалтер",
     "shift": "Старший смены",

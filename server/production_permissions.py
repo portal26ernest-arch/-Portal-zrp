@@ -1,11 +1,14 @@
 """Business capabilities. No platform authority can be delegated here."""
 ROLE_NAMES = {'packer':'Сборщик','manager':'Менеджер','director':'Директор',
-              'admin':'Администратор','shift':'Старший смены','accountant':'Бухгалтер'}
+              'admin':'Управляющий','shift':'Старший смены','accountant':'Бухгалтер'}
 # code, group, label, recommended roles
 CATALOG = [
  ('work.write','Работа','Вносить свою выработку','packer manager director admin shift'),
  ('tasks.read','Работа','Просматривать рабочие задания','packer manager director admin shift'),
  ('tasks.manage','Работа','Создавать задания сотрудникам','manager director admin shift'),
+ ('organizer.read','Органайзер','Просматривать свои задачи и напоминания','manager director admin'),
+ ('organizer.assign','Органайзер','Ставить задачи разрешённым коллегам','manager director admin'),
+ ('organizer.manage','Органайзер','Контролировать задачи компании','director admin'),
  ('batches.receive','Работа','Принимать поступление товара','manager director admin'),
  ('work.link','Работа','Привязывать работу без задания к партии','manager director admin'),
  ('users.manage','Сотрудники','Управлять сотрудниками и их правами','director admin'),

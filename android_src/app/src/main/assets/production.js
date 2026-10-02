@@ -3,7 +3,7 @@
 async function configureProduction(){
   const r=await api('GET','/api/v3/meta',undefined,{global:true});
   S.stage3=!!r.ready;
-  if(S.stage3){S.me.permissions=r.permissions;S.permissionCatalog=r.catalog;S.heartbeatSeconds=r.heartbeat_seconds||60;clearInterval(S.heartbeatTimer);S.heartbeatTimer=setInterval(()=>{if(S.token&&!document.hidden)api('POST','/api/v3/heartbeat',{}, {global:true}).catch(()=>{});},S.heartbeatSeconds*1000);}
+  if(S.stage3){S.me.permissions=r.permissions;S.permissionCatalog=r.catalog;S.heartbeatSeconds=r.heartbeat_seconds||60;clearInterval(S.heartbeatTimer);S.heartbeatTimer=setInterval(()=>{if(S.token&&!document.hidden)api('POST','/api/v3/heartbeat',{}, {global:true}).catch(()=>{});},S.heartbeatSeconds*1000);startOrganizerReminderWatch();}
 }
 const allowed=permission=>S.me?.permissions?.includes(permission);
 const rub=cents=>money(Number(cents||0)/100);
@@ -34,6 +34,7 @@ function taskStatusLabel(task){return task.status==='done'?'Завершено':
 screens.dashboard=async()=>{
   if(!S.stage3)return previous.dashboard();
   const d=await productionGet('today');
+  const organizerRows=globalThis.__PORTAL_DESKTOP__&&allowed('organizer.read')?await productionGet('organizer?scope=incoming'):[];
   S.productionTasks=d.tasks||[];S.activeTimers=allowed('work.write')||allowed('tasks.read')?await productionGet('timers'):[];
   const management=d.mode==='management';
   const inWorkTasks=new Set([...S.productionTasks.filter(t=>t.status==='in_progress').map(t=>t.id),...S.activeTimers.map(t=>t.task_id)]);
@@ -44,7 +45,9 @@ screens.dashboard=async()=>{
     (management?`<div class="metrics">${d.today_quantity!==undefined?metric('Работа сегодня',num(d.today_quantity)+' шт.'):''}${taskMetrics}${d.ready!==undefined?metric('Готовые партии',num(d.ready)):''}${d.active_batches!==undefined?metric('Активные партии',num(d.active_batches)):''}${d.active_jobs!==undefined?metric('Открытые задания',num(d.active_jobs)):''}${d.today_productivity?metric('Скорость команды',d.today_productivity.units_per_hour==null?'Нет данных времени':num(d.today_productivity.units_per_hour)+' шт./ч'):''}</div>${d.today_finance?`<div class="metrics">${metric('Выручка сегодня',rub(d.today_finance.revenue))}${metric('Начислено сегодня',rub(d.today_finance.salary))}</div><div class="metrics">${metric('Выручка за месяц',rub(d.month_finance.revenue))}${metric('Начислено за месяц',rub(d.month_finance.salary))}${d.expected_profit!==undefined?metric('Плановая прибыль',d.expected_profit==null?'Недоступна':rub(d.expected_profit)):''}</div>`:''}${d.debt!==undefined?metric('Дебиторская задолженность',rub(d.debt)):''}${d.open_invoice_count!==undefined?metric('Открытые счета',num(d.open_invoice_count)):''}${d.overdue_invoice_count?metric('Просроченные счета',num(d.overdue_invoice_count)+' · '+rub(d.overdue_debt)):''}${d.client_profitability_alerts?metric('Клиенты с отрицательной прибылью',num(d.client_profitability_alerts)):''}`:
       `<div class="hero"><span>Моя выработка сегодня</span><div class="hero-value">${num(d.own_quantity)} шт.</div>${d.own_salary!==undefined?`<strong>Заработано ${rub(d.own_salary)}</strong>`:''}</div>${workerActions}`)+
     (attention.length?`<section class="attention-section"><h2>Требует внимания</h2><div class="list attention">${attention.map(a=>`<div class="notice warning"><b>${esc(a.label)}</b>${a.number?`<p class="batch-number">${esc(a.number)}</p>`:''}${a.name?`<p>${esc(a.name)} · ${num(a.quantity)}</p>`:''}${a.amount!==undefined?`<p>${rub(a.amount)}</p>`:''}${a.type==='not_invoiced'&&allowed('invoices.create')?btn('Подготовить счёт','go','data-page="invoices"','secondary'):''}</div>`).join('')}</div></section>`:'')+
-    `${!management&&S.productionTasks.length?`<h2 class="compact-heading">Мои задания</h2><div class="list">${taskCards(S.productionTasks)}</div>`:''}${management&&allowed('tasks.read')?`<h2 class="compact-heading">Задания в работе</h2><div class="list">${taskCards(S.productionTasks.filter(t=>t.status==='in_progress'||S.activeTimers.some(timer=>timer.task_id===t.id)))}</div>`:''}`);tickElapsed();
+    `${!management&&S.productionTasks.length?`<h2 class="compact-heading">Мои задания</h2><div class="list">${taskCards(S.productionTasks)}</div>`:''}${management&&allowed('tasks.read')?`<h2 class="compact-heading">Задания в работе</h2><div class="list">${taskCards(S.productionTasks.filter(t=>t.status==='in_progress'||S.activeTimers.some(timer=>timer.task_id===t.id)))}</div>`:''}`);
+  if(organizerRows.length){const active=organizerRows.filter(t=>organizerActive(t)),late=active.filter(t=>new Date(t.due_at)<new Date());const box=document.createElement('section');box.className='card';box.innerHTML='<div class="row between"><div><span class="eyebrow">Органайзер</span><h2>Мои задачи</h2></div>'+btn('Открыть органайзер','go','data-page="organizer"','secondary')+'</div><p>'+active.length+' активных задач'+(late.length?' · <b>'+late.length+' просрочено</b>':'')+'</p>'+(active[0]?'<p class="meta">Ближайшая: '+esc(active[0].title)+' · '+esc(organizerMoment(active[0].due_at))+'</p>':'');$('content').querySelector('.page-heading')?.after(box);}
+  tickElapsed();
 };
 screens.work=async()=>{
   if(!S.stage3)return previous.work();
@@ -315,7 +318,7 @@ screens.teamChat=async()=>{
   S.chatUsers=await productionGet('chat-users');S.chatRecipient='';
   const roomOptions='<option value="">Общий чат</option>'+S.chatUsers.map(u=>`<option value="${u.id}">Лично · ${esc(u.display_name)}</option>`).join('');
   paint(heading('Команда','Внутреннее общение внутри PORTAL')+selectField('chatRecipient','Комната',roomOptions)+'<div id="chatList" class="list"></div>'+
-    (allowed('chat.write')?`<form id="chatForm" class="card">${field('chatText','Сообщение','','text','maxlength="4000" autocomplete="off"')}<label class="field"><span>Вложение — необязательно, до 2 МБ</span><input id="chatFile" type="file" accept="image/jpeg,image/png,image/webp,application/pdf,text/plain"></label><button class="btn secondary block" type="button" data-action="chooseChatSticker">Стикеры PORTAL</button><button class="btn secondary block" type="button" data-action="newAbsenceNotice">Сообщить о невыходе</button><button class="btn block" type="submit">Отправить</button><p class="meta">Обычная история и вложения хранятся 14 дней и затем удаляются. Закреплённые сообщения сохраняются до открепления.</p></form>`:''));
+    (allowed('chat.write')?`<form id="chatForm" class="card">${field('chatText','Сообщение','','text','maxlength="4000" autocomplete="off"')}<label class="field"><span>Вложение — необязательно, до 2 МБ</span><input id="chatFile" type="file" accept="image/jpeg,image/png,image/webp,application/pdf,text/plain"></label><button class="btn secondary block" type="button" data-action="chooseChatSticker">Стикеры PORTAL</button><button class="btn secondary block" type="button" data-action="newAbsenceNotice">Сообщить о невыходе</button><button class="btn block" type="submit">Отправить</button><p class="meta">В каждой комнате хранятся последние 1000 обычных сообщений. Закреплённые сообщения не входят в лимит и сохраняются до открепления.</p></form>`:''));
   $('chatRecipient').addEventListener('change',async()=>{S.chatRecipient=$('chatRecipient').value;await refreshTeamChat();});await refreshTeamChat();
 };
 actions.chooseChatSticker=()=>{if(S.chatRecipient)throw new Error('Стикеры доступны в общем чате');openSheet('Стикеры PORTAL',`<div class="mini-actions">${portalStickers.map(([key,label,file])=>`<button class="item" type="button" data-action="sendChatSticker" data-key="${key}"><img width="48" height="48" src="file:///android_asset/stickers/${file}" alt=""><b>${esc(label)}</b></button>`).join('')}</div>`);};
@@ -333,3 +336,125 @@ screens.expenses=async()=>{
 };
 actions.newExpense=()=>{const clients=S.expenseCatalog?.clients||[];openSheet('Новый расход',`<form id="expenseForm">${selectField('expenseCategory','Категория',Object.entries(expenseCategories).map(([k,v])=>`<option value="${k}">${esc(v)}</option>`).join(''))}${field('expenseAmount','Сумма, ₽','','number','required min="0.01" step="0.01"')}${selectField('expenseClient','Клиент — необязательно','<option value="">Вся компания</option>'+options(clients))}${field('expenseDate','Дата',new Date().toISOString().slice(0,10),'date','required')}${field('expenseNote','Комментарий','','text','maxlength="1000"')}<button class="btn block" type="submit">Записать расход</button></form>`);};
 forms.expenseForm=async form=>{await productionPost('expenses',{category_code:$('expenseCategory').value,amount:$('expenseAmount').value,client_id:$('expenseClient').value?Number($('expenseClient').value):null,incurred_at:$('expenseDate').value,note:$('expenseNote').value},form);closeSheet();toast('Расход записан');await go('expenses');};
+
+const organizerStatus={new:'Новая',in_progress:'В работе',done:'Выполнена',cancelled:'Отменена'};
+const organizerPriority={normal:'Обычная',important:'Важная',urgent:'Срочная'};
+const organizerRepeat={none:'Не повторять',daily:'Каждый день',weekly:'Каждую неделю',monthly:'Каждый месяц'};
+const organizerLink={client:'Клиент',invoice:'Счёт',document:'Документ'};
+function organizerMoment(value){if(!value)return '—';const d=new Date(value);return Number.isFinite(d.getTime())?d.toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—';}
+function organizerDay(value){const d=new Date(value);return Number.isFinite(d.getTime())?d.toLocaleDateString('sv-SE'):'0000-00-00';}
+function organizerActive(t){return !['done','cancelled'].includes(t.status);}
+function organizerTaskCard(t){
+  const now=new Date(),due=new Date(t.due_at),late=organizerActive(t)&&Number.isFinite(due.getTime())&&due<now;
+  const badge=late?'Просрочена':organizerStatus[t.status]||'Задача';
+  const link=t.linked_type?'<p class="meta">'+esc(organizerLink[t.linked_type]||'Связь')+' · '+esc(t.linked_id)+'</p>':'';
+  let buttons=btn('История','organizerHistory','data-id="'+esc(t.id)+'"','text');
+  if(t.can_change_status&&t.status==='new')buttons+=btn('В работу','organizerStatus','data-id="'+esc(t.id)+'" data-status="in_progress"','secondary');
+  if(t.can_change_status&&t.status==='in_progress')buttons+=btn('Выполнено','organizerStatus','data-id="'+esc(t.id)+'" data-status="done"');
+  if(t.can_edit&&organizerActive(t))buttons+=btn('Перенести','organizerReschedule','data-id="'+esc(t.id)+'"','secondary');
+  if(t.can_edit&&organizerActive(t))buttons+=btn('Отменить','organizerStatus','data-id="'+esc(t.id)+'" data-status="cancelled"','text');
+  return '<article class="item"><div class="row between"><div><span class="eyebrow">'+esc(organizerPriority[t.priority]||'Обычная')+'</span><h3>'+esc(t.title)+'</h3></div><span class="badge '+(late?'warning':'')+'">'+esc(badge)+'</span></div>'+
+    (t.description?'<p>'+esc(t.description)+'</p>':'')+
+    '<p><b>Срок:</b> '+esc(organizerMoment(t.due_at))+(t.remind_at?' · <b>Напомнить:</b> '+esc(organizerMoment(t.remind_at)):'')+'</p>'+
+    '<p class="meta">Исполнитель: '+esc(t.assignee_name)+' · '+esc(t.assignee_role_label||'Сотрудник')+'<br>Поставил: '+esc(t.created_by_name)+(t.repeat_rule&&t.repeat_rule!=='none'?' · '+esc(organizerRepeat[t.repeat_rule]):'')+'</p>'+link+
+    '<div class="item-actions">'+buttons+'</div></article>';
+}
+function organizerCalendar(rows,month){
+  const first=new Date(month.getFullYear(),month.getMonth(),1),last=new Date(month.getFullYear(),month.getMonth()+1,0);
+  const start=(first.getDay()+6)%7,cells=[],names=['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
+  for(let i=0;i<start;i++)cells.push('<div class="card" style="min-height:92px;opacity:.35"></div>');
+  for(let day=1;day<=last.getDate();day++){
+    const key=[month.getFullYear(),String(month.getMonth()+1).padStart(2,'0'),String(day).padStart(2,'0')].join('-');
+    const dayRows=rows.filter(t=>organizerDay(t.due_at)===key);
+    cells.push('<div class="card" style="min-height:92px;padding:10px"><b>'+day+'</b>'+dayRows.slice(0,4).map(t=>'<button type="button" class="btn text block" data-action="organizerHistory" data-id="'+esc(t.id)+'" style="text-align:left;padding:4px 0">'+esc(t.title)+'</button>').join('')+(dayRows.length>4?'<span class="meta">Ещё '+(dayRows.length-4)+'</span>':'')+'</div>');
+  }
+  return '<div class="row between"><button class="btn secondary" data-action="organizerMonth" data-shift="-1">← Предыдущий</button><h2>'+esc(month.toLocaleDateString('ru-RU',{month:'long',year:'numeric'}))+'</h2><button class="btn secondary" data-action="organizerMonth" data-shift="1">Следующий →</button></div>'+
+    '<div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;margin:14px 0">'+names.map(x=>'<div class="meta" style="text-align:center"><b>'+x+'</b></div>').join('')+cells.join('')+'</div>';
+}
+function organizerFiltered(rows,view){
+  const now=new Date(),today=organizerDay(now);
+  if(view==='today')return rows.filter(t=>organizerActive(t)&&organizerDay(t.due_at)===today);
+  if(view==='upcoming')return rows.filter(t=>organizerActive(t)&&new Date(t.due_at)>=now&&organizerDay(t.due_at)!==today);
+  if(view==='overdue')return rows.filter(t=>organizerActive(t)&&new Date(t.due_at)<now);
+  if(view==='incoming')return rows.filter(t=>t.assignee_user_id===S.me.id);
+  if(view==='assigned')return rows.filter(t=>t.created_by===S.me.id);
+  return rows;
+}
+async function refreshOrganizer(){
+  const scope=allowed('organizer.manage')?'company':'mine';
+  S.organizerRows=await productionGet('organizer?scope='+scope);
+  if(!$('organizerBody'))return;
+  const view=S.organizerView||'today';
+  if(view==='calendar'){
+    S.organizerMonth=S.organizerMonth||new Date(new Date().getFullYear(),new Date().getMonth(),1);
+    $('organizerBody').innerHTML=organizerCalendar(S.organizerRows,S.organizerMonth);return;
+  }
+  const rows=organizerFiltered(S.organizerRows,view);
+  $('organizerBody').innerHTML='<div class="list">'+(rows.map(organizerTaskCard).join('')||'<p class="empty">Задач в этом разделе нет</p>')+'</div>';
+}
+screens.organizer=async()=>{
+  if(!globalThis.__PORTAL_DESKTOP__)throw new Error('Органайзер доступен в версии PORTAL для компьютера');
+  if(!allowed('organizer.read'))throw new Error('Нет доступа к органайзеру');
+  S.organizerView=S.organizerView||'today';S.organizerUsers=await productionGet('organizer-users');
+  const tabs=[['today','Сегодня'],['upcoming','Предстоящие'],['overdue','Просроченные'],['incoming','Назначенные мне'],['assigned','Поставленные мной'],['calendar','Календарь'],['all','Все задачи']];
+  paint(heading('Органайзер','Рабочие задачи, календарь и напоминания',allowed('organizer.assign')?btn(icon('plus')+' Новая задача','organizerNew'):'')+
+    '<div class="mini-actions">'+tabs.map(([key,label])=>btn(label,'organizerView','data-view="'+key+'"',S.organizerView===key?'':'secondary')).join('')+'</div><div id="organizerBody"></div>');
+  await refreshOrganizer();
+};
+actions.organizerView=async button=>{S.organizerView=button.dataset.view;await screens.organizer();};
+actions.organizerMonth=async button=>{const m=S.organizerMonth||new Date();S.organizerMonth=new Date(m.getFullYear(),m.getMonth()+Number(button.dataset.shift),1);await refreshOrganizer();};
+actions.organizerNew=()=>{
+  if(!allowed('organizer.assign'))throw new Error('Нет права ставить задачи');
+  const users=S.organizerUsers||[],tomorrow=new Date(Date.now()+86400000);tomorrow.setHours(10,0,0,0);
+  const local=tomorrow.getFullYear()+'-'+String(tomorrow.getMonth()+1).padStart(2,'0')+'-'+String(tomorrow.getDate()).padStart(2,'0')+'T'+String(tomorrow.getHours()).padStart(2,'0')+':00';
+  openSheet('Новая задача','<form id="organizerForm">'+
+    selectField('organizerAssignee','Исполнитель',users.map(u=>'<option value="'+u.id+'">'+esc(u.display_name)+' · '+esc(u.role_label)+(u.self?' · Я':'')+'</option>').join(''))+
+    field('organizerTitle','Название задачи','','text','required maxlength="200" placeholder="Например: проверить оплату счёта"')+
+    '<label class="field"><span>Описание — необязательно</span><textarea id="organizerDescription" maxlength="4000" rows="4" placeholder="Что именно нужно сделать"></textarea></label>'+
+    field('organizerDue','Срок',local,'datetime-local','required')+
+    selectField('organizerReminder','Напомнить','<option value="none">Не напоминать заранее</option><option value="15m">За 15 минут</option><option value="1h">За 1 час</option><option value="2h">За 2 часа</option><option value="1d">За 1 день</option><option value="custom">Своё время</option>')+
+    field('organizerReminderCustom','Своя дата напоминания — если выбрано «Своё время»','','datetime-local')+
+    selectField('organizerPriority','Приоритет','<option value="normal">Обычная</option><option value="important">Важная</option><option value="urgent">Срочная</option>')+
+    selectField('organizerRepeat','Повтор','<option value="none">Не повторять</option><option value="daily">Каждый день</option><option value="weekly">Каждую неделю</option><option value="monthly">Каждый месяц</option>')+
+    selectField('organizerLinkType','Связать с','<option value="">Без связи</option><option value="client">Клиент</option><option value="invoice">Счёт</option><option value="document">Документ</option>')+
+    field('organizerLinkId','Номер / идентификатор связанной записи','','text','maxlength="200"')+
+    '<button class="btn block" type="submit">Поставить задачу</button><p class="meta">Постановщик и история изменений фиксируются автоматически.</p></form>');
+};
+forms.organizerForm=async form=>{
+  const due=$('organizerDue').value,choice=$('organizerReminder').value;let remind_at=null;
+  if(choice==='custom')remind_at=$('organizerReminderCustom').value||null;
+  else if(choice!=='none'){const mins={ '15m':15,'1h':60,'2h':120,'1d':1440 }[choice],d=new Date(due);remind_at=new Date(d.getTime()-mins*60000).toLocaleString('sv-SE').replace(' ','T').slice(0,16);}
+  const linked_type=$('organizerLinkType').value,linked_id=$('organizerLinkId').value.trim();
+  await productionPost('organizer',{mode:'create',assignee_user_id:Number($('organizerAssignee').value),title:$('organizerTitle').value.trim(),
+    description:$('organizerDescription').value.trim(),due_at:due,remind_at,priority:$('organizerPriority').value,repeat_rule:$('organizerRepeat').value,
+    linked_type,linked_id:linked_type?linked_id:''},form);
+  closeSheet();toast('Задача поставлена');await refreshOrganizer();
+};
+actions.organizerStatus=async button=>{await productionPost('organizer',{mode:'status',task_id:button.dataset.id,status:button.dataset.status});toast(button.dataset.status==='done'?'Задача выполнена':button.dataset.status==='in_progress'?'Задача взята в работу':'Задача отменена');await refreshOrganizer();};
+actions.organizerReschedule=button=>{
+  const t=(S.organizerRows||[]).find(x=>x.id===button.dataset.id);if(!t)throw new Error('Задача не найдена');
+  openSheet('Перенести задачу','<form id="organizerRescheduleForm" data-task="'+esc(t.id)+'">'+field('organizerNewDue','Новый срок',String(t.due_at||'').slice(0,16),'datetime-local','required')+field('organizerNewReminder','Напомнить в',String(t.remind_at||'').slice(0,16),'datetime-local')+'<button class="btn block" type="submit">Сохранить новый срок</button></form>');
+};
+forms.organizerRescheduleForm=async form=>{await productionPost('organizer',{mode:'reschedule',task_id:form.dataset.task,due_at:$('organizerNewDue').value,remind_at:$('organizerNewReminder').value||null},form);closeSheet();toast('Срок изменён');await refreshOrganizer();};
+actions.organizerHistory=async button=>{
+  const t=(S.organizerRows||[]).find(x=>x.id===button.dataset.id);if(!t)throw new Error('Задача не найдена');
+  const events=await productionGet('organizer-events?task_id='+encodeURIComponent(t.id));
+  const eventNames={created:'Создана задача',status:'Изменён статус',rescheduled:'Изменён срок',edited:'Изменена задача'};
+  openSheet(t.title,'<p><b>Исполнитель:</b> '+esc(t.assignee_name)+'</p><p><b>Срок:</b> '+esc(organizerMoment(t.due_at))+'</p><h3>История</h3><div class="list">'+events.slice().reverse().map(e=>'<div class="item"><b>'+esc(eventNames[e.event]||'Изменение')+'</b><p class="meta">'+esc(e.actor_name)+' · '+esc(organizerMoment(e.occurred_at))+'</p>'+(e.event==='rescheduled'&&e.detail?'<p>'+esc(e.detail)+'</p>':'')+'</div>').join('')+'</div>');
+};
+async function organizerReminderCheck(){
+  if(!globalThis.__PORTAL_DESKTOP__||!S.token||!allowed('organizer.read'))return;
+  try{
+    const rows=await productionGet('organizer?scope=incoming'),now=Date.now();
+    S.organizerReminderSeen=S.organizerReminderSeen||new Set();
+    for(const t of rows){
+      if(!organizerActive(t))continue;
+      const remind=t.remind_at?new Date(t.remind_at).getTime():null,due=new Date(t.due_at).getTime();
+      if((remind!==null&&remind<=now&&due>=now)||(remind===null&&due<=now)){
+        const key=t.id+':'+(t.remind_at||t.due_at);if(S.organizerReminderSeen.has(key))continue;
+        S.organizerReminderSeen.add(key);toast('Напоминание: '+t.title+(due<now?' · срок уже наступил':''),due<now);
+      }
+    }
+  }catch{}
+}
+function startOrganizerReminderWatch(){clearInterval(S.organizerReminderTimer);if(!globalThis.__PORTAL_DESKTOP__||!allowed('organizer.read'))return;organizerReminderCheck();S.organizerReminderTimer=setInterval(organizerReminderCheck,60000);}

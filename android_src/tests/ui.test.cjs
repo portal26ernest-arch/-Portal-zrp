@@ -487,7 +487,7 @@ test('browser UI regression',async t=>{
       const {page,errors}=await fixture(browser,'platform_owner');
       await page.locator('#loginCompany').click();await page.locator('#sheetContent [data-action=technicalLogin]').click();await login(page);
       await page.locator('[data-action=editPlatformCompany][data-id="2"]').click();
-      assert.equal(await page.locator('[data-platform-module]').count(),22);
+      assert.equal(await page.locator('[data-platform-module]').count(),23);
       await page.locator('#module-toggle-work').uncheck();
       await page.locator('#platformCompanyForm [type=submit]').click();
       await page.waitForFunction(()=>mock.calls.some(c=>c.method==='POST'&&c.url==='/api/platform/companies/2'));

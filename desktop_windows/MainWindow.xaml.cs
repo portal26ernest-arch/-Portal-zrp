@@ -14,7 +14,7 @@ namespace Portal.Desktop;
 
 public partial class MainWindow : Window
 {
-    private const int CurrentBuild = 44;
+    private const int CurrentBuild = 45;
     private const long MaxInstallerBytes = 250L * 1024 * 1024;
     private const string GithubRepository = "portal26ernest-arch/-Portal-zrp";
     private const string WebViewCompatibilityArguments = "--disable-gpu --disable-gpu-compositing";
@@ -232,7 +232,7 @@ public partial class MainWindow : Window
         var cssJson = JsonSerializer.Serialize(css);
         var cssScript =
             "(() => {" +
-            "if(!document.documentElement.classList.contains('web-client')) return false;" +
+            "if(!document.documentElement.classList.contains('web-client')) return false;globalThis.__PORTAL_DESKTOP__=true;document.documentElement.classList.add('desktop-client');" +
             "let style=document.getElementById('portal-desktop-43-style');" +
             "if(!style){style=document.createElement('style');style.id='portal-desktop-43-style';document.head.appendChild(style);}" +
             "style.textContent=" + cssJson + ";" +
@@ -252,7 +252,7 @@ public partial class MainWindow : Window
     const nav=document.getElementById('nav'); if(!nav) return;
     if(typeof isOwner==='function' && isOwner() && !S.company){nav.innerHTML=navButton('companies','clients','Компании')+'<div class="nav-spacer"></div>'+navButton('settings','settings','Настройки');return;}
     const byId=Object.fromEntries(PortalCore.modules.map(m=>[m.id,m]));
-    const groups=[['Работа',['work','jobs','batches','teamChat','notifications']],['Управление',['clients','users','permissions','tariffs']],['Учёт и финансы',['payroll','payrollPeriods','materials','invoices','expenses','documents','excelImport']],['Аналитика',['radar','analytics','reports','news']],['Система',['control','wms']]];
+    const groups=[['Работа',['organizer','work','jobs','batches','teamChat','notifications']],['Управление',['clients','users','permissions','tariffs']],['Учёт и финансы',['payroll','payrollPeriods','materials','invoices','expenses','documents','excelImport']],['Аналитика',['radar','analytics','reports','news']],['Система',['control','wms']]];
     let html=navButton('dashboard','home','Главная');
     for(const [title,ids] of groups){const allowed=ids.map(id=>byId[id]).filter(m=>m&&can(m.id));if(!allowed.length)continue;html+='<div class="nav-group"><div class="nav-group-title">'+esc(title)+'</div>'+allowed.map(m=>navButton(m.id,m.icon,m.title)).join('')+'</div>';}
     nav.innerHTML=html+'<div class="nav-spacer"></div>'+navButton('settings','settings','Настройки');
@@ -431,7 +431,7 @@ public partial class MainWindow : Window
     {
         using var request = new HttpRequestMessage(HttpMethod.Get,
             $"https://api.github.com/repos/{GithubRepository}/releases?per_page=50");
-        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/4.4.0");
+        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/4.5.0");
         request.Headers.Accept.ParseAdd("application/vnd.github+json");
         using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();

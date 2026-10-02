@@ -84,7 +84,8 @@ def migrate_access_invites(r):
 
 def migrate_products(r):
     """Version 11 permits edits to catalog metadata while preserving snapshots in facts."""
-    if r.sql('SELECT 1 FROM portal_production_migrations WHERE company_id=? AND version=11',(r.company_id,)).fetchone(): return
+    if r.sql('SELECT 1 FROM portal_production_migrations WHERE company_id=? AND version=11',(r.company_id,)).fetchone():
+        migrate_organizer(r);return
     if r.dialect=='sqlite':
         r.sql('DROP TRIGGER IF EXISTS production_no_update')
         r.sql("CREATE TRIGGER production_no_update BEFORE UPDATE ON portal_production WHEN OLD.kind NOT IN ('batches','tasks','permissions','settings','access_sessions','work_timers','products') BEGIN SELECT RAISE(ABORT,'production history is immutable'); END")
@@ -93,6 +94,19 @@ def migrate_products(r):
         if not row or "'products'" not in row[0]:
             raise RuntimeError('Apply PostgreSQL product catalog migration with the migration operator first')
     r.sql('INSERT INTO portal_production_migrations(company_id,version,applied_at) VALUES(?,11,?)',(r.company_id,utcnow()))
+    migrate_organizer(r)
+
+def migrate_organizer(r):
+    """Version 12 allows organizer task state edits while keeping organizer history immutable."""
+    if r.sql('SELECT 1 FROM portal_production_migrations WHERE company_id=? AND version=12',(r.company_id,)).fetchone(): return
+    if r.dialect=='sqlite':
+        r.sql('DROP TRIGGER IF EXISTS production_no_update')
+        r.sql("CREATE TRIGGER production_no_update BEFORE UPDATE ON portal_production WHEN OLD.kind NOT IN ('batches','tasks','permissions','settings','access_sessions','work_timers','products','organizer_tasks') BEGIN SELECT RAISE(ABORT,'production history is immutable'); END")
+    else:
+        row=r.sql("SELECT pg_get_functiondef('portal_production_immutable()'::regprocedure)").fetchone()
+        if not row or "'organizer_tasks'" not in row[0]:
+            raise RuntimeError('Apply PostgreSQL organizer migration with the migration operator first')
+    r.sql('INSERT INTO portal_production_migrations(company_id,version,applied_at) VALUES(?,12,?)',(r.company_id,utcnow()))
 
 def migrate_activity(r):
     """Version 4 augments the existing session table; no old session is falsified."""

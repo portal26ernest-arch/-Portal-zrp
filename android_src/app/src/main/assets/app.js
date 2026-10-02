@@ -6,7 +6,7 @@ const money = n => num(n)+' ₽';
 const date = value => value && Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleDateString('ru-RU') : '—';
 const browserClient=!!window.__PORTAL_WEB__; const storage = {get(key){try{return (browserClient?sessionStorage:localStorage).getItem(key);}catch{return null;}},set(key,value){try{(browserClient?sessionStorage:localStorage).setItem(key,value);}catch{}},remove(key){try{(browserClient?sessionStorage:localStorage).removeItem(key);}catch{}}};
 const S = {token:'',me:null,company:null,companies:[],page:'dashboard',history:[],epoch:0,view:0,writes:0,authBusy:false,loginCompany:1,ownerLogin:false,setupRequired:false,metadata:{},update:null,autoUpdateChecked:false,clients:[],operations:[]};
-const PLATFORM_MODULES=[['work','Выработка'],['payroll','Зарплата'],['payrollPeriods','Расчётные периоды'],['teamChat','Команда'],['clients','Клиенты'],['materials','Материалы'],['invoices','Счета и оплаты'],['users','Сотрудники'],['jobs','Задания'],['batches','Партии'],['permissions','Права сотрудников'],['tariffs','Тарифы'],['radar','Финансовый радар'],['expenses','Расходы'],['analytics','Аналитика'],['control','Контроль PORTAL'],['documents','Документы'],['reports','Отчёты'],['news','Новости'],['excelImport','Импорт Excel'],['wms','WMS / ТСД'],['notifications','Уведомления']];
+const PLATFORM_MODULES=[['work','Выработка'],['payroll','Зарплата'],['payrollPeriods','Расчётные периоды'],['teamChat','Команда'],['organizer','Органайзер'],['clients','Клиенты'],['materials','Материалы'],['invoices','Счета и оплаты'],['users','Сотрудники'],['jobs','Задания'],['batches','Партии'],['permissions','Права сотрудников'],['tariffs','Тарифы'],['radar','Финансовый радар'],['expenses','Расходы'],['analytics','Аналитика'],['control','Контроль PORTAL'],['documents','Документы'],['reports','Отчёты'],['news','Новости'],['excelImport','Импорт Excel'],['wms','WMS / ТСД'],['notifications','Уведомления']];
 const actions = Object.create(null), forms = Object.create(null), screens = Object.create(null);
 const paths = {
  portal:'M5 20V4h14v16M10 20V9h9',home:'m3 10 9-7 9 7M5 9v11h14V9M9 20v-7h6v7',
@@ -35,7 +35,7 @@ function can(page){return PortalCore.can(page,S.me,S.company);}
 function isOwner(){return S.me?.role==='platform_owner';}
 const employeeId=user=>user?.employee_id??null;
 function canLeave(){if(S.writes){toast('Дождитесь завершения записи');return false;}return true;}
-function clearCompanyData(){clearInterval(S.heartbeatTimer);S.heartbeatTimer=null;S.stage3=false;S.productionCatalog=null;S.permissionCatalog=[];if(S.me)delete S.me.permissions;S.clients=[];S.operations=[];S.userData=null;S.operationData=null;S.workSelection=null;S.history=[];if(typeof window.PortalNative?.setCacheCompany==='function')PortalNative.setCacheCompany('');S.epoch++;}
+function clearCompanyData(){clearInterval(S.heartbeatTimer);S.heartbeatTimer=null;clearInterval(S.organizerReminderTimer);S.organizerReminderTimer=null;S.stage3=false;S.productionCatalog=null;S.permissionCatalog=[];if(S.me)delete S.me.permissions;S.clients=[];S.operations=[];S.userData=null;S.operationData=null;S.workSelection=null;S.history=[];if(typeof window.PortalNative?.setCacheCompany==='function')PortalNative.setCacheCompany('');S.epoch++;}
 
 const pending=new Map();let requestSequence=0;
 window.PortalBridgeResult=(id,raw)=>{const item=pending.get(id);if(!item)return;clearTimeout(item.timer);pending.delete(id);try{item.resolve(JSON.parse(raw));}catch{item.reject(new Error('Сервер вернул некорректный ответ'));}};
