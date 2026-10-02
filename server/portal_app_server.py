@@ -19,9 +19,11 @@ from employee_identity import (account_directory, assigned_client_ids, canonical
     create_employee_card, create_invited_account, employee_exists, employee_id_for_user,
     employee_work_summary, insert_unlinked_user, legacy_employee_id, legacy_employee_id_for_user,
     insert_legacy_work_values, legacy_paid_period, personal_payroll_totals, personal_work_rows, public_user_record,
-    update_legacy_job_progress, write_user_account)
+    hash_access_pin, update_legacy_job_progress, write_user_account)
 import production_permissions as business_rights
 from production_migrations import migrate as migrate_production
+from client_names import persist_client_alias, persist_known_client_aliases
+from employee_names import persist_known_employee_aliases
 import production_activity as activity
 from portal_config import load_config
 from pathlib import Path
@@ -36,6 +38,8 @@ tenants.configure(CONFIG)
 HOST = CONFIG.host
 PORT = CONFIG.port
 SESSION_HOURS = 24 * 30
+GLOBAL_ROLE = "platform_owner"
+GLOBAL_ROLE_LABEL = "God"
 
 ROLE_LABELS = {
     "admin": "Управляющий",
@@ -69,6 +73,36 @@ def columns(conn, table):
     return {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
 
 
+def validate_postgresql_database_names(control_database, tenant_database):
+    if CONFIG.environment == 'test' and (
+            not control_database.startswith('portal_test_')
+            or not tenant_database.startswith('portal_test_')):
+        raise RuntimeError('Test runtime accepts only portal_test_ PostgreSQL databases')
+    if CONFIG.environment == 'production' and (
+            control_database == tenant_database
+            or control_database.startswith('portal_test_')
+            or tenant_database.startswith('portal_test_')):
+        raise RuntimeError('Production requires separate non-test control and tenant databases')
+
+
+def validate_postgresql_runtime_split(registry, conn):
+    """Production roles must be distinct and confined to their own data plane."""
+    control_role = registry.execute('SELECT current_user').fetchone()[0]
+    tenant_role = conn.execute('SELECT current_user').fetchone()[0]
+    if control_role == tenant_role:
+        raise RuntimeError('Production control and tenant roles must differ')
+    control_access = registry.execute("""SELECT
+        has_table_privilege(current_user,'public.companies','SELECT'),
+        has_table_privilege(current_user,'public.portal_company_keys','SELECT'),
+        has_table_privilege(current_user,'public.app_users','SELECT')""").fetchone()
+    tenant_access = conn.execute("""SELECT
+        has_table_privilege(current_user,'public.app_users','SELECT'),
+        has_table_privilege(current_user,'public.companies','SELECT'),
+        has_table_privilege(current_user,'public.portal_company_keys','SELECT')""").fetchone()
+    if control_access != (True, True, False) or tenant_access != (True, False, False):
+        raise RuntimeError('Production PostgreSQL roles cross the control/tenant boundary')
+
+
 def ensure_schema():
     if CONFIG.backend == 'postgresql':
         from portal_postgres import validate_runtime_role
@@ -77,11 +111,11 @@ def ensure_schema():
         with tenants.control(DB_PATH) as registry, tenants.company_scope(1), db() as conn:
             validate_runtime_role(registry)
             validate_runtime_role(conn)
-            if registry.execute('SELECT current_database()').fetchone()[0] != conn.execute('SELECT current_database()').fetchone()[0]:
-                raise RuntimeError('Control and tenant roles must use one isolated test database')
-            database_name = conn.execute('SELECT current_database()').fetchone()[0]
-            if CONFIG.environment == 'test' and not database_name.startswith('portal_test_'):
-                raise RuntimeError('Test runtime accepts only portal_test_ PostgreSQL databases')
+            control_database = registry.execute('SELECT current_database()').fetchone()[0]
+            tenant_database = conn.execute('SELECT current_database()').fetchone()[0]
+            validate_postgresql_database_names(control_database, tenant_database)
+            if CONFIG.environment == 'production':
+                validate_postgresql_runtime_split(registry, conn)
             required = {'companies','app_users','app_sessions','portal_clients','portal_client_operations',
                         'work_log','employees','portal_production','portal_production_migrations',
                         'work_material_consumption','portal_runtime_schema','portal_rls_context_schema',
@@ -155,10 +189,23 @@ def ensure_schema():
     tenants.initialize_control(DB_PATH)
 
 
+def runtime_ready():
+    """Check both data planes without returning data or connection details."""
+    with tenants.control(DB_PATH) as registry:
+        if registry.execute('SELECT 1 FROM companies WHERE id=1').fetchone() is None:
+            return False
+    with tenants.company_scope(1), db() as conn:
+        if CONFIG.backend == 'postgresql':
+            return bool(
+                conn.execute('SELECT portal_current_company()').fetchone()[0] == 1
+                and conn.execute('SELECT 1 FROM portal_runtime_schema WHERE version=1').fetchone()
+                and conn.execute('SELECT 1 FROM portal_rls_context_schema WHERE version=1').fetchone()
+            )
+        return table_exists(conn, 'app_users') and table_exists(conn, 'work_log')
+
+
 def hash_pin(pin, salt=None):
-    salt_b = base64.b64decode(salt) if salt else secrets.token_bytes(16)
-    digest = hashlib.pbkdf2_hmac("sha256", pin.encode("utf-8"), salt_b, 180000)
-    return base64.b64encode(salt_b).decode(), base64.b64encode(digest).decode()
+    return hash_access_pin(pin,salt)
 
 
 def verify_pin(pin, salt, expected):
@@ -185,7 +232,7 @@ def user_from_token(token):
         with tenants.control(DB_PATH) as conn:
             row = conn.execute("SELECT u.id,u.username,u.display_name,u.company_id FROM platform_sessions s JOIN platform_owners u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>=? AND u.active=1",
                                (hashlib.sha256(token.encode()).hexdigest(), now_text())).fetchone()
-        return dict(row, role="platform_owner") if row else None
+        return dict(row, role=GLOBAL_ROLE) if row else None
     try:
         company_id = int(token.split(".", 1)[0]) if "." in token else 1
         company = tenants.get_company(DB_PATH, company_id)
@@ -484,7 +531,11 @@ def validate_employee(conn, value):
 
 
 def create_internal_employee(conn, display_name, username):
-    return create_employee_card(conn,tenants.COMPANY_ID.get(),display_name,username)
+    company_id=tenants.COMPANY_ID.get()
+    employee_id=create_employee_card(conn,company_id,display_name,username)
+    repo=Repository(conn,company_id)
+    if repo.ready():persist_known_employee_aliases(repo,employee_id,display_name)
+    return employee_id
 
 
 def save_user(body, user_id=None):
@@ -594,8 +645,9 @@ def save_client(body, client_id=None, actor_id=None):
         active = active_value(body.get("active", old["active"] if old else 1))
         if conn.execute("SELECT 1 FROM portal_clients WHERE name=? COLLATE NOCASE AND id!=?", (name, client_id or 0)).fetchone():
             raise ValueError("Клиент с таким названием уже существует (включая архив)")
-        if old and name != old["name"]:
-            repo=Repository(conn,tenants.COMPANY_ID.get())
+        repo=Repository(conn,tenants.COMPANY_ID.get())
+        renamed=bool(old and name != old["name"])
+        if renamed:
             if repo.ready():
                 repo.insert('client_name_history',dict(client_id=int(client_id),old_name=old['name'],
                     new_name=name,event='renamed',actor_id=actor_id,occurred_at=now_text()))
@@ -604,7 +656,11 @@ def save_client(body, client_id=None, actor_id=None):
                 # Keep the legacy name-based compatibility path only before
                 # the stable-ID production ledger is enabled for this tenant.
                 rename_references(conn, old["name"], name)
-        return write_catalogue(conn, "portal_clients", {"name": name, "active": active}, client_id)
+        saved_id=write_catalogue(conn, "portal_clients", {"name": name, "active": active}, client_id)
+        if repo.ready():
+            if renamed: persist_client_alias(repo,int(saved_id),old["name"],'rename',name)
+            persist_known_client_aliases(repo,int(saved_id),name)
+        return saved_id
 
 
 def save_operation(body, client_id, operation_id=None):
@@ -708,10 +764,10 @@ def company_module_for_route(path):
             'payroll':'payroll','payroll-mine':'payroll','payroll-periods':'payrollPeriods',
             'payroll-settlements':'payrollPeriods',
             'chat':'teamChat','chat-attachments':'teamChat','chat-pins':'teamChat',
-            'clients':'clients','catalogue':'clients','operations':'clients','products':'clients','client-requisites':'clients','client-name-history':'clients',
+            'clients':'clients','catalogue':'clients','operations':'clients','products':'clients','client-requisites':'clients','client-name-history':'clients','client-aliases':'clients',
             'materials':'materials','usage':'materials',
             'invoices':'invoices','payments':'invoices','receivables':'invoices',
-            'users':'users','invitations':'users','company-access':'users','presence':'users','activity':'users','audit':'users',
+            'users':'users','invitations':'users','company-access':'users','presence':'users','activity':'users','audit':'users','employee-name-history':'users','employee-aliases':'users',
             'tasks':'jobs','batches':'batches','shipments':'batches','returns':'batches',
             'permissions':'permissions','tariffs':'tariffs','finance':'radar','expenses':'expenses',
             'analytics':'analytics','settings':'control','documents':'documents',
@@ -825,12 +881,13 @@ class Handler(BaseHTTPRequestHandler):
             with tenants.control(DB_PATH) as conn:
                 u = conn.execute("SELECT * FROM platform_owners WHERE username=? AND active=1", (str(body.get("username", "")),)).fetchone()
                 valid = bool(u and verify_pin(str(body.get("pin", "")), u["pin_salt"], u["pin_hash"]))
-                tenants.audit(conn, u["id"] if u else None, 1, "owner_login", "success" if valid else "denied")
+                if u:
+                    tenants.audit(conn, u["id"], 1, "god_login", "success" if valid else "denied")
                 if valid:
                     token = "p." + secrets.token_urlsafe(40)
                     conn.execute("INSERT INTO platform_sessions(token_hash,user_id,expires_at) VALUES(?,?,?)",
                                  (hashlib.sha256(token.encode()).hexdigest(), u["id"], (datetime.now()+timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S")))
-                    result = {"ok":True,"token":token,"user":{"id":u["id"],"username":u["username"],"role":"platform_owner","company_id":1}}
+                    result = {"ok":True,"token":token,"user":{"id":u["id"],"username":u["username"],"role":GLOBAL_ROLE,"company_id":1}}
             return self.send_json(result) if valid else self.error_json("Неверный логин или пароль", 401)
         if path == "/api/login" and method == "POST":
             body = parse_body(self)
@@ -843,17 +900,40 @@ class Handler(BaseHTTPRequestHandler):
                 return self.error_json("Неверный логин, PIN или компания", 401)
             if not tenants.available(company):
                 return self.error_json("Компания недоступна", 403)
+            username=str(body.get("username", "")).strip()
+            pin=str(body.get("pin", ""))
             with tenants.company_scope(company_id), db() as conn:
-                u = conn.execute("SELECT * FROM app_users WHERE lower(username)=lower(?) AND active=1", (str(body.get("username", "")).strip(),)).fetchone()
-                if not u or not verify_pin(str(body.get("pin", "")), u["pin_salt"], u["pin_hash"]):
+                u = conn.execute("SELECT * FROM app_users WHERE lower(username)=lower(?) AND active=1", (username,)).fetchone()
+                if u:
+                    if not verify_pin(pin, u["pin_salt"], u["pin_hash"]):
+                        repo=Repository(conn,company_id)
+                        if repo.ready():activity.login(repo,u['username'],u['id'],False,activity.client_type(self.headers))
+                        return self.error_json("Неверный логин, PIN или компания", 401)
+                    token = create_session(conn, u["id"])
                     repo=Repository(conn,company_id)
-                    if repo.ready():activity.login(repo,body.get('username'),u['id'] if u else None,False,activity.client_type(self.headers))
-                    return self.error_json("Неверный логин, PIN или компания", 401)
-                token = create_session(conn, u["id"])
-                repo=Repository(conn,company_id)
-                if repo.ready():activity.login(repo,u['username'],u['id'],True,activity.client_type(self.headers),token)
-                data = public_user_record({k:v for k,v in with_employee_id(u,conn,company_id).items() if k not in {"pin_hash","pin_salt"}})
-            return self.send_json({"ok":True,"token":token,"user":data})
+                    if repo.ready():activity.login(repo,u['username'],u['id'],True,activity.client_type(self.headers),token)
+                    data = public_user_record({k:v for k,v in with_employee_id(u,conn,company_id).items() if k not in {"pin_hash","pin_salt"}})
+                    return self.send_json({"ok":True,"token":token,"user":data})
+            with tenants.control(DB_PATH) as control:
+                god = control.execute("SELECT * FROM platform_owners WHERE lower(username)=lower(?) AND active=1", (username,)).fetchone()
+                if god:
+                    valid=verify_pin(pin,god["pin_salt"],god["pin_hash"])
+                    tenants.audit(control,god["id"],1,"god_login","success" if valid else "denied")
+                    if not valid:
+                        return self.error_json("Неверный логин, PIN или компания",401)
+                    token="p."+secrets.token_urlsafe(40)
+                    control.execute("INSERT INTO platform_sessions(token_hash,user_id,expires_at) VALUES(?,?,?)",
+                                    (hashlib.sha256(token.encode()).hexdigest(),god["id"],(datetime.now()+timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S")))
+                    return self.send_json({"ok":True,"token":token,"user":{"id":god["id"],"username":god["username"],"role":GLOBAL_ROLE,"company_id":1}})
+            return self.error_json("Неверный логин, PIN или компания",401)
+        if path == '/api/ready':
+            if method != 'GET':
+                return self.error_json('Метод не поддерживается', 405)
+            try:
+                ready = runtime_ready()
+            except Exception:
+                ready = False
+            return self.send_json({'ok': True, 'ready': True}) if ready else self.error_json('Сервис не готов', 503)
         if path in {"/api/ping", "/api/setup"}:
             with tenants.company_scope(1):
                 self.tenant_request = True
@@ -861,20 +941,20 @@ class Handler(BaseHTTPRequestHandler):
         identity = user_from_token(self.token())
         if not identity:
             return self.error_json("Требуется вход", 401)
-        is_owner = identity["role"] == "platform_owner"
+        is_owner = identity["role"] == GLOBAL_ROLE
         company_id = identity["company_id"]
         if path=='/api/logout' and method=='POST':
             if is_owner:
                 with tenants.control(DB_PATH) as conn:
                     conn.execute('DELETE FROM platform_sessions WHERE token_hash=?',(hashlib.sha256(self.token().encode()).hexdigest(),))
-                    tenants.audit(conn,identity['id'],1,'owner_logout','success')
+                    tenants.audit(conn,identity['id'],1,'god_logout','success')
             else:
                 with tenants.company_scope(company_id),db() as conn:
                     activity.logout(Repository(conn,company_id),self.token(),identity)
             return self.send_json({'ok':True})
         if is_owner and not readonly_preview:
             with tenants.control(DB_PATH) as conn:
-                tenants.audit(conn, identity["id"], company_id, "technical_access", "started", method=method, route=audit_route(path))
+                tenants.audit(conn, identity["id"], company_id, "god_access", "started", method=method, route=audit_route(path))
         try:
             selected = self.headers.get("X-Portal-Company")
             if selected is not None:
@@ -889,7 +969,7 @@ class Handler(BaseHTTPRequestHandler):
                     company_id = selected
             if not is_owner:
                 if path.startswith("/api/platform/"):
-                    raise PermissionError("Только Platform Owner")
+                    raise PermissionError("Раздел недоступен")
                 query = parse_qs(urlparse(self.path).query)
                 if "company_id" in query and query["company_id"] != [str(company_id)]:
                     raise PermissionError("Доступ к другой компании запрещён")
@@ -899,14 +979,40 @@ class Handler(BaseHTTPRequestHandler):
                 return self.platform_route(method, path, identity)
             if path == "/api/me" and method == "GET":
                 safe = public_user_record({k:v for k,v in identity.items() if k not in {"pin_salt","pin_hash"}})
-                safe["role_label"] = ROLE_LABELS.get(identity["role"], "Platform Owner")
+                safe["role_label"] = GLOBAL_ROLE_LABEL if is_owner else ROLE_LABELS.get(identity["role"], identity["role"])
                 if not is_owner:
                     with tenants.company_scope(company_id), db() as conn:
                         repo=Repository(conn,company_id)
                         if repo.ready(): safe['permissions']=sorted(business_rights.effective(repo,identity))
                 return self.send_json({"ok":True,"user":safe})
+            if path == "/api/me/pin" and method == "POST":
+                if is_owner:
+                    raise PermissionError("Для этого аккаунта используется отдельный пароль")
+                body=parse_body(self)
+                if set(body)!={'current_pin','new_pin'}:
+                    raise ValueError("Передайте текущий и новый PIN")
+                current_pin=body.get('current_pin')
+                new_pin=body.get('new_pin')
+                if not isinstance(current_pin,str) or not isinstance(new_pin,str):
+                    raise ValueError("PIN должен быть строкой")
+                if not 4<=len(new_pin)<=128:
+                    raise ValueError("Новый PIN должен содержать от 4 до 128 символов")
+                if current_pin==new_pin:
+                    raise ValueError("Новый PIN должен отличаться от текущего")
+                with tenants.company_scope(company_id), db() as conn:
+                    account=conn.execute("SELECT id,pin_salt,pin_hash FROM app_users WHERE id=? AND active=1",(identity['id'],)).fetchone()
+                    if not account or not verify_pin(current_pin,account['pin_salt'],account['pin_hash']):
+                        raise ValueError("Текущий PIN указан неверно")
+                    salt,digest=hash_pin(new_pin)
+                    conn.execute("UPDATE app_users SET pin_salt=?,pin_hash=?,updated_at=? WHERE id=?",
+                                 (salt,digest,now_text(),identity['id']))
+                    conn.execute("DELETE FROM app_sessions WHERE user_id=? AND token<>?",(identity['id'],self.token()))
+                    repo=Repository(conn,company_id)
+                    if repo.ready():repo.audit(identity,'user.pin.changed',identity['id'])
+                    conn.commit()
+                return self.send_json({"ok":True})
             if is_owner and selected is None:
-                raise PermissionError("Для технического доступа укажите X-Portal-Company")
+                raise PermissionError("Выберите компанию для глобального доступа")
             module=company_module_for_route(path)
             if module and tenants.decode_module_toggles(tenants.get_company(DB_PATH,company_id).get('module_toggles')).get(module) is False:
                 raise PermissionError('Модуль отключён для компании')
@@ -934,7 +1040,7 @@ class Handler(BaseHTTPRequestHandler):
                 status = getattr(self, "response_status", 500)
                 with tenants.control(DB_PATH) as conn:
                     numeric_ids = [int(p) for p in path.split("/") if p.isdecimal() and len(p) < 19]
-                    tenants.audit(conn, identity["id"], company_id, "technical_access", "success" if status < 400 else "failed",
+                    tenants.audit(conn, identity["id"], company_id, "god_access", "success" if status < 400 else "failed",
                                   method=method, route=audit_route(path), status=status, entity_id=numeric_ids)
 
     def production_route(self,method,path):
@@ -996,9 +1102,10 @@ class Handler(BaseHTTPRequestHandler):
                 users={str(u['id']):u.get('display_name','') for u in repo.catalog('users')}
                 rows=conn.execute("SELECT id,payload,created_at FROM portal_production WHERE company_id=? AND kind='audit' ORDER BY created_at DESC,id DESC",(repo.company_id,)).fetchall()
                 items=[]
-                labels={'access_invite.created':'Создано приглашение','access_invite.accepted':'Принят запрос доступа','access_invite.approved':'Подтверждён доступ','access_invite.revoked':'Приглашение отозвано','access_invite.rejected':'Запрос отклонён','access_invite.expired':'Приглашение истекло','client.requisites.updated':'Обновлены реквизиты клиента','user.permissions.updated':'Изменены права сотрудника','company.settings.updated':'Изменены настройки компании'}
+                labels={'access_invite.created':'Создано приглашение','access_invite.accepted':'Принят запрос доступа','access_invite.approved':'Подтверждён доступ','access_invite.revoked':'Приглашение отозвано','access_invite.rejected':'Запрос отклонён','access_invite.expired':'Приглашение истекло','client.requisites.updated':'Обновлены реквизиты клиента','user.permissions.updated':'Изменены права сотрудника','user.pin.changed':'Сотрудник сменил PIN','company.settings.updated':'Изменены настройки компании'}
                 for row in rows:
                     payload=json.loads(row['payload']);at=row['created_at'][:10];actor_id=payload.get('actor_id')
+                    if not self.request_user.get('technical_owner') and payload.get('actor_kind')=='platform_owner':continue
                     if actor and str(actor_id)!=actor:continue
                     if event and payload.get('event')!=event:continue
                     if entity and str(payload.get('entity_id'))!=entity:continue
@@ -1084,8 +1191,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(dict(ok=True,data=result))
 
     def platform_route(self, method, path, identity):
-        if identity["role"] != "platform_owner":
-            raise PermissionError("Только Platform Owner")
+        if identity["role"] != GLOBAL_ROLE:
+            raise PermissionError("Раздел недоступен")
         if path == "/api/platform/companies":
             if method == "GET":
                 with tenants.control(DB_PATH) as conn:
@@ -1119,6 +1226,8 @@ class Handler(BaseHTTPRequestHandler):
             with tenants.control(DB_PATH) as conn:
                 total=conn.execute('SELECT COUNT(*) FROM platform_audit'+where,tuple(args)).fetchone()[0]
                 rows = [dict(r) for r in conn.execute("SELECT * FROM platform_audit"+where+" ORDER BY id DESC LIMIT ? OFFSET ?",tuple(args+[limit,(page-1)*limit]))]
+            aliases={"owner_login":"god_login","owner_logout":"god_logout","technical_access":"god_access"}
+            for row in rows: row["event"]=aliases.get(row["event"],row["event"])
             return self.send_json({"ok":True,"rows":rows,"page":page,"limit":limit,"total":total})
         return self.error_json("Маршрут не найден", 404)
 
@@ -1324,7 +1433,7 @@ def main():
         print("Platform Owner создан. Существующие администраторы не повышались.")
         return
     print(BUILD_ID)
-    print("База:", DB_PATH if CONFIG.backend == 'sqlite' else 'PostgreSQL isolated test')
+    print("База:", DB_PATH if CONFIG.backend == 'sqlite' else f'PostgreSQL {CONFIG.environment}')
     print(f"Сервер: http://{HOST}:{PORT}")
     ThreadingHTTPServer((HOST,PORT),Handler).serve_forever()
 

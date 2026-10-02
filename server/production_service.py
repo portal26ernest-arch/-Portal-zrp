@@ -238,6 +238,8 @@ class Production:
         self.need('tasks.manage');batch=self.entity('batches',b['batch_id']);op=self.operation(batch['client_id'],b['operation_id'])
         if batch['status']=='shipped':raise ValueError('Партия уже отгружена')
         target=qty(b['quantity'])
+        planned_other=cents(b.get('other_cost',0))
+        if planned_other:self.need('finance.read')
         if target!=batch['quantity']: raise ValueError('План обязательной операции должен покрывать всю партию')
         if any(t['batch_id']==batch['id'] and t['operation_id']==op['id'] for t in self.r.list('tasks')): raise ValueError('Эта операция уже запланирована для партии')
         assignees=b.get('assignees',[])
@@ -250,7 +252,7 @@ class Production:
         tariff=self.tariff(op['id']);self.valid_rates(tariff)
         norms=self.norms(op['id'],target)
         task=self.r.insert('tasks',dict(batch_id=batch['id'],client_id=batch['client_id'],product=batch['product'],operation_id=op['id'],operation_name=op['name'],quantity=target,assignees=assignees,due_at=stamp(b.get('due_at') or batch['due_at'],True),status='open'))
-        self.r.insert('plans',dict(batch_id=batch['id'],task_id=task['id'],client_id=batch['client_id'],quantity=target,tariff_id=tariff['id'],tariff_sources=tariff['sources'],salary=target*tariff['employee_rate'],revenue=target*tariff['client_rate'],materials=sum(n['cost'] for n in norms),other=cents(b.get('other_cost',0)),norms=norms))
+        self.r.insert('plans',dict(batch_id=batch['id'],task_id=task['id'],client_id=batch['client_id'],quantity=target,tariff_id=tariff['id'],tariff_sources=tariff['sources'],salary=target*tariff['employee_rate'],revenue=target*tariff['client_rate'],materials=sum(n['cost'] for n in norms),other=planned_other,norms=norms))
         return task
 
     def valid_rates(self,t):
@@ -466,6 +468,8 @@ class Production:
     def settlement_entry(self,row):
         result=dict(row,amount=row['amount_minor'],money_unit='kopeck',currency='RUB')
         result.pop('amount_minor',None)
+        if result.get('actor_kind')=='platform_owner' and not self.u.get('technical_owner'):
+            result.pop('actor_id',None);result['actor_kind']='system'
         return result
 
     def settlement_summary(self,period,entries,employee=None):
@@ -1070,7 +1074,9 @@ class Production:
             rows=[w for w in works if w['client_id']==c['id']];revenue=sum(w['revenue'] for w in rows)
             salary=sum(w['salary'] for w in rows);material=sum(u['cost'] for u in usage if u['client_id']==c['id']);other=sum(e['amount'] for e in expenses if e.get('client_id')==c['id'])
             profit=revenue-salary-material-other;batches=[b for b in self.scoped('batches') if b['client_id']==c['id']]
-            clients.append(dict(client_id=c['id'],client_name=c['name'],revenue=revenue,salary=salary,materials=material,other=other,profit=profit,margin=profit/revenue if revenue else None,average_batch_profit=sum(self.economy(b['id'])['fact']['profit'] for b in batches)/len(batches) if batches else None))
+            clients.append(dict(client_id=c['id'],client_name=c['name'],revenue=revenue,salary=salary,materials=material,other=other,
+                profit=profit,margin=profit/revenue if revenue else None,margin_bps=margin_basis_points(profit,revenue),
+                average_batch_profit=sum(self.economy(b['id'])['fact']['profit'] for b in batches)/len(batches) if batches else None))
         for w in works:
             month=company_date(w['completed_at'],offset).strftime('%Y-%m');m=months.setdefault(month,dict(revenue=0,salary=0,materials=0,other=0,overhead=0));m['revenue']+=w['revenue'];m['salary']+=w['salary']
         for row in usage:
@@ -1081,9 +1087,15 @@ class Production:
             else:m['other']+=row['amount']
         for m in months.values():
             m['profit']=m['revenue']-m['salary']-m['materials']-m['other']-m['overhead']
+            m['margin_bps']=margin_basis_points(m['profit'],m['revenue'])
         overhead=sum(e['amount'] for e in expenses if e.get('client_id') is None)
+        total_revenue=sum(c['revenue'] for c in clients)
+        totals={key:sum(c[key] for c in clients) for key in ('revenue','salary','materials','other')}
         client_profit=sum(c['profit'] for c in clients)
-        return dict(clients=clients,months=months,company_overhead=overhead,client_profit=client_profit,net_profit=client_profit-overhead,currency='RUB',money_unit='kopeck')
+        net_profit=client_profit-overhead
+        return dict(clients=clients,months=months,totals=totals,company_overhead=overhead,client_profit=client_profit,
+                    client_margin_bps=margin_basis_points(client_profit,total_revenue),net_profit=net_profit,
+                    net_margin_bps=margin_basis_points(net_profit,total_revenue),currency='RUB',money_unit='kopeck')
 
     def invoices(self):
         self.need('invoices.read');rows=self.scoped('invoices');payments=self.scoped('payments')
@@ -1143,7 +1155,11 @@ class Production:
         params=params or {}
         all_team='analytics.read' in self.permissions
         if not all_team:self.need('work.write')
-        rows=[w for w in self.scoped('works') if all_team or w['user_id']==self.u['id']];groups={}
+        rows=[w for w in self.scoped('works') if all_team or w['user_id']==self.u['id']];groups={};batch_groups={}
+        users={u['id']:u.get('display_name') or u.get('username') or str(u['id']) for u in self.r.catalog('users')}
+        clients={c['id']:c['name'] for c in self.r.catalog('clients')}
+        operations={o['id']:o['name'] for o in self.r.catalog('operations')}
+        batches={b['id']:b for b in self.scoped('batches')}
         start_text=params.get('from',[''])[0];end_text=params.get('to',[''])[0]
         if bool(start_text)!=bool(end_text):raise ValueError('Укажите обе даты периода')
         comparison=None
@@ -1172,16 +1188,41 @@ class Production:
                 units_per_hour_delta=(current_measure['units_per_hour']-previous_measure['units_per_hour'])
                     if current_measure['units_per_hour'] is not None and previous_measure['units_per_hour'] is not None else None)
         else:all_rows=rows
-        for w in rows:
-            key=(w['user_id'],w['client_id'],w['product'] or (self.r.get('batches',self.batch_for_work(w))['product'] if self.batch_for_work(w) else ''),w['operation_id'])
-            g=groups.setdefault(key,dict(user_id=key[0],client_id=key[1],product=key[2],operation_id=key[3],quantity=0,samples=0,timed_quantity=0,seconds=0,rates=[]))
-            g['quantity']+=w['quantity'];g['samples']+=1
-            if w['duration_seconds'] and w['duration_seconds']>0:
-                g['timed_quantity']+=w['quantity'];g['seconds']+=w['duration_seconds'];g['rates'].append(w['quantity']/w['duration_seconds']*3600)
-        for g in groups.values():
-            rates=g.pop('rates');g['units_per_hour']=g['timed_quantity']/g['seconds']*3600 if g['seconds'] else None
+        def add_sample(group,work):
+            group['quantity']+=work['quantity'];group['samples']+=1
+            if work.get('duration_seconds') and work['duration_seconds']>0:
+                group['timed_quantity']+=work['quantity'];group['seconds']+=work['duration_seconds']
+                group['rates'].append(work['quantity']/work['duration_seconds']*3600)
+        def finish_group(group):
+            rates=group.pop('rates');group['units_per_hour']=group['timed_quantity']/group['seconds']*3600 if group['seconds'] else None
             mean=sum(rates)/len(rates) if rates else 0
-            g['variability']=((sum((v-mean)**2 for v in rates)/len(rates))**.5/mean) if len(rates)>=2 and mean else None
+            group['variability']=((sum((v-mean)**2 for v in rates)/len(rates))**.5/mean) if len(rates)>=2 and mean else None
+        for w in rows:
+            batch_id=w.get('batch_id') or self.batch_for_work(w)
+            batch=batches.get(batch_id) if batch_id else None
+            product=w.get('product') or (batch or {}).get('product','')
+            key=(w['user_id'],w['client_id'],product,w['operation_id'])
+            g=groups.setdefault(key,dict(user_id=key[0],user_name=users.get(key[0],str(key[0])),
+                client_id=key[1],client_name=clients.get(key[1],str(key[1])),product=key[2],operation_id=key[3],
+                operation_name=operations.get(key[3],str(key[3])),quantity=0,samples=0,timed_quantity=0,seconds=0,rates=[]))
+            add_sample(g,w)
+            if batch_id:
+                bkey=(batch_id,w['operation_id'])
+                bg=batch_groups.setdefault(bkey,dict(batch_id=batch_id,batch_number=(batch or {}).get('number',str(batch_id)),
+                    client_id=w['client_id'],client_name=clients.get(w['client_id'],str(w['client_id'])),
+                    product=product,operation_id=w['operation_id'],operation_name=operations.get(w['operation_id'],str(w['operation_id'])),
+                    quantity=0,samples=0,timed_quantity=0,seconds=0,rates=[]))
+                add_sample(bg,w)
+        for group in groups.values():finish_group(group)
+        for group in batch_groups.values():finish_group(group)
+        quality_samples=[]
+        for work in rows:
+            q=work.get('quality') if isinstance(work.get('quality'),dict) else {}
+            defects=q.get('defects')
+            if isinstance(defects,(int,float)) and not isinstance(defects,bool) and defects>=0:
+                quality_samples.append((work,defects))
+        quality=(dict(available=True,recorded_units=sum(w['quantity'] for w,_ in quality_samples),defects=sum(v for _,v in quality_samples))
+                 if quality_samples else dict(available=False,recorded_units=0,defects=None))
         forecasts=[]
         for t in self.scoped('tasks'):
             if not all_team and self.u['id'] not in t['assignees']:continue
@@ -1190,7 +1231,7 @@ class Production:
             pace=done/elapsed if elapsed>0 else 0
             eta=(datetime.fromisoformat(self.clock())+timedelta(seconds=max(0,t['quantity']-done)/pace)).isoformat() if pace else None
             forecasts.append(dict(task_id=t['id'],done=done,remaining=max(0,t['quantity']-done),units_per_hour=pace*3600 if pace else None,estimated_completion=eta,due_at=t['due_at']))
-        result=dict(groups=list(groups.values()),forecasts=forecasts,ranking=False)
+        result=dict(groups=list(groups.values()),batch_groups=list(batch_groups.values()),forecasts=forecasts,quality=quality,ranking=False)
         if comparison is not None:result['comparison']=comparison
         return result
 
@@ -1297,11 +1338,14 @@ class Production:
         if old:
             if old['fingerprint']!=fingerprint:raise ValueError('Идентификатор запроса уже использован')
             result=dict(old['result'])
-            if action in ('work','tariffs'):
+            if action=='work':
                 if not {'finance.read','rates.client','invoices.create'} & self.permissions:
                     result.pop('client_rate',None);result.pop('revenue',None)
                 if not {'payroll.own','payroll.all','rates.employee'} & self.permissions:
                     result.pop('employee_rate',None);result.pop('salary',None)
+            elif action=='tariffs':
+                if 'rates.client' not in self.permissions:result.pop('client_rate',None)
+                if 'rates.employee' not in self.permissions:result.pop('employee_rate',None)
             return result
         result=methods[action](body)
         if action=='payroll-settlements':
@@ -1313,11 +1357,14 @@ class Production:
         else:self.r.audit(self.u,'client.requisites.updated' if action=='client-requisites' else action,
                           result.get('client_id',result.get('id','control')) if action=='client-requisites' else result.get('id','control'))
         result=dict(result)
-        if action in ('work','tariffs'):
+        if action=='work':
             if not {'finance.read','rates.client','invoices.create'} & self.permissions:
                 result.pop('client_rate',None);result.pop('revenue',None)
             if not {'payroll.own','payroll.all','rates.employee'} & self.permissions:
                 result.pop('employee_rate',None);result.pop('salary',None)
+        elif action=='tariffs':
+            if 'rates.client' not in self.permissions:result.pop('client_rate',None)
+            if 'rates.employee' not in self.permissions:result.pop('employee_rate',None)
         self.r.insert('requests',dict(fingerprint=fingerprint,result=result),key)
         return result
 
@@ -1338,6 +1385,28 @@ class Production:
             else:
                 visible_ids={client['id'] for client in self.r.catalog('clients') if self.visible(client['id'])}
             return [row for row in self.r.list('client_name_history') if row['client_id'] in visible_ids]
+        if action=='client-aliases':
+            self.need('clients.read')
+            raw_client_id=params.get('client_id',[None])[0]
+            if raw_client_id not in (None,''):
+                try:client_id=int(raw_client_id)
+                except (TypeError,ValueError):raise ValueError('Некорректный клиент')
+                self.client(client_id)
+                visible_ids={client_id}
+            else:
+                visible_ids={client['id'] for client in self.r.catalog('clients') if self.visible(client['id'])}
+            return [row for row in self.r.list('client_aliases') if row['client_id'] in visible_ids]
+        if action in ('employee-name-history','employee-aliases'):
+            self.need('users.manage')
+            employee_ids={employee['employee_id'] for employee in self.r.employee_catalog()}
+            raw_employee_id=params.get('employee_id',[None])[0]
+            if raw_employee_id not in (None,''):
+                try:employee_id=int(raw_employee_id)
+                except (TypeError,ValueError):raise ValueError('Некорректный сотрудник')
+                if employee_id not in employee_ids:raise ValueError('Сотрудник не найден в этой компании')
+                employee_ids={employee_id}
+            kind='employee_name_history' if action=='employee-name-history' else 'employee_aliases'
+            return [row for row in self.r.list(kind) if row['employee_id'] in employee_ids]
         if action=='tasks':return self.task_rows()
         if action=='timers':
             if not {'tasks.read','work.write','tasks.manage'} & self.permissions:raise PermissionError('Нет доступа к работе')

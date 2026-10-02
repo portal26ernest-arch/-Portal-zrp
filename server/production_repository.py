@@ -15,8 +15,9 @@ from money_units import legacy_major_currency
 KINDS = {'batches','tasks','works','tariffs','permissions','plans','usage','expenses',
          'invoices','payments','settings','audit','links','requests','shipments',
          'access_events','access_sessions','work_timers','timer_events',
-         'payroll_periods','invoice_revisions','documents','products','notifications','reminder_job_runs','client_name_history','chat_messages','chat_pins','chat_attachments',
-         'organizer_tasks','organizer_events'}
+         'payroll_periods','invoice_revisions','documents','products','notifications','reminder_job_runs',
+         'client_name_history','client_aliases','employee_name_history','employee_aliases',
+         'chat_messages','chat_pins','chat_attachments','organizer_tasks','organizer_events'}
 MUTABLE = {'batches','tasks','permissions','settings','access_sessions','work_timers','products','organizer_tasks'}
 DELETABLE = {'chat_messages','chat_pins','chat_attachments'}
 
@@ -92,6 +93,8 @@ class Repository:
             'entry_type','employee_id','payroll_period_id','amount','request_id','fields',
             'actor_kind','reason','reason_sha256'
         ) if key in details}
+        if 'actor_kind' not in allowed and (user or {}).get('technical_owner'):
+            allowed['actor_kind']='platform_owner'
         self.insert('audit',dict(actor_id=(user or {}).get('id'),event=event,entity_id=str(entity_id),**allowed))
 
     def sync_payroll_employees(self):

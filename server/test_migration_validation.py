@@ -67,6 +67,39 @@ def fixture():
 
 
 class MigrationValidationTest(unittest.TestCase):
+    def test_legacy_unscoped_primary_company_snapshot_matches_scoped_target(self):
+        legacy = sqlite3.connect(':memory:')
+        scoped = sqlite3.connect(':memory:')
+        try:
+            legacy.executescript('''
+                CREATE TABLE employees(telegram_id INTEGER,full_name TEXT);
+                CREATE TABLE portal_clients(id INTEGER,name TEXT);
+                CREATE TABLE portal_client_operations(id INTEGER,client_id INTEGER,name TEXT);
+                CREATE TABLE work_log(id INTEGER,client TEXT,operation TEXT,quantity INTEGER,salary REAL);
+                INSERT INTO employees VALUES(101,'Worker');
+                INSERT INTO portal_clients VALUES(1,'Client');
+                INSERT INTO portal_client_operations VALUES(1,1,'Pack');
+                INSERT INTO work_log VALUES(1,'Client','Pack',2,4.0);
+            ''')
+            scoped.executescript('''
+                CREATE TABLE employees(telegram_id INTEGER,full_name TEXT,company_id INTEGER);
+                CREATE TABLE portal_clients(id INTEGER,name TEXT,company_id INTEGER);
+                CREATE TABLE portal_client_operations(id INTEGER,client_id INTEGER,name TEXT,company_id INTEGER);
+                CREATE TABLE work_log(id INTEGER,client TEXT,operation TEXT,quantity INTEGER,salary REAL,company_id INTEGER);
+                INSERT INTO employees VALUES(101,'Worker',1);
+                INSERT INTO portal_clients VALUES(1,'Client',1);
+                INSERT INTO portal_client_operations VALUES(1,1,'Pack',1);
+                INSERT INTO work_log VALUES(1,'Client','Pack',2,4.0,1);
+            ''')
+            source = snapshot(legacy,'sqlite',1,allow_legacy_primary=True)
+            self.assertTrue(all('company_id' in facts['columns'] for facts in source.values()))
+            self.assertTrue(compare(source,snapshot(scoped,'sqlite',1,projection=source)))
+            with self.assertRaisesRegex(ValidationError,'Missing company_id'):
+                snapshot(legacy,'sqlite',2,allow_legacy_primary=True)
+        finally:
+            legacy.close()
+            scoped.close()
+
     def test_linked_legacy_money_reconciles_in_company_scope_without_writes(self):
         conn = fixture()
         try:
@@ -250,6 +283,9 @@ class MigrationValidationTest(unittest.TestCase):
         self.assertTrue(compare_migration_history(
             source + [(6, '2026-09-25')], source + [(6, '2026-09-25')],
             required_version=6))
+        self.assertTrue(compare_migration_history(
+            [], [(6, 'cutover-6'), (7, 'cutover-7')], required_version=6,
+            additional_required_versions=(7,)))
         bad_histories = (
             source,
             [(3, 'changed'), (4, '2026-09-25'), (5, '2026-09-25'), (6, '2026-09-27')],

@@ -27,6 +27,11 @@ class DocumentAPITest(unittest.TestCase):
     get=fixtures.ProductionTest.get
     work=fixtures.ProductionTest.work
 
+    def test_public_document_metadata_never_exposes_god_actor(self):
+        item={'original_filename':'doc.pdf','checksum_sha256':'a'*64,'actor_kind':'platform_owner','created_by':999}
+        public=Documents.public(item)
+        self.assertNotIn('actor_kind',public);self.assertNotIn('created_by',public)
+
     def upload(self,token=None,**values):
         body=dict(action='upload',document_type='report_pdf',original_filename='Отчёт.pdf',mime_type='application/pdf',
                   file_b64=base64.b64encode(PDF).decode(),title='Отчёт',category='reports',document_date='2026-09-28')
@@ -218,11 +223,9 @@ class DocumentAPITest(unittest.TestCase):
         self.assertTrue(any(cell.data_type=='f' for row in sheet.iter_rows() for cell in row))
 
     def test_payroll_slip_uses_closed_snapshot_permissions_scope_and_immutable_facts(self):
-        work=self.work();today=datetime.utcnow().date()
-        if today.day>15:start=today.replace(day=1).isoformat();end=today.replace(day=15).isoformat()
-        else:
-            previous=today.replace(day=1)-timedelta(days=1)
-            start=previous.replace(day=16).isoformat();end=previous.isoformat()
+        work=self.work();today=datetime.fromisoformat(self.get('today')['data']['date']).date()
+        historical_month=(today-timedelta(days=60)).replace(day=1)
+        start=historical_month.isoformat();end=historical_month.replace(day=15).isoformat()
         with portal.db() as conn:
             repo=Repository(conn,1)
             source=dict(work,id=str(uuid.uuid4()),completed_at=end+'T12:00:00.000000',created_at=end+'T12:00:00.000000')

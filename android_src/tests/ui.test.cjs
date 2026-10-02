@@ -74,6 +74,18 @@ test('updates: unconfigured, offline, current, newer and invalid manifests',()=>
   const wrongVersionUrl=manifest.apkUrl.replace('portal-android-v'+metadata.versionName,'portal-android-v'+metadata.versionName+'-wrong');
   for(const patch of [{channel:'other'},{applicationId:'other'},{versionCode:'4'},{publishedAt:'invalid'},{changelog:null},{apkUrl:'http://example.test/app.apk'},{apkUrl:'https://user@example.test/app.apk'},{apkUrl:wrongVersionUrl},{sha256:'bad'}])assert.equal(state({...manifest,...patch}),'error');
 });
+test('login screen exposes update check before authentication and uses blue PORTAL accent',()=>{
+  const index=fs.readFileSync(path.join(assets,'index.html'),'utf8');
+  const app=fs.readFileSync(path.join(assets,'app.js'),'utf8');
+  const css=fs.readFileSync(path.join(assets,'ui.css'),'utf8');
+  assert.match(index,/id="authUpdateButton"[^>]+data-action="checkUpdates"/);
+  assert.match(index,/id="authUpdateState"/);
+  assert.match(app,/\['updateState','authUpdateState'\]/);
+  assert.match(app,/Вход в аккаунт для обновления не требуется/);
+  assert.match(css,/--accent:#0b5ed7/);
+  assert.doesNotMatch(css,/--accent:#23695d/);
+});
+
 test('update install action is available only for verified available state and renders progress',()=>{
   const app=fs.readFileSync(path.join(assets,'app.js'),'utf8');
   assert.match(app,/u\.state==='available'\?btn\('Скачать и установить','installUpdate'/);
@@ -99,21 +111,22 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
     if(web)window.__PORTAL_WEB__=true;
     const user={id:1,username:role,display_name:'Тестовый пользователь',role,company_id:1,employee_id:role==='platform_owner'?null:101};
     const client={id:1,name:'Клиент',active:1};
-    window.mock={calls:[],offline:false,rejectWrite:false,hold:false,held:[],update:{ok:true,configured:false},timer:null,stage3Today:null,stage3Batches:null,stage3Shipments:null,stage3Tasks:null,stage3Economy:null,stage3Permissions:null,stage3Invoices:null,clientNameHistory:[],clientRequisites:{legal_name:'ООО Тест',inn:'TEST-INN-001'},tariffHistory:[],presenceOnline:true,saved:null,previewMode:'ok',applyMode:'ok',payrollPaid:2000,invites:[],products:[]};
+    window.mock={calls:[],offline:false,rejectWrite:false,failUrls:[],hold:false,held:[],update:{ok:true,configured:false},timer:null,stage3Today:null,stage3Batches:null,stage3Shipments:null,stage3Tasks:null,stage3Economy:null,stage3Finance:null,stage3Permissions:null,stage3Invoices:null,stage3Users:null,clientNameHistory:[],clientAliases:[],clientRequisites:{legal_name:'ООО Тест',inn:'TEST-INN-001'},tariffHistory:[],presenceOnline:true,saved:null,previewMode:'ok',applyMode:'ok',payrollPaid:2000,invites:[],products:[]};
     const respond=(id,data)=>setTimeout(()=>window.PortalBridgeResult(id,JSON.stringify(data)),0);
     window.PortalNative={getServerUrl:()=> 'http://127.0.0.1:8765',getAppMetadata:()=>JSON.stringify(metadata),checkUpdates:id=>respond(id,mock.update),saveBase64FileAsync(id,filename,mime,file_b64){mock.saved={filename,mime,file_b64};respond(id,{ok:true,location:'Downloads/PORTAL/'+filename});},requestAsync(id,method,url,payload,token,company){
       mock.calls.push({method,url,body:payload?JSON.parse(payload):null,token,company});
       if(mock.offline)return respond(id,{ok:false,network:true,error:'Нет соединения'});
       if(mock.rejectWrite&&method==='POST')return respond(id,{ok:false,httpStatus:401});
+      if(mock.failUrls.includes(url))return respond(id,{ok:false,httpStatus:503,error:'Синтетическая ошибка источника'});
       let data={ok:true};
       if(stage3&&url==='/api/v3/meta')Object.assign(data,{ready:true,heartbeat_seconds:60,permissions:mock.stage3Permissions||['work.write','tasks.read','tasks.manage','batches.receive','finance.read','invoices.read','invoices.create','users.manage','access.history.read','payroll.own'],catalog:[{code:'work.write',group:'Работа',label:'Вносить свою выработку',recommended:['Сборщик']},{code:'access.history.read',group:'Сотрудники',label:'Просматривать историю входов сотрудников',recommended:['Управляющий','Администратор']}]});
       else if(stage3&&url.startsWith('/api/v3/documents?'))data.data={items:[{id:'doc-ready',title:'Готовый документ',document_type:'report_xlsx',category:'report',document_date:'2026-09-29',created_at:'2026-09-29T00:00:00Z',client_id:1,size_bytes:2048,status:'ready',revision:1},{id:'doc-archived',title:'Архивный документ',document_type:'report_pdf',category:'report',document_date:'2026-09-28',created_at:'2026-09-28T00:00:00Z',size_bytes:1024,status:'archived',revision:1}],total:2,page:1,limit:50};
       else if(stage3&&url.startsWith('/api/v3/document-history?'))data.data=[{id:'doc-older',title:'Старая версия',created_at:'2026-09-28T00:00:00Z',status:'archived',revision:1},{id:'doc-ready',title:'Готовый документ',created_at:'2026-09-29T00:00:00Z',status:'ready',revision:2}];
       else if(stage3&&url.startsWith('/api/v3/document-file?id=')){const result=url.includes('result-');data.data=result?{filename:'PORTAL_import_result.json',mime_type:'application/json',file_b64:'e30='}:{filename:'PORTAL_report.xlsx',mime_type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',file_b64:'UEs='};}
       else if(stage3&&url==='/api/v3/document-archive'&&method==='POST')data.data={id:'doc-ready',status:'archived'};
-      else if(stage3&&url==='/api/v3/document-template-info')data.data={template_version:'1.0',sheets:['Компания','Сотрудники','Клиенты','Операции_Тарифы']};
-      else if(stage3&&(url==='/api/v3/document-template-blank'||url==='/api/v3/document-template'))data.data={filename:'PORTAL_template_v1.xlsx',mime_type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',file_b64:'UEs='};
-      else if(stage3&&url==='/api/v3/excel-import-preview'&&method==='POST'){const conflict=mock.previewMode==='conflict';data.data={import_id:'import-1',preview_token:'token-1',template_version:'1.0',can_apply:!conflict,summary:{new:conflict?0:1,update:0,unchanged:0,conflict:conflict?1:0,invalid:0},rows:[{sheet:'Клиенты',row:4,classification:conflict?'conflict':'new',errors:conflict?[{code:'duplicate_client'}]:[],changes:conflict?{}:{name:{before:null,after:'Новый клиент'}}}]};}
+      else if(stage3&&url==='/api/v3/document-template-info')data.data={template_version:'1.1',sheets:['Компания','Сотрудники','Клиенты','Операции_Тарифы']};
+      else if(stage3&&(url==='/api/v3/document-template-blank'||url==='/api/v3/document-template'))data.data={filename:'PORTAL_template_v1.1.xlsx',mime_type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',file_b64:'UEs='};
+      else if(stage3&&url==='/api/v3/excel-import-preview'&&method==='POST'){const conflict=mock.previewMode==='conflict';data.data={import_id:'import-1',preview_token:'token-1',template_version:'1.1',can_apply:!conflict,summary:{new:conflict?0:1,update:0,unchanged:0,conflict:conflict?1:0,invalid:0},rows:[{sheet:'Клиенты',row:4,classification:conflict?'conflict':'new',errors:conflict?[{code:'duplicate_client'}]:[],changes:conflict?{}:{name:{before:null,after:'Новый клиент'}}}]};}
       else if(stage3&&url==='/api/v3/excel-import-apply'&&method==='POST'){if(mock.applyMode==='failed')return respond(id,{ok:false,httpStatus:409,error:'Импорт отменён полностью',data:{status:'failed',result_document_id:'result-failed',error_report:[{code:'apply_failed'}]}});if(mock.applyMode==='stale')return respond(id,{ok:false,httpStatus:400,error:'Справочники изменились; повторите preview'});data.data={status:'applied',result_counts:{new:1,updated:0,unchanged:0},result_document_id:'result-ok'};}
       else if(stage3&&url.startsWith('/api/v3/excel-import-result?id=')){if(mock.applyMode==='failed')data.data={status:'failed',result_document_id:'result-failed',error_report:[{code:'apply_failed'}]};else if(mock.applyMode==='ok')data.data={status:'applied',result_document_id:'result-ok',result_counts:{new:1,updated:0,unchanged:0}};else return respond(id,{ok:false,httpStatus:404,error:'Импорт не найден'});}
       else if(stage3&&url==='/api/v3/today'){const task={id:'task-1',batch_id:'batch-1',client_name:'Клиент',product:'Коробка',batch_number:'PRT-2026-000001',operation_name:'Упаковка',quantity:10,done:2,remaining:8,status:'in_progress',assignees:[1]};data.data=mock.stage3Today||{date:'2026-09-25',mode:role==='admin'?'management':'worker',own_quantity:4,own_salary:500,attention:[],tasks:[task],...(role==='admin'?{today_quantity:17,month_quantity:27,active_jobs:1,in_progress:1,ready:1,active_batches:2,finance:{salary:1200,revenue:2500,profit:900},today_finance:{revenue:1000,salary:400},month_finance:{revenue:5000,salary:2000},today_productivity:{units:17,timed_units:10,units_per_hour:5},closed_month_payroll:null,expected_profit:null,debt:400,open_invoice_count:2,overdue_invoice_count:1,overdue_debt:400,client_profitability_alerts:1}:{})};}
@@ -125,14 +138,15 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
       else if(stage3&&url.startsWith('/api/v3/economy?'))data.data=mock.stage3Economy||{plan:{salary:null,revenue:null,materials:null,other:null,profit:null,volume:null},fact:{salary:0,revenue:0,materials:0,other:0,profit:0,volume:0},deviation:{salary:null,revenue:null,materials:null,other:null,profit:null,volume:null},margin_bps:{plan:null,fact:null,deviation:null},finished_units:0,cost_per_unit:null,profit_per_unit:null};
       else if(stage3&&url==='/api/v3/invoices')data.data=mock.stage3Invoices||[];
       else if(stage3&&url==='/api/v3/documents')data.data=[{id:'doc-client',title:'Документ клиента',client_id:1,document_type:'invoice_pdf',status:'ready'}];
-      else if(stage3&&url==='/api/v3/finance')data.data={clients:[]};
+      else if(stage3&&url==='/api/v3/finance')data.data=mock.stage3Finance||{clients:[],months:{},client_profit:0,company_overhead:0,net_profit:0};
       else if(stage3&&url.startsWith('/api/v3/receivables'))data.data={as_of:'2026-09-30',money_unit:'kopeck',outstanding:12500,overdue:4000,total:2,page:1,limit:50,buckets:{current:{count:1,amount:8500},days_1_7:{count:1,amount:4000},days_8_30:{count:0,amount:0},days_31_60:{count:0,amount:0},days_61_plus:{count:0,amount:0},undated:{count:0,amount:0}},clients:[{client_id:1,name:'Клиент',outstanding:12500}],items:[{invoice_id:1,client_id:1,amount:8500,paid:0,outstanding:8500,due_at:'2026-09-30',overdue_days:0,bucket:'current'},{invoice_id:2,client_id:1,amount:6000,paid:2000,outstanding:4000,due_at:'2026-09-29',overdue_days:1,bucket:'days_1_7'}]};
       else if(stage3&&url==='/api/v3/payroll-periods')data.data=[{id:'period-1',period_start:'2026-09-01',period_end:'2026-09-15',closed_at:'2026-09-16',snapshot:{total_quantity:10,total_salary:10000,employees:[{employee_id:1,display_name:'Тестовый сотрудник',salary:10000}]}}];
       else if(stage3&&url.startsWith('/api/v3/payroll-settlements?'))data.data={period_id:'period-1',period_start:'2026-09-01',period_end:'2026-09-15',status:'закрыт',money_unit:'kopeck',employees:[{employee_id:1,display_name:'Тестовый сотрудник',accrued:10000,adjustment:0,paid:mock.payrollPaid,balance:10000-mock.payrollPaid}],totals:{accrued:10000,adjustment:0,paid:mock.payrollPaid,balance:10000-mock.payrollPaid},entries:[{id:'payment-1',employee_id:1,entry_type:'payout',effect:'payment',amount:2000,occurred_at:'2026-09-20',reason:'Первая выплата',reference:'Платёж 1'}]};
-      else if(stage3&&url.startsWith('/api/v3/analytics'))data.data={groups:[{user_id:1,client_id:1,product:'Товар',operation_id:1,quantity:12,units_per_hour:6}],forecasts:[],comparison:url.includes('from=')?{period_start:'2026-09-10',period_end:'2026-09-16',previous_start:'2026-09-03',previous_end:'2026-09-09',current:{units:12,units_per_hour:6},previous:{units:8,units_per_hour:4},units_delta:4,units_percent_delta:50,units_per_hour_delta:2}:undefined};
+      else if(stage3&&url.startsWith('/api/v3/analytics'))data.data={groups:[{user_id:1,user_name:'Анна Сборщик',client_id:1,client_name:'Клиент',product:'Товар',operation_id:1,operation_name:'Упаковка',quantity:12,samples:3,timed_quantity:10,seconds:6000,units_per_hour:6,variability:0.25}],batch_groups:[{batch_id:'batch-1',batch_number:'PRT-2026-000001',client_id:1,client_name:'Клиент',product:'Товар',operation_id:1,operation_name:'Упаковка',quantity:8,samples:2,timed_quantity:8,seconds:4800,units_per_hour:6,variability:0.1}],quality:{available:false,recorded_units:0,defects:null},forecasts:[],comparison:url.includes('from=')?{period_start:'2026-09-10',period_end:'2026-09-16',previous_start:'2026-09-03',previous_end:'2026-09-09',current:{units:12,units_per_hour:6},previous:{units:8,units_per_hour:4},units_delta:4,units_percent_delta:50,units_per_hour_delta:2}:undefined};
       else if(stage3&&url==='/api/v3/payroll-settlements'&&method==='POST'){mock.payrollPaid+=Math.round(Number(JSON.parse(payload).amount)*100);data.data={id:'payment-2',entry_type:'payout'};}
-      else if(stage3&&url==='/api/v3/catalog')data.data={clients:[{id:1,name:'Клиент'}],operations:[{id:1,client_id:1,name:'Упаковка'}],products:mock.products.filter(p=>p.active),users:[]};
+      else if(stage3&&url==='/api/v3/catalog')data.data={clients:[{id:1,name:'Клиент'}],operations:[{id:1,client_id:1,name:'Упаковка'}],products:mock.products.filter(p=>p.active),users:mock.stage3Users||[]};
       else if(stage3&&url.startsWith('/api/v3/client-name-history'))data.data=mock.clientNameHistory;
+      else if(stage3&&url.startsWith('/api/v3/client-aliases'))data.data=mock.clientAliases;
       else if(stage3&&url.startsWith('/api/v3/client-requisites?'))data.data=mock.clientRequisites;
       else if(stage3&&url==='/api/v3/client-requisites'&&method==='POST'){mock.clientRequisites={...mock.clientRequisites,...JSON.parse(payload)};data.data=mock.clientRequisites;}
       else if(stage3&&url.startsWith('/api/v3/tariff-history?operation_id='))data.data=mock.tariffHistory;
@@ -218,6 +232,7 @@ test('browser UI regression',async t=>{
         const visible=await page.locator('#content [data-page]').evaluateAll(nodes=>nodes.map(n=>n.dataset.page));
         const expected=Array.from(core.modules).filter(m=>!m.future&&core.can(m.id,{role,employee_id:101},{id:1})).map(m=>m.id);
         assert.deepEqual(visible,expected);
+        assert.doesNotMatch(await page.locator('body').innerText(),/\bGod\b|Технический вход|Platform Owner|Владелец платформы/);
         for(const name of expected){await page.evaluate(name=>go(name),name);assert.doesNotMatch(await page.locator('#content').innerText(),/Не удалось загрузить/);}
         assert.deepEqual(errors,[]);await page.close();
       }
@@ -285,8 +300,8 @@ test('browser UI regression',async t=>{
       await denied.page.close();
 
       const file={name:'PORTAL_test.xlsx',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',buffer:Buffer.from('PK-test')};
-      await page.evaluate(()=>go('excelImport'));await page.waitForFunction(()=>document.querySelector('#content').innerText.includes('Шаблон PORTAL 1.0'));
-      await page.locator('[data-action=downloadExcelTemplate][data-kind=blank]').click();await page.waitForFunction(()=>mock.saved?.filename==='PORTAL_template_v1.xlsx');
+      await page.evaluate(()=>go('excelImport'));await page.waitForFunction(()=>document.querySelector('#content').innerText.includes('Шаблон PORTAL 1.1'));
+      await page.locator('[data-action=downloadExcelTemplate][data-kind=blank]').click();await page.waitForFunction(()=>mock.saved?.filename==='PORTAL_template_v1.1.xlsx');
       await page.locator('#excelFile').setInputFiles(file);await page.locator('[data-action=previewExcelImport]').click();
       await page.waitForFunction(()=>document.querySelector('#content').innerText.includes('Проверка завершена'));
       assert.equal(await page.locator('[data-action=applyExcelImport]').innerText(),'Применить изменения');
@@ -333,6 +348,14 @@ test('browser UI regression',async t=>{
       const payout=await page.evaluate(()=>mock.calls.find(c=>c.method==='POST'&&c.url==='/api/v3/payroll-settlements'));
       assert.equal(payout.body.entry_type,'payout');assert.equal(payout.body.amount,'10');assert.equal(payout.body.employee_id,1);assert.equal(payout.body.payroll_period_id,'period-1');
       assert.match(await page.locator('#sheetContent').innerText(),/Первая выплата/);assert.deepEqual(errors,[]);await page.close();
+      const accountant=await fixture(browser,'accountant',{width:390,height:844},true);
+      await accountant.page.evaluate(()=>mock.stage3Permissions=['payroll.all','payroll.settlement.read','payroll.settlement.payout']);await login(accountant.page);
+      await accountant.page.evaluate(()=>go('payrollPeriods'));await accountant.page.locator('[data-action=payrollSettlement]').click();await accountant.page.waitForSelector('#sheetContent');
+      assert.equal(await accountant.page.locator('[data-action=payrollAddPayment]').count(),1);
+      await accountant.page.locator('[data-action=payrollAddPayment]').click();await accountant.page.locator('#payrollPaymentAmount').fill('5');
+      await accountant.page.locator('#payrollPaymentForm [type=submit]').click();await accountant.page.waitForFunction(()=>mock.calls.some(c=>c.method==='POST'&&c.url==='/api/v3/payroll-settlements'));
+      const accountantPayout=await accountant.page.evaluate(()=>mock.calls.find(c=>c.method==='POST'&&c.url==='/api/v3/payroll-settlements'));
+      assert.equal(accountantPayout.body.entry_type,'payout');assert.equal(accountantPayout.body.amount,'5');assert.deepEqual(accountant.errors,[]);await accountant.page.close();
       const manager=await fixture(browser,'manager',{width:390,height:844},true);
       await manager.page.evaluate(()=>mock.stage3Permissions=['payroll.all','payroll.settlement.read']);await login(manager.page);await manager.page.evaluate(()=>go('payrollPeriods'));
       await manager.page.locator('[data-action=payrollSettlement]').click();await manager.page.waitForSelector('#sheetContent');
@@ -383,6 +406,21 @@ test('browser UI regression',async t=>{
       assert.equal((await manager.page.evaluate(()=>mock.calls)).some(c=>c.url.startsWith('/api/v3/invitations')),false);
       assert.deepEqual(manager.errors,[]);await manager.page.close();
     });
+    await t.test('invitee submits one-time code and private PIN only in the accept request body',async()=>{
+      const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);
+      await page.locator('[data-action=acceptInvite]').click();await page.waitForSelector('#acceptInviteForm');
+      const token='1.synthetic-invitation-code';const pin='9876';
+      await page.locator('#acceptInviteToken').fill(token);await page.locator('#acceptInvitePin').fill(pin);
+      await page.locator('#acceptInviteForm [type=submit]').click();
+      await page.waitForFunction(()=>mock.calls.some(c=>c.method==='POST'&&c.url==='/api/access-invites/accept'));
+      const request=await page.evaluate(()=>mock.calls.find(c=>c.method==='POST'&&c.url==='/api/access-invites/accept'));
+      assert.deepEqual(request.body,{token,pin});
+      assert.equal(new URL(request.url,'https://portal.example').search,'');
+      assert.doesNotMatch(page.url(),/9876|synthetic-invitation-code/);
+      await page.waitForFunction(()=>document.querySelector('#toast').textContent.includes('Запрос отправлен'));
+      assert.equal(await page.locator('#acceptInviteForm').count(),0);
+      assert.deepEqual(errors,[]);await page.close();
+    });
     await t.test('director approves access requests and packer cannot decide invitations',async()=>{
       const {page,errors}=await fixture(browser,'director',{width:390,height:844},true);
       await page.evaluate(()=>{mock.stage3Permissions=['users.manage'];mock.invites=[
@@ -406,6 +444,10 @@ test('browser UI regression',async t=>{
       await page.locator('#accessInviteForm [type=submit]').click();await page.waitForSelector('#oneTimeInviteToken');
       const directorCreate=(await page.evaluate(()=>mock.calls)).find(c=>c.method==='POST'&&c.url==='/api/v3/invitations'&&c.body?.username==='director-invitee');
       assert.equal(directorCreate.body.action,'create');assert.equal(Object.hasOwn(directorCreate.body,'pin'),false);
+      await page.evaluate(()=>closeSheet());await page.locator('[data-action=companyAudit]').click();await page.waitForSelector('#auditEntity');
+      await page.locator('#auditAction').fill('access_invite.created');await page.locator('#auditFilterForm [type=submit]').click();
+      await page.waitForFunction(()=>mock.calls.some(c=>c.url.startsWith('/api/v3/audit?')&&c.url.includes('action=access_invite.created')));
+      assert.equal((await page.evaluate(()=>mock.calls)).some(c=>c.url.startsWith('/api/platform/audit?')),false);
       assert.deepEqual(errors,[]);await page.close();
       const packer=await fixture(browser,'packer',{width:390,height:844},true);
       await packer.page.evaluate(()=>{mock.stage3Permissions=['work.write','tasks.read'];mock.invites=[
@@ -426,11 +468,13 @@ test('browser UI regression',async t=>{
       await page.evaluate(()=>mock.rejectWrite=true);await page.locator('#wQty').fill('4');await page.locator('#workSubmit').click();await page.waitForSelector('#auth:not(.hidden)');
       assert.equal(await page.evaluate(()=>localStorage.getItem('portalSession')),null);assert.deepEqual(errors,[]);await page.close();
     });
-    await t.test('owner requires company and confirmation, switches scope and rejects stale data',async()=>{
+    await t.test('God requires company and confirmation, switches scope and rejects stale data',async()=>{
       const {page,errors}=await fixture(browser,'platform_owner');
-      await page.locator('#loginCompany').click();await page.locator('#sheetContent [data-action=technicalLogin]').click();
-      assert.equal(await page.locator('#passwordLabel').innerText(),'Пароль владельца платформы');await login(page);
-      assert.equal(await page.evaluate(()=>mock.calls.some(c=>c.url==='/api/platform/login')),true);
+      assert.equal(await page.locator('[data-action=technicalLogin]').count(),0);
+      assert.equal((await page.locator('#auth').innerText()).includes('God'),false);
+      await login(page);
+      assert.equal(await page.evaluate(()=>mock.calls.some(c=>c.url==='/api/login')),true);
+      assert.equal(await page.locator('#companyName').innerText(),'God');
       assert.equal(await page.locator('[data-action=selectCompany]').count(),2);
       assert.equal((await page.evaluate(()=>mock.calls)).some(c=>c.url.startsWith('/api/dashboard')),false);
       await page.locator('[data-action=selectCompany][data-id="2"]').click();await page.locator('[data-action=confirmSheet]').click();
@@ -446,9 +490,9 @@ test('browser UI regression',async t=>{
       await page.waitForFunction(()=>pending.size===0);assert.equal(await page.locator('[data-action=selectCompany]').count(),2);
       assert.equal(await page.locator('#supportStrip').isVisible(),false);assert.deepEqual(errors,[]);await page.close();
     });
-    await t.test('owner invitation writes require selected company confirmation and stay in support audit',async()=>{
+    await t.test('God invitation writes require selected company confirmation and stay in support audit',async()=>{
       const {page,errors}=await fixture(browser,'platform_owner',{width:390,height:844},true);
-      await page.locator('#loginCompany').click();await page.locator('#sheetContent [data-action=technicalLogin]').click();await login(page);
+      await login(page);
       await page.locator('[data-action=selectCompany][data-id="2"]').click();await page.locator('[data-action=confirmSheet]').click();
       await page.waitForSelector('#supportStrip:not(.hidden)');await page.waitForFunction(()=>S.page==='dashboard'&&!document.querySelector('.loading')&&S.writes===0);
       const support=await page.evaluate(async()=>{await go('users');return {page:S.page,company:S.company?.id,stage3:S.stage3};});
@@ -464,28 +508,28 @@ test('browser UI regression',async t=>{
       await page.evaluate(()=>{closeSheet();actions.exitSupport();});await page.waitForSelector('[data-action=selectCompany]');
       assert.equal(await page.locator('#oneTimeInviteToken').count(),0);assert.equal(await page.locator('#supportStrip').isVisible(),false);
       await page.locator('[data-action=audit]').click();await page.waitForSelector('#ownerAuditCompany');
-      await page.locator('#ownerAuditCompany').fill('2');await page.locator('#ownerAuditEvent').fill('technical_access');
+      await page.locator('#ownerAuditCompany').fill('2');await page.locator('#ownerAuditEvent').fill('god_access');
       await page.locator('#ownerAuditFilterForm [type=submit]').click();
-      await page.waitForFunction(()=>mock.calls.some(c=>c.url.startsWith('/api/platform/audit?')&&c.url.includes('company_id=2')&&c.url.includes('event=technical_access')));
+      await page.waitForFunction(()=>mock.calls.some(c=>c.url.startsWith('/api/platform/audit?')&&c.url.includes('company_id=2')&&c.url.includes('event=god_access')));
       assert.deepEqual(errors,[]);await page.close();
     });
-    await t.test('platform owner audit is separate and filters are sent only from owner surface',async()=>{
+    await t.test('God audit is separate and filters are sent only from God surface',async()=>{
       const {page,errors}=await fixture(browser,'platform_owner');
-      await page.locator('#loginCompany').click();await page.locator('#sheetContent [data-action=technicalLogin]').click();await login(page);
+      await login(page);
       await page.locator('[data-action=audit]').click();await page.waitForSelector('#ownerAuditCompany');
-      assert.match(await page.locator('#sheetContent').innerText(),/Только действия Platform Owner и системной поддержки/);
+      assert.match(await page.locator('#sheetContent').innerText(),/Только действия God и системные события/);
       await page.locator('#ownerAuditCompany').fill('2');await page.locator('#ownerAuditActor').fill('1');
-      await page.locator('#ownerAuditEvent').fill('technical_access');await page.locator('#ownerAuditFrom').fill('2026-09-01');await page.locator('#ownerAuditTo').fill('2026-09-30');
+      await page.locator('#ownerAuditEvent').fill('god_access');await page.locator('#ownerAuditFrom').fill('2026-09-01');await page.locator('#ownerAuditTo').fill('2026-09-30');
       await page.locator('#ownerAuditFilterForm [type=submit]').click();
       await page.waitForFunction(()=>mock.calls.some(c=>c.url.startsWith('/api/platform/audit?')&&c.url.includes('company_id=2')));
       const url=await page.evaluate(()=>mock.calls.filter(c=>c.url.startsWith('/api/platform/audit?')).at(-1).url);
-      assert.match(url,/actor_id=1/);assert.match(url,/event=technical_access/);assert.match(url,/from=2026-09-01/);assert.match(url,/to=2026-09-30/);
+      assert.match(url,/actor_id=1/);assert.match(url,/event=god_access/);assert.match(url,/from=2026-09-01/);assert.match(url,/to=2026-09-30/);
       assert.match(await page.locator('#sheetContent').innerText(),/Запросы и секреты в журнал не включаются/);
       assert.deepEqual(errors,[]);await page.close();
     });
-    await t.test('platform owner module switches are explicit and submitted with company scope',async()=>{
+    await t.test('God module switches are explicit and submitted with company scope',async()=>{
       const {page,errors}=await fixture(browser,'platform_owner');
-      await page.locator('#loginCompany').click();await page.locator('#sheetContent [data-action=technicalLogin]').click();await login(page);
+      await login(page);
       await page.locator('[data-action=editPlatformCompany][data-id="2"]').click();
       assert.equal(await page.locator('[data-platform-module]').count(),23);
       await page.locator('#module-toggle-work').uncheck();
@@ -495,9 +539,9 @@ test('browser UI regression',async t=>{
       assert.equal(saved.body.module_toggles.work,false);assert.equal(saved.company,'');
       assert.deepEqual(errors,[]);await page.close();
     });
-    await t.test('platform owner saves company subscription state and override while PORTAL stays unlimited',async()=>{
+    await t.test('God saves company subscription state and override while PORTAL stays unlimited',async()=>{
       const {page,errors}=await fixture(browser,'platform_owner');
-      await page.locator('#loginCompany').click();await page.locator('#sheetContent [data-action=technicalLogin]').click();await login(page);
+      await login(page);
       await page.locator('[data-action=editPlatformCompany][data-id="2"]').click();
       assert.equal(await page.locator('#platformCompanyLimit').inputValue(),'15');
       await page.locator('#platformCompanyLimit').fill('16');await page.locator('#platformCompanyFee').fill('123.45');
@@ -524,14 +568,18 @@ test('browser UI regression',async t=>{
       assert.match(await page.locator('#content').innerText(),/10\.09\.2026–16\.09\.2026 · сравнение с 03\.09\.2026–09\.09\.2026/);
       assert.match(await page.locator('#content').innerText(),/Объём за период\s+12 шт\./);
       assert.match(await page.locator('#content').innerText(),/Изменение объёма\s+4 шт\. · 50%/);
-      assert.match(await page.locator('#content').innerText(),/Изменение темпа\s+2 шт\.\/час/);
+      assert.match(await page.locator('#content').innerText(),/Изменение темпа\s+2 шт\.\/ч/);
+      assert.match(await page.locator('#content').innerText(),/Анна Сборщик[\s\S]*Клиент · Упаковка[\s\S]*разброс темпа 25%/);
+      assert.match(await page.locator('#content').innerText(),/PRT-2026-000001 · Упаковка[\s\S]*разброс темпа 10%/);
+      assert.match(await page.locator('#content').innerText(),/Источник данных о дефектах пока не заполнен/);
       assert.deepEqual(errors,[]);await page.close();
     });
     await t.test('client product catalog supports stable-ID create, rename and archive',async()=>{
-      const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);await page.evaluate(()=>mock.stage3Permissions=['work.write','tasks.read','tasks.manage','batches.receive','finance.read','invoices.read','invoices.create','users.manage','clients.read','clients.manage','documents.read','access.history.read','payroll.own']);await login(page);
-      await page.evaluate(async()=>{mock.clientNameOverride='Борискин';mock.stage3Invoices=[{id:1,client_id:1,remaining:12500}];mock.stage3Shipments=[{id:'ship-client',batch_id:'batch-1',client_id:1,direction:'FBS',quantity:10},{id:'return-client',type:'return',batch_id:'batch-1',client_id:1,direction:'FBS',quantity:2,condition:'damaged'},{id:'ship-other',batch_id:'batch-other',client_id:2,direction:'FBO',quantity:99}];mock.stage3Tasks=[{id:'task-client',batch_id:'batch-1',batch_number:'PRT-2026-000001',operation_name:'Упаковка клиента',quantity:10,done:2,remaining:8},{id:'task-other',batch_id:'batch-other',batch_number:'PRT-OTHER',operation_name:'Чужая партия',quantity:1,done:0,remaining:1}];mock.clientNameHistory=[{client_id:1,old_name:'Старое название',new_name:'Новое <имя>',occurred_at:'2026-09-30T10:00:00'}];mock.tariffHistory=[{operation_id:1,effective_from:'2026-01-01T00:00:00',employee_rate:200,client_rate:500},{operation_id:1,effective_from:'2099-01-01T00:00:00',employee_rate:300,client_rate:700}];await go('clients');});await page.waitForSelector('#clientSearch');
+      const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);await page.evaluate(()=>mock.stage3Permissions=['work.write','tasks.read','tasks.manage','batches.receive','finance.read','invoices.read','invoices.create','users.manage','clients.read','clients.manage','documents.read','access.history.read','payroll.own','rates.employee','rates.client']);await login(page);
+      await page.evaluate(async()=>{mock.clientNameOverride='Борискин';mock.clientAliases=[{client_id:1,alias:'Борисенко',source:'knowledge'}];mock.stage3Invoices=[{id:1,client_id:1,remaining:12500}];mock.stage3Shipments=[{id:'ship-client',batch_id:'batch-1',client_id:1,direction:'FBS',quantity:10},{id:'return-client',type:'return',batch_id:'batch-1',client_id:1,direction:'FBS',quantity:2,condition:'damaged'},{id:'ship-other',batch_id:'batch-other',client_id:2,direction:'FBO',quantity:99}];mock.stage3Tasks=[{id:'task-client',batch_id:'batch-1',batch_number:'PRT-2026-000001',operation_name:'Упаковка клиента',quantity:10,done:2,remaining:8},{id:'task-other',batch_id:'batch-other',batch_number:'PRT-OTHER',operation_name:'Чужая партия',quantity:1,done:0,remaining:1}];mock.clientNameHistory=[{client_id:1,old_name:'Старое название',new_name:'Новое <имя>',occurred_at:'2026-09-30T10:00:00'}];mock.tariffHistory=[{operation_id:1,effective_from:'2026-01-01T00:00:00',employee_rate:200,client_rate:500},{operation_id:1,effective_from:'2099-01-01T00:00:00',employee_rate:300,client_rate:700}];await go('clients');});await page.waitForSelector('#clientSearch');
       await page.locator('#clientSearch').fill('Старое название');assert.equal(await page.locator('#content [data-action=openClient]').isVisible(),true);
       await page.locator('#clientSearch').fill('Борисенко');assert.equal(await page.locator('#content [data-action=openClient]').isVisible(),true);
+      assert.equal(await page.evaluate(()=>mock.calls.some(c=>c.url.startsWith('/api/v3/client-aliases'))),true);
       assert.match(await page.locator('#content').innerText(),/Ранее: Старое название/);
       await page.locator('#clientSearch').fill('несуществующий клиент');assert.equal(await page.locator('#content [data-action=openClient]').isVisible(),false);
       assert.equal(await page.locator('#content .empty').filter({hasText:'Клиенты по этому запросу не найдены'}).isVisible(),true);
@@ -557,6 +605,19 @@ test('browser UI regression',async t=>{
       await page.locator('#sheetContent details summary').click();
       assert.match(await page.locator('#sheetContent').innerText(),/Действует сейчас/);
       assert.match(await page.locator('#sheetContent').innerText(),/Будущая версия/);
+      assert.equal(await page.locator('[data-action=newTariff][data-return-to-client="true"]').count(),1);
+      assert.equal(await page.locator('[data-action=clientOperations]').count(),1);
+      await page.locator('[data-action=newTariff][data-return-to-client="true"]').click();await page.waitForSelector('#tariffForm');
+      await page.locator('#tariffEmployee').fill('2.50');await page.locator('#tariffClient').fill('5.50');
+      await page.locator('#tariffForm [type=submit]').click();
+      await page.waitForFunction(()=>mock.calls.some(c=>c.method==='POST'&&c.url==='/api/v3/tariffs'));
+      const tariffWrite=await page.evaluate(()=>mock.calls.find(c=>c.method==='POST'&&c.url==='/api/v3/tariffs'));
+      assert.equal(tariffWrite.body.client_id,1);assert.equal(tariffWrite.body.operation_id,1);assert.equal(tariffWrite.body.employee_rate,'2.50');assert.equal(tariffWrite.body.client_rate,'5.50');
+      await page.waitForFunction(()=>document.querySelector('#sheetContent')?.textContent.includes('Реквизиты и контакты'));
+      await page.locator('[data-action=clientOperations]').click();await page.waitForFunction(()=>document.querySelector('#content')?.textContent.includes('Операции клиента'));
+      assert.equal(await page.locator('#content [data-action=editOperation]').count()>0,true);
+      assert.equal(await page.evaluate(()=>mock.calls.some(c=>c.url==='/api/admin/clients/1/operations')),true);
+      await page.evaluate(()=>actions.openClient({dataset:{id:'1'}}));await page.waitForSelector('[data-action=manageClientProducts]');
       await page.locator('[data-action=manageClientProducts]').click();await page.locator('[data-action=newCatalogProduct]').click();
       await page.locator('#catalogProductName').fill('Коробка');await page.locator('#catalogProductForm [type=submit]').click();
       await page.waitForFunction(()=>mock.calls.some(c=>c.method==='POST'&&c.url==='/api/v3/products'&&c.body?.action==='create'));
@@ -582,6 +643,8 @@ test('browser UI regression',async t=>{
       await restricted.page.waitForSelector('#clientSearch');await restricted.page.locator('#content [data-action=openClient]').click();
       await restricted.page.waitForFunction(()=>document.querySelector('#sheetContent')?.textContent.includes('Реквизиты и контакты'));
       assert.equal(await restricted.page.locator('[data-action=editClientRequisites]').count(),0);
+      assert.equal(await restricted.page.locator('[data-action=clientOperations]').count(),0);
+      assert.equal(await restricted.page.locator('[data-action=newTariff]').count(),0);
       assert.equal(await restricted.page.evaluate(()=>mock.calls.some(c=>c.url==='/api/v3/tasks')),false);
       assert.equal(await restricted.page.evaluate(()=>actions.openClientReceivables({dataset:{id:'1'}}).then(()=>false).catch(error=>error.message==='Недостаточно прав для просмотра дебиторки')),true);
       assert.deepEqual(restricted.errors,[]);await restricted.page.close();
@@ -592,6 +655,30 @@ test('browser UI regression',async t=>{
       assert.match(await page.locator('#sheetContent').innerText(),/Недоступно/);
       assert.deepEqual(errors,[]);await page.close();
     });
+    await t.test('Client 360 identifies a failed source instead of silently presenting a complete card',async()=>{
+      const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);
+      await page.evaluate(()=>{mock.stage3Permissions=['clients.read','batches.receive','clients.manage'];mock.failUrls=['/api/v3/shipments'];});
+      await login(page);await page.evaluate(()=>actions.openClient({dataset:{id:'1'}}));await page.waitForSelector('#sheetContent');
+      const rendered=await page.locator('#sheetContent').innerText();
+      assert.match(rendered,/Карточка загружена частично/);assert.match(rendered,/Не удалось загрузить: Отгрузки и возвраты/);
+      assert.match(rendered,/Реквизиты и контакты/);assert.deepEqual(errors,[]);await page.close();
+    });
+    await t.test('finance radar combines source-backed profitability, receivables and financial attention with capability gating',async()=>{
+      const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);
+      await page.evaluate(()=>{mock.stage3Permissions=['finance.read','invoices.read'];mock.stage3Finance={clients:[{client_id:1,client_name:'Клиент прибыль',revenue:10000,salary:3000,materials:1000,other:500,profit:5500,margin:0.55,margin_bps:5500,average_batch_profit:2750},{client_id:2,client_name:'Клиент убыток',revenue:2000,salary:1800,materials:500,other:200,profit:-500,margin_bps:-2500,average_batch_profit:-500}],months:{'2026-08':{revenue:8000,salary:3000,materials:1000,other:500,overhead:2000,profit:1500,margin_bps:1875},'2026-09':{revenue:10000,salary:4000,materials:1200,other:700,overhead:2500,profit:1600,margin_bps:1600}},totals:{revenue:12000,salary:4800,materials:1500,other:700},client_profit:5000,client_margin_bps:4167,company_overhead:1000,net_profit:4000,net_margin_bps:3333};mock.stage3Today={date:'2026-09-30',mode:'management',tasks:[],attention:[{type:'payment_late',label:'Просрочен платёж',amount:4000},{type:'batch_late',label:'Просрочена партия'}]};});
+      await login(page);await page.evaluate(()=>go('radar'));await page.waitForSelector('#content h2');
+      let rendered=await page.locator('#content').innerText();
+      for(const label of ['Прибыль клиентов','Общие расходы','Чистая прибыль','Убыточные клиенты','Открытая дебиторка','Просрочено','Открытые счета','Требует внимания','Просрочен платёж','Динамика по месяцам','ФОТ','Материалы','Расходы по клиентам','Прибыль'])assert.ok(rendered.includes(label),`missing ${label}`);
+      assert.match(rendered,/Убыточные клиенты\s+1/);assert.match(rendered,/Открытая дебиторка\s+125/);assert.match(rendered,/Просрочено\s+40/);
+      assert.doesNotMatch(rendered,/Просрочена партия/);assert.ok(rendered.indexOf('2026-09')<rendered.indexOf('2026-08'));
+      assert.equal(await page.evaluate(()=>mock.calls.some(c=>c.url.startsWith('/api/v3/receivables?'))),true);
+      await page.evaluate(()=>{S.me.permissions=S.me.permissions.filter(p=>p!=='invoices.read');mock.calls=[];mock.stage3Today={date:'2026-09-30',mode:'management',tasks:[],attention:[]};void go('radar');});
+      await page.waitForFunction(()=>document.querySelector('#content').textContent.includes('Финансовый радар')&&!document.querySelector('.loading'));
+      rendered=await page.locator('#content').innerText();
+      assert.doesNotMatch(rendered,/Открытая дебиторка|Просрочено|Открытые счета/);
+      assert.equal(await page.evaluate(()=>mock.calls.some(c=>c.url.startsWith('/api/v3/receivables?'))),false);
+      assert.deepEqual(errors,[]);await page.close();
+    });
     await t.test('batch economics shows basis-point margins and per-unit profit without inventing zero',async()=>{
       const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);
       await page.evaluate(()=>{mock.stage3Economy={plan:{salary:400,revenue:1000,materials:0,other:100,profit:500,volume:2},fact:{salary:200,revenue:500,materials:0,other:25,profit:275,volume:1},deviation:{salary:-200,revenue:-500,materials:0,other:-75,profit:-225,volume:-1},margin_bps:{plan:5050,fact:null,deviation:null},finished_units:1,cost_per_unit:225,profit_per_unit:275};});
@@ -599,6 +686,23 @@ test('browser UI regression',async t=>{
       const rendered=await page.locator('#sheetContent').innerText();
       assert.match(rendered,/Маржа[\s\S]*50,5% → Недоступно/);assert.match(rendered,/Себестоимость единицы: 2,25/);assert.match(rendered,/Прибыль на единицу: 2,75/);
       assert.deepEqual(errors,[]);await page.close();
+    });
+    await t.test('planned batch overhead is submitted only with finance capability',async()=>{
+      const batch={id:'batch-plan-role',number:'PRT-PLAN-ROLE',client_id:1,client_name:'Клиент',product:'Коробка',received_at:'2026-09-24',quantity:2,done:0,remaining:2,stage:'in_progress',ready:false};
+      const users=[{id:2,display_name:'Исполнитель',employee_id:102,active:true}];
+      for(const [role,permissions,expectCost] of [['admin',['tasks.manage','batches.receive','finance.read'],'1.25'],['manager',['tasks.manage','batches.receive'],null]]){
+        const {page,errors}=await fixture(browser,role,{width:390,height:844},true);
+        await page.evaluate(({permissions,batch,users})=>{mock.stage3Permissions=permissions;mock.stage3Batches=[batch];mock.stage3Users=users;},{permissions,batch,users});
+        await login(page);await page.evaluate(()=>go('batches'));await page.locator('[data-action=createTask]').click();await page.waitForSelector('#taskOperation');
+        assert.equal(await page.locator('#taskOther').count(),expectCost?1:0);
+        await page.selectOption('#taskOperation','1');await page.selectOption('#taskAssignees','2');
+        if(expectCost)await page.locator('#taskOther').fill(expectCost);
+        await page.locator('#createTaskForm [type=submit]').click();
+        await page.waitForFunction(()=>mock.calls.some(c=>c.method==='POST'&&c.url==='/api/v3/tasks'));
+        const created=await page.evaluate(()=>mock.calls.find(c=>c.method==='POST'&&c.url==='/api/v3/tasks'));
+        if(expectCost)assert.equal(created.body.other_cost,expectCost);else assert.equal(Object.hasOwn(created.body,'other_cost'),false);
+        assert.deepEqual(errors,[]);await page.close();
+      }
     });
     await t.test('shipped batch return flow is visible, permission aware and submits quantity/result',async()=>{
       const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);
@@ -627,7 +731,7 @@ test('browser UI regression',async t=>{
     });
     await t.test('Stage 3 timer, presence, activity and system information',async()=>{
       const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);
-      await page.evaluate(()=>mock.stage3Permissions=['work.write','tasks.read','tasks.manage','batches.receive','finance.read','invoices.read','invoices.create','users.manage','clients.read','clients.manage','access.history.read','payroll.own']);
+      await page.evaluate(()=>mock.stage3Permissions=['work.write','tasks.read','tasks.manage','batches.receive','finance.read','invoices.read','invoices.create','users.manage','clients.read','clients.manage','access.history.read','payroll.own','payroll.settlement.read']);
       await login(page);
       assert.match(await page.locator('#content').innerText(),/PORTAL Сегодня/);
       assert.match(await page.locator('#content').innerText(),/Финансовый радар/);
@@ -636,11 +740,17 @@ test('browser UI regression',async t=>{
       assert.match(await page.locator('#content').innerText(),/Выручка за месяц/);
       assert.match(await page.locator('#content').innerText(),/Открытые счета: 2/);
       assert.match(await page.locator('#content').innerText(),/Плановая прибыль\s+Недоступна/);
-      assert.match(await page.locator('#content').innerText(),/Выплачено \/ остаток\s+Нет закрытого периода/);
+      assert.match(await page.locator('#content').innerText(),/Закрытый ФОТ\s+Нет закрытого периода/);
       assert.match(await page.locator('#content').innerText(),/Скорость команды\s+5 шт\./);
-      await page.evaluate(()=>{mock.stage3Today={date:'2026-09-25',mode:'management',today_quantity:17,ready:1,active_batches:2,in_progress:0,tasks:[],attention:[]};void go('dashboard');});
-      await page.waitForFunction(()=>document.querySelector('#content').textContent.includes('PORTAL Сегодня')&&!document.querySelector('.loading'));
-      assert.doesNotMatch(await page.locator('#content').innerText(),/Ожидаемая прибыль|Выручка|Начислено сотрудникам/);
+      await page.evaluate(async()=>{mock.stage3Today={date:'2026-09-25',mode:'management',today_quantity:17,month_quantity:27,tasks:[],finance:{revenue:2500,salary:1200,materials:0,other:0,company_overhead:0,profit:900},closed_month_payroll:{accrued:10000,paid:4000,balance:6000}};await go('dashboard');});
+      await page.waitForFunction(()=>document.querySelector('#content').textContent.includes('Начислено 100')&&!document.querySelector('.loading'));
+      assert.match(await page.locator('#content').innerText(),/Закрытый ФОТ\s+Начислено 100 ₽ · Выплачено 40 ₽ · Остаток 60 ₽/);
+      await page.evaluate(async()=>{S.me.permissions=S.me.permissions.filter(p=>p!=='payroll.settlement.read'&&p!=='payroll.all');await go('dashboard');});
+      await page.waitForFunction(()=>!document.querySelector('#content').textContent.includes('Закрытый ФОТ')&&!document.querySelector('.loading'));
+      assert.doesNotMatch(await page.locator('#content').innerText(),/Закрытый ФОТ|Начислено 100|Выплачено 40|Остаток 60/);
+      await page.evaluate(async()=>{mock.stage3Today={date:'2026-09-26',mode:'management',today_quantity:17,ready:1,active_batches:2,in_progress:0,tasks:[],attention:[]};await go('dashboard');});
+      await page.waitForFunction(()=>document.querySelector('#content').textContent.includes('26.09.2026')&&!document.querySelector('.loading'));
+      assert.doesNotMatch(await page.locator('#content').innerText(),/Плановая прибыль|Выручка|Начислено|Закрытый ФОТ/);
       await page.evaluate(()=>{mock.stage3Today=null;void go('batches');});
       await page.waitForFunction(()=>S.page==='batches'&&document.querySelector('#content').textContent.includes('Связанные задания'));
       assert.match(await page.locator('#content').innerText(),/PRT-2026-000001/);
@@ -725,4 +835,23 @@ test('new employee creation is independent from existing employees',()=>{
   assert.match(source,/existingEmployeeWrap" hidden/);
   assert.match(source,/body\.create_employee=!existing/);
   assert.match(source,/Новый сотрудник получит собственную карточку и уникальный ID/);
+});
+
+test('self-service PIN change settings flow is masked, validates mismatch and hides for God',async t=>{
+  if(!chromium){t.skip('Playwright is not installed in this environment');return;}
+  const browser=await chromium.launch({headless:true,...(process.env.PORTAL_BROWSER_PATH?{executablePath:process.env.PORTAL_BROWSER_PATH}:{})});
+  try{
+    const {page,errors}=await fixture(browser,'packer');await login(page);await page.evaluate(()=>go('settings'));
+    await page.waitForFunction(()=>document.querySelector('#content [data-action=changePin]'));
+    await page.locator('[data-action=changePin]').click();await page.waitForSelector('#changePinForm');
+    for(const id of ['currentPin','newPin','confirmPin'])assert.equal(await page.locator('#'+id).getAttribute('type'),'password');
+    await page.locator('#currentPin').fill('fixture-current');await page.locator('#newPin').fill('fixture-new');await page.locator('#confirmPin').fill('mismatch');await page.locator('#changePinForm [type=submit]').click();
+    await page.waitForFunction(()=>document.querySelector('#toast')?.textContent.includes('PIN'));
+    assert.equal(await page.evaluate(()=>mock.calls.some(c=>c.url==='/api/me/pin')),false);
+    await page.locator('#confirmPin').fill('fixture-new');await page.locator('#changePinForm [type=submit]').click();
+    await page.waitForFunction(()=>mock.calls.some(c=>c.url==='/api/me/pin'));
+    assert.deepEqual(await page.evaluate(()=>mock.calls.find(c=>c.url==='/api/me/pin').body),{current_pin:'fixture-current',new_pin:'fixture-new'});
+    await page.evaluate(()=>{S.me.role='platform_owner';screens.settings();});
+    assert.equal(await page.locator('[data-action=changePin]').count(),0);assert.deepEqual(errors,[]);await page.close();
+  }finally{await browser.close();}
 });

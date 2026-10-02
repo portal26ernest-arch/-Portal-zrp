@@ -190,6 +190,14 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
     @property
     def admin(self):return self.tokens[1]
 
+    def role_token(self, role, company_id=1):
+        """Create an ephemeral role account through the canonical PostgreSQL user path."""
+        username='pg-role-'+role+'-'+secrets.token_hex(4)
+        with self.portal.tenants.company_scope(company_id):
+            uid=self.portal.save_user(dict(username=username,display_name='PG '+role,pin=self.synthetic_pin,role=role))
+            with self.portal.db() as conn:
+                return self.portal.create_session(conn,uid)
+
     def assert_unique_legacy_work_links(self, stage):
         """Pinpoint duplicate canonical links without printing row identities."""
         with self.portal.tenants.company_scope(1),self.portal.db() as conn:
@@ -345,9 +353,10 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.assertEqual(events['company.settings.updated']['fields'],
             ['monday_time','reminder_cadence','reminder_enabled','utc_offset_minutes'])
         self.assertEqual(events['user.permissions.updated']['fields'],['work.write'])
-        serialized=json.dumps(events,ensure_ascii=False)
-        for value in ('11:30','240','Synthetic packer 1','true'):
-            self.assertNotIn(value,serialized)
+        for event in events.values():
+            self.assertEqual(set(event),{'id','company_id','actor_id','event','entity_id','fields','created_at'})
+            self.assertNotIn('values',event)
+            self.assertNotIn('details',event)
         director=self.tokens['same_company_second_session']
         self.post('settings',{'reminder_enabled':True,'reminder_cadence':'daily'},director)
         self.assertEqual(self.get('settings',self.admin)['data']['reminder_cadence'],'daily')
@@ -436,6 +445,20 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.get('economy?batch_id='+batch['id'],self.tokens['company_1_packer'],status=403)
         self.get('economy?batch_id='+batch['id'],self.tokens[2],status=400)
 
+    def test_manager_cannot_set_nonzero_planned_other_cost_without_finance_capability(self):
+        batch=self.post('batches',dict(client_id=1,product='PG role-gated plan fixture',quantity=2))['data']
+        manager=self.tokens['company_1_packer']
+        self.addCleanup(lambda:self.post('permissions',{'user_id':2,'permissions':{'work.write':True}},self.admin))
+        self.post('permissions',{'user_id':2,'permissions':{'work.write':True,'tasks.manage':True}},self.admin)
+        self.request('/api/v3/tasks',manager,body={'batch_id':batch['id'],'operation_id':1,'quantity':2,
+            'assignees':[2],'other_cost':'1.25','request_id':'pg-manager-plan-cost-denied'},method='POST',status=403)
+        # A manager may still plan operational work without a financial override.
+        created=self.request('/api/v3/tasks',manager,body={'batch_id':batch['id'],'operation_id':1,'quantity':2,
+            'assignees':[2],'request_id':'pg-manager-plan-default-zero'},method='POST')['data']
+        economy=self.get('economy?batch_id='+batch['id'],self.admin)['data']
+        self.assertEqual(economy['plan']['other'],0)
+        self.assertEqual(created['batch_id'],batch['id'])
+
     def test_tariff_effective_version_keeps_postgresql_work_snapshots(self):
         from production_repository import Repository, utcnow
         self.assert_unique_legacy_work_links('tariff fixture baseline')
@@ -457,6 +480,34 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.assertEqual((before['salary'],before['employee_rate']),(400,200))
         self.assertEqual(current[before['id']]['salary'],400)
         self.assertEqual((after['salary'],after['employee_rate']),(600,300))
+        self.addCleanup(lambda:self.post('permissions',{'user_id':2,'permissions':{'rates.employee':False,'rates.client':False}},self.admin))
+        self.post('permissions',{'user_id':2,'permissions':{'rates.employee':True}},self.admin)
+        employee_only=self.get('tariff-history?operation_id=1',self.tokens['company_1_packer'])['data']
+        self.assertTrue(employee_only)
+        self.assertTrue(all('employee_rate' in row for row in employee_only))
+        self.assertTrue(all('client_rate' not in row for row in employee_only))
+        self.request('/api/v3/tariffs',self.tokens['company_1_packer'],
+                     {'client_id':1,'operation_id':1,'client_rate':'7.00',
+                      'effective_from':(datetime.fromisoformat(future)+timedelta(days=1)).isoformat(),
+                      'request_id':'pg-tariff-client-rate-forbidden'},method='POST',status=403)
+        self.post('permissions',{'user_id':2,'permissions':{'rates.employee':False,'rates.client':True}},self.admin)
+        client_only=self.get('tariff-history?operation_id=1',self.tokens['company_1_packer'])['data']
+        self.assertTrue(client_only)
+        self.assertTrue(all('client_rate' in row for row in client_only))
+        self.assertTrue(all('employee_rate' not in row for row in client_only))
+        self.request('/api/v3/tariffs',self.tokens['company_1_packer'],
+                     {'client_id':1,'operation_id':1,'employee_rate':'7.00',
+                      'effective_from':(datetime.fromisoformat(future)+timedelta(days=2)).isoformat(),
+                      'request_id':'pg-tariff-employee-rate-forbidden'},method='POST',status=403)
+        allowed_body={'client_id':1,'operation_id':1,'client_rate':'7.00',
+                      'effective_from':(datetime.fromisoformat(future)+timedelta(days=2)).isoformat(),
+                      'request_id':'pg-tariff-client-rate-allowed'}
+        allowed=self.request('/api/v3/tariffs',self.tokens['company_1_packer'],allowed_body,method='POST')['data']
+        replay=self.request('/api/v3/tariffs',self.tokens['company_1_packer'],allowed_body,method='POST')['data']
+        self.assertEqual(allowed['client_rate'],700)
+        self.assertEqual(replay['id'],allowed['id'])
+        self.assertNotIn('employee_rate',allowed)
+        self.assertNotIn('employee_rate',replay)
 
     def test_zzz_linked_legacy_and_canonical_money_reconcile_on_postgresql(self):
         work=self.post('work',dict(client_id=1,operation_id=1,quantity=2,
@@ -470,6 +521,11 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.assertGreaterEqual(result['unlinked_legacy_work_count'],0)
 
     def test_z_client_rename_history_aliases_are_company_scoped_on_postgresql(self):
+        known_id=self.request('/api/admin/clients',self.admin,{'name':'Борискин'})['id']
+        known=self.get('client-aliases?client_id='+str(known_id),self.admin)['data']
+        self.assertEqual([(row['alias'],row['source']) for row in known],[('Борисенко','knowledge')])
+        with self.portal.tenants.company_scope(1),self.portal.db() as conn:
+            self.assertEqual(self.portal.get_client(conn,known_id)['name'],'Борискин')
         client_id=self.request('/api/admin/clients',self.admin,{'name':'Synthetic alias client'})['id']
         operation=self.request(f'/api/admin/clients/{client_id}/operations',self.admin,
                                {'name':'Alias test packing','employee_rate':2,'client_rate':5})['id']
@@ -477,13 +533,65 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
                        self.tokens['company_1_packer'])['data']
         self.request(f'/api/admin/clients/{client_id}',self.admin,{'name':'Synthetic canonical client'},method='POST')
         history=self.get('client-name-history',self.admin)['data']
-        self.assertEqual([(row['old_name'],row['new_name']) for row in history],
+        self.assertEqual([(row['old_name'],row['new_name']) for row in history if row['client_id']==client_id],
                          [('Synthetic alias client','Synthetic canonical client')])
+        aliases=self.get('client-aliases?client_id='+str(client_id),self.admin)['data']
+        self.assertTrue(any(row['alias']=='Synthetic alias client' and row['source']=='rename' for row in aliases))
         saved_work=next(row for row in self.get('works',self.tokens['company_1_packer'])['data'] if row['id']==work['id'])
         self.assertEqual(saved_work['client_name'],'Synthetic alias client')
         self.assertEqual(self.get('client-name-history',self.tokens[2])['data'],[])
+        self.assertEqual(self.get('client-aliases',self.tokens[2])['data'],[])
         self.request('/api/v3/client-name-history',self.admin,status=403,
                      extra_headers={'X-Portal-Company':'2'})
+        self.request('/api/v3/client-aliases',self.admin,status=403,
+                     extra_headers={'X-Portal-Company':'2'})
+
+    def test_z_employee_rename_history_aliases_are_stable_id_scoped_on_postgresql(self):
+        with self.portal.tenants.company_scope(1),self.portal.db() as conn:
+            from employee_identity import update_employee_card
+            from employee_names import persist_employee_rename
+            from production_repository import Repository
+            r=Repository(conn,1);employee=r.employee_catalog()[0]
+            employee_id=employee['employee_id'];old_name=employee['full_name']
+            update_employee_card(conn,1,employee_id,'Артем Варданян',employee['username'])
+            persist_employee_rename(r,employee_id,old_name,'Артем Варданян')
+            conn.commit()
+            current={row['employee_id']:row for row in r.employee_catalog()}[employee_id]
+        self.assertEqual(current['full_name'],'Артем Варданян')
+        history=self.get('employee-name-history?employee_id='+str(employee_id),self.admin)['data']
+        aliases=self.get('employee-aliases?employee_id='+str(employee_id),self.admin)['data']
+        self.assertEqual([(row['old_name'],row['new_name']) for row in history],[(old_name,'Артем Варданян')])
+        self.assertTrue(any(row['alias']==old_name and row['source']=='rename' for row in aliases))
+        self.assertTrue(any(row['alias']=='Артем Вартанян' and row['source']=='knowledge' for row in aliases))
+        self.assertEqual(self.get('employee-name-history',self.tokens[2])['data'],[])
+        self.request('/api/v3/employee-aliases',self.admin,status=403,
+                     extra_headers={'X-Portal-Company':'2'})
+        self.get('employee-name-history',self.tokens['company_1_packer'],status=403)
+
+    def test_productivity_breakdown_is_tenant_scoped_and_self_only_on_postgresql(self):
+        batch=self.post('batches',dict(client_id=1,product='PG productivity fixture',quantity=3),self.admin)['data']
+        task=self.post('tasks',dict(batch_id=batch['id'],operation_id=1,quantity=3,assignees=[2]),self.admin)['data']
+        now=datetime.now(timezone.utc).replace(tzinfo=None)
+        self.post('work',dict(task_id=task['id'],quantity=1,started_at=(now-timedelta(hours=1)).isoformat(),
+            request_id='pg-productivity-work-1'),self.tokens['company_1_packer'])
+        self.post('work',dict(task_id=task['id'],quantity=1,started_at=(now-timedelta(hours=2)).isoformat(),
+            request_id='pg-productivity-work-2'),self.tokens['company_1_packer'])
+
+        team=self.get('analytics',self.admin)['data']
+        own=self.get('analytics',self.tokens['company_1_packer'])['data']
+        foreign=self.get('analytics',self.tokens[2])['data']
+        group=next(row for row in team['groups']
+                   if row['user_id']==2 and row['client_id']==1 and row['product']=='PG productivity fixture')
+        self.assertTrue(group['user_name']);self.assertTrue(group['client_name']);self.assertTrue(group['operation_name'])
+        self.assertEqual(group['timed_quantity'],2);self.assertGreater(group['units_per_hour'],0)
+        self.assertIsNotNone(group['variability'])
+        batch_group=next(row for row in team['batch_groups'] if row['batch_id']==batch['id'] and row['operation_id']==1)
+        self.assertEqual(batch_group['quantity'],2);self.assertGreater(batch_group['units_per_hour'],0)
+        self.assertIsNotNone(batch_group['variability'])
+        self.assertEqual({row['user_id'] for row in own['groups']},{2})
+        self.assertIn(batch['id'],{row['batch_id'] for row in own['batch_groups']})
+        self.assertNotIn(batch['id'],{row['batch_id'] for row in foreign['batch_groups']})
+        self.assertEqual(team['quality'],dict(available=False,recorded_units=0,defects=None))
 
     def test_zz_profitability_reconciles_postgresql_source_facts_without_allocating_overhead(self):
         before=self.get('finance',self.admin)['data']
@@ -510,6 +618,11 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.assertEqual(after['client_profit']-before['client_profit'],expected_profit)
         self.assertEqual(after['company_overhead']-before['company_overhead'],overhead['amount'])
         self.assertEqual(after['net_profit']-before['net_profit'],expected_profit-overhead['amount'])
+        from production_service import margin_basis_points
+        self.assertEqual(after['totals'],{key:sum(row[key] for row in after['clients']) for key in ('revenue','salary','materials','other')})
+        self.assertEqual(after_client['margin_bps'],margin_basis_points(after_client['profit'],after_client['revenue']))
+        self.assertEqual(after['client_margin_bps'],margin_basis_points(after['client_profit'],after['totals']['revenue']))
+        self.assertEqual(after['net_margin_bps'],margin_basis_points(after['net_profit'],after['totals']['revenue']))
 
     def test_secure_invitation_lifecycle_uses_hash_and_tenant_scope(self):
         """Stage 10 invitations remain hash-only, one-time and tenant-scoped on PostgreSQL."""
@@ -658,17 +771,18 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         owner=self.request('/api/platform/login',body={'username':'synthetic-owner','pin':pin})['token']
         self.request('/api/platform/login',body={'username':'synthetic-owner','pin':pin})
         day=datetime.now(timezone.utc).date().isoformat()
-        query=f'company_id=1&actor_id=1&event=owner_login&from={day}&to={day}&limit=1'
+        query=f'company_id=1&actor_id=1&event=god_login&from={day}&to={day}&limit=1'
         filtered=self.request('/api/platform/audit?'+query+'&page=1',owner)
         next_page=self.request('/api/platform/audit?'+query+'&page=2',owner)
         self.assertEqual(filtered['total'],2)
         self.assertEqual((filtered['page'],filtered['limit'],len(filtered['rows'])),(1,1,1))
         self.assertEqual((next_page['page'],len(next_page['rows'])),(2,1))
         self.assertNotEqual(filtered['rows'][0]['id'],next_page['rows'][0]['id'])
-        self.assertEqual(filtered['rows'][0]['event'],'owner_login')
+        self.assertEqual(filtered['rows'][0]['event'],'god_login')
         self.assertEqual(filtered['rows'][0]['outcome'],'success')
         self.assertNotIn(pin,json.dumps(filtered))
         self.request('/api/platform/audit',self.admin,status=403)
+        self.request('/api/platform/audit',self.tokens['same_company_second_session'],status=403)
         self.request('/api/platform/audit',self.tokens['company_1_packer'],status=403)
         invite_body={'action':'create','role':'packer','username':'owner-scoped-invite',
                      'display_name':'Owner Scoped Invite','request_id':'owner-scoped-invite-once'}
@@ -678,7 +792,7 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.assertTrue(selected['token'].startswith('2.'))
         self.assertEqual(selected['invite']['company_id'],2)
         support_audit=self.request(
-            '/api/platform/audit?company_id=2&actor_id=1&event=technical_access',owner)
+            '/api/platform/audit?company_id=2&actor_id=1&event=god_access',owner)
         support_events=[(row['outcome'],json.loads(row['details']))
                         for row in support_audit['rows']]
         self.assertTrue(any(outcome=='success' and details.get('route')=='/api/v3/invitations'
@@ -928,17 +1042,24 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
                          entry_type='payout',amount='1.00',reason='Disposable PostgreSQL role-flow',
                          request_id='pg-settlement-payout-once')
         self.request('/api/v3/payroll-settlements',self.tokens['company_1_packer'],payout_body,method='POST',status=403)
+        manager=self.role_token('manager')
+        self.request('/api/v3/payroll-settlements',manager,dict(payout_body,request_id='pg-settlement-manager-denied'),method='POST',status=403)
         payout=self.request('/api/v3/payroll-settlements',self.tokens[1],payout_body,method='POST')['data']
         retry=self.request('/api/v3/payroll-settlements',self.tokens[1],payout_body,method='POST')['data']
         self.assertEqual(payout['id'],retry['id'])
+        accountant=self.role_token('accountant')
+        accountant_payout=self.request('/api/v3/payroll-settlements',accountant,
+            dict(payout_body,amount='0.50',reason='Disposable PostgreSQL accountant role-flow',
+                 request_id='pg-settlement-accountant-once'),method='POST')['data']
+        self.assertEqual(accountant_payout['entry_type'],'payout')
         totals=self.request('/api/v3/payroll-settlements?payroll_period_id='+period['id'],self.tokens[1])['data']['totals']
-        self.assertEqual((totals['accrued'],totals['paid'],totals['balance']),(400,100,300))
+        self.assertEqual((totals['accrued'],totals['paid'],totals['balance']),(400,150,250))
         self.request('/api/v3/payroll-settlements?payroll_period_id='+period['id'],self.tokens['company_1_packer'],status=403)
         self.request('/api/v3/payroll-settlements?payroll_period_id='+period['id'],self.tokens[2],status=400)
         with self.portal.tenants.company_scope(1),self.portal.db() as conn:
             repo=Repository(conn,1)
             self.assertEqual(repo.get('payroll_periods',period['id'])['snapshot'],snapshot_before)
-            self.assertEqual(conn.execute('SELECT COUNT(*),SUM(amount_minor),pg_typeof(amount_minor)::text FROM payroll_settlement_entries WHERE payroll_period_id=? GROUP BY pg_typeof(amount_minor)',(period['id'],)).fetchone()[:],(1,100,'bigint'))
+            self.assertEqual(conn.execute('SELECT COUNT(*),SUM(amount_minor),pg_typeof(amount_minor)::text FROM payroll_settlement_entries WHERE payroll_period_id=? GROUP BY pg_typeof(amount_minor)',(period['id'],)).fetchone()[:],(2,150,'bigint'))
 
     @unittest.skipUnless(_WEB_E2E,'Web browser gate only')
     def test_real_web_static_login_meta_and_company_scope_in_browser(self):

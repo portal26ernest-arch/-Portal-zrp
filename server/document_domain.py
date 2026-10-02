@@ -109,6 +109,8 @@ class Documents:
     @staticmethod
     def public(item):
         value={k:v for k,v in item.items() if k not in ('fingerprint','request_id','storage_key','file_b64','invoice_kind','payroll_period_kind')}
+        if value.get('actor_kind')=='platform_owner':
+            value.pop('created_by',None);value.pop('actor_kind',None)
         value.update(filename=item['original_filename'],sha256=item['checksum_sha256'])
         if item.get('payroll_period_id'):
             value['period_id']=item['payroll_period_id'];value['snapshot']={}

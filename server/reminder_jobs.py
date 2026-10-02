@@ -10,9 +10,11 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import re
 import uuid
+from itertools import islice
 
 
 _KEY_PART = re.compile(r"^[A-Za-z0-9._:-]{1,160}$")
+MAX_REMINDERS_PER_RUN = 500
 
 
 @dataclass(frozen=True)
@@ -131,7 +133,14 @@ class ReminderRunner:
         now = self.clock()
         cadence_id = self.cadence_id(now)
         sent = duplicate = failed = 0
-        for reminder in reminders:
+        try:
+            candidate_count = len(reminders)
+        except TypeError:
+            candidate_count = None
+        bounded = list(islice(iter(reminders), MAX_REMINDERS_PER_RUN))
+        processed = len(bounded)
+        deferred = max(0, candidate_count - processed) if candidate_count is not None else None
+        for reminder in bounded:
             if not isinstance(reminder, Reminder):
                 raise TypeError("Reminder candidates must be validated Reminder values")
             key = reminder.key(cadence_id)
@@ -145,7 +154,8 @@ class ReminderRunner:
                 sent += 1
             else:
                 duplicate += 1
-        return {"enabled": True, "sent": sent, "duplicate": duplicate, "failed": failed}
+        return {"enabled": True, "sent": sent, "duplicate": duplicate,
+                "failed": failed, "processed": processed, "deferred": deferred}
 
 
 def next_run_at(now, cadence, utc_offset_minutes=0):
@@ -194,12 +204,14 @@ def run_scheduled_company(repository, *, enabled=False, cadence="daily",
     cadence_id = runner.cadence_id(current)
     result = {"enabled": False, "sent": 0, "duplicate": 0, "failed": 0}
     candidates = []
+    deferred = 0
     if enabled:
         try:
             candidates = source_candidates(repository, current,
                                            utc_offset_minutes=utc_offset_minutes)
             result = runner.run(company_id, candidates,
                                 dispatch_once=repository_dispatcher(repository, occurred_at=current))
+            deferred = result["deferred"]
         except Exception:
             # Exception messages may contain SQL or tenant data.
             result = {"enabled": True, "sent": 0, "duplicate": 0, "failed": 1}
@@ -209,7 +221,8 @@ def run_scheduled_company(repository, *, enabled=False, cadence="daily",
                   completed_at=current.astimezone(timezone.utc).isoformat(),
                   next_run_at=next_run_at(current, cadence, utc_offset_minutes),
                   outcome=outcome, candidate_count=len(candidates), sent=result["sent"],
-                  duplicate=result["duplicate"], failed=result["failed"])
+                  duplicate=result["duplicate"], failed=result["failed"],
+                  processed=min(len(candidates), MAX_REMINDERS_PER_RUN), deferred=deferred)
     repository.insert_once("reminder_job_runs", record, run_id)
     return {key: value for key, value in record.items() if key != "company_id"}
 

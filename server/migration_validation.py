@@ -45,7 +45,7 @@ def _normalize(value):
     return value
 
 
-def snapshot(conn, dialect, company_id, projection=None):
+def snapshot(conn, dialect, company_id, projection=None, allow_legacy_primary=False):
     """Hash company-scoped rows without printing credentials or personal data."""
     if type(company_id) is not int or company_id < 1:
         raise ValidationError('Invalid company_id')
@@ -53,6 +53,10 @@ def snapshot(conn, dialect, company_id, projection=None):
     for table in TABLES:
         columns = _columns(conn, dialect, table)
         if projection is not None and table not in projection:
+            # Migration history is reconciled separately because cutover may
+            # legitimately add required schema-version markers.
+            if table == 'portal_production_migrations':
+                continue
             if columns and conn.execute('SELECT 1 FROM ' + table +
                                         ' WHERE company_id=%s LIMIT 1',
                                         (company_id,)).fetchone():
@@ -62,25 +66,39 @@ def snapshot(conn, dialect, company_id, projection=None):
             if table in REQUIRED:
                 raise ValidationError('Missing required table: ' + table)
             continue
-        if 'company_id' not in columns:
+        legacy_unscoped = (allow_legacy_primary and dialect == 'sqlite' and
+                           projection is None and company_id == 1 and
+                           'company_id' not in columns)
+        if 'company_id' not in columns and not legacy_unscoped:
             raise ValidationError('Missing company_id: ' + table)
-        # Older SQLite copies may lack columns newly added to PostgreSQL. Hash
-        # every source column in the destination and reject missing columns.
-        fields = sorted(projection[table]['columns'] if projection is not None else columns)
-        if not set(fields).issubset(columns):
+        # Older SQLite primary-company copies may predate tenant columns. Treat
+        # those rows as company #1 only, matching the importer contract.
+        source_columns = list(columns)
+        projected_columns = source_columns + (['company_id'] if legacy_unscoped else [])
+        fields = sorted(projection[table]['columns'] if projection is not None else projected_columns)
+        if projection is not None and not set(fields).issubset(columns):
             raise ValidationError('Missing target columns: ' + table)
-        placeholder = '%s' if dialect == 'postgresql' else '?'
-        cursor = conn.execute('SELECT ' + ','.join(fields) + ' FROM ' + table +
-                              ' WHERE company_id=' + placeholder, (company_id,))
+        if legacy_unscoped:
+            selected = [field for field in fields if field != 'company_id']
+            cursor = conn.execute('SELECT ' + ','.join(selected) + ' FROM ' + table)
+        else:
+            selected = fields
+            placeholder = '%s' if dialect == 'postgresql' else '?'
+            cursor = conn.execute('SELECT ' + ','.join(fields) + ' FROM ' + table +
+                                  ' WHERE company_id=' + placeholder, (company_id,))
         hashes = []
         while True:
             rows = cursor.fetchmany(1000)
             if not rows:
                 break
             for row in rows:
-                if row[fields.index('company_id')] != company_id:
-                    raise ValidationError('Company scope mismatch: ' + table)
-                record = dict(zip(fields, (_normalize(value) for value in row)))
+                if legacy_unscoped:
+                    record = dict(zip(selected, (_normalize(value) for value in row)))
+                    record['company_id'] = _normalize(company_id)
+                else:
+                    if row[fields.index('company_id')] != company_id:
+                        raise ValidationError('Company scope mismatch: ' + table)
+                    record = dict(zip(fields, (_normalize(value) for value in row)))
                 if table == 'portal_production':
                     try:
                         payload = (record['payload'] if isinstance(record['payload'], dict)
@@ -237,7 +255,7 @@ def reconcile_linked_work_money(legacy_conn, ledger_conn, company_id,
             'money_fields_checked': checked}
 
 
-def compare_migration_history(source_rows, destination_rows, required_version=6):
+def compare_migration_history(source_rows, destination_rows, required_version=6, additional_required_versions=()):
     """Preserve source history exactly and allow only the required cutover marker."""
     source = {int(version): applied_at for version, applied_at in source_rows}
     destination = {int(version): applied_at for version, applied_at in destination_rows}
@@ -246,9 +264,11 @@ def compare_migration_history(source_rows, destination_rows, required_version=6)
     for version, applied_at in source.items():
         if destination.get(version) != applied_at:
             raise ValidationError('Migration validation failed: portal_production_migrations')
-    allowed = set(source)
-    allowed.add(required_version)
-    if set(destination) != allowed or required_version not in destination or not destination[required_version]:
+    required = {int(required_version)}
+    required.update(int(version) for version in additional_required_versions)
+    allowed = set(source) | required
+    if set(destination) != allowed or any(
+            version not in destination or not destination[version] for version in required):
         raise ValidationError('Migration validation failed: portal_production_migrations')
     return True
 

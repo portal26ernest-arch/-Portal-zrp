@@ -30,16 +30,31 @@ def validate(sqlite_copy, company_ids, pg_dsn):
                 target.execute('SET TRANSACTION READ ONLY')
                 for company_id in company_ids:
                     bind_company(target, company_id)
-                    source_facts = snapshot(source, 'sqlite', company_id)
+                    source_facts = snapshot(source, 'sqlite', company_id, allow_legacy_primary=True)
                     target_facts = snapshot(target, 'postgresql', company_id,
                                             projection=source_facts)
-                    source_history = source.execute(
-                        'SELECT version,applied_at FROM portal_production_migrations '
-                        'WHERE company_id=? ORDER BY version', (company_id,)).fetchall()
+                    source_tables = {row[0] for row in source.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table'")}
+                    if 'portal_production_migrations' in source_tables:
+                        history_columns = {row[1] for row in source.execute(
+                            'PRAGMA table_info(portal_production_migrations)')}
+                        if 'company_id' in history_columns:
+                            source_history = source.execute(
+                                'SELECT version,applied_at FROM portal_production_migrations '
+                                'WHERE company_id=? ORDER BY version', (company_id,)).fetchall()
+                        elif company_id == 1:
+                            source_history = source.execute(
+                                'SELECT version,applied_at FROM portal_production_migrations '
+                                'ORDER BY version').fetchall()
+                        else:
+                            raise ValidationError('Missing company_id: portal_production_migrations')
+                    else:
+                        source_history = []
                     target_history = target.execute(
                         'SELECT version,applied_at FROM portal_production_migrations '
                         'WHERE company_id=%s ORDER BY version', (company_id,)).fetchall()
-                    compare_migration_history(source_history, target_history, required_version=6)
+                    compare_migration_history(source_history, target_history, required_version=6,
+                                              additional_required_versions=(7,))
                     source_facts = dict(source_facts)
                     target_facts = dict(target_facts)
                     source_facts.pop('portal_production_migrations', None)

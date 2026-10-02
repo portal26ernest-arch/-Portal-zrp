@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
   push:
     branches: ["portal-next-b003", "assistant-release-3.4-candidate", "assistant/**", "assistant-part10-web-invoice-e2e", "assistant-part11-web-template-download", "codex-finalization-megapack-part12", "codex/part12-employee-id"]
-    paths: ["server/**", ".github/workflows/server-tests.yml"]
+    paths: ["server/**", "ops/**", ".github/workflows/server-tests.yml"]
   pull_request:
-    paths: ["server/**", ".github/workflows/server-tests.yml"]
+    paths: ["server/**", "ops/**", ".github/workflows/server-tests.yml"]
 
 permissions:
   contents: read
@@ -31,3 +31,7 @@ jobs:
         env:
           PORTAL_TEST_HTTP: "1"
         run: python -m unittest discover -s server -p 'test_*.py' -v
+      - name: Verify backup and cutover infrastructure contracts
+        run: |
+          bash -n ops/portal_central_backup.sh
+          python -m unittest ops.test_infra_readiness -v

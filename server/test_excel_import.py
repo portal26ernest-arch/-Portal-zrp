@@ -12,9 +12,10 @@ from xml.etree import ElementTree as ET
 from unittest.mock import patch
 
 import test_documents_api as fixtures
-from excel_template import workbook
+from excel_template import TEMPLATE_VERSION,workbook
 from portal_excel_workbook import NS,parse_template
 from excel_import import ExcelImport
+from employee_names import employee_name_key
 from production_service import Production
 from production_repository import Repository
 
@@ -43,6 +44,46 @@ class ImportAPITest(unittest.TestCase):
     def database_hashes(self):
         paths=[Path(portal.DB_PATH),portal.tenants.platform_path(portal.DB_PATH),portal.tenants.tenant_path(portal.DB_PATH,self.other)]
         return {str(path):hashlib.sha256(path.read_bytes()).hexdigest() for path in paths}
+
+    def test_employee_name_aliases_prevent_ambiguous_import_without_rewriting_names(self):
+        for alias,canonical in (('Борисенко','Борискин'),('Вартанян','Варданян'),('Вдовин','Вдовина'),
+                                ('Шульгинова','Шульгина'),('Эленгатика','Элегантика'),('Корягин','Карягин'),
+                                ('Коорягин','Карягин'),('Чотчаев','Чотчаева')):
+            self.assertEqual(employee_name_key('Артем '+alias),employee_name_key('Артем '+canonical))
+        self.assertEqual(employee_name_key('  АРТЕМ Вартанян  '),employee_name_key('Артем Варданян'))
+        self.assertEqual(employee_name_key('Вартанян, Артем'),employee_name_key('Варданян, Артем'))
+        with portal.db() as conn:
+            employee=conn.execute('SELECT telegram_id FROM employees WHERE company_id=1 ORDER BY telegram_id LIMIT 1').fetchone()
+            conn.execute('UPDATE employees SET full_name=? WHERE company_id=1 AND telegram_id=?',('Артем Варданян',employee[0]))
+            conn.commit()
+        plan=self.preview(self.payload({'Сотрудники':[dict(employee_ref='alias-collision',full_name='Артем Вартанян')]}))
+        self.assertIn('employee_identity_ambiguous',plan['rows'][0]['errors'])
+        with portal.db() as conn:
+            self.assertEqual(conn.execute('SELECT full_name FROM employees WHERE company_id=1 AND telegram_id=?',(employee[0],)).fetchone()[0],'Артем Варданян')
+
+    def test_employee_rename_history_is_stable_id_scoped_and_never_matches_by_fio(self):
+        with portal.db() as conn:
+            r=Repository(conn,1);employee=r.employee_catalog()[0]
+            employee_id=employee['employee_id'];old_name=employee['full_name'];username=employee['username']
+        new_name='Артем Варданян'
+        payload=self.payload({'Сотрудники':[dict(employee_ref='stable-rename',employee_id=employee_id,
+                                                full_name=new_name,profile_username=username)]})
+        preview=self.preview(payload)
+        self.assertEqual(preview['rows'][0]['classification'],'update')
+        self.assertEqual(self.apply(payload,preview)['status'],'applied')
+        with portal.db() as conn:
+            r=Repository(conn,1);current={row['employee_id']:row for row in r.employee_catalog()}[employee_id]
+            self.assertEqual(current['full_name'],new_name)
+            history=[row for row in r.list('employee_name_history') if row['employee_id']==employee_id]
+            aliases=[row for row in r.list('employee_aliases') if row['employee_id']==employee_id]
+        self.assertEqual([(row['old_name'],row['new_name']) for row in history],[(old_name,new_name)])
+        self.assertTrue(any(row['alias']==old_name and row['source']=='rename' for row in aliases))
+        self.assertTrue(any(row['alias']=='Артем Вартанян' and row['source']=='knowledge' for row in aliases))
+        self.assertEqual(self.get('employee-name-history?employee_id='+str(employee_id))['data'],history)
+        self.assertEqual(self.get('employee-aliases?employee_id='+str(employee_id))['data'],aliases)
+        self.assertEqual(self.get('employee-name-history',self.other_admin)['data'],[])
+        self.get('employee-name-history',self.role_token('manager'),status=403)
+        self.request('/api/v3/employee-aliases',self.admin,status=403,extra_headers={'X-Portal-Company':'2'})
 
     def test_preview_no_database_writes_for_admin_or_selected_owner(self):
         data={'Клиенты':[dict(client_ref='new',name='Синтетический клиент',active=1)],
@@ -114,7 +155,7 @@ class ImportAPITest(unittest.TestCase):
         payload=self.payload()
         cases=[b'not ZIP',
                change_zip(payload,'xl/workbook.xml',lambda raw:raw.replace('Компания'.encode(),'Wrong'.encode())),
-               change_zip(payload,'xl/worksheets/sheet1.xml',lambda raw:raw.replace(b'<t>1.0</t>',b'<t>99</t>')),
+               change_zip(payload,'xl/worksheets/sheet1.xml',lambda raw:raw.replace(('<t>'+TEMPLATE_VERSION+'</t>').encode(),b'<t>99</t>')),
                change_zip(payload,'xl/worksheets/sheet2.xml',lambda raw:raw.replace(b'employee_id',b'bad_key')),
                change_zip(payload,'xl/worksheets/sheet2.xml',lambda raw:raw.replace(b'<c r="A1"',b'<c r="A1"').replace(b'<is><t>PORTAL_TEMPLATE_VERSION</t></is>',b'<f>1+1</f><v>2</v>')),
                change_zip(payload,'[Content_Types].xml',lambda raw:raw.replace(b'spreadsheetml.sheet.main',b'spreadsheetml.sheet.macroEnabled.main')),
@@ -160,6 +201,32 @@ class ImportAPITest(unittest.TestCase):
             self.assertEqual(conn.execute('SELECT COUNT(*) FROM app_sessions WHERE user_id=?',(uid,)).fetchone()[0],0)
             self.assertEqual(Repository(conn,1).payroll_employee(101,legacy=True)['employee_id'],eid)
         self.get('catalog',target,status=401)
+
+    def test_new_employee_can_create_login_role_and_pin_in_one_import(self):
+        row=dict(employee_ref='new-login',full_name='Новый упаковщик',profile_username='new.packer',
+                 role='packer',active=1,initial_pin='4826')
+        payload=self.payload({'Сотрудники':[row]});preview=self.preview(payload)
+        self.assertTrue(preview['can_apply'],preview['summary'])
+        self.assertEqual(preview['rows'][0]['normalized']['initial_pin'],'***')
+        result=self.apply(payload,preview);self.assertEqual(result['status'],'applied')
+        with portal.db() as conn:
+            user=conn.execute("SELECT username,role,active,pin_salt,pin_hash,telegram_id FROM app_users WHERE lower(username)=lower('new.packer')").fetchone()
+            self.assertIsNotNone(user);self.assertEqual(tuple(user[:3]),('new.packer','packer',1))
+            self.assertTrue(portal.verify_pin('4826',user[3],user[4]))
+            self.assertLess(user[5],0)
+            employee=conn.execute('SELECT full_name FROM employees WHERE telegram_id=?',(user[5],)).fetchone()
+            self.assertEqual(employee[0],'Новый упаковщик')
+
+    def test_new_access_requires_role_pin_and_unique_login(self):
+        base=dict(employee_ref='new-login',full_name='Новый сотрудник',profile_username='new.login')
+        plan=self.preview(self.payload({'Сотрудники':[dict(base,role='packer',active=1)]}))
+        self.assertIn('new_access_requires_valid_pin',plan['rows'][0]['errors'])
+        plan=self.preview(self.payload({'Сотрудники':[dict(base,initial_pin='4826',active=1)]}))
+        self.assertIn('new_access_requires_role',plan['rows'][0]['errors'])
+        self.role_token('manager')
+        duplicate=dict(base,profile_username='manager',role='packer',active=1,initial_pin='4826')
+        plan=self.preview(self.payload({'Сотрудники':[duplicate]}))
+        self.assertIn('access_username_conflict',plan['rows'][0]['errors'])
 
     def test_access_activation_self_change_and_last_admin_are_rejected(self):
         target=self.role_token('shift')

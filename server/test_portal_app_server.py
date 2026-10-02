@@ -14,6 +14,7 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import threading
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 from contextlib import closing
@@ -114,6 +115,12 @@ class PortalAPITest(unittest.TestCase):
         gc.collect()
         self.tmp.cleanup()
 
+    def test_readiness_checks_both_planes_without_disclosing_errors(self):
+        self.assertEqual(self.request('/api/ready'), {'ok': True, 'ready': True})
+        with patch.object(portal.tenants, 'control', side_effect=ConnectionError('secret-dsn')):
+            response = self.request('/api/ready', status=503)
+        self.assertNotIn('secret-dsn', json.dumps(response))
+
     def request(self,path,token=None,body=None,method=None,status=200,extra_headers=None):
         headers = {"Authorization":"Bearer "+token} if token else {}
         headers.update(extra_headers or {})
@@ -145,6 +152,32 @@ class PortalAPITest(unittest.TestCase):
         logged=self.login("WORKER","1234")
         self.assertEqual(logged["user"]["username"],"worker")
         self.request("/api/users",self.admin,{"username":"WoRkEr","display_name":"Duplicate","pin":"4321","role":"packer"},status=400)
+
+    def test_self_service_pin_change_verifies_identity_revokes_other_sessions_and_preserves_current(self):
+        with portal.db() as conn:
+            other_session=portal.create_session(conn,self.worker_id)
+        with patch.object(portal.Repository,"ready",return_value=True), patch.object(portal.Repository,"audit") as audit:
+            self.assertEqual(self.request("/api/me/pin",self.worker,{"current_pin":"1234","new_pin":"5678"}),{"ok":True})
+        audit.assert_called_once()
+        audit_args,audit_kwargs=audit.call_args
+        self.assertEqual(audit_args[1:],("user.pin.changed",self.worker_id))
+        self.assertEqual(audit_kwargs,{})
+        self.assertIsNotNone(portal.user_from_token(self.worker))
+        self.assertIsNone(portal.user_from_token(other_session))
+        self.login("worker","1234",status=401)
+        self.assertEqual(self.login("worker","5678")["user"]["id"],self.worker_id)
+
+    def test_self_service_pin_change_rejects_wrong_same_invalid_and_targeted_payloads_without_mutation(self):
+        for payload in (
+            {"current_pin":"wrong","new_pin":"5678"},
+            {"current_pin":"1234","new_pin":"1234"},
+            {"current_pin":"1234","new_pin":"123"},
+            {"current_pin":"1234","new_pin":"x"*129},
+            {"current_pin":"1234","new_pin":"5678","user_id":self.admin_id},
+        ):
+            self.request("/api/me/pin",self.worker,payload,status=400)
+        self.login("worker","1234")
+        self.request("/api/me/pin",status=401,body={"current_pin":"1234","new_pin":"5678"})
 
     def test_desktop_update_manifest_is_public_and_fail_closed(self):
         keys = {
@@ -320,6 +353,49 @@ class PortalAPITest(unittest.TestCase):
         self.assertEqual(portal.audit_route('/api/v3/invitations'),'/api/v3/invitations')
         self.assertEqual(portal.audit_route('/api/v3/invitations/123'),'/api/v3/invitations/{id}')
         self.assertEqual(portal.audit_route('/api/v3/unlisted-secret-path'),'unknown')
+
+
+class PostgreSQLDatabaseNameValidationTest(unittest.TestCase):
+    def test_split_control_and_tenant_databases_are_supported(self):
+        with patch.object(portal, 'CONFIG', SimpleNamespace(environment='test')):
+            portal.validate_postgresql_database_names(
+                'portal_test_control_runtime', 'portal_test_company_runtime')
+            with self.assertRaises(RuntimeError):
+                portal.validate_postgresql_database_names(
+                    'portal_control_runtime', 'portal_test_company_runtime')
+            with self.assertRaises(RuntimeError):
+                portal.validate_postgresql_database_names(
+                    'portal_test_control_runtime', 'portal_company_runtime')
+        with patch.object(portal, 'CONFIG', SimpleNamespace(environment='production')):
+            portal.validate_postgresql_database_names(
+                'portal_prod_control', 'portal_prod_company_1')
+            for control, tenant in (
+                    ('portal_prod_control', 'portal_prod_control'),
+                    ('portal_test_control', 'portal_prod_company_1'),
+                    ('portal_prod_control', 'portal_test_company_1')):
+                with self.subTest(control=control, tenant=tenant), self.assertRaises(RuntimeError):
+                    portal.validate_postgresql_database_names(control, tenant)
+
+    def test_production_role_split_denies_cross_plane_access(self):
+        class FakeConnection:
+            def __init__(self, role, access):
+                self.role, self.access = role, access
+
+            def execute(self, sql):
+                return SimpleNamespace(fetchone=lambda: (self.role,) if 'current_user' in sql and
+                                       'has_table_privilege' not in sql else self.access)
+
+        control = FakeConnection('control', (True, True, False))
+        tenant = FakeConnection('tenant', (True, False, False))
+        portal.validate_postgresql_runtime_split(control, tenant)
+        for bad_control, bad_tenant in (
+                (FakeConnection('tenant', control.access), tenant),
+                (FakeConnection('control', (True, True, True)), tenant),
+                (control, FakeConnection('tenant', (True, True, False))),
+                (control, FakeConnection('tenant', (True, False, True))),
+                (control, FakeConnection('tenant', (False, False, False)))):
+            with self.subTest(control=bad_control.access, tenant=bad_tenant.access), self.assertRaises(RuntimeError):
+                portal.validate_postgresql_runtime_split(bad_control, bad_tenant)
 
 
 if __name__ == "__main__":

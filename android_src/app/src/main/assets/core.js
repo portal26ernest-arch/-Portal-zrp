@@ -1,7 +1,7 @@
 'use strict';
 // Presentation capabilities; the server remains the security authority.
 globalThis.PortalCore = (() => {
-  const roles = {admin:'Управляющий',director:'Директор',manager:'Менеджер',packer:'Сотрудник',shift:'Старший смены',accountant:'Бухгалтер',platform_owner:'Владелец платформы'};
+  const roles = {admin:'Управляющий',director:'Директор',manager:'Менеджер',packer:'Сотрудник',shift:'Старший смены',accountant:'Бухгалтер',platform_owner:'God'};
   const modules = [
     {id:'work',title:'Выработка',icon:'plus',description:'Записать работу'},
     {id:'payroll',title:'Зарплата',icon:'wallet',description:'Начисления и выплаты'},

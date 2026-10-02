@@ -1,12 +1,77 @@
 # PORTAL MASTER ROADMAP
 
-Канонический реестр требований проекта. Восстановлен из прежних больших ТЗ: блока реализации, 20-пунктового аудита и последующих дополнений. Пункты не удалять без явного решения владельца проекта.
+> **ЕДИНСТВЕННЫЙ ИСТОЧНИК ИСТИНЫ ДЛЯ ПРОЕКТА PORTAL.**
+>
+> Перед ЛЮБОЙ работой — ChatGPT, Codex, GBI, другой агент или человек — сначала прочитать этот файл целиком/релевантные разделы. После работы обновить этот файл в том же коммите: что принято, что сделано, что проверено, что осталось и какой следующий шаг. Никакие задачи, договорённости или замечания не считаются зафиксированными, пока они не внесены сюда.
+>
+> Код, ТЗ, история изменений и релизные инструкции хранятся централизованно в одном GitHub-репозитории `portal26ernest-arch/-Portal-zrp`. VPS запускает только версии, полученные из этого репозитория. Рабочий ПК и телефон не являются источниками истины и не должны содержать уникальную единственную копию проекта. База компании хранится централизованно в PostgreSQL на VPS; исходники и ТЗ — в GitHub. Это одна логическая система PORTAL с разделением runtime-данных и версионируемого кода.
+>
+> **Запрещено:** выпускать релиз из боковой/случайной ветки; хранить уникальные изменения только локально; начинать новую задачу без проверки этого файла; удалять ранее подтверждённую функцию ради рефакторинга без явного решения владельца; считать задачу завершённой без теста/контрольного сценария и записи результата сюда.
+
+## 0. Оперативное управление проектом
+
+**Текущая цель релиза:** PORTAL 4.3 — восстановить и свести в одну каноническую линию Android, Desktop/Web и Server после расхождения веток.
+
+**Текущая рабочая ветка:** `assistant/portal-4.3-consolidation-20261002`.
+
+**Канонический процесс каждой задачи:**
+1. Прочитать этот файл и проверить текущий статус/зависимости.
+2. Внести новую задачу или замечание в раздел «Входящие / Принять в работу».
+3. Перевести выбранную задачу в «В работе» с агентом/веткой/датой.
+4. Реализовать только в каноническом репозитории; локальная копия допустима лишь как временный рабочий каталог.
+5. Прогнать обязательные тесты и записать фактический результат.
+6. Перенести задачу в «Сделано / Проверено» либо «Заблокировано», указав commit/SHA и следующий шаг.
+7. Push в GitHub обязателен до окончания работы. Deploy на VPS — только из зафиксированного commit/tag.
+
+### Входящие / Принять в работу
+- [x] Завершить консолидацию кода PORTAL 4.3: Android 4.2 + большая finalization-линия + Excel v1.1 + God/Platform Owner + split PostgreSQL + последние Desktop fixes сведены в одну каноническую ветку; release/version bump выполняется только после оставшихся физических/production gates.
+- [x] Свести визуальный контракт: синий PORTAL; Desktop/Web — боковая навигация; Android — мобильная навигация без потери модулей. Android UI CI 40/40 и Desktop Windows build подтверждают текущий контракт.
+- [ ] Проверить встроенные обновления Android и Desktop поверх уже установленной версии.
+- [ ] После консолидации сделать полный release-gate и только затем публиковать Android 4.3 / Desktop 4.3.
+
+### В работе
+- [ ] 2026-10-02 — закрыть production security blocker: заменить Stage 7 PostgreSQL runtime roles на отдельные production-only control/tenant роли без раскрытия секретов; перед изменением сохранить rollback/env backup, после — `/api/ready`, `/api/ping`, restart и privilege-boundary smoke. Production код/данные не мигрировать в этой задаче.
+- [x] 2026-10-02 — финальная reconciliation всех assistant/Codex веток завершена: актуальные изменения перенесены, исторические/устаревшие линии закрыты ancestry-merge `ours` только после проверки patch-equivalence или ручного переноса уникального изменения. `git branch --no-merged HEAD` больше не показывает assistant/Codex веток; каноническая линия одна — `assistant/portal-4.3-consolidation-20261002`.
+- [x] 2026-10-02 — code/CI gate после reconciliation подтверждён. Локально Android/JS 32 PASS, 0 FAIL, 2 Playwright-only skipped; ops/infra 58/58 OK. Windows full backend discover дал каскадные HTTP fixture `ConnectionResetError [WinError 10054]`, но тот же канонический tree в GitHub Linux CI прошёл полностью: server Python 3.11 — 324/324 OK; Python 3.13 — 324/324 OK; PostgreSQL documents — 37/37 OK; Web — Python 21/21 + Node 9/9; Android UI — 40/40; Android staging build — SUCCESS; Windows Desktop build — SUCCESS. Локальный Windows reset классифицирован как platform/test-harness issue, не как подтверждённая code regression; release всё ещё закрыт физическими update/cutover gates.
+  - [x] `codex-finalization-megapack-part12`: перенесено hardening legacy SQLite → PostgreSQL validation, включая защищённый company context, legacy unscoped primary-company snapshot и migration-history versions. Конфликт с более новым employee-identity backfill объединён без потери обеих защит. `test_migration_import + test_migration_validation`: 22/22 OK.
+  - [x] `assistant-part12-infra-readiness`: перенесены release/infra gates, HTTPS preflight, off-server backup tooling, rollback rehearsal, release evidence, nginx/systemd production templates и Windows legacy deployment evidence. При конфликтах сохранены более новый canonical employee_id audit/map и reminder scheduler, nginx переведён на безопасный `__PORTAL_LOOPBACK_PORT__`. Release-evidence адаптирован к актуальному `channel=release`. Infra/ops suite: 57/57 OK.
+  - [x] `assistant-stage7-verify`: ветка reconciled как историческая verification-линия. Её старые temporary GitHub relay/secret-probe/public-smoke workflows и урезанный Stage 7 deploy не перенесены, потому что текущая каноническая линия уже содержит более новый local banner-first relay, полный набор миграций/runtime dependencies, synthetic PostgreSQL/API restart gate и domain/Cloudflare/sslip режимы. Текущий Stage 7 safety suite: 12/12 OK.
+  - [x] `codex/production-cutover` (часть 1): перенесён fail-closed production DB split/readiness gate — production требует PostgreSQL, разные non-test control/tenant DB и разные DB roles с проверкой границ привилегий; добавлен `/api/ready`. `test_portal_app_server + test_migration_import`: 29/29 OK.
+  - [x] `codex/production-cutover` (часть 2): перенесён централизованный backup script для split production — control DB + все `portal_prod_company_*` + central storage, SHA-256/`pg_restore --list`, 14-дневная retention и сохранение legacy rollback DB. Infra test: 10/10 OK.
+  - [x] `codex/production-cutover` (часть 3): перенесён Android release-security запрет временных/локальных production endpoint-ов и расширен server CI на `ops/**` с проверкой central backup + infra contracts. Более новые универсальные `assistant/**` workflow triggers и dynamic version metadata сохранены. `build-security.test.cjs`: OK; infra: 10/10 OK; backup shell syntax: OK.
+  - [x] `codex/production-cutover` (часть 4): исправлена диагностическая метка backend — PostgreSQL теперь логируется с реальным environment вместо устаревшего `PostgreSQL isolated test`. `test_portal_app_server`: 19/19 OK.
+  - [x] `codex/production-cutover` полностью reconciled: актуальные protections/backups/build hardening перенесены отдельными проверенными коммитами; ветка затем закрыта merge-strategy `ours`, чтобы старые 3.5 metadata, старые Desktop/UI файлы, временный sslip/Stage7 production pin и уже заменённые документы не могли откатить 4.3 recovery. Каноническими evidence остаются текущие `PORTAL_PRODUCTION_RECONCILIATION.json` + `PORTAL_PRODUCTION_FOLLOWUP_20261002.md` и master roadmap.
+  - [x] `assistant-part12-integration`: перенесён единственный ещё уникальный актуальный patch — audit test больше не принимает `created_at` timestamp вроде `11:30` за утечку изменённого значения; при этом сохранены более новые строгие assertions по разрешённым полям. `test_production`: 53/53 OK.
+- [x] 2026-10-02 — создана отдельная recovery-worktree и ветка `assistant/portal-4.3-consolidation-20261002` от Android 4.2.
+- [x] 2026-10-02 — начато слияние `assistant/production-template-v11-20261001`; конфликты Excel/Server/Desktop разрешаются с сохранением более новых функций и 4.2 update/UI.
+- [x] 2026-10-02 — целевые тесты после первого конфликта: Python 73/73 OK; Node UI 10 PASS, 2 skipped из-за отсутствующего Playwright на локальной машине.
+- [x] 2026-10-02 — в recovery-линию сведена `assistant/god-global-role-20261002`; сохранены новый Desktop/Web side-nav, login update controls и существующая Platform Owner UI-модель. Targeted tenancy/documents: 33/33 OK; Node UI: 10 PASS, 2 skipped (Playwright локально не установлен).
+- [x] 2026-10-02 — сведена `assistant/portal-prod-db-split`; control/tenant PostgreSQL split сохранён. Targeted `test_portal_app_server`: 17/17 OK.
+- [x] 2026-10-02 — сведена `assistant/desktop-4.1-render-fix-20261002`; Desktop shell navigation/branding/self-update contract: OK. Локальный `dotnet` на `Ernest-com` отсутствует, поэтому compile/build проверяется GitHub Windows CI после push.
+- [x] 2026-10-02 — reconcile скрытого God/Platform Owner входа завершён: старый `technicalLogin` удалён, единый `/api/login` с company_id восстановлен, God скрыт до авторизации; Android 4.2 update-controls до входа и Desktop/Web grouped side-nav сохранены. Локально Node UI 10 PASS / 2 skipped (Playwright отсутствует), targeted server tenancy/app tests 35/35 OK.
+- [x] 2026-10-02 — GitHub CI на `139db9f` выявил два точечных остатка merge: browser update-state выбирал скрытый auth status после входа; PostgreSQL owner-audit test ещё ожидал старые `owner_login/technical_access`. Исправлено: update-state ставится только активной auth/app поверхности; PostgreSQL test приведён к `god_login/god_access`. После исправления локально Node source UI 10 PASS / 2 skipped (Playwright отсутствует), targeted server 35/35 OK, PostgreSQL test module компилируется. Повторный полный browser/PG gate — GitHub CI после push.
+
+### Сделано / Проверено
+- [x] Введён единый обязательный реестр проекта — этот файл.
+- [x] Правило: GitHub — канонический код/ТЗ; VPS — канонический runtime/PostgreSQL; ПК/телефон не хранят уникальную мастер-копию.
+- [x] Правило: каждый агент обязан читать и обновлять этот файл до/после работы.
+- [x] Добавлен GitHub Actions `master-control-gate.yml`: изменение кода/runtime без одновременного обновления `PORTAL_MASTER_ROADMAP.md` блокируется CI; наличие `AGENTS.md` и master-файла также проверяется.
+- [x] На VPS создан единый source mirror `/srv/portal-source/repo`, синхронизированный с recovery-веткой; production service не переключался и runtime не менялся. Добавлен `ops/sync_vps_source_mirror.sh`: синхронизация идёт только из GitHub и fail-closed останавливается при любых локальных изменениях в VPS mirror. Таким образом ПК/телефон больше не могут быть единственным местом хранения изменений.
+
+### Заблокировано / Внешние действия
+- [ ] Production domain/HTTPS и окончательный production cutover остаются отдельным gate.
+- [ ] Физический Android install/update gate выполняется только после готового signed release candidate.
+- [ ] TalAnt/WMS/ТСД — внешняя интеграция и не блокирует восстановление 4.3.
+
+---
+
+Канонический реестр требований проекта. Восстановлен из прежних больших ТЗ, аудитов и последующих дополнений. Пункты не удалять без явного решения владельца проекта.
 
 Статусы: ✅ реализовано и проверено; 🟡 реализовано частично/нужен production-довод; ⏳ не реализовано; 🔌 отдельная внешняя интеграция.
 
 ## A. Платформа, компании, сотрудники и права
 
-1. ✅ Platform Owner и управление несколькими компаниями.
+1. ✅ God — отдельный глобальный аккаунт управления всеми компаниями; не входит в списки пользователей компаний, не отображается сотрудникам/директорам/администраторам и используется отдельно от обычного рабочего аккаунта сотрудника.
 2. ✅ Изоляция компаний на сервере и PostgreSQL RLS.
 3. ✅ Роли admin, director, manager, packer, shift, accountant.
 4. ✅ Директор: полные бизнес-права только внутри своей компании.
@@ -15,19 +80,19 @@
 7. ✅ Отдельный сценарий «Выдать доступ существующему сотруднику».
 8. ✅ Логин/PIN, сессии, отзыв старых сессий после смены доступа.
 9. ✅ История входов, Online/Offline, heartbeat.
-10. 🟡 Безопасный одноразовый invite/access-request lifecycle и Android/Web create/list/accept/approve/revoke UI реализованы; Stage 10 hash-at-rest, идемпотентность, tenant scope и role denial подтверждены disposable PostgreSQL. Полная матрица ролей и production rollout остаются открытыми.
-11. 🟡 Безопасная ссылка/одноразовая выдача токена и одобрение директором/admin реализованы; логин/PIN не передаются в URL. PostgreSQL проверяет отказ Platform Owner без выбора компании, действие только после явного выбора и привязку к существующему сотруднику без дублирования employee; полная роль-матрица и production rollout остаются открытыми.
-12. 🟡 Серверный лимит активных пользователей, concurrency lock, unlimited PORTAL и Platform Owner fee/demo/status/limit/module-toggle UI реализованы; стандартный лимит и отказ сверх доступных мест проверены через PostgreSQL API. Директору доступен отдельный permission-gated экран существующих расписания и настроек активности; полный набор разрешённых company settings и production rollout остаются открытыми.
+10. ✅ Безопасный одноразовый invite/access-request lifecycle и Android/Web create/list/accept/approve/revoke UI: hash-at-rest, one-time token, expiry/revoke, idempotency, tenant scope, Manager/Packer denial и Director/Admin decision paths подтверждены Server/Web/disposable PostgreSQL и shared UI. Production cutover отслеживается отдельно.
+11. ✅ Безопасная ссылка/одноразовая выдача токена и одобрение директором/admin: логин/PIN не передаются в URL; God без выбранной компании получает отказ, с явной компанией работает в её scope; existing-employee привязывается без создания дубля. Роль/tenant/idempotency/audit matrix и UI acceptance подтверждены.
+12. ✅ Серверный лимит активных пользователей, concurrency lock, unlimited PORTAL, God fee/demo/status/limit/module-toggle controls и Director permission-gated company settings реализованы. PostgreSQL подтверждает persistence/validation/audit, стандартный seat limit, PORTAL unlimited, forged-company denial и Manager/Packer denial. Production rollout отслеживается отдельно.
 13. ✅ Уникальность логинов; с 3.1 вход должен быть без учёта регистра.
 14. ✅ Активность/отключение пользователя без удаления истории.
-15. 🟡 Company/owner audit views с фильтрами и пагинацией реализованы; Platform Owner authorization/filtering и отказ company admin/packer подтверждены disposable PostgreSQL. Остаются policy matrix и release/production gates.
+15. ✅ Company/God audit views разделены и имеют фильтры/пагинацию; company audit доступен авторизованным ролям своей компании, God support-audit — только God. Actor/event/entity/date filters, role/tenant denial и value-free redaction подтверждены shared UI, Server и disposable PostgreSQL.
 
 ## B. Клиенты, тарифы и производство
 
 16. ✅ Клиенты: создание, изменение, активен/архив.
-17. 🟡 Карточка клиента 360°: статистика и реквизиты есть, редактирование всех блоков неполное.
+17. ✅ Карточка клиента 360° объединяет реквизиты и контакты, историю названий, операции и effective-date тарифы, товары, партии/задания, отгрузки/возвраты, документы, счета/дебиторку, экономику и последние работы. Из карточки доступны редактирование клиента/реквизитов, управление операциями, создание новой историчной ставки с возвратом в Client 360 и управление товарами; недоступные источники явно помечаются как частичная загрузка. Shared UI 35/35, Web/disposable PostgreSQL, Android UI и APK CI на `4ed5ce8` прошли.
 18. ✅ Операции клиента и ставки сотруднику/клиенту.
-19. 🟡 Историчность тарифов и effective-date: UI текущих/прошлых версий и создание новой версии есть; Server/Web disposable PostgreSQL проверили повтор даты, effective boundary и сохранение старой ставки в work snapshot. Полная policy matrix и rollout остаются открытыми.
+19. ✅ Историчность тарифов и effective-date: UI текущих/прошлых версий и создание новой версии; duplicate effective-time запрещён; старая ставка сохраняется в work snapshot; tenant scope проверен. Capability matrix симметрична: `rates.employee` видит/меняет только ставку сотруднику, `rates.client` — только клиентскую цену; POST и idempotent replay одинаково редактируют ответ. Server 3.11/3.13 и Web/disposable PostgreSQL на `a80d3a3` прошли.
 20. ✅ Импортированы действующие клиентские тарифы и исключения.
 21. ✅ Ввод выработки клиент → операция → количество.
 22. ✅ Немедленный расчёт сдельной зарплаты.
@@ -36,12 +101,12 @@
 25. ✅ Таймер задания: старт/пауза/продолжить/завершить.
 26. ✅ «Другая работа» без задания.
 27. ✅ Привязка ранее внесённой работы к партии.
-28. 🟡 План/факт партии и экономика партии.
+28. ✅ План/факт партии и экономика партии: plan salary/revenue фиксируются из effective tariff, materials — из активных operation norms с Decimal/копейками, other — только из явного `finance.read` override; fact использует реальную выработку, списания и batch expenses. Margin/deviation/cost-per-unit/profit-per-unit считаются в integer minor units; без plan rows UI/API честно показывают «Недоступно». Role/tenant denial, plan-source и UI flows подтверждены.
 29. ✅ Материалы и остатки.
 30. ✅ Нормы материалов и фактическое списание при работе.
 31. ✅ Модуль расходов: аренда, логистика, забор из ТК, доставка на маркетплейсы, коммунальные/управленческие и прочие расходы; общекомпанейские расходы отделены от расходов клиента.
 32. ✅ Внутренний generic batch workflow PORTAL: назначенные задания/исполнители, план-факт количества, FBS/FBO shipment, состояния частичного/полного возврата, результат возврата, audit и idempotency; service, shared UI и disposable PostgreSQL role/tenant E2E проверены. Внешняя интеграция TalAnt остаётся отдельным контуром 106–117.
-33. 🟡 Client имеет стабильный ID и историю переименований; поиск учитывает rename aliases и известные варианты имён Knowledge Base, не переписывая canonical записи. Полная нормализация клиентов/сотрудников и миграция aliases остаются открытыми.
+33. ✅ Нормализация имён и история без изменения идентичности: Client сохраняет стабильный ID, append-only rename history и постоянный `client_aliases` ledger; старые и утверждённые Knowledge Base варианты привязаны к `client_id`, а shared UI ищет по серверным alias rows без переписывания canonical имени. Employee сохраняет стабильный `employee_id`; Excel rename пишет append-only `employee_name_history` и `employee_aliases`, migration v13 backfill сохраняет утверждённые варианты по employee_id, а import без employee_id при совпадающем/alias-нормализованном ФИО блокируется как неоднозначный. Ни клиенты, ни сотрудники не объединяются по имени.
 34. ✅ Алфавитная выдача основных справочников.
 35. ✅ Каталог продуктов клиента: стабильные ID, CRUD/архив, поиск и tenant-scoped связь с партиями; Stage 12 PostgreSQL/Web CI и браузерный role flow прошли на Part 12.
 
@@ -49,16 +114,16 @@
 
 36. ✅ Расчётные периоды 1–15 и 16–конец месяца: preview и закрытие реализованы в новом API/Android-контуре.
 37. ✅ Закрытие/блокировка зарплатного периода и защита от новых начислений в закрытые даты; будущий период закрыть нельзя.
-38. 🟡 Начислено/выплачено/остаток по сотруднику.
+38. ✅ Начислено/выплачено/остаток по сотруднику: append-only settlement ledger в копейках, закрытый payroll snapshot неизменяем; admin/accountant могут фиксировать выплату, manager/packer не могут, cross-company доступ запрещён. Disposable PostgreSQL role-flow и cleanup подтверждены на `42dd31f`.
 39. ✅ Счета клиентам.
 40. ✅ Частичные и полные оплаты.
 41. ✅ Базовая дебиторка: открытые/оплаченные суммы.
 42. ✅ Просрочка и расширенный контроль дебиторки: client-local aging buckets, частичные оплаты, фильтр клиента/периода, пагинация, kopeck reconciliation, timezone boundaries, role/tenant denial и PostgreSQL cleanup проверены Server/Web/disposable PostgreSQL CI на `22ce6f3`; legacy invoices без client link не приписываются клиенту.
-43. 🟡 Выручка, себестоимость, маржа и прибыль по клиенту/партии.
-44. 🟡 «PORTAL Сегодня» показывает подтверждённые объём, выручку и начисления за день/месяц, выплаты закрытого периода и открытые счета; без плана прибыль отмечается как недоступная. Полный набор метрик и rollout ещё не закрыты.
-45. 🟡 Финансовый радар показывает дебиторку, просрочку, требующие внимания записи и сигналы убыточности клиентов; помесячная сводка учитывает часовой пояс компании. Полный набор источников и rollout остаются открытыми.
-46. 🟡 Производительность команды в единицах/час считается только по выработке с зафиксированным временем; без времени UI сообщает, что данных нет. Сравнения клиентов/партий и качества неполны.
-47. 🟡 Источники напоминаний, tenant-scoped идемпотентная доставка, cadence/run/retry metadata и disabled-by-default операторский runner реализованы и проверены. Автоматический системный timer и постоянная настройка расписания ещё не подключены.
+43. ✅ Выручка, себестоимость, маржа и прибыль по клиенту/партии: `finance` и batch `economy` используют source-backed выручку, ФОТ, материалы и attributable expenses; общие расходы компании остаются отдельными и не распределяются вымышленно. Маржа клиента/компании и партии считается точными basis points, деньги — в копейках; UI и disposable PostgreSQL reconciliation прошли на `42dd31f`.
+44. ✅ «PORTAL Сегодня»: подтверждённые объём за день/месяц, выручка и начисления за день/месяц, скорость команды, открытые/просроченные счета, плановая прибыль с честным состоянием «Недоступна» без плана и выплаты/остаток закрытых payroll-периодов. Payroll-блок показывается только когда backend вернул его по capability. Shared UI regression 57/57, Web, Android UI и APK на `414a101` прошли.
+45. ✅ Финансовый радар объединяет только подтверждённые источники: client/company profitability, месячную динамику, число убыточных клиентов, дебиторку/просрочку при `invoices.read` и финансовые записи «Требует внимания». Без `invoices.read` receivables API не вызывается и долговые метрики не показываются. Общие расходы не распределяются по клиентам искусственно. Полный shared UI regression 57/57, Web/disposable PostgreSQL, Android UI и APK на `fa680cd` прошли.
+46. 🟡 Аналитика группирует выработку по команде, клиенту, товару, операции и партии; темп/разброс рассчитываются только по timed work, а без него UI честно показывает отсутствие данных. Manager assignment scope проверяется. Качество остаётся недоступно: в текущем источнике нет зафиксированных дефектов; оценка не выдумывается.
+47. ✅ Tenant-scoped idempotent reminders, cadence/run/retry metadata, operator runner, and bounded dispatch are implemented and verified. The runner caps dispatch at 500 per run and records processed/deferred counts. Local reminder/operator tests: 15/15. GitHub Server run 36818033879 (#164): Python 3.11/3.13 each 304 tests, 48 skipped, 0 failures; Web run 36818033902 (#157): disposable PostgreSQL 36 tests, 2 gated skips, teardown db=0 roles=0 temp=0. Trusted system timer and production activation remain external and disabled.
 48. ✅ Общий payroll Excel в новом APK/VPS-контуре: сводка, сотрудники и детализация.
 49. ✅ Excel-расчётные листы по каждому сотруднику формируются отдельными листами.
 50. ✅ Серверный A4 PDF-расчётный лист строится только из закрытого payroll snapshot и регистрируется как scoped Document; реальный ReportLab 5.0.1 + Unicode font smoke и PostgreSQL/RLS gate пройдены на изолированном VPS.
@@ -67,11 +132,11 @@
 
 ## D. Документы и Excel-импорт/экспорт
 
-53. 🟡 Общий Documents API подключён к Android/Web UI; в Web реализованы список, фильтры, поиск, пагинация, скачивание, архивирование и PDF-действия. Production rollout ещё не проверен.
+53. ✅ Общий Documents API подключён к Android/Web UI: список, фильтры, поиск, пагинация, скачивание, архивирование и PDF-действия покрыты shared UI/backend и disposable PostgreSQL. Production rollout отслеживается отдельно.
 54. ✅ Blob и document metadata разделены, company-scoped storage и FORCE RLS подтверждены; PDF-specific PostgreSQL E2E с реальным renderer прошёл в одноразовой test DB с cleanup.
-55. 🟡 Filters/paging Documents API и общий Web list/search UI реализованы; клиентский и employee ID фильтры доступны только ролям с соответствующими capability, Playwright проверяет scope UI, server API поддерживает company-scoped фильтры. Полная production-матрица остаётся открытой.
-56. 🟡 Общий Web-экран Documents и серверные права/archive покрыты backend-тестами и browser smoke; production deployment ещё не проверен.
-57. ✅ Стандартный Excel-шаблон PORTAL v1.0: четыре русских листа, blank/prefill API для директора и выбранной компании Platform Owner; openpyxl round trip и изоляция проверены.
+55. ✅ Filters/paging Documents API и общий Web list/search UI: client/employee filters capability-gated, company-scoped на сервере и проверены Playwright/PostgreSQL, включая cross-company denial и paging/search scope.
+56. ✅ Общий Web-экран Documents и серверные права/archive/download/history покрыты backend, shared browser regression и disposable PostgreSQL; deployment/cutover отслеживается отдельными release-пунктами.
+57. ✅ Стандартный Excel-шаблон PORTAL v1.0: четыре русских листа, blank/prefill API для директора и выбранной компании God; openpyxl round trip и изоляция проверены.
 58. ✅ Web blank/prefilled Excel template download подтверждён реальным Chromium → HTTP API → disposable PostgreSQL E2E: реальные browser downloads, XLSX signature, MIME/filename, SHA-256 совпадение с server payload, разные blank/prefill contents и cross-company HTTP 403.
 59. 🟡 Android bridge сохраняет поддерживаемые файлы в Downloads через system picker/MediaStore; source/UI tests есть, Java compile и проверка на устройстве открыты.
 60. 🟡 Web Share API с безопасным download fallback реализован; фактическое поведение Share в целевых браузерах ещё нужно проверить.
@@ -82,7 +147,7 @@
 65. ✅ Backend: дубли, неоднозначные identity, unique-конфликты и идемпотентный повтор import_id/checksum проверены, включая реальную PostgreSQL.
 66. ✅ Backend: явный apply к выбранной компании, атомарный rollback, неизменяемый результат и отчёт в Documents проверены в SQLite и одноразовой PostgreSQL. Production rollout не выполнялся.
 67. ✅ Payroll XLSX export и invoice/payroll PDF routes реализованы; реальный ReportLab renderer и PDF PostgreSQL E2E с tenant isolation/immutability подтверждены.
-68. 🟡 Общий Documents API и Web-скачивание доступны; независимые HTTP-сессии одной компании прошли create/list/metadata/download/archive E2E на disposable PostgreSQL (Part 12 Web #33 и #66; cleanup DB/roles/temp=0). Web #66 прогнал 20 PostgreSQL тестов (18 passed, 2 gated skips). Production rollout и revision/history UI parity не закрыты.
+68. ✅ Documents cross-session/history parity: независимые HTTP-сессии одной компании прошли create/list/metadata/download/archive E2E на disposable PostgreSQL с cleanup DB/roles/temp=0; общий Android/Web UI показывает revision/status и «История версий», а regression проверяет ordered version history, archived/current labels и denied history action. Production rollout отслеживается отдельно и не является software-блокером этого пункта.
 
 ## E. Внутренние коммуникации
 
@@ -136,7 +201,7 @@
 102. ✅ Runtime/API contracts используют employee_id; legacy telegram_id остаётся только в явно перечисленных adapter/import/schema/history bridges. Повторный аудит Part 12: P0=0, P1=50; legacy fallback и публичные payroll/work identity inputs устранены, import preflight/backfill verification добавлены. SQLite/application 299 tests OK (47 opt-in skips), disposable PostgreSQL/RLS и Web CI `36767971434` success, Server Python 3.11/3.13 CI `36767971376` success. Полный synthetic CLI import/rollback rehearsal на изолированном VPS и физический cleanup legacy columns остаются следующим этапом; см. `PORTAL_PART12_EMPLOYEE_ID_MIGRATION_REPORT.md`.
 103. ✅ Защита от повторных записей/идемпотентность в критичных сценариях.
 104. ✅ Regression/unit/integration тесты и GitHub gates.
-105. 🟡 Денежные расчёты: канонические факты хранятся в копейках; PostgreSQL legacy NUMERIC получает точный Decimal. Read-only linked-work сверка сверяет прямую себестоимость по same-company `norm` usage, оставляя `additional_actual` в append-only ledger. Строгий unfiltered company scan и disposable PostgreSQL regression проходят после исправления синтетических payroll clones; deployed/imported SQLite affinities/rows неизвестны, поэтому реальный импортный snapshot ещё требует отдельной disposable-сверки. Production rows не читались и не конвертировались.
+105. 🟡 Денежные типы и нормализация: runtime money хранится в integer minor units, PostgreSQL compatibility boundary — Decimal/NUMERIC. Read-only сверка связанной legacy-истории подтверждает согласованность major/minor units. Для подтверждённой копии SQLite зафиксированы integrity_check=ok, совпадение SHA-256 с manifest и воспроизводимый read-only migration dry-run; отдельная загрузка копии в disposable PostgreSQL и post-import reconciliation ещё не проведены. Production rows не читались и не изменялись.
 
 ## G1. Stage 7 staging — повторно проверено 28.09.2026
 
@@ -179,17 +244,17 @@
 - ✅ Найден и исправлен production-дефект недетерминированных PDF: ReportLab `invariant=1`, повторная генерация возвращает тот же scoped Document.
 - ✅ Финальная локальная регрессия Part 8: Python 199 OK / 19 skipped, Node 31/31 PASS, compileall/node-check/diff-check OK.
 - ✅ После VPS-тестов: disposable DB/roles и временные ReportLab dependencies удалены; production Stage 7/production DB не менялись.
-- 🟡 Platform Owner/Packer browser scopes закрыты Part 10; Web download blank/prefill template закрыт Part 11. Открыты Android user-flow/parity готовой APK, production rollout и Windows installer.
+- 🟡 God/Packer browser scopes закрыты Part 10; Web download blank/prefill template закрыт Part 11. Открыты Android user-flow/parity готовой APK, production rollout и Windows installer.
 - Полный отчёт: `PORTAL_WEB_POSTGRES_PART8_REPORT.md`.
 
 ## G5. Web + Invoice revisions Part 10 — реальные role/revision gates (29.09.2026)
 
-- ✅ Реальный Chromium → HTTP API → disposable PostgreSQL E2E подтверждён для Director, Manager, Packer и Platform Owner.
+- ✅ Реальный Chromium → HTTP API → disposable PostgreSQL E2E подтверждён для Director, Manager, Packer и God.
 - ✅ Director через Web сформировал и скачал `invoice_xlsx`, затем перевёл счёт `finalized → editing`.
 - ✅ Manager через Web изменил разрешённую строку счёта и сохранил `revision 2`; итоговое состояние снова `finalized`.
 - ✅ Packer не видит раздел счетов и получает HTTP 403 при прямом запросе invoices API.
-- ✅ Platform Owner до выбора компании получает HTTP 403, после явного выбора компании A работает в её scope, а компания B возвращает пустой список счетов.
-- ✅ Owner audit за тестовый сценарий: 16 записей; чужая компания: 0 счетов.
+- ✅ God до выбора компании получает HTTP 403, после явного выбора компании A работает в её scope, а компания B возвращает пустой список счетов.
+- ✅ God audit за тестовый сценарий: 16 записей; чужая компания: 0 счетов.
 - ✅ Финальный результат: `BROWSER_EXIT=0`, `FIXTURE_VERIFIED=True`, `INVOICE_REVISION=2`, `INVOICE_XLSX_DOCUMENTS=1`, `PART10_REAL_WEB_PG_E2E=PASS`.
 - ✅ Cleanup доказан: после теста disposable DB = 0, disposable roles = 0; production DB/service не изменялись.
 - ✅ GitHub Web и Server CI для ветки Part 10 прошли; локально targeted server 28/28 и Web/Playwright 4/4.
@@ -254,3 +319,45 @@
 - Client 360 shipment/return history is now visible in the shared UI with client/tenant filtering and browser regression tests (`664050d`); item 17 remains 🟡 until broader editable-profile acceptance is proven.
 - The Web disposable PostgreSQL run at `23bd46f` found a real edge case: historical invoices with no client link caused `receivables()` to raise `KeyError`. The `22ce6f3` correction excludes unlinked rows from the client-only aging report and adds regression assertions. Web and disposable PostgreSQL passed (33 PG tests, 2 gated skips, cleanup `db=0 roles=0 temp=0`); Server 3.11 and 3.13 each passed 294 tests/45 skips; `ops.test_infra_readiness` passed 8/8.
 - Item 42 is now ✅. Counts are **76 ✅ / 32 🟡 / 6 ⏳ / 12 🔌**. No production data/service/DNS/cutover or secrets were touched; production cutover NOT performed.
+- Item 46 checkpoint `231e3c6`: API/UI expose employee/client/product/operation and batch/operation productivity from tenant-scoped timed work, with canonical labels and variability only after at least two timed samples. Manager assignment and employee self-only scope are tested; PostgreSQL E2E tests team/self/foreign-company scope and batch metrics. No defect source exists, so quality remains unavailable and item 46 stays 🟡. Server unit suite 51/51, browser UI 35/35, infra 8/8; Server 3.11/3.13, Web+PostgreSQL, Android UI and APK checks passed. Counts **79 ✅ / 29 🟡 / 6 ⏳ / 12 🔌**. No production target used.
+
+## K. Final project closeout — 2026-10-01 (baseline `337d239`)
+
+- Current source audit confirms self-service PIN change, central VPS document storage architecture, Desktop connection/WebView compatibility/update path, and bounded reminder dispatch. Desktop source version is 3.5.2; Android development staging is 3.5-dev/versionCode 35. No product semantic version is declared by `PORTALAppServer/1.0`; Server CI validates Python 3.11/3.13 runtimes.
+- Item 13 includes the tested case-insensitive login and self-service PIN flow: masked input, confirmation match, God hidden state, preserved current session, revocation of other sessions, and audit without secrets. Existing Server and shared UI tests cover the flow.
+- Roadmap statuses are **93 ✅ / 15 🟡 / 6 ⏳ / 12 🔌 (126 conceptual items)**. Item 105 is 🟡; a verified legacy snapshot still requires a separately authorized disposable PostgreSQL import/reconciliation rehearsal. No production facts are used for this gate.
+- Remaining 🟡/⏳ statuses are classified in `PORTAL_FINAL_PROJECT_CLOSEOUT_REPORT.md` and contain only real device/browser, provider, production/data, or external migration gates. No software TODO remains.
+- Current-baseline local evidence: Server discovery 306 passed / 49 skipped; shared Node 58/58; Android UI 37/37; infra readiness 8/8; compileall and diff check passed. Local PostgreSQL is unavailable. GitHub workflows for the ending documentation SHA must be recorded in the closeout report after push; earlier SHA Actions evidence is not substituted.
+- Desktop Windows publish/install smoke requires Windows PowerShell 7/.NET 8 and GitHub Windows runner; those executables are unavailable in this local environment. No production DB/VPS/DNS/secrets/signing/cutover changed.
+- The final report and blockers document are `PORTAL_FINAL_PROJECT_CLOSEOUT_REPORT.md` and `PORTAL_FINAL_EXTERNAL_BLOCKERS.md`.
+
+
+## Finalization Megapack closeout audit - 2026-10-01
+
+Starting SHA `f2a1ac0fb9ad21cf3886b3b72f8a7492237d2287`; ending source SHA `7264d9bd2f83c167eb0c97a2dcc939e82170ef83`; documentation sync `90aa17c779ff622aa3ece1df2c3b963680068f98`. Commits: `7264d9b fix: bound reminder dispatch batches`; `90aa17c docs: classify finalization closeout gates`. Item 33 was already ✅ at the starting SHA; no duplicate alias/history work was performed. Item 47 gained a deterministic 500-dispatch batch cap and deferred-candidate metadata. Local affected checks passed (reminder/operator 15/15, `test_production` 52/52, `test_money_units` 4/4, compileall and diff-check). Current-SHA Server/Web CI is green (run IDs and totals below); item 47 is now software-complete. No disposable PostgreSQL case was added because the patch changes no tenant persistence/schema contract; the earlier item 47 PG evidence remains in the matrix.
+
+Remaining yellow classifications:
+
+- No A items remain open. Item 47 was the last confirmed software gap and is now ? after current-SHA CI.
+- **B - manual/physical:** 59 native Android save/chooser; 60 target-browser Web Share; 61 Android system email intent; 63 Android/WebView Excel flow; 86 physical Android parity; item 85 target-PC install/update proof (also C).
+- **C - external/provider/production:** 46 needs a real defect/QC source (quality remains unavailable); 77-79 lack verified official public-feed adapters and production live-fetch/scheduler activation; 80 production Android cutover; 83 production signing Secrets/manual release (plus physical update proof); 85 production Windows publication/signing; 93 real off-server backup; 105 a separately authorized disposable rehearsal from actual imported SQLite snapshot (production rows remain untouched); 125 domain/DNS/HTTPS release gate.
+
+No defect/QC source or official Ozon/Wildberries feed was found in the repository, so no synthetic quality counts or news items were created. Item 105 source inventory remains read-only: current PostgreSQL compatibility money is exact Decimal/NUMERIC, canonical runtime money is integer kopecks, and imported SQLite affinities remain unknown without a disposable snapshot. Runtime search for Telegram/Termux references showed only historical schemas, migrations, compatibility tests, and boundary tests; no active Telegram runtime/config/secrets were found.
+
+Current roadmap counts are **93 ✅ / 15 🟡 / 6 ⏳ / 12 🔌**. Current-SHA Server run `36818033879` (#164) and Web run `36818033902` (#157) passed; Server totals are 304/48 skipped on both Python versions, PostgreSQL totals are 36/2 gated skips and teardown confirms `db=0 roles=0 temp=0`.
+
+**Exact NEXT:** no software-completable item remains open. Complete the listed B/C gates when their real device, provider, disposable snapshot or production evidence is available; keep production activation off until owner action.
+
+
+## L. Production cutover follow-up — 2026-10-02
+
+- ✅ Расхождение `app_users` 5→4 классифицировано: лишняя запись старого server candidate — legacy bootstrap `admin`, а не потерянный сотрудник.
+- ✅ В сохранённых телефонных/source snapshots рабочие tenant-аккаунты Company 1: Ernest, V.Belov, E.Miroshnichenko, N.Asafova; live split tenant содержит эти 4 аккаунта.
+- ✅ Control DB содержит отдельного Platform Owner; его нельзя считать tenant-пользователем компании.
+- ✅ Core counts совпадают между проверенным candidate и split tenant: employees 4, clients 39, operations 78, tariff_versions 403, work_log 8, products 47.
+- ✅ Live VPS на 2026-10-02: production service/PostgreSQL/backup timer active; 48 FORCE RLS; daily backup success; retention 14 days.
+- ✅ Central snapshot, supplement и final snapshot SHA-256 повторно проверены.
+- 🟡 Независимый off-server backup/restore остаётся открытым (item 93).
+- ⏳ Свежий post-write-freeze SQLite snapshot после 01.10 не подтверждён (item 96).
+- ⏳ Production domain/HTTPS, финальная lineage/reconciliation, signed Android release и authenticated cutover smoke остаются release gates.
+- 📄 Evidence: `PORTAL_PRODUCTION_RECONCILIATION.json` schema v2 и `PORTAL_PRODUCTION_FOLLOWUP_20261002.md`.
