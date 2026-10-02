@@ -2,7 +2,7 @@ name: PORTAL Windows Desktop build
 
 on:
   push:
-    branches: ["main", "codex-finalization-megapack-part12", "codex/desktop-client-connection"]
+    branches: ["main", "codex-finalization-megapack-part12", "codex/desktop-client-connection", "assistant/desktop-company-cache-20261002"]
     paths:
       - "desktop_windows/**"
       - "ops/install_portal_desktop.ps1"
