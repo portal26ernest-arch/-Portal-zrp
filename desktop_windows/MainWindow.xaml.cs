@@ -236,15 +236,15 @@ public partial class MainWindow : Window
 }
 """;
         var cssJson = JsonSerializer.Serialize(css);
-        await Browser.ExecuteScriptAsync($"""
-(() => {{
-  if(!document.documentElement.classList.contains('web-client')) return false;
-  let style=document.getElementById('portal-desktop-42-style');
-  if(!style){{style=document.createElement('style');style.id='portal-desktop-42-style';document.head.appendChild(style);}}
-  style.textContent={cssJson};
-  return true;
-}})()
-""");
+        var cssScript =
+            "(() => {" +
+            "if(!document.documentElement.classList.contains('web-client')) return false;" +
+            "let style=document.getElementById('portal-desktop-42-style');" +
+            "if(!style){style=document.createElement('style');style.id='portal-desktop-42-style';document.head.appendChild(style);}" +
+            "style.textContent=" + cssJson + ";" +
+            "return true;" +
+            "})()";
+        await Browser.ExecuteScriptAsync(cssScript);
 
         const string sidebarScript = """
 (() => {
