@@ -34,6 +34,7 @@
 - [x] 2026-10-02 — начато слияние `assistant/production-template-v11-20261001`; конфликты Excel/Server/Desktop разрешаются с сохранением более новых функций и 4.2 update/UI.
 - [x] 2026-10-02 — целевые тесты после первого конфликта: Python 73/73 OK; Node UI 10 PASS, 2 skipped из-за отсутствующего Playwright на локальной машине.
 - [x] 2026-10-02 — в recovery-линию сведена `assistant/god-global-role-20261002`; сохранены новый Desktop/Web side-nav, login update controls и существующая Platform Owner UI-модель. Targeted tenancy/documents: 33/33 OK; Node UI: 10 PASS, 2 skipped (Playwright локально не установлен).
+- [x] 2026-10-02 — сведена `assistant/portal-prod-db-split`; control/tenant PostgreSQL split сохранён. Targeted `test_portal_app_server`: 17/17 OK.
 
 ### Сделано / Проверено
 - [x] Введён единый обязательный реестр проекта — этот файл.

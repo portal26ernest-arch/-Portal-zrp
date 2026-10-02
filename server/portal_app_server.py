@@ -73,6 +73,13 @@ def columns(conn, table):
     return {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
 
 
+def validate_postgresql_database_names(control_database, tenant_database):
+    if CONFIG.environment == 'test' and (
+            not control_database.startswith('portal_test_')
+            or not tenant_database.startswith('portal_test_')):
+        raise RuntimeError('Test runtime accepts only portal_test_ PostgreSQL databases')
+
+
 def ensure_schema():
     if CONFIG.backend == 'postgresql':
         from portal_postgres import validate_runtime_role
@@ -81,11 +88,9 @@ def ensure_schema():
         with tenants.control(DB_PATH) as registry, tenants.company_scope(1), db() as conn:
             validate_runtime_role(registry)
             validate_runtime_role(conn)
-            if registry.execute('SELECT current_database()').fetchone()[0] != conn.execute('SELECT current_database()').fetchone()[0]:
-                raise RuntimeError('Control and tenant roles must use one isolated test database')
-            database_name = conn.execute('SELECT current_database()').fetchone()[0]
-            if CONFIG.environment == 'test' and not database_name.startswith('portal_test_'):
-                raise RuntimeError('Test runtime accepts only portal_test_ PostgreSQL databases')
+            control_database = registry.execute('SELECT current_database()').fetchone()[0]
+            tenant_database = conn.execute('SELECT current_database()').fetchone()[0]
+            validate_postgresql_database_names(control_database, tenant_database)
             required = {'companies','app_users','app_sessions','portal_clients','portal_client_operations',
                         'work_log','employees','portal_production','portal_production_migrations',
                         'work_material_consumption','portal_runtime_schema','portal_rls_context_schema',
