@@ -7,10 +7,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>PORTAL.Desktop</AssemblyName>
     <RootNamespace>Portal.Desktop</RootNamespace>
-    <Version>4.2.0</Version>
-    <FileVersion>4.2.0.42</FileVersion>
-    <AssemblyVersion>4.2.0.0</AssemblyVersion>
-    <InformationalVersion>4.2-blue-sidebar-selfupdate</InformationalVersion>
+    <Version>4.3.0</Version>
+    <FileVersion>4.3.0.43</FileVersion>
+    <AssemblyVersion>4.3.0.0</AssemblyVersion>
+    <InformationalVersion>4.3-fast-start</InformationalVersion>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <PublishSingleFile>false</PublishSingleFile>

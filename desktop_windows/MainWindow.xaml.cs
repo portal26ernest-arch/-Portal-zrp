@@ -14,7 +14,7 @@ namespace Portal.Desktop;
 
 public partial class MainWindow : Window
 {
-    private const int CurrentBuild = 42;
+    private const int CurrentBuild = 43;
     private const long MaxInstallerBytes = 250L * 1024 * 1024;
     private const string GithubRepository = "portal26ernest-arch/-Portal-zrp";
     private const string WebViewCompatibilityArguments = "--disable-gpu --disable-gpu-compositing";
@@ -27,6 +27,7 @@ public partial class MainWindow : Window
     private string? _serverOrigin;
     private bool _browserEventsAttached;
     private bool _webRecoveryPending;
+    private string? _pendingPersistOrigin;
 
     public MainWindow()
     {
@@ -100,13 +101,6 @@ public partial class MainWindow : Window
     {
         try
         {
-            StatusText.Text = "Проверка сервера…";
-            var problem = await ProbePortalWebAsync(origin);
-            if (problem is not null)
-            {
-                ShowSetup(problem);
-                return;
-            }
             StatusText.Text = "Подключение…";
             if (Browser.CoreWebView2 is null)
             {
@@ -123,47 +117,30 @@ public partial class MainWindow : Window
                     userDataFolder: Path.Combine(_settingsDir, "WebView2"),
                     options: environmentOptions);
                 var options = env.CreateCoreWebView2ControllerOptions();
-                options.IsInPrivateModeEnabled = true;
+                // Keep a normal per-user WebView profile so cookies/session state and any
+                // cacheable web assets survive restarts. "Сменить сервер" still clears it explicitly.
+                options.IsInPrivateModeEnabled = false;
                 await Browser.EnsureCoreWebView2Async(env, options);
                 ConfigureBrowser();
             }
+
             _serverOrigin = origin;
-            if (persist) SaveOrigin(origin);
+            _pendingPersistOrigin = persist ? origin : null;
             SetupPanel.Visibility = Visibility.Collapsed;
             Browser.Visibility = Visibility.Visible;
+
+            // Do not preflight /web/ with HttpClient. That used to add a full DNS/TCP/TLS
+            // round trip before WebView2 could even begin loading the same page.
             Browser.Source = new Uri(origin + "/web/");
         }
         catch (WebView2RuntimeNotFoundException)
         {
             ShowSetup("Не найден Microsoft Edge WebView2 Runtime. Установите официальный WebView2 Runtime и повторите запуск.");
         }
-        catch (OperationCanceledException)
-        {
-            ShowSetup("Сервер PORTAL не ответил за 12 секунд. Проверьте сеть и адрес.");
-        }
-        catch (HttpRequestException)
-        {
-            ShowSetup("Не удалось установить соединение с сервером. Проверьте сеть, HTTPS и сертификат.");
-        }
         catch
         {
             ShowSetup("Не удалось открыть PORTAL. Проверьте адрес сервера и соединение.");
         }
-    }
-
-    private static async Task<string?> ProbePortalWebAsync(string origin)
-    {
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(12));
-        using var response = await Http.GetAsync(origin + "/web/", HttpCompletionOption.ResponseHeadersRead,
-            timeout.Token);
-        if ((int)response.StatusCode is >= 300 and < 400)
-            return "Сервер перенаправляет /web/. Укажите окончательный HTTPS-адрес PORTAL.";
-        if (response.StatusCode != HttpStatusCode.OK)
-            return $"Сервер ответил HTTP {(int)response.StatusCode} на /web/. Проверьте адрес и настройку PORTAL Web.";
-        if (!string.Equals(response.Content.Headers.ContentType?.MediaType, "text/html",
-                StringComparison.OrdinalIgnoreCase))
-            return "По адресу /web/ сервер не отдаёт интерфейс PORTAL (HTML).";
-        return null;
     }
 
     private void ConfigureBrowser()
@@ -198,10 +175,24 @@ public partial class MainWindow : Window
         Browser.CoreWebView2.NavigationCompleted += async (_, e) =>
         {
             if (_serverOrigin is null || Browser.Visibility != Visibility.Visible) return;
-            StatusText.Text = e.IsSuccess ? "Подключено" : "Ошибка подключения";
             BackButton.IsEnabled = true;
             _webRecoveryPending = false;
-            if (e.IsSuccess) await ApplyDesktopExperienceAsync();
+
+            if (!e.IsSuccess)
+            {
+                _pendingPersistOrigin = null;
+                ShowSetup($"Не удалось загрузить PORTAL ({e.WebErrorStatus}). Проверьте сеть и сервер.");
+                return;
+            }
+
+            StatusText.Text = "Подключено";
+            if (_pendingPersistOrigin is not null &&
+                _pendingPersistOrigin.Equals(_serverOrigin, StringComparison.OrdinalIgnoreCase))
+            {
+                SaveOrigin(_pendingPersistOrigin);
+                _pendingPersistOrigin = null;
+            }
+            await ApplyDesktopExperienceAsync();
         };
         Browser.CoreWebView2.ProcessFailed += (_, _) =>
         {
@@ -239,8 +230,8 @@ public partial class MainWindow : Window
         var cssScript =
             "(() => {" +
             "if(!document.documentElement.classList.contains('web-client')) return false;" +
-            "let style=document.getElementById('portal-desktop-42-style');" +
-            "if(!style){style=document.createElement('style');style.id='portal-desktop-42-style';document.head.appendChild(style);}" +
+            "let style=document.getElementById('portal-desktop-43-style');" +
+            "if(!style){style=document.createElement('style');style.id='portal-desktop-43-style';document.head.appendChild(style);}" +
             "style.textContent=" + cssJson + ";" +
             "return true;" +
             "})()";
@@ -249,7 +240,7 @@ public partial class MainWindow : Window
         const string sidebarScript = """
 (() => {
   if(!document.documentElement.classList.contains('web-client')) return false;
-  if(window.__portalDesktop42Patched){ if(typeof buildNav==='function') buildNav(); return true; }
+  if(window.__portalDesktop43Patched){ if(typeof buildNav==='function') buildNav(); return true; }
   if(typeof buildNav!=='function') return false;
   const original=buildNav, mq=matchMedia('(min-width:900px)');
   const navButton=(id,i,title)=>'<button data-action="go" data-page="'+id+'" class="'+(S.page===id?'active':'')+'" '+(S.page===id?'aria-current="page"':'')+'>'+icon(i)+'<span>'+esc(title)+'</span></button>';
@@ -263,7 +254,7 @@ public partial class MainWindow : Window
     for(const [title,ids] of groups){const allowed=ids.map(id=>byId[id]).filter(m=>m&&can(m.id));if(!allowed.length)continue;html+='<div class="nav-group"><div class="nav-group-title">'+esc(title)+'</div>'+allowed.map(m=>navButton(m.id,m.icon,m.title)).join('')+'</div>';}
     nav.innerHTML=html+'<div class="nav-spacer"></div>'+navButton('settings','settings','Настройки');
   };
-  buildNav=desktopBuild; mq.addEventListener?.('change',desktopBuild); window.__portalDesktop42Patched=true; desktopBuild(); return true;
+  buildNav=desktopBuild; mq.addEventListener?.('change',desktopBuild); window.__portalDesktop43Patched=true; desktopBuild(); return true;
 })()
 """;
         await Browser.ExecuteScriptAsync(sidebarScript);
@@ -428,7 +419,7 @@ public partial class MainWindow : Window
     {
         using var request = new HttpRequestMessage(HttpMethod.Get,
             $"https://api.github.com/repos/{GithubRepository}/releases?per_page=50");
-        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/4.2.0");
+        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/4.3.0");
         request.Headers.Accept.ParseAdd("application/vnd.github+json");
         using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();
