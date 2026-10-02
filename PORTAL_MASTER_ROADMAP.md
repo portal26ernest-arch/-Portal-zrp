@@ -44,6 +44,7 @@
 - [x] Правило: GitHub — канонический код/ТЗ; VPS — канонический runtime/PostgreSQL; ПК/телефон не хранят уникальную мастер-копию.
 - [x] Правило: каждый агент обязан читать и обновлять этот файл до/после работы.
 - [x] Добавлен GitHub Actions `master-control-gate.yml`: изменение кода/runtime без одновременного обновления `PORTAL_MASTER_ROADMAP.md` блокируется CI; наличие `AGENTS.md` и master-файла также проверяется.
+- [x] На VPS создан единый source mirror `/srv/portal-source/repo`, синхронизированный с recovery-веткой; production service не переключался и runtime не менялся. Добавлен `ops/sync_vps_source_mirror.sh`: синхронизация идёт только из GitHub и fail-closed останавливается при любых локальных изменениях в VPS mirror. Таким образом ПК/телефон больше не могут быть единственным местом хранения изменений.
 
 ### Заблокировано / Внешние действия
 - [ ] Production domain/HTTPS и окончательный production cutover остаются отдельным gate.
