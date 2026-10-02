@@ -193,8 +193,8 @@ class Documents:
         except (FileNotFoundError,KeyError):raise ValueError('Файл отсутствует; метаданные сохранены') from None
         if len(payload)!=item['size_bytes'] or hashlib.sha256(payload).hexdigest()!=item['checksum_sha256']:raise ValueError('Checksum/размер документа не совпадает')
         return dict(id=item['id'],filename=item['original_filename'],mime_type=item['mime_type'],size_bytes=len(payload),sha256=item['checksum_sha256'],file_b64=base64.b64encode(payload).decode('ascii'))
-    def register(self,payload,body,source_kind='uploaded',identity=None):
-        self.s.need('documents.manage');self.ready();document_type=body.get('document_type','report_xlsx')
+    def register(self,payload,body,source_kind='uploaded',identity=None,permission='documents.manage'):
+        self.s.need(permission);self.ready();document_type=body.get('document_type','report_xlsx')
         filename=body.get('original_filename');mime=body.get('mime_type');checksum=validate_upload(filename,mime,payload,document_type)
         metadata=body.get('metadata',{})
         if not isinstance(metadata,dict) or set(metadata)-{'template_version','period_start','period_end','snapshot_sha256','import_id','result','notes'} or len(json.dumps(metadata))>4000:raise ValueError('Недопустимые метаданные')

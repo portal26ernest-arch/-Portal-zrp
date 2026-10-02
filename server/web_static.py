@@ -4,7 +4,7 @@ from urllib.parse import unquote, urlsplit
 import mimetypes
 
 ASSETS = Path(__file__).resolve().parents[1] / "android_src" / "app" / "src" / "main" / "assets"
-FIXED = {"index.html", "ui.css", "core.js", "app.js", "screens.js", "production.js", "preview.js", "documents_excel.js", "web_adapter.js", "brand-mark.svg", "stickers/catalog.json"}
+FIXED = {"index.html", "ui.css", "core.js", "app.js", "screens.js", "production.js", "preview.js", "invoices.js", "documents_excel.js", "web_adapter.js", "brand-mark.svg", "stickers/catalog.json"}
 
 def serve(handler):
     parsed = urlsplit(handler.path)

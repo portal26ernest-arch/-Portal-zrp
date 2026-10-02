@@ -163,6 +163,46 @@ class DocumentAPITest(unittest.TestCase):
             row=conn.execute('SELECT status,document_type FROM portal_documents WHERE id=?',(doc['id'],)).fetchone()
             self.assertEqual(tuple(row),('ready','invoice_pdf'))
 
+    def test_manager_invoice_workspace_manual_excel_preview_and_pdf_export(self):
+        from io import BytesIO
+        from openpyxl import load_workbook
+
+        manager=self.role_token('manager')
+        with portal.db() as conn:
+            conn.execute('INSERT INTO manager_client_assignments(telegram_id,client_id,active,company_id) VALUES(101,1,1,1)')
+
+        template=self.get('invoice-template?client_id=1',manager)['data']
+        self.assertTrue(template['filename'].endswith('.xlsx'))
+        payload=base64.b64decode(template['file_b64'])
+        book=load_workbook(BytesIO(payload))
+        sheet=book['Счёт']
+        self.assertEqual(sheet['B2'].value,1)
+        sheet['C6']=3
+        sheet['D6']=12.50
+        stream=BytesIO();book.save(stream)
+        preview=self.post('invoice-import-preview',dict(
+            client_id=1,file_b64=base64.b64encode(stream.getvalue()).decode()),manager)['data']
+        self.assertEqual((preview['lines'][0]['quantity'],preview['lines'][0]['client_rate'],preview['total']),(3,1250,3750))
+
+        invoice=self.post('invoices',dict(mode='manual',client_id=1,lines=[
+            {key:line[key] for key in ('operation_id','quantity','client_rate')} for line in preview['lines']
+        ],due_at='2026-10-15T00:00:00'),manager)['data']
+        self.assertTrue(invoice['number'].startswith('PRT-'))
+        self.assertEqual((invoice['amount'],invoice['source_kind'],invoice['client_id']),(3750,'manual',1))
+        self.assertTrue(invoice['lines'][0]['work_id'].startswith('manual:'))
+
+        renderer=SimpleNamespace(invoice_pdf=lambda *args: PDF)
+        with patch.dict(sys.modules,{'pdf_documents':renderer}):
+            document=self.post('document-generate',dict(document_type='invoice_pdf',invoice_id=invoice['id']),manager)['data']
+        self.assertEqual(document['document_type'],'invoice_pdf')
+        self.assertIn(invoice['number'],document['title'])
+        self.assertEqual(base64.b64decode(self.get('document-file?id='+document['id'],manager)['data']['file_b64']),PDF)
+
+        bad=load_workbook(BytesIO(payload));bad['Счёт']['C6']='=1+1';bad_stream=BytesIO();bad.save(bad_stream)
+        self.post('invoice-import-preview',dict(client_id=1,file_b64=base64.b64encode(bad_stream.getvalue()).decode()),manager,status=400)
+        foreign=load_workbook(BytesIO(payload));foreign['Счёт']['B2']=999;foreign['Счёт']['C6']=1;foreign_stream=BytesIO();foreign.save(foreign_stream)
+        self.post('invoice-import-preview',dict(client_id=1,file_b64=base64.b64encode(foreign_stream.getvalue()).decode()),manager,status=400)
+
     def test_invoice_editing_revision_permissions_and_payment_lock(self):
         work=self.work();invoice=self.post('invoices',dict(work_ids=[work['id']]))['data']
         self.assertEqual((invoice['state'],invoice['revision']),('finalized',1))
@@ -213,7 +253,7 @@ class DocumentAPITest(unittest.TestCase):
         self.assertEqual(doc['revision'],1);self.assertEqual(doc['mime_type'],'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         data=base64.b64decode(self.get('document-file?id='+doc['id'])['data']['file_b64'])
         book=load_workbook(BytesIO(data),data_only=False);sheet=book.active
-        self.assertEqual(sheet['A1'].value,'Счёт на оплату')
+        self.assertTrue(sheet['A1'].value.startswith('Счёт на оплату № PRT-'))
         self.assertTrue(any(sheet.cell(row,1).value=='Операция' for row in range(1,sheet.max_row+1)))
         self.assertTrue(any([sheet.cell(row,col).value for col in range(1,5)]==['Операция','Количество','Цена','Сумма'] for row in range(1,sheet.max_row+1)))
         self.assertTrue(any(sheet.cell(row,1).value=='Исполнитель' for row in range(1,sheet.max_row+1)))

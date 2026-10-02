@@ -32,6 +32,7 @@ CATALOG = [
  ('materials.use','Склад','Учитывать фактический расход материалов','director admin shift'),
  ('invoices.read','Счета и оплаты','Просматривать счета и оплаты','manager director admin accountant'),
  ('invoices.create','Счета и оплаты','Создавать счета на оплату','manager director admin accountant'),
+ ('invoices.export','Счета и оплаты','Формировать PDF/XLSX счетов','manager director admin accountant'),
  ('payments.record','Счета и оплаты','Отмечать поступление оплаты','director admin accountant'),
  ('finance.read','Отчёты','Просматривать финансовую аналитику клиентов','director admin accountant'),
  ('expenses.read','Расходы','Просматривать расходы компании','director admin accountant'),

@@ -45,9 +45,8 @@ def route(service,storage,action,method,values,company=None):
     if operation=='archive':return docs.archive(values.get('id'))
     if operation=='upload':return docs.register(decode_file(values),values)
     if operation!='generate': raise ValueError('Неизвестное действие с документом')
-    service.need('documents.manage')
     if values.get('document_type') in ('invoice_pdf','invoice_xlsx'):
-        service.need('invoices.read')
+        service.need('invoices.read');service.need('invoices.export')
         invoice=service.invoice_current(values.get('invoice_id'))
         from excel_template import catalog, SHEETS
         catalogs=catalog(service,company)
@@ -66,11 +65,14 @@ def route(service,storage,action,method,values,company=None):
             from pdf_documents import invoice_pdf
             payload=invoice_pdf(company_profile,client,invoice,operations);extension='.pdf';mime='application/pdf'
         identity=str(invoice['id'])
+        invoice_number=str(invoice.get('number') or identity[:24])
+        safe_number=''.join(ch for ch in invoice_number if ch.isalnum() or ch in '-_')[:48] or identity[:24]
         body=dict(values,document_type=values['document_type'],category='invoice',invoice_id=identity,
-            client_id=invoice['client_id'],title=f"Счёт на оплату · {client.get('name','Клиент')}",
-            original_filename=f'PORTAL_invoice_{identity[:24]}{extension}',mime_type=mime,
+            client_id=invoice['client_id'],title=f"Счёт на оплату № {invoice_number} · {client.get('name','Клиент')}",
+            original_filename=f'PORTAL_invoice_{safe_number}{extension}',mime_type=mime,
             metadata={'notes':'Invoice snapshot '+identity,'snapshot_sha256':hashlib.sha256(json.dumps(invoice.get('snapshot',invoice),ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()).hexdigest()})
-        return docs.register(payload,body,'generated')
+        return docs.register(payload,body,'generated',permission='invoices.export')
+    service.need('documents.manage')
     if values.get('document_type') in ('payroll_slip_pdf','payroll_slip_xlsx'):
         service.need('payroll.all');service.need('payroll.settlement.read')
         period=service.closed_payroll_period(values.get('payroll_period_id'))

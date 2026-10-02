@@ -739,7 +739,38 @@ class Production:
             revision=invoice.get('revision',1)+1
             self.r.insert('invoice_revisions',dict(invoice_id=invoice['id'],revision=revision,state='finalized',snapshot=snapshot,previous_snapshot=previous,finalized_at=self.clock()))
             return dict(invoice,**snapshot,revision=revision,state='finalized',history=list(invoice.get('history',[]))+[dict(revision=invoice.get('revision',1),snapshot=previous)],finalized_at=self.clock())
-        self.need('invoices.create');ids=b.get('work_ids')
+        self.need('invoices.create')
+        if b.get('mode')=='manual':
+            client_id=b.get('client_id')
+            if type(client_id) is not int: raise ValueError('Выберите клиента')
+            self.client(client_id,True)
+            submitted=b.get('lines')
+            if not isinstance(submitted,list) or not 1<=len(submitted)<=200:
+                raise ValueError('Добавьте от 1 до 200 строк счёта')
+            lines=[];seen=set()
+            for item in submitted:
+                if not isinstance(item,dict) or set(item)!={'operation_id','quantity','client_rate'}:
+                    raise ValueError('Некорректная строка счёта')
+                operation_id=item['operation_id']
+                if type(operation_id) is not int or operation_id in seen:
+                    raise ValueError('Операции в счёте должны быть уникальными')
+                seen.add(operation_id)
+                op=self.operation(client_id,operation_id)
+                quantity=qty(item['quantity']);rate=item['client_rate']
+                if type(rate) is not int or not 0<=rate<=100_000_000_000:
+                    raise ValueError('Цена строки указана неверно')
+                line_id='manual:'+str(uuid.uuid4())
+                lines.append(dict(work_id=line_id,operation_id=op['id'],operation_name=op['name'],
+                    quantity=quantity,client_rate=rate,amount=quantity*rate,batch_id=None,source_kind='manual'))
+            amount=sum(line['amount'] for line in lines);due=stamp(b.get('due_at'),True)
+            identity=str(uuid.uuid4())
+            day=self.clock()[:10].replace('-','')
+            number=f'PRT-{day}-{identity[:6].upper()}'
+            ids=[line['work_id'] for line in lines]
+            snapshot=dict(work_ids=ids,lines=lines,amount=amount,due_at=due)
+            return self.r.insert('invoices',dict(number=number,client_id=client_id,work_ids=ids,amount=amount,due_at=due,
+                lines=lines,source_kind='manual',state='finalized',revision=1,finalized_at=self.clock(),history=[],snapshot=snapshot),identity)
+        ids=b.get('work_ids')
         if not isinstance(ids,list) or not ids or len(ids)!=len(set(ids)): raise ValueError('Выберите уникальные записи работ')
         billed=self.billed_work_ids()
         works=[self.entity('works',wid) for wid in ids]
@@ -747,8 +778,9 @@ class Production:
         if len({w['client_id'] for w in works})!=1: raise ValueError('Счёт может включать работы одного клиента')
         lines=[dict(work_id=w['id'],operation_id=w['operation_id'],operation_name=w['operation_name'],quantity=w['quantity'],client_rate=w['client_rate'],amount=w['revenue'],batch_id=self.batch_for_work(w)) for w in works]
         amount=sum(w['revenue'] for w in works);due=stamp(b.get('due_at'),True)
-        return self.r.insert('invoices',dict(client_id=works[0]['client_id'],work_ids=ids,amount=amount,due_at=due,lines=lines,
-            state='finalized',revision=1,finalized_at=self.clock(),history=[],snapshot=dict(work_ids=ids,lines=lines,amount=amount,due_at=due)))
+        identity=str(uuid.uuid4());day=self.clock()[:10].replace('-','');number=f'PRT-{day}-{identity[:6].upper()}'
+        return self.r.insert('invoices',dict(number=number,client_id=works[0]['client_id'],work_ids=ids,amount=amount,due_at=due,lines=lines,
+            state='finalized',revision=1,finalized_at=self.clock(),history=[],snapshot=dict(work_ids=ids,lines=lines,amount=amount,due_at=due)),identity)
 
     def payment(self,b):
         self.need('payments.record');i=self.entity('invoices',b['invoice_id'])
