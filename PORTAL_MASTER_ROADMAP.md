@@ -30,6 +30,8 @@
 - [ ] После консолидации сделать полный release-gate и только затем публиковать Android 4.3 / Desktop 4.3.
 
 ### В работе
+- [ ] 2026-10-02 — финальная reconciliation всех ещё не слитых assistant/Codex веток: перенести в каноническую 4.3 только уникальные актуальные изменения (infra readiness, Stage 7 verification, migration hardening, production cutover evidence), не откатывая более новые Android/Desktop/God/Excel изменения. Для каждой группы — тесты, запись результата и push.
+  - [x] `codex-finalization-megapack-part12`: перенесено hardening legacy SQLite → PostgreSQL validation, включая защищённый company context, legacy unscoped primary-company snapshot и migration-history versions. Конфликт с более новым employee-identity backfill объединён без потери обеих защит. `test_migration_import + test_migration_validation`: 22/22 OK.
 - [x] 2026-10-02 — создана отдельная recovery-worktree и ветка `assistant/portal-4.3-consolidation-20261002` от Android 4.2.
 - [x] 2026-10-02 — начато слияние `assistant/production-template-v11-20261001`; конфликты Excel/Server/Desktop разрешаются с сохранением более новых функций и 4.2 update/UI.
 - [x] 2026-10-02 — целевые тесты после первого конфликта: Python 73/73 OK; Node UI 10 PASS, 2 skipped из-за отсутствующего Playwright на локальной машине.

@@ -7,7 +7,7 @@ from contextlib import closing
 from pathlib import Path
 
 from migration_import import ValidationError, open_copy, prepared_source, transfer, transfer_control
-from migrate_sqlite_to_pg import run
+from migrate_sqlite_to_pg import _migration_repository, run
 from portal_config import load_config
 
 
@@ -82,6 +82,24 @@ class MigrationImportTest(unittest.TestCase):
         with self.assertRaisesRegex(ValidationError,'work_log=1'):
             transfer(source,target,1,'sqlite')
         self.assertEqual(target.execute('SELECT COUNT(*) FROM employees').fetchone()[0],0)
+
+    def test_postgresql_migration_repository_wraps_raw_connection(self):
+        class Cursor:
+            def fetchone(self):
+                return ('k' * 64,)
+        class Raw:
+            def __init__(self):
+                self.calls=[]
+            def execute(self, query, args=()):
+                self.calls.append((query,args))
+                return Cursor()
+        raw=Raw()
+        repository=_migration_repository(raw,1)
+        self.assertEqual(repository.company_id,1)
+        self.assertEqual(repository.dialect,'postgresql')
+        self.assertIs(repository.conn._raw,raw)
+        self.assertEqual(repository.conn.company_id,1)
+        self.assertIn('portal_company_keys',raw.calls[0][0])
 
     def test_dry_run_and_failed_source_preflight(self):
         result = run([(1, str(self.copy))])
