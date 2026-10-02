@@ -1433,7 +1433,7 @@ def main():
         print("Platform Owner создан. Существующие администраторы не повышались.")
         return
     print(BUILD_ID)
-    print("База:", DB_PATH if CONFIG.backend == 'sqlite' else 'PostgreSQL isolated test')
+    print("База:", DB_PATH if CONFIG.backend == 'sqlite' else f'PostgreSQL {CONFIG.environment}')
     print(f"Сервер: http://{HOST}:{PORT}")
     ThreadingHTTPServer((HOST,PORT),Handler).serve_forever()
 
