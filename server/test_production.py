@@ -360,6 +360,14 @@ class ProductionTest(unittest.TestCase):
         allowed={'actor_id','company_id','created_at','entity_id','event','fields','id'}
         self.assertEqual(set(events['company.settings.updated']),allowed)
         self.assertEqual(set(events['user.permissions.updated']),allowed)
+        # Audit timestamps can legitimately contain strings such as "11:30".
+        # Check only the event payload fields that could leak changed values.
+        safe_events={name:{key:value for key,value in event.items()
+                           if key not in ('id','created_at')}
+                     for name,event in events.items()}
+        serialized=json.dumps(safe_events,ensure_ascii=False)
+        for value in ('11:30','240','true'):
+            self.assertNotIn(value,serialized)
 
     def test_company_access_summary_is_capability_and_owner_scope_checked(self):
         self.assertTrue(self.get('company-access')['data']['unlimited'])
