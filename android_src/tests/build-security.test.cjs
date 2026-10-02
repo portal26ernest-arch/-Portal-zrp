@@ -57,4 +57,7 @@ must(stagingWorkflow.includes('staging_api_url') && stagingWorkflow.includes('va
   'Staging workflow must accept a runtime/Actions-variable HTTPS endpoint');
 must(stagingWorkflow.includes("'https://portal.invalid'"),
   'Staging workflow must fail disconnected instead of silently using a stale endpoint');
+must(gradle.includes("graph.allTasks.any") && gradle.includes("Release requires a stable owned HTTPS PORTAL API URL") &&
+     gradle.includes("host.endsWith('.sslip.io')") && gradle.includes("host.endsWith('.trycloudflare.com')"),
+  'Release task must reject missing, local, and temporary API endpoints');
 console.log('Android build security checks: OK');
