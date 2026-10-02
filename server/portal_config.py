@@ -23,6 +23,8 @@ def load_config(env):
         raise ValueError('Invalid PORTAL_ENV')
     if backend not in ('sqlite', 'postgresql'):
         raise ValueError('Invalid PORTAL_DB_BACKEND')
+    if environment == 'production' and backend != 'postgresql':
+        raise ValueError('Production requires explicit PostgreSQL backend')
     try:
         port = int(env.get('PORTAL_APP_PORT', '8765'))
     except ValueError as exc:
@@ -47,6 +49,11 @@ def load_config(env):
     if backend == 'postgresql' and environment == 'production':
         if env.get('PORTAL_ENABLE_POSTGRES_PRODUCTION', '').lower() != 'true':
             raise ValueError('Production PostgreSQL requires explicit PORTAL_ENABLE_POSTGRES_PRODUCTION=true')
+        for name, value in (('PORTAL_DATABASE_URL', dsn),
+                            ('PORTAL_CONTROL_DATABASE_URL', control_dsn)):
+            parsed = urlsplit(value)
+            if parsed.scheme not in ('postgresql', 'postgres') or not parsed.hostname or not parsed.username or not parsed.path.strip('/'):
+                raise ValueError(f'Production requires a complete {name}')
     return Config(environment, backend,
                   env.get('PORTAL_DB', str(Path.cwd() / 'portal.db')),
                   dsn, env.get('PORTAL_APP_HOST', '127.0.0.1' if environment == 'production' or backend == 'postgresql' else '0.0.0.0'),
