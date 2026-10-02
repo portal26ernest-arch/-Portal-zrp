@@ -14,9 +14,10 @@ namespace Portal.Desktop;
 
 public partial class MainWindow : Window
 {
-    private const int CurrentBuild = 40;
+    private const int CurrentBuild = 41;
     private const long MaxInstallerBytes = 250L * 1024 * 1024;
     private const string GithubRepository = "portal26ernest-arch/-Portal-zrp";
+    private const string WebViewCompatibilityArguments = "--disable-gpu --disable-gpu-compositing";
     private static readonly HttpClient Http = new(new HttpClientHandler { AllowAutoRedirect = false })
     {
         Timeout = TimeSpan.FromMinutes(5)
@@ -110,8 +111,17 @@ public partial class MainWindow : Window
             if (Browser.CoreWebView2 is null)
             {
                 Directory.CreateDirectory(_settingsDir);
+                var environmentOptions = new CoreWebView2EnvironmentOptions
+                {
+                    // On some Windows/GPU driver combinations WebView2 loads the DOM but
+                    // leaves a blank white surface. PORTAL is a forms/data client, so
+                    // software compositing is a safe compatibility default.
+                    AdditionalBrowserArguments = WebViewCompatibilityArguments
+                };
                 var env = await CoreWebView2Environment.CreateAsync(
-                    userDataFolder: Path.Combine(_settingsDir, "WebView2"));
+                    browserExecutableFolder: null,
+                    userDataFolder: Path.Combine(_settingsDir, "WebView2"),
+                    options: environmentOptions);
                 var options = env.CreateCoreWebView2ControllerOptions();
                 options.IsInPrivateModeEnabled = true;
                 await Browser.EnsureCoreWebView2Async(env, options);
@@ -364,7 +374,7 @@ public partial class MainWindow : Window
     {
         using var request = new HttpRequestMessage(HttpMethod.Get,
             $"https://api.github.com/repos/{GithubRepository}/releases?per_page=50");
-        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/4.0.0");
+        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/4.1.0");
         request.Headers.Accept.ParseAdd("application/vnd.github+json");
         using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();
