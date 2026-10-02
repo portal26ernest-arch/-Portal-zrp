@@ -1,0 +1,62 @@
+name: PORTAL master control gate
+
+on:
+  push:
+    branches:
+      - main
+      - 'assistant/**'
+      - 'codex/**'
+      - 'portal-*'
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  master-control:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Require canonical project control update
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test -f AGENTS.md
+          test -f PORTAL_MASTER_ROADMAP.md
+          grep -q "ЕДИНСТВЕННЫЙ ИСТОЧНИК ИСТИНЫ" PORTAL_MASTER_ROADMAP.md
+          grep -q "PORTAL_MASTER_ROADMAP.md" AGENTS.md
+
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            BASE="$PR_BASE_SHA"
+          else
+            BASE="$BEFORE_SHA"
+            if [[ -z "$BASE" || "$BASE" =~ ^0+$ ]]; then
+              BASE="$(git rev-parse HEAD^ 2>/dev/null || true)"
+            fi
+          fi
+
+          if [[ -z "$BASE" ]]; then
+            echo "No comparable base; repository control files exist."
+            exit 0
+          fi
+
+          git diff --name-only "$BASE" "$HEAD_SHA" > /tmp/portal_changed.txt
+          cat /tmp/portal_changed.txt
+
+          if grep -Ev '^(PORTAL_MASTER_ROADMAP\.md|AGENTS\.md|README\.md|docs/|.*\.md$)' /tmp/portal_changed.txt | grep -q .; then
+            if ! grep -Fxq 'PORTAL_MASTER_ROADMAP.md' /tmp/portal_changed.txt; then
+              echo "::error::Code/runtime change detected without PORTAL_MASTER_ROADMAP.md update."
+              echo "::error::Read the master file before work and record status/tests/next step in the same change."
+              exit 1
+            fi
+          fi
+
+          echo "PORTAL master control gate: OK"
