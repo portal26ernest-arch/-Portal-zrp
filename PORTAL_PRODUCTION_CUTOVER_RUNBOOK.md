@@ -42,3 +42,17 @@ This is a controlled checklist. It is not authorization to mutate production. Re
 Record approvals, operators, timestamps, exact commits and migration checksums, source snapshot checksum, reconciliation outputs, smoke results, backup/restore evidence, and rollback decision. Store evidence in the approved protected operations location; do not put production data or secrets in Git.
 
 **Current status:** no production freeze, import, migration, DNS change, service/config mutation, or cutover has been performed by Part 12.
+
+
+## Automated read-only dry-run gate
+
+Part 12 assistant tooling adds:
+
+- `ops/cutover_dry_run.py` — records current Git SHA/branch, clean-worktree state and SHA-256 of every tracked SQL migration, then merges only non-protected operator evidence. It does not connect to production or mutate services.
+- `ops/release_gate.py` — deterministic GO/NO-GO evaluator for staging or production evidence.
+- staging gate requires clean worktree, green Server/Web/Android UI/Android build evidence, tenant/RLS/security/financial invariants, backup+restore, migration dry-run, reconciliation, production untouched, and a valid staging artifact SHA/version.
+- production profile additionally requires HTTPS/TLS, protected production signing, verified off-server backup, explicit owner authorization, write-freeze confirmation and an independent verifier.
+- A production profile with no explicit owner authorization cannot return GO.
+- `ops/cutover_operator_evidence.example.json` is schema/example data only; it is not evidence that production gates have passed.
+
+These tools supplement the human runbook. They do not authorize cutover and cannot perform it.

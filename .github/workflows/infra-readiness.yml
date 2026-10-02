@@ -1,0 +1,71 @@
+name: Infra readiness
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - assistant-part12-infra-readiness
+      - codex-finalization-megapack-part12
+    paths:
+      - "ops/**"
+      - "deploy/nginx/**"
+      - "deploy/systemd/**"
+      - "PORTAL_LEGACY_RUNTIME_AUDIT.md"
+      - "PORTAL_MONEY_FIELD_INVENTORY.md"
+      - "PORTAL_PRODUCTION_CUTOVER_RUNBOOK.md"
+      - ".github/workflows/infra-readiness.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Run infra and release-gate tests
+        run: |
+          python -m unittest \
+            ops.test_infra_readiness \
+            ops.test_offsite_backup \
+            ops.test_release_audits \
+            ops.test_release_gate \
+            ops.test_legacy_money_reconcile \
+            ops.test_employee_identity_migration_audit \
+            ops.test_release_evidence_manifest \
+            ops.test_rollback_rehearsal \
+            ops.test_https_endpoint_preflight \
+            ops.test_render_nginx_config -v
+
+      - name: Compile ops tools
+        run: |
+          python -m py_compile \
+            ops/postgres_backup.py \
+            ops/postgres_restore_rehearsal.py \
+            ops/offsite_backup.py \
+            ops/legacy_runtime_audit.py \
+            ops/money_field_inventory.py \
+            ops/cutover_dry_run.py \
+            ops/release_gate.py \
+            ops/https_endpoint_preflight.py \
+            ops/render_nginx_config.py
+
+      - name: Verify runtime identity boundary
+        run: |
+          python ops/legacy_runtime_audit.py \
+            --markdown /tmp/PORTAL_LEGACY_RUNTIME_AUDIT.md \
+            --json /tmp/PORTAL_LEGACY_RUNTIME_AUDIT.json
+
+      - name: Build money-field inventory
+        run: |
+          python ops/money_field_inventory.py \
+            --markdown /tmp/PORTAL_MONEY_FIELD_INVENTORY.md \
+            --json /tmp/PORTAL_MONEY_FIELD_INVENTORY.json
+
+      - name: Diff hygiene
+        run: git diff --check

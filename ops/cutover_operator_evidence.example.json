@@ -1,0 +1,17 @@
+{
+  "ci_server": "pass",
+  "ci_web": "pass",
+  "ci_android_ui": "pass",
+  "ci_android_build": "pass",
+  "tenant_isolation": "pass",
+  "rls_force": "pass",
+  "secrets_scan": "pass",
+  "financial_invariants": "pass",
+  "backup_created": "pass",
+  "backup_restore_rehearsed": "pass",
+  "migration_dry_run": "pass",
+  "reconciliation": "pass",
+  "staging_apk_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "staging_version_name": "3.5-dev-staging",
+  "staging_version_code": 35
+}

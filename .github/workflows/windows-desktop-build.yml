@@ -1,0 +1,70 @@
+name: Windows Desktop staging
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex-finalization-megapack-part12
+      - assistant-part12-infra-readiness
+    paths:
+      - "desktop/windows/**"
+      - "android_src/release.properties"
+      - ".github/workflows/windows-desktop-build.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test Windows thin client
+        shell: powershell
+        run: |
+          .\desktop\windows\test.ps1
+
+      - name: Read PORTAL version
+        shell: powershell
+        run: |
+          $props = Get-Content .\android_src\release.properties -Raw | ConvertFrom-StringData
+          $version = "$($props.buildNumber)-dev-staging"
+          "PORTAL_DESKTOP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Package Windows staging client
+        shell: powershell
+        run: |
+          $name = "PORTAL_Windows_$env:PORTAL_DESKTOP_VERSION"
+          $stage = Join-Path $env:RUNNER_TEMP $name
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item -LiteralPath .\desktop\windows\PortalDesktop.ps1 -Destination $stage
+          Copy-Item -LiteralPath .\desktop\windows\install.ps1 -Destination $stage
+          Copy-Item -LiteralPath .\desktop\windows\uninstall.ps1 -Destination $stage
+          Copy-Item -LiteralPath .\desktop\windows\README.md -Destination $stage
+          $manifest = [ordered]@{
+            schema_version = 1
+            version = $env:PORTAL_DESKTOP_VERSION
+            git_sha = $env:GITHUB_SHA
+            wrapper = "system-edge-app-mode"
+            stores_company_master_database = $false
+            stores_secrets = $false
+            production_cutover = $false
+          }
+          $manifest | ConvertTo-Json | Set-Content (Join-Path $stage "manifest.json") -Encoding utf8
+          $zip = Join-Path $PWD ($name + ".zip")
+          Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $zip -Force
+          $hash = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLowerInvariant()
+          "$hash  $([IO.Path]::GetFileName($zip))" | Set-Content ($zip + ".sha256") -Encoding ascii
+          Copy-Item (Join-Path $stage "manifest.json") ($name + ".manifest.json")
+          "PORTAL_WINDOWS_ARTIFACT=$name" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Upload Windows staging artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PORTAL_WINDOWS_ARTIFACT }}
+          if-no-files-found: error
+          path: |
+            ${{ env.PORTAL_WINDOWS_ARTIFACT }}.zip
+            ${{ env.PORTAL_WINDOWS_ARTIFACT }}.zip.sha256
+            ${{ env.PORTAL_WINDOWS_ARTIFACT }}.manifest.json
