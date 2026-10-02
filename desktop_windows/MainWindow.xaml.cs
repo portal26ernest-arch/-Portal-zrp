@@ -14,7 +14,7 @@ namespace Portal.Desktop;
 
 public partial class MainWindow : Window
 {
-    private const int CurrentBuild = 43;
+    private const int CurrentBuild = 44;
     private const long MaxInstallerBytes = 250L * 1024 * 1024;
     private const string GithubRepository = "portal26ernest-arch/-Portal-zrp";
     private const string WebViewCompatibilityArguments = "--disable-gpu --disable-gpu-compositing";
@@ -28,6 +28,7 @@ public partial class MainWindow : Window
     private bool _browserEventsAttached;
     private bool _webRecoveryPending;
     private string? _pendingPersistOrigin;
+    private DesktopCacheBridge? _cacheBridge;
 
     public MainWindow()
     {
@@ -125,6 +126,7 @@ public partial class MainWindow : Window
             }
 
             _serverOrigin = origin;
+            ConfigureDesktopCache(origin);
             _pendingPersistOrigin = persist ? origin : null;
             SetupPanel.Visibility = Visibility.Collapsed;
             Browser.Visibility = Visibility.Visible;
@@ -150,6 +152,7 @@ public partial class MainWindow : Window
         Browser.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
         Browser.CoreWebView2.Settings.IsStatusBarEnabled = false;
         Browser.CoreWebView2.Settings.IsPasswordAutosaveEnabled = false;
+        Browser.CoreWebView2.Settings.AreHostObjectsAllowed = true;
         if (_browserEventsAttached) return;
         Browser.CoreWebView2.NavigationStarting += (_, e) =>
         {
@@ -260,6 +263,14 @@ public partial class MainWindow : Window
         await Browser.ExecuteScriptAsync(sidebarScript);
     }
 
+    private void ConfigureDesktopCache(string origin)
+    {
+        if (Browser.CoreWebView2 is null) return;
+        try { Browser.CoreWebView2.RemoveHostObjectFromScript("portalDesktopCache"); } catch { }
+        _cacheBridge = new DesktopCacheBridge(_settingsDir, origin);
+        Browser.CoreWebView2.AddHostObjectToScript("portalDesktopCache", _cacheBridge);
+    }
+
     private static bool SameOrigin(Uri target, string origin) =>
         target.GetLeftPart(UriPartial.Authority).Equals(origin, StringComparison.OrdinalIgnoreCase);
 
@@ -290,7 +301,8 @@ public partial class MainWindow : Window
         {
             Browser.CoreWebView2.Navigate("about:blank");
             await Browser.CoreWebView2.Profile.ClearBrowsingDataAsync();
-            SetupError.Text = "Локальный сеанс очищен. Выберите сервер и войдите снова.";
+            _cacheBridge?.ClearAll();
+            SetupError.Text = "Локальный сеанс и кэш компании очищены. Выберите сервер и войдите снова.";
             ConnectButton.IsEnabled = true;
             StatusText.Text = "Требуется подключение";
         }
@@ -419,7 +431,7 @@ public partial class MainWindow : Window
     {
         using var request = new HttpRequestMessage(HttpMethod.Get,
             $"https://api.github.com/repos/{GithubRepository}/releases?per_page=50");
-        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/4.3.0");
+        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/4.4.0");
         request.Headers.Accept.ParseAdd("application/vnd.github+json");
         using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();

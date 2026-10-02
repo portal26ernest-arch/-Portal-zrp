@@ -35,3 +35,12 @@ test('Web Share cancellation is explicit and native-only controls are hidden',()
   assert.ok(css.includes('Web-клиент обновляется автоматически'));
   assert.ok(adapter.includes("document.documentElement.classList.add('web-client')"));
 });
+
+test('Desktop cache is company-scoped, encrypted by native bridge and never used for auth',()=>{
+  for(const value of ['portalDesktopCache','setCacheCompany','cacheCompany','CACHEABLE','cacheRead','cacheWrite','ClearCompany']) assert.ok(adapter.includes(value),value);
+  assert.ok(app.includes("PortalNative.setCacheCompany(String(S.company?.id||S.me.company_id||''))"));
+  assert.ok(app.includes("PortalNative.setCacheCompany(String(c.id))"));
+  assert.ok(!adapter.includes("CACHEABLE = [/^\\/api\\/(?:login|me|platform)"));
+  assert.ok(adapter.includes("verb === 'GET' && !!token && !!cacheCompany"));
+  assert.ok(adapter.includes("INVALIDATES_CACHE.test(target)"));
+});

@@ -14,6 +14,44 @@
     ['text/plain', ['.txt']]
   ]);
 
+  const CACHE_MAX_AGE_MS = 5 * 60 * 1000;
+  const CACHEABLE = [
+    /^\/api\/(?:admin\/)?clients(?:\?.*)?$/,
+    /^\/api\/clients\/\d+(?:\/operations)?(?:\?.*)?$/,
+    /^\/api\/admin\/clients\/\d+\/operations(?:\?.*)?$/,
+    /^\/api\/users(?:\?.*)?$/,
+    /^\/api\/materials(?:\?.*)?$/,
+    /^\/api\/jobs(?:\?.*)?$/,
+    /^\/api\/v3\/(?:catalog|products|client-requisites|client-name-history|tariff-history)(?:\?.*)?$/
+  ];
+  const INVALIDATES_CACHE = /\/(?:clients?|users?|materials?|operations?|tariffs?|products?|invitations?|company-access)(?:\/|\?|$)/i;
+  let cacheCompany = '';
+  const desktopCache = () => {
+    try { return window.chrome?.webview?.hostObjects?.sync?.portalDesktopCache || null; }
+    catch { return null; }
+  };
+  const cacheRead = (company, key) => {
+    try {
+      const raw = desktopCache()?.Read(String(company), key);
+      if (!raw) return null;
+      const item = JSON.parse(String(raw));
+      if (!item || item.v !== 1 || !item.savedAt || !item.data) return null;
+      if (Date.now() - Number(item.savedAt) > CACHE_MAX_AGE_MS) return null;
+      return item.data;
+    } catch { return null; }
+  };
+  const cacheWrite = (company, key, data) => {
+    try {
+      return !!desktopCache()?.Write(String(company), key, JSON.stringify({v:1,savedAt:Date.now(),data}));
+    } catch { return false; }
+  };
+  const cacheClearCompany = company => {
+    try { return !!desktopCache()?.ClearCompany(String(company)); }
+    catch { return false; }
+  };
+  const canCache = (verb, target, token) =>
+    verb === 'GET' && !!token && !!cacheCompany && CACHEABLE.some(pattern => pattern.test(target));
+
   const result = (id, obj) => window.PortalBridgeResult(String(id), JSON.stringify(obj));
   const fail = (id, error, network = false) => result(id, {ok:false, httpStatus:0, network, error});
   const safeName = value => {
@@ -61,9 +99,35 @@
     return {ok:true, location:'загрузки браузера'};
   };
 
+  const fetchJson = async (verb, target, body, token, company) => {
+    const headers = {Accept:'application/json'};
+    if (token) headers.Authorization = 'Bearer ' + token;
+    if (company) headers['X-Portal-Company'] = String(company);
+    if (body) headers['Content-Type'] = 'application/json';
+    const response = await fetch(target, {
+      method:verb,
+      headers,
+      body:body || undefined,
+      credentials:'same-origin',
+      cache:'no-store',
+      redirect:'error'
+    });
+    let data;
+    try { data = await response.json(); }
+    catch { data = {ok:false, error:'Некорректный ответ сервера'}; }
+    if (!data || typeof data !== 'object' || Array.isArray(data)) data = {ok:false, error:'Некорректный ответ сервера'};
+    return {...data, ok:response.ok && data.ok !== false, httpStatus:response.status};
+  };
+
   window.PortalNative = {
     getServerUrl: () => location.origin,
     setServerUrl: () => false,
+    setCacheCompany: value => {
+      const next = String(value || '');
+      cacheCompany = /^[1-9]\d{0,9}$/.test(next) ? next : '';
+      return !!cacheCompany;
+    },
+    clearCompanyCache: () => cacheCompany ? cacheClearCompany(cacheCompany) : true,
     checkUpdates: id => result(id, {ok:true, configured:false, web:true}),
     requestAsync: async (id, method, path, body, token, company) => {
       const verb = String(method || 'GET').toUpperCase();
@@ -72,24 +136,21 @@
       if (company && !/^[1-9]\d{0,9}$/.test(String(company))) return fail(id, 'Недопустимый контекст компании');
       if (token && (typeof token !== 'string' || token.length > 8192 || /[\r\n]/.test(token))) return fail(id, 'Недопустимая сессия');
       if (body && (typeof body !== 'string' || body.length > 24 * 1024 * 1024 || verb !== 'POST')) return fail(id, 'Недопустимые данные запроса');
+      const cacheEligible = canCache(verb, target, token);
+      const cached = cacheEligible ? cacheRead(cacheCompany, target) : null;
+      if (cached) {
+        result(id, {...cached, cached:true});
+        fetchJson(verb, target, body, token, company).then(fresh => {
+          if (fresh.ok) cacheWrite(cacheCompany, target, fresh);
+          else if (fresh.httpStatus === 401 || fresh.httpStatus === 403) cacheClearCompany(cacheCompany);
+        }).catch(() => {});
+        return;
+      }
       try {
-        const headers = {Accept:'application/json'};
-        if (token) headers.Authorization = 'Bearer ' + token;
-        if (company) headers['X-Portal-Company'] = String(company);
-        if (body) headers['Content-Type'] = 'application/json';
-        const response = await fetch(target, {
-          method:verb,
-          headers,
-          body:body || undefined,
-          credentials:'same-origin',
-          cache:'no-store',
-          redirect:'error'
-        });
-        let data;
-        try { data = await response.json(); }
-        catch { data = {ok:false, error:'Некорректный ответ сервера'}; }
-        if (!data || typeof data !== 'object' || Array.isArray(data)) data = {ok:false, error:'Некорректный ответ сервера'};
-        result(id, {...data, ok:response.ok && data.ok !== false, httpStatus:response.status});
+        const data = await fetchJson(verb, target, body, token, company);
+        if (cacheEligible && data.ok) cacheWrite(cacheCompany, target, data);
+        if (verb === 'POST' && data.ok && cacheCompany && INVALIDATES_CACHE.test(target)) cacheClearCompany(cacheCompany);
+        result(id, data);
       } catch {
         fail(id, 'Нет соединения с сервером', true);
       }

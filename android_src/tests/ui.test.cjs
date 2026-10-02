@@ -306,7 +306,7 @@ test('browser UI regression',async t=>{
 
       await page.evaluate(()=>{mock.previewMode='ok';mock.applyMode='stale';return go('excelImport');});await page.locator('#excelFile').setInputFiles(file);await page.locator('[data-action=previewExcelImport]').click();await page.waitForSelector('[data-action=applyExcelImport]');
       await page.locator('[data-action=applyExcelImport]').click();await page.locator('[data-action=confirmSheet]').click();
-      await page.waitForFunction(()=>document.querySelector('#content').innerText.includes('Preview устарел'));
+      await page.waitForFunction(()=>document.querySelector('#content').innerText.includes('Результат предварительной проверки устарел'));
       assert.deepEqual(errors,[]);await page.close();
     });
     await t.test('receivables screen renders cents-backed aging and applies client and bucket filters',async()=>{
