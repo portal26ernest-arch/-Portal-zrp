@@ -97,6 +97,18 @@ class InfraReadinessTest(unittest.TestCase):
         self.assertNotIn("PGPASSWORD=", text)
         self.assertNotIn("password=", text.lower())
 
+    def test_central_backup_covers_split_production_and_preserves_manual_checkpoints(self):
+        text = (ROOT / "ops/portal_central_backup.sh").read_text(encoding="utf-8")
+        self.assertIn("backup_database portal_prod_control", text)
+        self.assertIn("portal_prod_company_[0-9]+", text)
+        self.assertIn("grep -qx portal_prod_company_1", text)
+        self.assertIn("pg_restore --list", text)
+        self.assertIn('postgresql/daily', text)
+        self.assertIn('storage/daily', text)
+        self.assertIn('RETENTION_DAYS=14', text)
+        self.assertNotIn('PGPASSWORD=', text)
+        self.assertNotIn('password=', text.lower())
+
     def test_reminder_systemd_example_is_hardened_and_not_installed_by_default(self):
         service_path = ROOT / "ops/systemd/portal-reminder-scheduler.service.example"
         timer_path = ROOT / "ops/systemd/portal-reminder-scheduler.timer.example"
