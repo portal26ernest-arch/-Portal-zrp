@@ -770,14 +770,14 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         owner=self.request('/api/platform/login',body={'username':'synthetic-owner','pin':pin})['token']
         self.request('/api/platform/login',body={'username':'synthetic-owner','pin':pin})
         day=datetime.now(timezone.utc).date().isoformat()
-        query=f'company_id=1&actor_id=1&event=owner_login&from={day}&to={day}&limit=1'
+        query=f'company_id=1&actor_id=1&event=god_login&from={day}&to={day}&limit=1'
         filtered=self.request('/api/platform/audit?'+query+'&page=1',owner)
         next_page=self.request('/api/platform/audit?'+query+'&page=2',owner)
         self.assertEqual(filtered['total'],2)
         self.assertEqual((filtered['page'],filtered['limit'],len(filtered['rows'])),(1,1,1))
         self.assertEqual((next_page['page'],len(next_page['rows'])),(2,1))
         self.assertNotEqual(filtered['rows'][0]['id'],next_page['rows'][0]['id'])
-        self.assertEqual(filtered['rows'][0]['event'],'owner_login')
+        self.assertEqual(filtered['rows'][0]['event'],'god_login')
         self.assertEqual(filtered['rows'][0]['outcome'],'success')
         self.assertNotIn(pin,json.dumps(filtered))
         self.request('/api/platform/audit',self.admin,status=403)
@@ -791,7 +791,7 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         self.assertTrue(selected['token'].startswith('2.'))
         self.assertEqual(selected['invite']['company_id'],2)
         support_audit=self.request(
-            '/api/platform/audit?company_id=2&actor_id=1&event=technical_access',owner)
+            '/api/platform/audit?company_id=2&actor_id=1&event=god_access',owner)
         support_events=[(row['outcome'],json.loads(row['details']))
                         for row in support_audit['rows']]
         self.assertTrue(any(outcome=='success' and details.get('route')=='/api/v3/invitations'
