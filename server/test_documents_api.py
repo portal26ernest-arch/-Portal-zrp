@@ -27,6 +27,11 @@ class DocumentAPITest(unittest.TestCase):
     get=fixtures.ProductionTest.get
     work=fixtures.ProductionTest.work
 
+    def test_public_document_metadata_never_exposes_god_actor(self):
+        item={'original_filename':'doc.pdf','checksum_sha256':'a'*64,'actor_kind':'platform_owner','created_by':999}
+        public=Documents.public(item)
+        self.assertNotIn('actor_kind',public);self.assertNotIn('created_by',public)
+
     def upload(self,token=None,**values):
         body=dict(action='upload',document_type='report_pdf',original_filename='Отчёт.pdf',mime_type='application/pdf',
                   file_b64=base64.b64encode(PDF).decode(),title='Отчёт',category='reports',document_date='2026-09-28')

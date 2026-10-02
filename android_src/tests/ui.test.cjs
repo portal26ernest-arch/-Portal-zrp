@@ -232,6 +232,7 @@ test('browser UI regression',async t=>{
         const visible=await page.locator('#content [data-page]').evaluateAll(nodes=>nodes.map(n=>n.dataset.page));
         const expected=Array.from(core.modules).filter(m=>!m.future&&core.can(m.id,{role,employee_id:101},{id:1})).map(m=>m.id);
         assert.deepEqual(visible,expected);
+        assert.doesNotMatch(await page.locator('body').innerText(),/\bGod\b|Технический вход|Platform Owner|Владелец платформы/);
         for(const name of expected){await page.evaluate(name=>go(name),name);assert.doesNotMatch(await page.locator('#content').innerText(),/Не удалось загрузить/);}
         assert.deepEqual(errors,[]);await page.close();
       }
@@ -467,11 +468,13 @@ test('browser UI regression',async t=>{
       await page.evaluate(()=>mock.rejectWrite=true);await page.locator('#wQty').fill('4');await page.locator('#workSubmit').click();await page.waitForSelector('#auth:not(.hidden)');
       assert.equal(await page.evaluate(()=>localStorage.getItem('portalSession')),null);assert.deepEqual(errors,[]);await page.close();
     });
-    await t.test('owner requires company and confirmation, switches scope and rejects stale data',async()=>{
+    await t.test('God requires company and confirmation, switches scope and rejects stale data',async()=>{
       const {page,errors}=await fixture(browser,'platform_owner');
-      await page.locator('#loginCompany').click();await page.locator('#sheetContent [data-action=technicalLogin]').click();
-      assert.equal(await page.locator('#passwordLabel').innerText(),'Пароль владельца платформы');await login(page);
-      assert.equal(await page.evaluate(()=>mock.calls.some(c=>c.url==='/api/platform/login')),true);
+      assert.equal(await page.locator('[data-action=technicalLogin]').count(),0);
+      assert.equal((await page.locator('#auth').innerText()).includes('God'),false);
+      await login(page);
+      assert.equal(await page.evaluate(()=>mock.calls.some(c=>c.url==='/api/login')),true);
+      assert.equal(await page.locator('#companyName').innerText(),'God');
       assert.equal(await page.locator('[data-action=selectCompany]').count(),2);
       assert.equal((await page.evaluate(()=>mock.calls)).some(c=>c.url.startsWith('/api/dashboard')),false);
       await page.locator('[data-action=selectCompany][data-id="2"]').click();await page.locator('[data-action=confirmSheet]').click();
@@ -487,9 +490,9 @@ test('browser UI regression',async t=>{
       await page.waitForFunction(()=>pending.size===0);assert.equal(await page.locator('[data-action=selectCompany]').count(),2);
       assert.equal(await page.locator('#supportStrip').isVisible(),false);assert.deepEqual(errors,[]);await page.close();
     });
-    await t.test('owner invitation writes require selected company confirmation and stay in support audit',async()=>{
+    await t.test('God invitation writes require selected company confirmation and stay in support audit',async()=>{
       const {page,errors}=await fixture(browser,'platform_owner',{width:390,height:844},true);
-      await page.locator('#loginCompany').click();await page.locator('#sheetContent [data-action=technicalLogin]').click();await login(page);
+      await login(page);
       await page.locator('[data-action=selectCompany][data-id="2"]').click();await page.locator('[data-action=confirmSheet]').click();
       await page.waitForSelector('#supportStrip:not(.hidden)');await page.waitForFunction(()=>S.page==='dashboard'&&!document.querySelector('.loading')&&S.writes===0);
       const support=await page.evaluate(async()=>{await go('users');return {page:S.page,company:S.company?.id,stage3:S.stage3};});
@@ -505,28 +508,28 @@ test('browser UI regression',async t=>{
       await page.evaluate(()=>{closeSheet();actions.exitSupport();});await page.waitForSelector('[data-action=selectCompany]');
       assert.equal(await page.locator('#oneTimeInviteToken').count(),0);assert.equal(await page.locator('#supportStrip').isVisible(),false);
       await page.locator('[data-action=audit]').click();await page.waitForSelector('#ownerAuditCompany');
-      await page.locator('#ownerAuditCompany').fill('2');await page.locator('#ownerAuditEvent').fill('technical_access');
+      await page.locator('#ownerAuditCompany').fill('2');await page.locator('#ownerAuditEvent').fill('god_access');
       await page.locator('#ownerAuditFilterForm [type=submit]').click();
-      await page.waitForFunction(()=>mock.calls.some(c=>c.url.startsWith('/api/platform/audit?')&&c.url.includes('company_id=2')&&c.url.includes('event=technical_access')));
+      await page.waitForFunction(()=>mock.calls.some(c=>c.url.startsWith('/api/platform/audit?')&&c.url.includes('company_id=2')&&c.url.includes('event=god_access')));
       assert.deepEqual(errors,[]);await page.close();
     });
-    await t.test('platform owner audit is separate and filters are sent only from owner surface',async()=>{
+    await t.test('God audit is separate and filters are sent only from God surface',async()=>{
       const {page,errors}=await fixture(browser,'platform_owner');
-      await page.locator('#loginCompany').click();await page.locator('#sheetContent [data-action=technicalLogin]').click();await login(page);
+      await login(page);
       await page.locator('[data-action=audit]').click();await page.waitForSelector('#ownerAuditCompany');
-      assert.match(await page.locator('#sheetContent').innerText(),/Только действия Platform Owner и системной поддержки/);
+      assert.match(await page.locator('#sheetContent').innerText(),/Только действия God и системные события/);
       await page.locator('#ownerAuditCompany').fill('2');await page.locator('#ownerAuditActor').fill('1');
-      await page.locator('#ownerAuditEvent').fill('technical_access');await page.locator('#ownerAuditFrom').fill('2026-09-01');await page.locator('#ownerAuditTo').fill('2026-09-30');
+      await page.locator('#ownerAuditEvent').fill('god_access');await page.locator('#ownerAuditFrom').fill('2026-09-01');await page.locator('#ownerAuditTo').fill('2026-09-30');
       await page.locator('#ownerAuditFilterForm [type=submit]').click();
       await page.waitForFunction(()=>mock.calls.some(c=>c.url.startsWith('/api/platform/audit?')&&c.url.includes('company_id=2')));
       const url=await page.evaluate(()=>mock.calls.filter(c=>c.url.startsWith('/api/platform/audit?')).at(-1).url);
-      assert.match(url,/actor_id=1/);assert.match(url,/event=technical_access/);assert.match(url,/from=2026-09-01/);assert.match(url,/to=2026-09-30/);
+      assert.match(url,/actor_id=1/);assert.match(url,/event=god_access/);assert.match(url,/from=2026-09-01/);assert.match(url,/to=2026-09-30/);
       assert.match(await page.locator('#sheetContent').innerText(),/Запросы и секреты в журнал не включаются/);
       assert.deepEqual(errors,[]);await page.close();
     });
-    await t.test('platform owner module switches are explicit and submitted with company scope',async()=>{
+    await t.test('God module switches are explicit and submitted with company scope',async()=>{
       const {page,errors}=await fixture(browser,'platform_owner');
-      await page.locator('#loginCompany').click();await page.locator('#sheetContent [data-action=technicalLogin]').click();await login(page);
+      await login(page);
       await page.locator('[data-action=editPlatformCompany][data-id="2"]').click();
       assert.equal(await page.locator('[data-platform-module]').count(),22);
       await page.locator('#module-toggle-work').uncheck();
@@ -536,9 +539,9 @@ test('browser UI regression',async t=>{
       assert.equal(saved.body.module_toggles.work,false);assert.equal(saved.company,'');
       assert.deepEqual(errors,[]);await page.close();
     });
-    await t.test('platform owner saves company subscription state and override while PORTAL stays unlimited',async()=>{
+    await t.test('God saves company subscription state and override while PORTAL stays unlimited',async()=>{
       const {page,errors}=await fixture(browser,'platform_owner');
-      await page.locator('#loginCompany').click();await page.locator('#sheetContent [data-action=technicalLogin]').click();await login(page);
+      await login(page);
       await page.locator('[data-action=editPlatformCompany][data-id="2"]').click();
       assert.equal(await page.locator('#platformCompanyLimit').inputValue(),'15');
       await page.locator('#platformCompanyLimit').fill('16');await page.locator('#platformCompanyFee').fill('123.45');
@@ -834,7 +837,7 @@ test('new employee creation is independent from existing employees',()=>{
   assert.match(source,/Новый сотрудник получит собственную карточку и уникальный ID/);
 });
 
-test('self-service PIN change settings flow is masked, validates mismatch and hides for Platform Owner',async t=>{
+test('self-service PIN change settings flow is masked, validates mismatch and hides for God',async t=>{
   if(!chromium){t.skip('Playwright is not installed in this environment');return;}
   const browser=await chromium.launch({headless:true,...(process.env.PORTAL_BROWSER_PATH?{executablePath:process.env.PORTAL_BROWSER_PATH}:{})});
   try{

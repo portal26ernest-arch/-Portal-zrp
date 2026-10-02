@@ -91,6 +91,8 @@ class Repository:
             'entry_type','employee_id','payroll_period_id','amount','request_id','fields',
             'actor_kind','reason','reason_sha256'
         ) if key in details}
+        if 'actor_kind' not in allowed and (user or {}).get('technical_owner'):
+            allowed['actor_kind']='platform_owner'
         self.insert('audit',dict(actor_id=(user or {}).get('id'),event=event,entity_id=str(entity_id),**allowed))
 
     def sync_payroll_employees(self):

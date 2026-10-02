@@ -38,6 +38,8 @@ tenants.configure(CONFIG)
 HOST = CONFIG.host
 PORT = CONFIG.port
 SESSION_HOURS = 24 * 30
+GLOBAL_ROLE = "platform_owner"
+GLOBAL_ROLE_LABEL = "God"
 
 ROLE_LABELS = {
     "admin": "Администратор",
@@ -185,7 +187,7 @@ def user_from_token(token):
         with tenants.control(DB_PATH) as conn:
             row = conn.execute("SELECT u.id,u.username,u.display_name,u.company_id FROM platform_sessions s JOIN platform_owners u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>=? AND u.active=1",
                                (hashlib.sha256(token.encode()).hexdigest(), now_text())).fetchone()
-        return dict(row, role="platform_owner") if row else None
+        return dict(row, role=GLOBAL_ROLE) if row else None
     try:
         company_id = int(token.split(".", 1)[0]) if "." in token else 1
         company = tenants.get_company(DB_PATH, company_id)
@@ -834,12 +836,13 @@ class Handler(BaseHTTPRequestHandler):
             with tenants.control(DB_PATH) as conn:
                 u = conn.execute("SELECT * FROM platform_owners WHERE username=? AND active=1", (str(body.get("username", "")),)).fetchone()
                 valid = bool(u and verify_pin(str(body.get("pin", "")), u["pin_salt"], u["pin_hash"]))
-                tenants.audit(conn, u["id"] if u else None, 1, "owner_login", "success" if valid else "denied")
+                if u:
+                    tenants.audit(conn, u["id"], 1, "god_login", "success" if valid else "denied")
                 if valid:
                     token = "p." + secrets.token_urlsafe(40)
                     conn.execute("INSERT INTO platform_sessions(token_hash,user_id,expires_at) VALUES(?,?,?)",
                                  (hashlib.sha256(token.encode()).hexdigest(), u["id"], (datetime.now()+timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S")))
-                    result = {"ok":True,"token":token,"user":{"id":u["id"],"username":u["username"],"role":"platform_owner","company_id":1}}
+                    result = {"ok":True,"token":token,"user":{"id":u["id"],"username":u["username"],"role":GLOBAL_ROLE,"company_id":1}}
             return self.send_json(result) if valid else self.error_json("Неверный логин или пароль", 401)
         if path == "/api/login" and method == "POST":
             body = parse_body(self)
@@ -852,17 +855,32 @@ class Handler(BaseHTTPRequestHandler):
                 return self.error_json("Неверный логин, PIN или компания", 401)
             if not tenants.available(company):
                 return self.error_json("Компания недоступна", 403)
+            username=str(body.get("username", "")).strip()
+            pin=str(body.get("pin", ""))
             with tenants.company_scope(company_id), db() as conn:
-                u = conn.execute("SELECT * FROM app_users WHERE lower(username)=lower(?) AND active=1", (str(body.get("username", "")).strip(),)).fetchone()
-                if not u or not verify_pin(str(body.get("pin", "")), u["pin_salt"], u["pin_hash"]):
+                u = conn.execute("SELECT * FROM app_users WHERE lower(username)=lower(?) AND active=1", (username,)).fetchone()
+                if u:
+                    if not verify_pin(pin, u["pin_salt"], u["pin_hash"]):
+                        repo=Repository(conn,company_id)
+                        if repo.ready():activity.login(repo,u['username'],u['id'],False,activity.client_type(self.headers))
+                        return self.error_json("Неверный логин, PIN или компания", 401)
+                    token = create_session(conn, u["id"])
                     repo=Repository(conn,company_id)
-                    if repo.ready():activity.login(repo,body.get('username'),u['id'] if u else None,False,activity.client_type(self.headers))
-                    return self.error_json("Неверный логин, PIN или компания", 401)
-                token = create_session(conn, u["id"])
-                repo=Repository(conn,company_id)
-                if repo.ready():activity.login(repo,u['username'],u['id'],True,activity.client_type(self.headers),token)
-                data = public_user_record({k:v for k,v in with_employee_id(u,conn,company_id).items() if k not in {"pin_hash","pin_salt"}})
-            return self.send_json({"ok":True,"token":token,"user":data})
+                    if repo.ready():activity.login(repo,u['username'],u['id'],True,activity.client_type(self.headers),token)
+                    data = public_user_record({k:v for k,v in with_employee_id(u,conn,company_id).items() if k not in {"pin_hash","pin_salt"}})
+                    return self.send_json({"ok":True,"token":token,"user":data})
+            with tenants.control(DB_PATH) as control:
+                god = control.execute("SELECT * FROM platform_owners WHERE lower(username)=lower(?) AND active=1", (username,)).fetchone()
+                if god:
+                    valid=verify_pin(pin,god["pin_salt"],god["pin_hash"])
+                    tenants.audit(control,god["id"],1,"god_login","success" if valid else "denied")
+                    if not valid:
+                        return self.error_json("Неверный логин, PIN или компания",401)
+                    token="p."+secrets.token_urlsafe(40)
+                    control.execute("INSERT INTO platform_sessions(token_hash,user_id,expires_at) VALUES(?,?,?)",
+                                    (hashlib.sha256(token.encode()).hexdigest(),god["id"],(datetime.now()+timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S")))
+                    return self.send_json({"ok":True,"token":token,"user":{"id":god["id"],"username":god["username"],"role":GLOBAL_ROLE,"company_id":1}})
+            return self.error_json("Неверный логин, PIN или компания",401)
         if path in {"/api/ping", "/api/setup"}:
             with tenants.company_scope(1):
                 self.tenant_request = True
@@ -870,20 +888,20 @@ class Handler(BaseHTTPRequestHandler):
         identity = user_from_token(self.token())
         if not identity:
             return self.error_json("Требуется вход", 401)
-        is_owner = identity["role"] == "platform_owner"
+        is_owner = identity["role"] == GLOBAL_ROLE
         company_id = identity["company_id"]
         if path=='/api/logout' and method=='POST':
             if is_owner:
                 with tenants.control(DB_PATH) as conn:
                     conn.execute('DELETE FROM platform_sessions WHERE token_hash=?',(hashlib.sha256(self.token().encode()).hexdigest(),))
-                    tenants.audit(conn,identity['id'],1,'owner_logout','success')
+                    tenants.audit(conn,identity['id'],1,'god_logout','success')
             else:
                 with tenants.company_scope(company_id),db() as conn:
                     activity.logout(Repository(conn,company_id),self.token(),identity)
             return self.send_json({'ok':True})
         if is_owner and not readonly_preview:
             with tenants.control(DB_PATH) as conn:
-                tenants.audit(conn, identity["id"], company_id, "technical_access", "started", method=method, route=audit_route(path))
+                tenants.audit(conn, identity["id"], company_id, "god_access", "started", method=method, route=audit_route(path))
         try:
             selected = self.headers.get("X-Portal-Company")
             if selected is not None:
@@ -898,7 +916,7 @@ class Handler(BaseHTTPRequestHandler):
                     company_id = selected
             if not is_owner:
                 if path.startswith("/api/platform/"):
-                    raise PermissionError("Только Platform Owner")
+                    raise PermissionError("Раздел недоступен")
                 query = parse_qs(urlparse(self.path).query)
                 if "company_id" in query and query["company_id"] != [str(company_id)]:
                     raise PermissionError("Доступ к другой компании запрещён")
@@ -908,7 +926,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.platform_route(method, path, identity)
             if path == "/api/me" and method == "GET":
                 safe = public_user_record({k:v for k,v in identity.items() if k not in {"pin_salt","pin_hash"}})
-                safe["role_label"] = ROLE_LABELS.get(identity["role"], "Platform Owner")
+                safe["role_label"] = GLOBAL_ROLE_LABEL if is_owner else ROLE_LABELS.get(identity["role"], identity["role"])
                 if not is_owner:
                     with tenants.company_scope(company_id), db() as conn:
                         repo=Repository(conn,company_id)
@@ -916,7 +934,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"ok":True,"user":safe})
             if path == "/api/me/pin" and method == "POST":
                 if is_owner:
-                    raise PermissionError("Для владельца платформы используется отдельный технический пароль")
+                    raise PermissionError("Для этого аккаунта используется отдельный пароль")
                 body=parse_body(self)
                 if set(body)!={'current_pin','new_pin'}:
                     raise ValueError("Передайте текущий и новый PIN")
@@ -941,7 +959,7 @@ class Handler(BaseHTTPRequestHandler):
                     conn.commit()
                 return self.send_json({"ok":True})
             if is_owner and selected is None:
-                raise PermissionError("Для технического доступа укажите X-Portal-Company")
+                raise PermissionError("Выберите компанию для глобального доступа")
             module=company_module_for_route(path)
             if module and tenants.decode_module_toggles(tenants.get_company(DB_PATH,company_id).get('module_toggles')).get(module) is False:
                 raise PermissionError('Модуль отключён для компании')
@@ -969,7 +987,7 @@ class Handler(BaseHTTPRequestHandler):
                 status = getattr(self, "response_status", 500)
                 with tenants.control(DB_PATH) as conn:
                     numeric_ids = [int(p) for p in path.split("/") if p.isdecimal() and len(p) < 19]
-                    tenants.audit(conn, identity["id"], company_id, "technical_access", "success" if status < 400 else "failed",
+                    tenants.audit(conn, identity["id"], company_id, "god_access", "success" if status < 400 else "failed",
                                   method=method, route=audit_route(path), status=status, entity_id=numeric_ids)
 
     def production_route(self,method,path):
@@ -1034,6 +1052,7 @@ class Handler(BaseHTTPRequestHandler):
                 labels={'access_invite.created':'Создано приглашение','access_invite.accepted':'Принят запрос доступа','access_invite.approved':'Подтверждён доступ','access_invite.revoked':'Приглашение отозвано','access_invite.rejected':'Запрос отклонён','access_invite.expired':'Приглашение истекло','client.requisites.updated':'Обновлены реквизиты клиента','user.permissions.updated':'Изменены права сотрудника','user.pin.changed':'Сотрудник сменил PIN','company.settings.updated':'Изменены настройки компании'}
                 for row in rows:
                     payload=json.loads(row['payload']);at=row['created_at'][:10];actor_id=payload.get('actor_id')
+                    if not self.request_user.get('technical_owner') and payload.get('actor_kind')=='platform_owner':continue
                     if actor and str(actor_id)!=actor:continue
                     if event and payload.get('event')!=event:continue
                     if entity and str(payload.get('entity_id'))!=entity:continue
@@ -1119,8 +1138,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(dict(ok=True,data=result))
 
     def platform_route(self, method, path, identity):
-        if identity["role"] != "platform_owner":
-            raise PermissionError("Только Platform Owner")
+        if identity["role"] != GLOBAL_ROLE:
+            raise PermissionError("Раздел недоступен")
         if path == "/api/platform/companies":
             if method == "GET":
                 with tenants.control(DB_PATH) as conn:
@@ -1154,6 +1173,8 @@ class Handler(BaseHTTPRequestHandler):
             with tenants.control(DB_PATH) as conn:
                 total=conn.execute('SELECT COUNT(*) FROM platform_audit'+where,tuple(args)).fetchone()[0]
                 rows = [dict(r) for r in conn.execute("SELECT * FROM platform_audit"+where+" ORDER BY id DESC LIMIT ? OFFSET ?",tuple(args+[limit,(page-1)*limit]))]
+            aliases={"owner_login":"god_login","owner_logout":"god_logout","technical_access":"god_access"}
+            for row in rows: row["event"]=aliases.get(row["event"],row["event"])
             return self.send_json({"ok":True,"rows":rows,"page":page,"limit":limit,"total":total})
         return self.error_json("Маршрут не найден", 404)
 

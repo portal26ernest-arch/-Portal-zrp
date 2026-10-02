@@ -462,6 +462,8 @@ class Production:
     def settlement_entry(self,row):
         result=dict(row,amount=row['amount_minor'],money_unit='kopeck',currency='RUB')
         result.pop('amount_minor',None)
+        if result.get('actor_kind')=='platform_owner' and not self.u.get('technical_owner'):
+            result.pop('actor_id',None);result['actor_kind']='system'
         return result
 
     def settlement_summary(self,period,entries,employee=None):
