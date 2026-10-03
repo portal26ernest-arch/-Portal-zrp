@@ -88,13 +88,13 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKNavigationDe
             getAppMetadata: () => metadata,
             getServerUrl: () => server,
             setServerUrl: value => {
-              const next = String(value || '').trim().replace(/\/+$/, '');
+              const next = String(value || '').trim().replace(/[/]+$/, '');
               if (!validServer(next)) return false;
               server = next; send('setServerUrl', {value:next}); return true;
             },
             setCacheCompany: value => {
               const next = String(value || '');
-              cacheCompany = /^[1-9]\d{0,9}$/.test(next) ? next : '';
+              cacheCompany = /^[1-9][0-9]{0,9}$/.test(next) ? next : '';
               send('setCacheCompany', {value:cacheCompany}); return !!cacheCompany;
             },
             clearCompanyCache: () => true,
