@@ -6,7 +6,7 @@ import hashlib
 import mimetypes
 
 ASSETS = Path(__file__).resolve().parents[1] / "android_src" / "app" / "src" / "main" / "assets"
-FIXED = {"index.html", "ui.css", "core.js", "app.js", "screens.js", "production.js", "preview.js", "invoices.js", "documents_excel.js", "web_adapter.js", "brand-mark.svg", "stickers/catalog.json"}
+FIXED = {"index.html", "privacy.html", "support.html", "ui.css", "core.js", "app.js", "screens.js", "production.js", "preview.js", "invoices.js", "documents_excel.js", "web_adapter.js", "brand-mark.svg", "stickers/catalog.json"}
 COMPRESSIBLE = frozenset({".html", ".js", ".css", ".svg", ".json"})
 
 

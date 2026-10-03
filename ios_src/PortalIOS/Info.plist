@@ -37,13 +37,15 @@
     <key>NSAllowsLocalNetworking</key>
     <true/>
   </dict>
+  <key>ITSAppUsesNonExemptEncryption</key>
+  <false/>
   <key>PORTALDefaultAPIURL</key>
-  <string>https://portal.invalid</string>
+  <string>$(PORTAL_API_URL)</string>
   <key>PORTALReleaseChannel</key>
-  <string>release</string>
+  <string>$(PORTAL_RELEASE_CHANNEL)</string>
   <key>PORTALBuildNumber</key>
-  <string>$(MARKETING_VERSION)</string>
+  <string>$(CURRENT_PROJECT_VERSION)</string>
   <key>PORTALBuildDate</key>
-  <string>2026-10-03</string>
+  <string>$(PORTAL_BUILD_DATE)</string>
 </dict>
 </plist>
