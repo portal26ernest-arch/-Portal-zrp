@@ -428,3 +428,12 @@ Current roadmap counts are **93 ✅ / 15 🟡 / 6 ⏳ / 12 🔌**. Current-SHA S
 - Production hotfix reconciliation перед официальным релизом: в main перенесены проверенные runtime-патчи, уже работавшие на VPS — разрешение первой версии тарифа, актуальная company role matrix и сохранение явных permission overrides; также перенесены PostgreSQL/payroll regression-контракты. iOS и экспериментальные ветки не включались.
 
 - 2026-10-03 — Android 4.7 release metadata guard: официальный `portal-android-v4.7` опубликован на SHA `63ad6637`; signed-release SUCCESS, manifest versionName=4.7/versionCode=47 и SHA-256 APK подтверждены. Android release повторно отмечен GitHub `latest`, а Desktop workflow теперь создаёт релизы с `--latest=false`, чтобы `releases/latest/download/portal-update.json` всегда оставался Android update-manifest. Production API уже работает на PORTAL Server 4.7.0 из `/srv/portal-production/releases/63ad6637-portal47/server`, /api/ping и /api/ready OK.
+
+
+## O. Release integrity incident and permanent guard — 2026-10-04
+- 2026-10-04 production incident: PORTAL Server 4.7.0 runtime from commit `63ad6637` answered `/api/ping = 200`, but Desktop/Web `/web/ = 404`.
+- Root cause: versioned VPS release `63ad6637-portal47` contained `server/` but omitted `android_src/app/src/main/assets/`; `server/web_static.py` resolves shared Web UI from that assets directory.
+- Service was restored by adding the missing Web assets from the **same Git commit 63ad6637**; PostgreSQL, schema and server version were not rolled back.
+- Permanent rule: a Git SHA alone is not proof of a complete deploy. Required chain is Git SHA → complete release payload → active runtime identity → external user-endpoint smoke.
+- Added mandatory `PORTAL_RELEASE_INTEGRITY_RULES.md`, strengthened `AGENTS.md`, added fail-closed `ops/verify_release_payload.py` and release-gate evidence `release_payload_complete/api_smoke/web_smoke/runtime_release_verified`.
+- Any future production incident must produce a regression guard before it is considered closed.

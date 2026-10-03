@@ -21,6 +21,7 @@ class ReleaseGateTest(unittest.TestCase):
             "tenant_isolation":True,"rls_force":True,"secrets_scan":True,"financial_invariants":True,
             "backup_created":True,"backup_restore_rehearsed":True,"migration_dry_run":True,
             "reconciliation":True,"production_untouched":True,
+            "release_payload_complete":True,"api_smoke":True,"web_smoke":True,"runtime_release_verified":True,
             "staging_apk_sha256":"b"*64,"staging_version_name":"3.5-dev-staging","staging_version_code":35,
         }
 

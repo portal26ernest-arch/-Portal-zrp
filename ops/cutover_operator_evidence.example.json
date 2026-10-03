@@ -11,6 +11,10 @@
   "backup_restore_rehearsed": "pass",
   "migration_dry_run": "pass",
   "reconciliation": "pass",
+  "release_payload_complete": "pass",
+  "api_smoke": "pass",
+  "web_smoke": "pass",
+  "runtime_release_verified": "pass",
   "staging_apk_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
   "staging_version_name": "3.5-dev-staging",
   "staging_version_code": 35

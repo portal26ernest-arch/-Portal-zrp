@@ -23,6 +23,7 @@ COMMON_REQUIRED=(
     "tenant_isolation","rls_force","secrets_scan","financial_invariants",
     "backup_created","backup_restore_rehearsed","migration_dry_run",
     "reconciliation","production_untouched",
+    "release_payload_complete","api_smoke","web_smoke","runtime_release_verified",
 )
 COMMON_PASS_FLAGS=tuple(x for x in COMMON_REQUIRED if x!="git_sha")
 STAGING_REQUIRED=COMMON_REQUIRED+(

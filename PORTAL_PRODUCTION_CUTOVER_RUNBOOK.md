@@ -17,7 +17,8 @@ This is a controlled checklist. It is not authorization to mutate production. Re
 2. Verify runtime DB roles are non-superuser, lack `BYPASSRLS`, and RLS/FORCE RLS applies to the intended tenant tables.
 3. Verify health and HTTPS certificate for the approved endpoint; verify the setup endpoint is closed and no debug service is exposed.
 4. Verify a fresh source snapshot can be restored to an isolated database and reconciled before scheduling cutover.
-5. Abort if any count, checksum, money total, tenant boundary, backup, or health check differs from the approved baseline.
+5. Build/extract the exact release payload and run `python ops/verify_release_payload.py --root <release-root>`; any missing/empty runtime dependency is an unconditional NO-GO.
+6. Abort if any count, checksum, money total, tenant boundary, backup, payload-completeness, or health check differs from the approved baseline.
 
 ## Owner-authorized cutover sequence
 
