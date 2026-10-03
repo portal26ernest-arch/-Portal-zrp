@@ -75,6 +75,7 @@ globalThis.PortalCore = (() => {
   }
   function updateState(current,result) {
     if (!result || !result.ok) return {state:'error',title:'Не удалось проверить обновления',description:'Сервис обновлений недоступен. Попробуйте позже.'};
+    if (result.storeManaged) return {state:'store',title:'Обновления через App Store',description:'Новые версии PORTAL для iPhone устанавливаются через App Store по той же прямой ссылке PORTAL.'};
     if (!result.configured) return {state:'unconfigured',title:'Проверка пока недоступна',description:'Официальный источник обновлений ещё не подключён.'};
     const m=result.manifest;
     const versionOk=m && typeof m.versionName==='string' && /^[A-Za-z0-9._-]{1,80}$/.test(m.versionName);
