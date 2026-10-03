@@ -440,3 +440,10 @@ Current roadmap counts are **93 ✅ / 15 🟡 / 6 ⏳ / 12 🔌**. Current-SHA S
 - Login form logic, API authentication, credentials, PostgreSQL and tenant data are unchanged.
 - Focused Desktop/Web adapter regression suite: 6/6 passed; source-level test now explicitly rejects any `MutationObserver` in the Desktop shell.
 - Exact NEXT: run GitHub Windows/Desktop + Android UI gates, publish `portal-desktop-v5.1.0`, install on the authorized PC and verify login/password/submit are interactive.
+
+## R. Desktop 5.2 release renumber — 2026-10-03
+
+- The login-responsiveness fix is released as `5.2.0` / build `52` because `5.1.0` had already been published from an earlier metadata-only checkpoint.
+- Functional fix is unchanged: no global `MutationObserver`; metadata bootstrap runs before page scripts and About rendering is patched directly.
+- Focused Desktop/Web adapter suite: 6/6 passed; diff check passed.
+- Exact NEXT: publish and install Desktop 5.2, then verify login/password/submit interaction on the authorized PC.

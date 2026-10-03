@@ -7,10 +7,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>PORTAL.Desktop</AssemblyName>
     <RootNamespace>Portal.Desktop</RootNamespace>
-    <Version>5.1.0</Version>
-    <FileVersion>5.1.0.51</FileVersion>
-    <AssemblyVersion>5.1.0.0</AssemblyVersion>
-    <InformationalVersion>5.1-native-visible-metadata</InformationalVersion>
+    <Version>5.2.0</Version>
+    <FileVersion>5.2.0.52</FileVersion>
+    <AssemblyVersion>5.2.0.0</AssemblyVersion>
+    <InformationalVersion>5.2-login-responsiveness-fix</InformationalVersion>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <PublishSingleFile>false</PublishSingleFile>

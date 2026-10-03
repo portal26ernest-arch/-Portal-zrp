@@ -14,8 +14,8 @@ namespace Portal.Desktop;
 
 public partial class MainWindow : Window
 {
-    private const int CurrentBuild = 51;
-    private const string CurrentVersion = "5.1.0";
+    private const int CurrentBuild = 52;
+    private const string CurrentVersion = "5.2.0";
     private const long MaxInstallerBytes = 250L * 1024 * 1024;
     private const string GithubRepository = "portal26ernest-arch/-Portal-zrp";
     private const string WebViewCompatibilityArguments = "--disable-gpu --disable-gpu-compositing";
@@ -106,7 +106,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            StatusText.Text = "Подключение…";
+            StatusText.Text = $"Подключение… · {CurrentVersion} · build {CurrentBuild}";
             if (Browser.CoreWebView2 is null)
             {
                 Directory.CreateDirectory(_settingsDir);
@@ -192,7 +192,7 @@ public partial class MainWindow : Window
                 return;
             }
 
-            StatusText.Text = "Подключено";
+            StatusText.Text = $"Подключено · {CurrentVersion} · build {CurrentBuild}";
             if (_pendingPersistOrigin is not null &&
                 _pendingPersistOrigin.Equals(_serverOrigin, StringComparison.OrdinalIgnoreCase))
             {
@@ -518,7 +518,7 @@ public partial class MainWindow : Window
     {
         using var request = new HttpRequestMessage(HttpMethod.Get,
             $"https://api.github.com/repos/{GithubRepository}/releases?per_page=50");
-        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.1.0");
+        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.2.0");
         request.Headers.Accept.ParseAdd("application/vnd.github+json");
         using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();
