@@ -376,10 +376,10 @@ Current roadmap counts are **93 ✅ / 15 🟡 / 6 ⏳ / 12 🔌**. Current-SHA S
 
 ## N. Official release PORTAL 4.5 — 2026-10-03
 - Домен перенесён на пост-релизный этап; первый официальный релиз работает через действующий HTTPS sslip.io.
-- Публичная версия выровнена: Android 4.5 (versionCode 45), Desktop 4.5.0, Server 4.5.0.
+- Production launch: Android 4.5 (versionCode 45), Server 4.5.0; для Windows используется уже опубликованный PORTAL Desktop 5.4.0 — downgrade до 4.5.0 не выполняется.
 - Release target включает Organizer «Запросы директору» и исправление capability invariant для роли Директор.
 - До публикации тегов обязательны зелёные main CI: Server 3.11/3.13, Android UI/APK, Web, Windows Desktop и master-control.
-- После зелёного CI: production backup → Stage 14 migration → immutable server deploy → /api/ping + /api/ready → signed Android tag → Desktop 4.5.0 tag.
+- После зелёного CI: production backup → проверить Stage 14 → immutable server deploy → /api/ping + /api/ready → signed Android 4.5 tag. Desktop 5.4.0 уже опубликован отдельной проверенной release-линией и остаётся текущим Windows-релизом.
 
 - Release-fix 70942b3: устранена недетерминированность generated XLSX — OpenPyXL переписывал docProps/core.xml modified текущей секундой, из-за чего повтор с тем же request_id мог ошибочно считаться другим документом. deterministic_zip теперь нормализует created/modified; защита request_id не ослаблена. Проверка: 4 последовательных генерации дали одинаковый SHA-256; targeted Document API + regression test 2/2 OK; Android build-security OK.
 - Production pre-release evidence: fresh control/tenant/storage backup создан и вынесен off-server с совпадающими SHA-256. Tenant DB уже имеет migration 14 и portal_production_immutable() уже допускает organizer_requests, поэтому повторное применение Stage 14 не требуется.
