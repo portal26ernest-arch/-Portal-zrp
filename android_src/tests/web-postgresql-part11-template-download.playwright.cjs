@@ -92,8 +92,8 @@ async function main() {
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     assert.equal(prefillApi.body.data.mime_type,
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    assert.equal(blankApi.body.data.template_version, '1.1');
-    assert.equal(prefillApi.body.data.template_version, '1.1');
+    assert.equal(blankApi.body.data.template_version, '2.0');
+    assert.equal(prefillApi.body.data.template_version, '2.0');
 
     const forged = await serverTemplate(
       page, token, 'document-template',

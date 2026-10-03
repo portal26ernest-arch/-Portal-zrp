@@ -19,7 +19,7 @@ test('Documents list has scoped API filters, paging, version history, ready-only
 });
 
 test('Excel API contract validates files, shows classifications and requires explicit apply',()=>{
-  for(const value of ['document-template-info','document-template-blank','document-template','excel-import-preview','excel-import-apply','excel-import-result','file_b64','preview_token','import_id','10 * 1024 * 1024','Компания','Сотрудники','Клиенты','Операции_Тарифы'])assert.ok(source.includes(value),value);
+  for(const value of ['document-template-info','document-template-blank','document-template','excel-import-preview','excel-import-apply','excel-import-result','file_b64','preview_token','import_id','10 * 1024 * 1024','Компания','Сотрудники','Клиенты','Операции_Тарифы','Материалы','Приход_материалов','Нормы_материалов','Выработка','служебные строки и ID скрыты'])assert.ok(source.includes(value),value);
   assert.match(source,/preview\.can_apply && state\.file/);
   assert.match(source,/classification/);
   assert.match(source,/confirmSheet\(/);
