@@ -19,6 +19,16 @@ ORGANIZER_ASSIGNABLE={'director':{'admin','manager'},'admin':{'manager'},'manage
 ORGANIZER_PRIORITIES={'normal','important','urgent'}
 ORGANIZER_REPEATS={'none','daily','weekly','monthly'}
 ORGANIZER_STATUSES={'new','in_progress','done','cancelled'}
+ORGANIZER_REQUEST_TYPES={'materials_purchase','equipment_purchase','repair','expense','tariff_change','hr','other'}
+ORGANIZER_REQUEST_STATUSES={'new','review','approved','rejected','needs_info','done'}
+ORGANIZER_REQUEST_TRANSITIONS={
+    'new':{'review'},
+    'review':{'approved','rejected','needs_info'},
+    'needs_info':{'review','rejected'},
+    'approved':{'review','done'},
+    'rejected':{'review'},
+    'done':set(),
+}
 
 def text(value, name='Название', optional=False):
     if optional and value in (None,''): return ''
@@ -915,8 +925,8 @@ class Production:
             return due.replace(year=year,month=month,day=min(due.day,calendar.monthrange(year,month)[1])).isoformat(timespec='minutes')
         return None
 
-    def organizer_create(self,b,recurrence_of=None):
-        self.need('organizer.assign');allowed={u['id']:u for u in self.organizer_users()}
+    def organizer_create(self,b,recurrence_of=None,allowed_assignees=None):
+        self.need('organizer.assign');allowed=allowed_assignees or {u['id']:u for u in self.organizer_users()}
         assignee=b.get('assignee_user_id',self.u['id'])
         if type(assignee) is not int or assignee not in allowed:raise PermissionError('Нельзя поставить задачу этому сотруднику')
         title=text(b.get('title'),'Название задачи')
@@ -929,7 +939,7 @@ class Production:
         if priority not in ORGANIZER_PRIORITIES:raise ValueError('Неизвестный приоритет задачи')
         if repeat not in ORGANIZER_REPEATS:raise ValueError('Неизвестное правило повтора')
         linked_type=b.get('linked_type') or '';linked_id=str(b.get('linked_id') or '').strip()
-        if linked_type not in {'','client','invoice','document'} or linked_type and not linked_id:raise ValueError('Проверьте связь задачи')
+        if linked_type not in {'','client','invoice','document','request'} or linked_type and not linked_id:raise ValueError('Проверьте связь задачи')
         target=allowed[assignee]
         task=self.r.insert('organizer_tasks',dict(title=title,description=description.strip(),assignee_user_id=assignee,
             assignee_name=target['display_name'],assignee_role=target['role'],created_by=self.u['id'],
@@ -1005,6 +1015,201 @@ class Production:
         task=self.r.get('organizer_tasks',identity)
         if not self.organizer_visible(task):raise PermissionError('Задача недоступна')
         return [e for e in self.r.list('organizer_events') if e.get('task_id')==identity]
+
+    def organizer_directors(self):
+        self.need('organizer.read')
+        if not ({'organizer.request.create','organizer.request.decide'} & self.permissions):
+            raise PermissionError('Нет доступа к запросам директору')
+        rows=[]
+        for user in self.r.catalog('users'):
+            if user.get('active') and user.get('role')=='director':
+                rows.append(dict(id=user['id'],display_name=user.get('display_name') or user.get('username') or 'Директор'))
+        return sorted(rows,key=lambda row:row['display_name'].casefold())
+
+    def organizer_request_responsibles(self):
+        self.need('organizer.assign')
+        if not self.u.get('technical_owner') and self.u.get('role') not in {'director','admin'}:
+            raise PermissionError('Назначать ответственного по запросу может директор или управляющий')
+        rows=[]
+        for user in self.r.catalog('users'):
+            if user.get('active') and user.get('role') in {'director','admin','manager'}:
+                rows.append(dict(id=user['id'],display_name=user.get('display_name') or user.get('username') or 'Сотрудник',
+                    role=user['role'],role_label=ORGANIZER_ROLE_LABELS[user['role']]))
+        return sorted(rows,key=lambda row:(row['role_label'],row['display_name'].casefold()))
+
+    def organizer_request_visible(self,request):
+        return bool(self.u.get('technical_owner') or request.get('created_by')==self.u['id'] or request.get('director_user_id')==self.u['id'])
+
+    def organizer_request_event(self,request,event,detail='',comment=''):
+        self.r.insert('organizer_request_events',dict(organizer_request_id=request['id'],event=event,
+            actor_id=self.u['id'],actor_name=self.u.get('display_name') or self.u.get('username') or 'Сотрудник',
+            detail=detail,comment=comment,occurred_at=self.clock()))
+
+    def organizer_request_attachment_payload(self,attachment):
+        if not isinstance(attachment,dict):raise ValueError('Некорректное вложение')
+        original=attachment.get('name');mime=attachment.get('mime_type');encoded=attachment.get('file_b64')
+        if not isinstance(original,str) or not original.strip() or len(original.strip())>120:
+            raise ValueError('Имя файла: до 120 символов')
+        original=original.strip()
+        if any(char in original for char in ('/','\\','\x00')) or re.search(r'\.(?:exe|com|bat|cmd|ps1|vbs|js|msi|scr|dll|jar|apk|sh)$',original,re.I):
+            raise ValueError('Небезопасное имя или тип файла')
+        types={'image/jpeg':'jpg','image/png':'png','image/webp':'webp','application/pdf':'pdf','text/plain':'txt'}
+        if mime not in types:raise ValueError('Этот тип файла пока не поддерживается')
+        if not isinstance(encoded,str) or len(encoded)>3*1024*1024:raise ValueError('Файл слишком большой')
+        try:data=base64.b64decode(encoded,validate=True)
+        except Exception:raise ValueError('Некорректное содержимое файла')
+        if not data or len(data)>2*1024*1024:raise ValueError('Файл должен быть не больше 2 МБ')
+        return dict(original_name=original,filename=f"PORTAL_request_{uuid.uuid4().hex[:16]}.{types[mime]}",
+            mime_type=mime,size_bytes=len(data),sha256=hashlib.sha256(data).hexdigest(),
+            file_b64=base64.b64encode(data).decode('ascii'))
+
+    def organizer_request_public(self,request):
+        users={u['id']:u for u in self.r.catalog('users')}
+        creator=users.get(request.get('created_by'),{});director=users.get(request.get('director_user_id'),{})
+        responsible=users.get(request.get('responsible_user_id'),{}) if request.get('responsible_user_id') else {}
+        item=dict(request,
+            created_by_name=creator.get('display_name') or request.get('created_by_name') or 'Сотрудник',
+            director_name=director.get('display_name') or request.get('director_name') or 'Директор',
+            responsible_name=(responsible.get('display_name') or responsible.get('username')) if responsible else None)
+        attachments=[]
+        for row in self.r.list('organizer_request_attachments'):
+            if row.get('organizer_request_id')==request['id']:
+                attachments.append({k:row[k] for k in ('id','original_name','mime_type','size_bytes','sha256')})
+        item['attachments']=attachments
+        item['can_decide']='organizer.request.decide' in self.permissions and (self.u.get('technical_owner') or request.get('director_user_id')==self.u['id'])
+        item['can_comment']=self.organizer_request_visible(request)
+        item['can_create_task']=bool(request.get('status')=='approved' and not request.get('task_id') and
+            ('organizer.assign' in self.permissions) and (self.u.get('technical_owner') or self.u.get('role') in {'director','admin'}))
+        return item
+
+    def organizer_request_create(self,b):
+        self.need('organizer.request.create')
+        if not self.u.get('technical_owner') and self.u.get('role') not in {'manager','admin'}:
+            raise PermissionError('Создавать запрос директору может управляющий или менеджер')
+        director_id=b.get('director_user_id')
+        if type(director_id) is not int:raise ValueError('Выберите директора')
+        directors={row['id']:row for row in self.organizer_directors()}
+        if director_id not in directors:raise PermissionError('Директор другой компании или недоступен')
+        request_type=b.get('request_type')
+        if request_type not in ORGANIZER_REQUEST_TYPES:raise ValueError('Неизвестный тип запроса')
+        title=text(b.get('title'),'Тема запроса')
+        if len(title)>200:raise ValueError('Тема запроса: до 200 символов')
+        description=b.get('description','')
+        if not isinstance(description,str) or len(description.strip())>4000:raise ValueError('Описание: до 4000 символов')
+        priority=b.get('priority','normal')
+        if priority not in ORGANIZER_PRIORITIES:raise ValueError('Неизвестный приоритет запроса')
+        due=self.organizer_moment(b.get('requested_due_at'),'Желаемый срок',True)
+        amount=None if b.get('amount') in (None,'') else settlement_cents(b.get('amount'))
+        item_name=b.get('item_name','');unit=b.get('unit','');initial_comment=b.get('initial_comment','')
+        if not isinstance(item_name,str) or len(item_name.strip())>200:raise ValueError('Материал или товар: до 200 символов')
+        if not isinstance(unit,str) or len(unit.strip())>50:raise ValueError('Единица измерения: до 50 символов')
+        if not isinstance(initial_comment,str) or len(initial_comment.strip())>2000:raise ValueError('Комментарий: до 2000 символов')
+        quantity=b.get('quantity')
+        if quantity in (None,''):quantity=None
+        else:
+            raw=str(quantity)
+            if not re.fullmatch(r'[0-9]+(?:\.[0-9]{1,3})?',raw) or Decimal(raw)<=0 or Decimal(raw)>Decimal('1000000000'):
+                raise ValueError('Количество: положительное число, до трёх знаков после точки')
+            quantity=format(Decimal(raw).normalize(),'f')
+        attachment_payload=self.organizer_request_attachment_payload(b['attachment']) if b.get('attachment') else None
+        request=self.r.insert('organizer_requests',dict(request_type=request_type,title=title,
+            description=description.strip(),priority=priority,requested_due_at=due,amount=amount,
+            item_name=item_name.strip(),quantity=quantity,unit=unit.strip(),status='new',
+            created_by=self.u['id'],created_by_name=self.u.get('display_name') or self.u.get('username') or 'Сотрудник',
+            director_user_id=director_id,director_name=directors[director_id]['display_name'],
+            responsible_user_id=None,task_id=None,decided_at=None,completed_at=None,updated_at=self.clock()))
+        self.organizer_request_event(request,'created','Запрос создан',initial_comment.strip())
+        if attachment_payload:
+            self.r.insert('organizer_request_attachments',dict(attachment_payload,
+                organizer_request_id=request['id'],uploaded_by=self.u['id']))
+        return self.organizer_request_public(request)
+
+    def organizer_request(self,b):
+        mode=b.get('mode','create')
+        if mode=='create':return self.organizer_request_create(b)
+        self.need('organizer.read')
+        identity=str(b.get('organizer_request_id') or '')
+        request=self.r.get('organizer_requests',identity)
+        if not self.organizer_request_visible(request):raise PermissionError('Запрос недоступен')
+        if mode=='comment':
+            comment=b.get('comment','')
+            if not isinstance(comment,str) or not comment.strip() or len(comment.strip())>2000:
+                raise ValueError('Комментарий: от 1 до 2000 символов')
+            self.organizer_request_event(request,'comment','Комментарий',comment.strip())
+            if request.get('status')=='needs_info' and request.get('created_by')==self.u['id']:
+                old=request['status'];request['status']='review';request['updated_at']=self.clock()
+                self.r.update('organizer_requests',request)
+                self.organizer_request_event(request,'status',old+' → review','Информация предоставлена')
+            return self.organizer_request_public(request)
+        if mode=='decide':
+            self.need('organizer.request.decide')
+            if not self.u.get('technical_owner') and request.get('director_user_id')!=self.u['id']:
+                raise PermissionError('Рассматривать запрос может назначенный директор')
+            status=b.get('status')
+            if status not in ORGANIZER_REQUEST_STATUSES:raise ValueError('Неизвестный статус запроса')
+            current=request.get('status','new')
+            if status not in ORGANIZER_REQUEST_TRANSITIONS.get(current,set()):
+                raise ValueError('Недопустимый переход статуса запроса')
+            responsible=b.get('responsible_user_id',request.get('responsible_user_id'))
+            if responsible not in (None,''):
+                if type(responsible) is not int:raise ValueError('Некорректный ответственный')
+                user=next((u for u in self.r.catalog('users') if u.get('active') and u['id']==responsible and u.get('role') in {'director','admin','manager'}),None)
+                if not user:raise PermissionError('Ответственный другой компании или недоступен')
+                request['responsible_user_id']=responsible
+            comment=b.get('comment','')
+            if not isinstance(comment,str) or len(comment.strip())>2000:raise ValueError('Комментарий: до 2000 символов')
+            request['status']=status;request['updated_at']=self.clock()
+            if status in {'approved','rejected'}:request['decided_at']=self.clock()
+            if status=='done':request['completed_at']=self.clock()
+            self.r.update('organizer_requests',request)
+            self.organizer_request_event(request,'status',current+' → '+status,comment.strip())
+            return self.organizer_request_public(request)
+        if mode=='create_task':
+            if 'organizer.assign' not in self.permissions or (not self.u.get('technical_owner') and self.u.get('role') not in {'director','admin'}):
+                raise PermissionError('Создать задачу из запроса может директор или управляющий')
+            if request.get('status')!='approved':raise ValueError('Задачу можно создать только по одобренному запросу')
+            if request.get('task_id'):return self.organizer_public(self.r.get('organizer_tasks',request['task_id']))
+            responsible=b.get('responsible_user_id',request.get('responsible_user_id'))
+            if type(responsible) is not int:raise ValueError('Назначьте ответственного')
+            allowed={u['id']:u for u in self.r.catalog('users')
+                     if u.get('active') and u.get('role') in {'director','admin','manager'}}
+            if responsible not in allowed:raise PermissionError('Ответственный другой компании или неактивен')
+            due=request.get('requested_due_at')
+            if not due:
+                base=datetime.fromisoformat(self.clock()).replace(second=0,microsecond=0)
+                due=(base+timedelta(days=1)).isoformat(timespec='minutes')
+            task=self.organizer_create(dict(assignee_user_id=responsible,title='Запрос: '+request['title'],
+                description=request.get('description',''),due_at=due,priority=request.get('priority','normal'),
+                repeat_rule='none',linked_type='request',linked_id=request['id']),allowed_assignees=allowed)
+            request['responsible_user_id']=responsible;request['task_id']=task['id'];request['updated_at']=self.clock()
+            self.r.update('organizer_requests',request)
+            self.organizer_request_event(request,'task_created',task['id'],'Создана связанная задача')
+            return self.organizer_public(task)
+        raise ValueError('Неизвестное действие запроса директору')
+
+    def organizer_request_rows(self,params):
+        self.need('organizer.read');scope=(params.get('scope',['mine'])[0] or 'mine')
+        if scope not in {'mine','incoming'}:raise ValueError('Неизвестный режим запросов')
+        rows=self.r.list('organizer_requests')
+        if scope=='mine':
+            if 'organizer.request.create' not in self.permissions:raise PermissionError('Нет доступа к своим запросам')
+            rows=[row for row in rows if row.get('created_by')==self.u['id']]
+        else:
+            self.need('organizer.request.decide')
+            if not self.u.get('technical_owner'):rows=[row for row in rows if row.get('director_user_id')==self.u['id']]
+        return [self.organizer_request_public(row) for row in sorted(rows,key=lambda row:(row.get('status') in {'done','rejected'},row.get('created_at') or ''),reverse=True)]
+
+    def organizer_request_events(self,params):
+        self.need('organizer.read');identity=str(params.get('organizer_request_id',[''])[0] or '')
+        request=self.r.get('organizer_requests',identity)
+        if not self.organizer_request_visible(request):raise PermissionError('Запрос недоступен')
+        return [row for row in self.r.list('organizer_request_events') if row.get('organizer_request_id')==identity]
+
+    def organizer_request_file(self,identity):
+        self.need('organizer.read');attachment=self.r.get('organizer_request_attachments',str(identity or ''))
+        request=self.r.get('organizer_requests',attachment.get('organizer_request_id'))
+        if not self.organizer_request_visible(request):raise PermissionError('Файл запроса недоступен')
+        return {k:attachment[k] for k in ('id','filename','original_name','mime_type','size_bytes','sha256','file_b64')}
 
     def scoped(self,kind): return [x for x in self.r.list(kind) if 'client_id' not in x or self.visible(x['client_id'])]
 
@@ -1345,7 +1550,7 @@ class Production:
 
     def command(self,action,body):
         if 'company_id' in body and (type(body['company_id']) is not int or body['company_id']!=self.r.company_id):raise PermissionError('Компания определяется сессией')
-        methods={'batches':self.batch,'products':self.product,'client-requisites':self.save_client_requisites,'tasks':self.task,'work':self.work,'timers':self.timer,'links':self.link,'tariffs':self.create_tariff,'permissions':self.set_permissions,'usage':self.usage,'expenses':self.expense,'invoices':self.invoice,'payments':self.payment,'settings':self.settings,'shipments':self.ship,'returns':self.return_batch,'payroll-periods':self.payroll_period,'payroll-settlements':self.payroll_settlement,'chat':self.chat_command,'documents':self.document,'organizer':self.organizer}
+        methods={'batches':self.batch,'products':self.product,'client-requisites':self.save_client_requisites,'tasks':self.task,'work':self.work,'timers':self.timer,'links':self.link,'tariffs':self.create_tariff,'permissions':self.set_permissions,'usage':self.usage,'expenses':self.expense,'invoices':self.invoice,'payments':self.payment,'settings':self.settings,'shipments':self.ship,'returns':self.return_batch,'payroll-periods':self.payroll_period,'payroll-settlements':self.payroll_settlement,'chat':self.chat_command,'documents':self.document,'organizer':self.organizer,'organizer-requests':self.organizer_request}
         if action not in methods: raise ValueError('Действие не поддерживается')
         authorization={'batches':'batches.receive','products':'clients.manage','client-requisites':'clients.manage','tasks':'tasks.manage','work':'work.write','timers':'work.write','links':'work.link','permissions':'users.manage','usage':'materials.use','expenses':'expenses.manage','invoices':'invoices.create','payments':'payments.record','settings':'company.settings','shipments':'batches.receive','returns':'batches.receive','payroll-periods':'payroll.close','chat':'chat.write','documents':'documents.manage'}
         if action in authorization:self.need(authorization[action])
@@ -1405,6 +1610,11 @@ class Production:
         if action=='organizer':return self.organizer_rows(params)
         if action=='organizer-users':return self.organizer_users()
         if action=='organizer-events':return self.organizer_events(params)
+        if action=='organizer-directors':return self.organizer_directors()
+        if action=='organizer-request-responsibles':return self.organizer_request_responsibles()
+        if action=='organizer-requests':return self.organizer_request_rows(params)
+        if action=='organizer-request-events':return self.organizer_request_events(params)
+        if action=='organizer-request-file':return self.organizer_request_file(params.get('id',[None])[0])
         if action=='client-requisites':return self.client_requisites(params)
         if action=='client-name-history':
             self.need('clients.read')

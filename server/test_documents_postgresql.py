@@ -24,7 +24,7 @@ from unittest.mock import patch
 MIGRATIONS=('postgresql_core_stage4b.sql','postgresql_stage3.sql','postgresql_runtime.sql',
  'postgresql_rls_context.sql','postgresql_stage5_chat_retention.sql','postgresql_stage6_payroll_settlement.sql',
  'postgresql_stage4c.sql','postgresql_stage8_documents_excel.sql','postgresql_stage9_invoice_revisions.sql',
- 'postgresql_stage10_access_invites.sql','postgresql_stage11_company_modules.sql','postgresql_stage12_product_catalog.sql','postgresql_stage13_organizer.sql')
+ 'postgresql_stage10_access_invites.sql','postgresql_stage11_company_modules.sql','postgresql_stage12_product_catalog.sql','postgresql_stage13_organizer.sql','postgresql_stage14_organizer_requests.sql')
 
 _WEB_E2E=os.environ.get('PORTAL_WEB_PG_E2E')=='1'
 _DOCS_E2E=os.environ.get('PORTAL_DOCUMENTS_PG_INTEGRATION')=='1'
@@ -71,6 +71,7 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
             cls.migration('postgresql_stage11_company_modules.sql')
             cls.migration('postgresql_stage12_product_catalog.sql')
             cls.migration('postgresql_stage13_organizer.sql')
+            cls.migration('postgresql_stage14_organizer_requests.sql')
             with psycopg.connect(make_conninfo(cls.admin_dsn,dbname=cls.database),autocommit=True) as admin:
                 tenant=sql.Identifier(cls.roles['tenant']);control=sql.Identifier(cls.roles['control'])
                 for role in (tenant,control):

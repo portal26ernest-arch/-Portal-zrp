@@ -29,6 +29,21 @@ test('system sticker catalog, rendering and absence notice use structured safe f
   assert.match(production,/esc\(m\.absence_date\)/);
   assert.match(production,/portalStickers\.find\(x=>x\[0\]===m\.sticker_key\)/);
 });
+test('desktop Organizer exposes director requests in Russian and stays desktop-only',()=>{
+  const production=fs.readFileSync(path.join(assets,'production.js'),'utf8');
+  const coreSource=fs.readFileSync(path.join(assets,'core.js'),'utf8');
+  for(const label of ['Мои запросы','Входящие запросы','Новый запрос директору','Создать задачу из запроса','Закупка материалов'])assert.match(production,new RegExp(label));
+  assert.match(production,/organizer-requests\?scope=mine/);
+  assert.match(production,/organizer-requests\?scope=incoming/);
+  assert.match(production,/organizer-request-events\?organizer_request_id=/);
+  assert.match(production,/organizer-request-file\?id=/);
+  assert.match(production,/allowed\('organizer\.request\.create'\)/);
+  assert.match(production,/canCreateDirectorRequest=\(\)=>allowed\('organizer\.request\.create'\)&&\['manager','admin'\]\.includes\(S\.me\?\.role\)/);
+  assert.match(production,/allowed\('organizer\.request\.decide'\)/);
+  assert.match(coreSource,/id:'organizer'.*desktopOnly:true/);
+  assert.match(coreSource,/page==='organizer' && !globalThis\.__PORTAL_DESKTOP__/);
+});
+
 test('marketplace news is live/empty, escaped and links only to official HTTPS hosts',()=>{
   const preview=fs.readFileSync(path.join(assets,'preview.js'),'utf8');
   assert.match(preview,/marketplace-news\?source=/);

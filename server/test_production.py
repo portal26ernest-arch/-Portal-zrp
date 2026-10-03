@@ -955,3 +955,88 @@ class ProductionTest(unittest.TestCase):
         other=self.post('organizer',dict(mode='create',assignee_user_id=self.request('/api/me',self.other_admin)['user']['id'],
             title='Чужая компания',due_at=due),self.other_admin)['data']
         self.assertNotIn(other['id'],{t['id'] for t in self.get('organizer?scope=company',director)['data']})
+
+    def test_organizer_director_requests_workflow_security_and_task_link(self):
+        director=self.role_token('director');manager=self.role_token('manager')
+        director_id=self.request('/api/me',director)['user']['id']
+        with portal.tenants.company_scope(self.other):
+            other_director_id=portal.save_user({'username':'other_director','pin':'9876','role':'director'})
+            with portal.db() as conn:other_director=portal.create_session(conn,other_director_id)
+        due=(datetime.now()+timedelta(days=3)).replace(second=0,microsecond=0).isoformat(timespec='minutes')
+        attachment={'name':'material.png','mime_type':'image/png',
+                    'file_b64':base64.b64encode(b'not-real-image-but-safe-test-bytes').decode('ascii')}
+        created=self.post('organizer-requests',dict(mode='create',request_type='materials_purchase',
+            director_user_id=director_id,title='Закупить вакуумные пакеты',description='Нужен запас на неделю',
+            priority='urgent',requested_due_at=due,amount='1250.50',item_name='Вакуумный пакет 25x30',
+            quantity='10.5',unit='уп.',initial_comment='Закупить до пятницы',attachment=attachment),manager)['data']
+        self.assertEqual(created['status'],'new')
+        self.assertEqual(created['amount'],125050)
+        self.assertEqual(created['quantity'],'10.5')
+        self.assertEqual(len(created['attachments']),1)
+        request_id=created['id'];attachment_id=created['attachments'][0]['id']
+        self.post('organizer-requests',dict(mode='create_task',organizer_request_id=request_id,
+            responsible_user_id=self.admin_id),director,status=400)
+
+        # A director cannot create a request even if a permission override is present.
+        self.post('permissions',dict(user_id=director_id,permissions={'organizer.request.create':True}))
+        self.post('organizer-requests',dict(mode='create',request_type='other',director_user_id=director_id,
+            title='Запрос от директора'),director,status=403)
+        self.post('organizer-requests',dict(mode='create',request_type='other',director_user_id=director_id,
+            title='Сумма с float',amount=12.5),manager,status=400)
+        self.post('organizer-requests',dict(mode='create',request_type='other',director_user_id=director_id,
+            title='Сумма с лишней точностью',amount='12.501'),manager,status=400)
+
+        self.post('organizer-requests',dict(mode='create',request_type='other',director_user_id=director_id,
+            title='Запрещено'),self.worker,status=403)
+        # IDs are tenant-local in split PostgreSQL/SQLite fixtures; an ID not present as a director in this tenant must fail closed.
+        self.post('organizer-requests',dict(mode='create',request_type='other',director_user_id=999999,
+            title='Чужой директор'),manager,status=403)
+        self.post('organizer-requests',dict(mode='create',request_type='repair',director_user_id=director_id,
+            title='Запрос управляющего'),self.admin)
+        self.post('organizer-requests',dict(mode='create',request_type='other',director_user_id=director_id,
+            title='Опасное вложение',attachment={'name':'../evil.txt','mime_type':'text/plain',
+            'file_b64':base64.b64encode(b'x').decode('ascii')}),manager,status=400)
+
+        mine=self.get('organizer-requests?scope=mine',manager)['data']
+        self.assertIn(request_id,{row['id'] for row in mine})
+        incoming=self.get('organizer-requests?scope=incoming',director)['data']
+        self.assertIn(request_id,{row['id'] for row in incoming})
+        self.assertNotIn(request_id,{row['id'] for row in self.get('organizer-requests?scope=incoming',other_director)['data']})
+        self.get('organizer-requests?scope=mine',self.worker,status=403)
+
+        self.post('organizer-requests',dict(mode='decide',organizer_request_id=request_id,status='review'),manager,status=403)
+        self.post('organizer-requests',dict(mode='decide',organizer_request_id=request_id,status='review'),director)
+        request_users=self.get('organizer-request-responsibles',director)['data']
+        self.assertEqual({row['role'] for row in request_users},{'director','admin','manager'})
+        needs=self.post('organizer-requests',dict(mode='decide',organizer_request_id=request_id,
+            status='needs_info',comment='Уточните количество'),director)['data']
+        self.assertEqual(needs['status'],'needs_info')
+        replied=self.post('organizer-requests',dict(mode='comment',organizer_request_id=request_id,
+            comment='Количество подтверждено'),manager)['data']
+        self.assertEqual(replied['status'],'review')
+        approved=self.post('organizer-requests',dict(mode='decide',organizer_request_id=request_id,
+            status='approved',responsible_user_id=self.admin_id,comment='Одобрено'),director)['data']
+        self.assertEqual(approved['responsible_user_id'],self.admin_id)
+
+        task1=self.post('organizer-requests',dict(mode='create_task',organizer_request_id=request_id,
+            responsible_user_id=self.admin_id),director)['data']
+        task2=self.post('organizer-requests',dict(mode='create_task',organizer_request_id=request_id,
+            responsible_user_id=self.admin_id),director)['data']
+        self.assertEqual(task1['id'],task2['id'])
+        self.assertEqual((task1['linked_type'],task1['linked_id']),('request',request_id))
+        refreshed=next(row for row in self.get('organizer-requests?scope=incoming',director)['data'] if row['id']==request_id)
+        self.assertEqual(refreshed['task_id'],task1['id'])
+        done=self.post('organizer-requests',dict(mode='decide',organizer_request_id=request_id,status='done'),director)['data']
+        self.assertEqual(done['status'],'done')
+
+        downloaded=self.get('organizer-request-file?id='+attachment_id,manager)['data']
+        self.assertEqual(base64.b64decode(downloaded['file_b64']),b'not-real-image-but-safe-test-bytes')
+        self.get('organizer-request-file?id='+attachment_id,other_director,status=400)
+        events=self.get('organizer-request-events?organizer_request_id='+request_id,manager)['data']
+        self.assertTrue(any(row['event']=='created' for row in events))
+        self.assertTrue(any(row['event']=='task_created' for row in events))
+        with portal.tenants.company_scope(1),portal.db() as conn:
+            repo=Repository(conn,1);event=repo.list('organizer_request_events')[0]
+            with self.assertRaises(ValueError):repo.update('organizer_request_events',dict(event,detail='tamper'))
+            attachment_row=repo.get('organizer_request_attachments',attachment_id)
+            with self.assertRaises(ValueError):repo.update('organizer_request_attachments',dict(attachment_row,original_name='tampered.txt'))
