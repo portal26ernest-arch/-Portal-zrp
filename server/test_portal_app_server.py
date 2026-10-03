@@ -187,6 +187,7 @@ class PortalAPITest(unittest.TestCase):
             "PORTAL_DESKTOP_UPDATE_BUILD": "",
             "PORTAL_DESKTOP_UPDATE_URL": "",
             "PORTAL_DESKTOP_UPDATE_SHA256": "",
+            "PORTAL_DESKTOP_UPDATE_SIGNATURE": "",
         }
         with patch.dict(os.environ, keys, clear=False):
             self.request("/api/desktop-update", status=404)
@@ -195,6 +196,7 @@ class PortalAPITest(unittest.TestCase):
             "PORTAL_DESKTOP_UPDATE_BUILD": "37",
             "PORTAL_DESKTOP_UPDATE_URL": "https://downloads.example.test/PORTAL-Desktop-win-x64-3.7.0.zip",
             "PORTAL_DESKTOP_UPDATE_SHA256": "a" * 64,
+            "PORTAL_DESKTOP_UPDATE_SIGNATURE": "B" * 512,
         }
         with patch.dict(os.environ, configured, clear=False):
             data = self.request("/api/desktop-update")

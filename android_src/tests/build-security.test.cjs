@@ -5,6 +5,7 @@ const gradle = fs.readFileSync(path.join(root, 'app', 'build.gradle'), 'utf8');
 const gradleProperties = fs.readFileSync(path.join(root, 'gradle.properties'), 'utf8');
 const manifest = fs.readFileSync(path.join(root, 'app', 'src', 'main', 'AndroidManifest.xml'), 'utf8');
 const releaseWorkflow = fs.readFileSync(path.join(root, '..', '.github', 'workflows', 'android-release.yml'), 'utf8');
+const desktopReleaseWorkflow = fs.readFileSync(path.join(root, '..', '.github', 'workflows', 'windows-desktop.yml'), 'utf8');
 const stagingWorkflow = fs.readFileSync(path.join(root, '..', '.github', 'workflows', 'android-build.yml'), 'utf8');
 const releaseProperties = fs.readFileSync(path.join(root, 'release.properties'), 'utf8');
 const serverDiscovery = fs.readFileSync(path.join(root, '..', 'portal-server.json'), 'utf8');
@@ -58,6 +59,20 @@ must(discovery.schemaVersion === 1 && Number.isInteger(discovery.revision) && di
   'Server-discovery document must have a versioned HTTPS endpoint');
 must(releaseWorkflow.includes('build_update_manifest.py'),
   'Signed release must generate a machine-readable update manifest');
+must(releaseWorkflow.includes('Require release tag at current reviewed main commit') &&
+     releaseWorkflow.includes('git rev-parse refs/remotes/origin/main') &&
+     releaseWorkflow.includes('fetch-depth: 0'),
+  'Android releases must be pinned to the current reviewed main commit before signing');
+must(releaseWorkflow.indexOf('Require release tag at current reviewed main commit') <
+     releaseWorkflow.indexOf('Validate release inputs'),
+  'Android release provenance must be checked before signing secrets are exposed');
+must(desktopReleaseWorkflow.includes('Require release tag at current reviewed main commit') &&
+     desktopReleaseWorkflow.includes('git rev-parse refs/remotes/origin/main') &&
+     desktopReleaseWorkflow.includes('fetch-depth: 0'),
+  'Desktop tag releases must be pinned to the current reviewed main commit');
+must(desktopReleaseWorkflow.includes('PORTAL_DESKTOP_UPDATE_SIGNING_PRIVATE_KEY') &&
+     desktopReleaseWorkflow.includes('portal-desktop-update.json'),
+  'Desktop release must create and publish a signed update manifest');
 must(releaseWorkflow.includes('gh release create') && releaseWorkflow.includes('portal-update.json'),
   'Signed release must publish APK, checksum and manifest through GitHub Releases');
 must(!stagingWorkflow.includes('trycloudflare.com'),

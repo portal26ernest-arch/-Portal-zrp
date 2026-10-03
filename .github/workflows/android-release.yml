@@ -61,6 +61,12 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$PORTAL_PUBLIC_API_URL" == https://* ]]
+          API_HOST="${PORTAL_PUBLIC_API_URL#https://}"
+          API_HOST="${API_HOST%%/*}"
+          API_HOST="${API_HOST%%:*}"
+          if [[ "$API_HOST" == *.sslip.io ]]; then
+            test "$API_HOST" = "$PORTAL_RELEASE_TEMPORARY_SSLIP_HOST"
+          fi
           test -n "$KEYSTORE_B64"
           test -n "$PORTAL_ANDROID_STORE_PASSWORD"
           test -n "$PORTAL_ANDROID_KEY_ALIAS"
