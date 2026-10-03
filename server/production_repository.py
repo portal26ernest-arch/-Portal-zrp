@@ -56,28 +56,67 @@ class Repository:
         if kind not in KINDS: raise ValueError('Неизвестная сущность')
         return [json.loads(r[0]) for r in self.sql('SELECT payload FROM portal_production WHERE company_id=? AND kind=? ORDER BY created_at,id', (self.company_id,kind)).fetchall()]
 
+    @staticmethod
+    def _json_field(field):
+        if not isinstance(field,str) or not field.replace('_','').isalnum() or not field[0].isalpha():
+            raise ValueError('Некорректное имя поля')
+        return field
+
+    def _json_filters(self, filters):
+        conditions=[];args=[]
+        for field,value in filters.items():
+            field=self._json_field(field);expression=f"payload::jsonb ->> '{field}'"
+            if value is None:conditions.append(expression+' IS NULL')
+            else:
+                conditions.append(expression+'=?')
+                if isinstance(value,bool):value='true' if value else 'false'
+                else:value=str(value)
+                args.append(value)
+        return conditions,args
+
     def list_by(self, kind, **filters):
         """Filter immutable JSON ledger rows in SQL on PostgreSQL, with SQLite parity."""
         if kind not in KINDS: raise ValueError('Неизвестная сущность')
-        if not filters: return self.list(kind)
-        for field in filters:
-            if not isinstance(field,str) or not field.replace('_','').isalnum() or not field[0].isalpha():
-                raise ValueError('???????????? ???? ???????')
+        if not filters:return self.list(kind)
         if self.dialect=='postgresql':
-            conditions=['company_id=?','kind=?'];args=[self.company_id,kind]
-            for field,value in filters.items():
-                expression=f"payload::jsonb ->> '{field}'"
-                if value is None:
-                    conditions.append(expression+' IS NULL')
-                else:
-                    conditions.append(expression+'=?')
-                    if isinstance(value,bool): value='true' if value else 'false'
-                    else: value=str(value)
-                    args.append(value)
-            rows=self.sql('SELECT payload FROM portal_production WHERE '+' AND '.join(conditions)+' ORDER BY created_at,id',tuple(args)).fetchall()
+            extra,args=self._json_filters(filters)
+            rows=self.sql('SELECT payload FROM portal_production WHERE '+' AND '.join(['company_id=?','kind=?',*extra])+
+                          ' ORDER BY created_at,id',(self.company_id,kind,*args)).fetchall()
             return [json.loads(row[0]) for row in rows]
         result=self.list(kind)
         return [row for row in result if all(row.get(field)==value for field,value in filters.items())]
+
+    def list_range(self, kind, field, start=None, end=None, **filters):
+        """Return rows whose JSON text field is in the half-open range [start,end)."""
+        if kind not in KINDS:raise ValueError('Неизвестная сущность')
+        field=self._json_field(field)
+        if (start is not None and not isinstance(start,str)) or (end is not None and not isinstance(end,str)):
+            raise ValueError('Границы диапазона должны быть строками')
+        if self.dialect=='postgresql':
+            extra,args=self._json_filters(filters);expression=f"payload::jsonb ->> '{field}'"
+            conditions=['company_id=?','kind=?',*extra]
+            if start is not None:conditions.append(expression+'>=?');args.append(start)
+            if end is not None:conditions.append(expression+'<?');args.append(end)
+            rows=self.sql('SELECT payload FROM portal_production WHERE '+' AND '.join(conditions)+
+                          ' ORDER BY created_at,id',(self.company_id,kind,*args)).fetchall()
+            return [json.loads(row[0]) for row in rows]
+        result=self.list_by(kind,**filters)
+        return [row for row in result if (start is None or str(row.get(field,''))>=start)
+                and (end is None or str(row.get(field,''))<end)]
+
+    def list_recent(self, kind, limit=20, order_field='created_at', **filters):
+        """Return a bounded newest-first slice without loading the full PostgreSQL ledger."""
+        if kind not in KINDS:raise ValueError('Неизвестная сущность')
+        if type(limit) is not int or not 1<=limit<=1000:raise ValueError('Некорректный лимит')
+        order_field=self._json_field(order_field)
+        if self.dialect=='postgresql':
+            extra,args=self._json_filters(filters);expression=f"payload::jsonb ->> '{order_field}'"
+            rows=self.sql('SELECT payload FROM portal_production WHERE '+' AND '.join(['company_id=?','kind=?',*extra])+
+                          f' ORDER BY {expression} DESC,created_at DESC,id DESC LIMIT ?',
+                          (self.company_id,kind,*args,limit)).fetchall()
+            return [json.loads(row[0]) for row in rows]
+        rows=self.list_by(kind,**filters)
+        return sorted(rows,key=lambda row:(str(row.get(order_field,'')),str(row.get('created_at','')),str(row.get('id',''))),reverse=True)[:limit]
 
     def insert(self, kind, data, identity=None):
         if kind not in KINDS: raise ValueError('Неизвестная сущность')

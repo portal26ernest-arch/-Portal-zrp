@@ -166,7 +166,7 @@ class Production:
 
     def invoice_current(self,identity):
         invoice=self.entity('invoices',identity)
-        revisions=sorted((r for r in self.r.list('invoice_revisions') if r['invoice_id']==invoice['id']),key=lambda r:r['revision'])
+        revisions=sorted(self.r.list_by('invoice_revisions',invoice_id=invoice['id']),key=lambda r:r['revision'])
         history=[dict(revision=1,state='finalized',snapshot={k:invoice[k] for k in ('work_ids','lines','amount','due_at')})]
         history.extend(dict(revision=r['revision'],state=r['state'],snapshot=r['snapshot']) for r in revisions if r['state']=='finalized')
         if revisions:
@@ -201,7 +201,7 @@ class Production:
     def create_tariff(self,b):
         op=self.operation(b['client_id'],b['operation_id'])
         now=self.clock()
-        versions=[t for t in self.r.list('tariffs') if t['operation_id']==op['id'] and t['effective_from']<=now]
+        versions=[t for t in self.r.list_by('tariffs',operation_id=op['id']) if t['effective_from']<=now]
         old=self.tariff(op['id'],now) if versions else None
         values={k:(old[k] if old else None) for k in ('employee_rate','client_rate')}
         changed=False
@@ -215,15 +215,15 @@ class Production:
         if effective<self.clock():
             # A small clock gap is allowed only for immediate server-generated time.
             if b.get('effective_from'): raise ValueError('Тариф нельзя вводить задним числом')
-        if any(t['operation_id']==op['id'] and t['effective_from']==effective for t in self.r.list('tariffs')): raise ValueError('Тариф на эту дату уже есть')
+        if self.r.list_by('tariffs',operation_id=op['id'],effective_from=effective): raise ValueError('Тариф на эту дату уже есть')
         return self.r.insert('tariffs',dict(operation_id=op['id'],client_id=op['client_id'],effective_from=effective,changed_fields=[k for k in values if k in b],**values))
 
     def batch(self,b):
         self.need('batches.receive'); c=self.client(b['client_id'],True)
         identity=str(uuid.uuid4())
         product_id=b.get('product_id')
-        product=next((item for item in self.r.list('products') if item['id']==str(product_id)
-                      and item['client_id']==c['id'] and item['active']),None) if product_id else None
+        product=next((item for item in self.r.list_by('products',id=str(product_id))
+                      if item['client_id']==c['id'] and item['active']),None) if product_id else None
         if product_id and not product: raise ValueError('Выберите активный товар этого клиента')
         # Company + UUID is globally unambiguous during file -> central DB migration.
         return self.r.insert('batches',dict(number='PRT-'+self.clock()[:4]+'-'+str(self.r.company_id)+'-'+identity.replace('-',''),
@@ -239,7 +239,7 @@ class Production:
         if action=='create':
             client=self.client(b.get('client_id'),True)
             name=text(b.get('name'),'Товар')
-            if any(p['client_id']==client['id'] and p['name'].casefold()==name.casefold() and p['active'] for p in self.r.list('products')):
+            if any(p['name'].casefold()==name.casefold() for p in self.r.list_by('products',client_id=client['id'],active=True)):
                 raise ValueError('Активный товар с таким названием уже есть у клиента')
             return self.r.insert('products',dict(client_id=client['id'],name=name,active=True))
         product=self.entity('products',b.get('product_id'))
@@ -247,7 +247,7 @@ class Production:
         if action=='archive': product['active']=False
         elif action=='update':
             name=text(b.get('name',product['name']),'Товар')
-            if any(p['id']!=product['id'] and p['client_id']==product['client_id'] and p['name'].casefold()==name.casefold() and p['active'] for p in self.r.list('products')):
+            if any(p['id']!=product['id'] and p['name'].casefold()==name.casefold() for p in self.r.list_by('products',client_id=product['client_id'],active=True)):
                 raise ValueError('Активный товар с таким названием уже есть у клиента')
             product['name']=name
         else: raise ValueError('Неизвестное действие товара')
@@ -260,7 +260,7 @@ class Production:
         planned_other=cents(b.get('other_cost',0))
         if planned_other:self.need('finance.read')
         if target!=batch['quantity']: raise ValueError('План обязательной операции должен покрывать всю партию')
-        if any(t['batch_id']==batch['id'] and t['operation_id']==op['id'] for t in self.r.list('tasks')): raise ValueError('Эта операция уже запланирована для партии')
+        if self.r.list_by('tasks',batch_id=batch['id'],operation_id=op['id']): raise ValueError('Эта операция уже запланирована для партии')
         assignees=b.get('assignees',[])
         if not isinstance(assignees,list) or not assignees or len(assignees)!=len(set(assignees)): raise ValueError('Выберите исполнителей')
         users={u['id']:u for u in self.r.catalog('users')}
@@ -308,7 +308,7 @@ class Production:
         batch=self.entity('batches',batch_id) if batch_id else None
         if batch and (batch['client_id']!=client_id or batch['status']=='shipped'): raise ValueError('Партия недоступна для этой работы')
         if task:
-            done=sum(w['quantity'] for w in self.r.list('works') if w.get('task_id')==task['id'])
+            done=sum(w['quantity'] for w in self.r.list_by('works',task_id=task['id']))
             if done+quantity>task['quantity']: raise ValueError('Количество превышает остаток задания')
         tariff=self.tariff(op_id);self.valid_rates(tariff);now=self.clock()
         if self.payroll_is_closed(now):raise ValueError('Расчётный период уже закрыт')
@@ -346,7 +346,7 @@ class Production:
             if not employee_id(self.u):raise PermissionError('Свяжите доступ с сотрудником перед началом работы')
             task=self.entity('tasks',b['task_id'])
             if self.u['id'] not in task['assignees'] or task['status']=='done':raise PermissionError('Задание недоступно')
-            if any(t['user_id']==self.u['id'] and t['status'] in ('running','paused') for t in self.r.list('work_timers')):
+            if any(t['status'] in ('running','paused') for t in self.r.list_by('work_timers',user_id=self.u['id'])):
                 raise ValueError('Сначала завершите текущую работу')
             timer=self.r.insert('work_timers',dict(task_id=task['id'],batch_id=task['batch_id'],client_id=task['client_id'],product=task['product'],
                 operation_id=task['operation_id'],user_id=self.u['id'],employee_id=employee_id(self.u),started_at=now,
@@ -410,7 +410,7 @@ class Production:
     def payroll_snapshot(self,start,end):
         self.need('payroll.all');start,end=self.payroll_bounds(start,end)
         users={u['id']:u for u in self.r.catalog('users')};groups={}
-        works=[w for w in self.r.list('works') if start<=w['completed_at'][:10]<=end]
+        end_exclusive=(datetime.strptime(end,'%Y-%m-%d').date()+timedelta(days=1)).isoformat()+'T00:00:00';works=self.r.list_range('works','completed_at',start+'T00:00:00',end_exclusive)
         for w in works:
             g=groups.setdefault(w['user_id'],dict(user_id=w['user_id'],employee_id=w.get('employee_id'),
                 display_name=users.get(w['user_id'],{}).get('display_name','Сотрудник'),quantity=0,salary=0,work_rows=0))
@@ -452,7 +452,7 @@ class Production:
 
     def payroll_is_closed(self,at):
         day=at[:10]
-        return any(p['status']=='closed' and p['period_start']<=day<=p['period_end'] for p in self.r.list('payroll_periods'))
+        return any(p['period_start']<=day<=p['period_end'] for p in self.r.list_by('payroll_periods',status='closed'))
 
     def payroll_employee_id(self,b,required=True):
         canonical=b.get('employee_id')
@@ -589,7 +589,7 @@ class Production:
         request_id=b.get('request_id')
         if not isinstance(request_id,str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{1,128}',request_id):
             raise ValueError('Некорректный request id')
-        previous=next((m for m in self.r.list('chat_messages') if m.get('request_id')==request_id and m.get('sender_user_id')==self.u['id']),None)
+        previous=next(iter(self.r.list_by('chat_messages',request_id=request_id,sender_user_id=self.u['id'])),None)
         if previous:return previous
         if subtype=='sticker':
             key=b.get('sticker_key')
@@ -669,7 +669,7 @@ class Production:
         self.need('documents.manage')
         if b.get('document_type')!='payroll':raise ValueError('Пока поддерживается расчётный документ зарплаты')
         start,end=self.payroll_bounds(b.get('period_start'),b.get('period_end'))
-        period=next((p for p in self.r.list('payroll_periods') if p['period_start']==start and p['period_end']==end and p['status']=='closed'),None)
+        period=next(iter(self.r.list_by('payroll_periods',period_start=start,period_end=end,status='closed')),None)
         if not period:raise ValueError('Сначала закройте расчётный период')
         snapshot=period['snapshot'];snapshot_raw=json.dumps(snapshot,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode('utf-8')
         settlements=self.settlement_summary(period,self.r.payroll_settlements(period['id']))
@@ -713,13 +713,13 @@ class Production:
                 raise ValueError('Invoice revision migration 9 must be applied before changing invoice state')
             self.need('invoices.read')
             original=self.entity('invoices',b.get('invoice_id'))
-            history=sorted((r for r in self.r.list('invoice_revisions') if r['invoice_id']==original['id']),key=lambda r:r['revision'])
+            history=sorted(self.r.list_by('invoice_revisions',invoice_id=original['id']),key=lambda r:r['revision'])
             current=self.invoice_current(original['id'])
             invoice=current
             if self.u.get('role') not in ('admin','director'):
                 if workflow=='send_to_editing':raise PermissionError('Только администратор или директор может отправить счёт на редактирование')
                 if self.u.get('role')!='manager':raise PermissionError('Нет права изменять счёт')
-            payments=[p for p in self.r.list('payments') if p['invoice_id']==invoice['id']]
+            payments=self.r.list_by('payments',invoice_id=invoice['id'])
             if workflow=='send_to_editing':
                 if invoice.get('state','finalized')=='editing':return invoice
                 if invoice.get('state','finalized')!='finalized':raise ValueError('Недопустимое состояние счёта')
@@ -804,11 +804,11 @@ class Production:
 
     def payment(self,b):
         self.need('payments.record');i=self.entity('invoices',b['invoice_id'])
-        history=sorted((r for r in self.r.list('invoice_revisions') if r['invoice_id']==i['id']),key=lambda r:r['revision'])
+        history=sorted(self.r.list_by('invoice_revisions',invoice_id=i['id']),key=lambda r:r['revision'])
         if history:i=dict(i,**history[-1]['snapshot'],state=history[-1]['state'])
         if i.get('state')=='editing':raise ValueError('Счёт на редактировании; приём оплаты временно недоступен')
         amount=cents(b['amount'])
-        paid=sum(p['amount'] for p in self.r.list('payments') if p['invoice_id']==i['id'])
+        paid=sum(p['amount'] for p in self.r.list_by('payments',invoice_id=i['id']))
         if not 0<amount<=i['amount']-paid: raise ValueError('Оплата должна быть больше нуля и не больше остатка счёта')
         return self.r.insert('payments',dict(invoice_id=i['id'],client_id=i['client_id'],amount=amount,reference=text(b.get('reference'),optional=True)))
 
@@ -1025,7 +1025,7 @@ class Production:
         self.need('organizer.read');identity=str(params.get('task_id',[''])[0] or '')
         task=self.r.get('organizer_tasks',identity)
         if not self.organizer_visible(task):raise PermissionError('Задача недоступна')
-        return [e for e in self.r.list('organizer_events') if e.get('task_id')==identity]
+        return self.r.list_by('organizer_events',task_id=identity)
 
     def organizer_directors(self):
         self.need('organizer.read')
@@ -1083,7 +1083,7 @@ class Production:
             director_name=director.get('display_name') or request.get('director_name') or 'Директор',
             responsible_name=(responsible.get('display_name') or responsible.get('username')) if responsible else None)
         attachments=[]
-        for row in self.r.list('organizer_request_attachments'):
+        for row in self.r.list_by('organizer_request_attachments',organizer_request_id=request['id']):
             if row.get('organizer_request_id')==request['id']:
                 attachments.append({k:row[k] for k in ('id','original_name','mime_type','size_bytes','sha256')})
         item['attachments']=attachments
@@ -1287,10 +1287,10 @@ class Production:
         condition=b.get('condition','unknown')
         if condition not in ('resalable','damaged','unknown'):
             raise ValueError('Укажите состояние возвращённого товара')
-        shipment=next((item for item in self.r.list('shipments') if item['batch_id']==batch['id'] and item.get('type')!='return'),None)
+        shipment_rows=self.r.list_by('shipments',batch_id=batch['id'])
+        shipment=next((item for item in shipment_rows if item.get('type')!='return'),None)
         if shipment is None:raise ValueError('Исходная отгрузка не найдена')
-        returned=sum(item.get('quantity',0) for item in self.r.list('shipments')
-                     if item['batch_id']==batch['id'] and item.get('type')=='return')
+        returned=sum(item.get('quantity',0) for item in shipment_rows if item.get('type')=='return')
         remaining=shipment['quantity']-returned
         if quantity>remaining:raise ValueError('Возвращаемое количество превышает остаток отгрузки')
         item=self.r.insert('shipments',dict(type='return',batch_id=batch['id'],client_id=batch['client_id'],
@@ -1359,7 +1359,7 @@ class Production:
     def invoices(self):
         self.need('invoices.read');rows=self.scoped('invoices');payments=self.scoped('payments')
         for i in rows:
-            revisions=sorted((r for r in self.r.list('invoice_revisions') if r['invoice_id']==i['id']),key=lambda r:r['revision'])
+            revisions=sorted(self.r.list_by('invoice_revisions',invoice_id=i['id']),key=lambda r:r['revision'])
             if revisions:
                 latest=revisions[-1]
                 i.update(latest['snapshot'],state=latest['state'],revision=latest['revision'],
@@ -1517,7 +1517,7 @@ class Production:
         for i in invoices:
             if i['due_at'] and i['remaining'] and company_date(i['due_at'],settings['utc_offset_minutes']).isoformat()<day:attention.append(dict(type='payment_late',label='Просрочена оплата',invoice_id=i['id'],amount=i['remaining']))
         if {'invoices.read','finance.read'} & self.permissions:
-            notices=sorted(self.r.list('notifications'),key=lambda item:(item.get('occurred_at',''),item.get('id','')),reverse=True)[:20]
+            notices=self.r.list_recent('notifications',20,'occurred_at')
             attention.extend(dict(type='reminder',label=item['title'],entity_id=item['entity_id'],notification_id=item['id']) for item in notices)
         check='monday' if now.weekday()==0 and now.strftime('%H:%M')>=settings['monday_time'] else 'wednesday' if now.weekday()==2 and now.strftime('%H:%M')>=settings['wednesday_time'] else None
         if check and invoices:attention.append(dict(type='control_'+check,label='Контроль счетов и оплат',paid=sum(i['status']=='paid' for i in invoices),partial=sum(i['status']=='partial' for i in invoices),unpaid=sum(i['status']=='unpaid' for i in invoices),not_invoiced=len(unbilled)))
@@ -1540,9 +1540,8 @@ class Production:
             result['expected_profit']=None if not plan_profits or any(value is None for value in plan_profits) else sum(plan_profits)
             result['client_profitability_alerts']=sum(client['profit']<0 for client in data['clients'])
         if {'payroll.all','payroll.settlement.read'} & self.permissions:
-            closed=[period for period in self.r.list('payroll_periods')
-                    if period['status']=='closed' and period['period_start'][:7]==day[:7]
-                    and period['period_end']<=day]
+            closed=[period for period in self.r.list_by('payroll_periods',status='closed')
+                    if period['period_start'][:7]==day[:7] and period['period_end']<=day]
             settled=None
             if closed and self.r.has_table('payroll_settlement_entries'):
                 accrued=sum(employee['salary'] for period in closed
@@ -1740,7 +1739,7 @@ class Production:
                 operations.append(item)
             clients=[c for c in self.r.catalog('clients') if c['active'] and self.visible(c['id'])]
             client_ids={c['id'] for c in clients}
-            products=[p for p in self.r.list('products') if p['active'] and p['client_id'] in client_ids]
+            products=[p for p in self.r.list_by('products',active=True) if p['client_id'] in client_ids]
             return dict(clients=clients,operations=operations,products=products,users=self.r.catalog('users') if 'tasks.manage' in self.permissions else [])
         if action=='products':
             if not ({'clients.read','clients.manage'}&self.permissions): raise PermissionError('Нет доступа к товарам')
