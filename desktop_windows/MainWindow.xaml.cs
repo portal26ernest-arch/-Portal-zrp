@@ -117,11 +117,9 @@ public partial class MainWindow : Window
                 Directory.CreateDirectory(_settingsDir);
                 var environmentOptions = new CoreWebView2EnvironmentOptions
                 {
-                    // On some Windows/GPU driver combinations WebView2 loads the DOM but
-                    // leaves a blank white surface. PORTAL is a forms/data client, so
-                    // software compositing is a safe compatibility default.
-                    // GPU rendering is the fast default. Software rendering remains an explicit
-                    // compatibility fallback for machines with broken WebView2/GPU drivers.
+                    // GPU rendering is the fast default. On Windows/GPU driver combinations
+                    // that show a blank WebView2 surface, software rendering remains an explicit
+                    // compatibility fallback via environment flag or local marker.
                     AdditionalBrowserArguments = WebViewArguments()
                 };
                 var env = await CoreWebView2Environment.CreateAsync(

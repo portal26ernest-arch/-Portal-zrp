@@ -168,7 +168,7 @@ final class PortalLocalCache {
     }
 
     private File outboxDir(String serverOrigin, String companyId) throws Exception {
-        if (serverOrigin == null || serverOrigin.isBlank() || companyId == null || !companyId.matches("[1-9][0-9]{0,9}")) return null;
+        if (serverOrigin == null || serverOrigin.trim().isEmpty() || companyId == null || !companyId.matches("[1-9][0-9]{0,9}")) return null;
         return new File(new File(new File(context.getFilesDir(), "company-outbox"), hash(serverOrigin.toLowerCase(Locale.ROOT))), companyId);
     }
 
@@ -199,12 +199,12 @@ final class PortalLocalCache {
 
     private File cacheFile(String serverOrigin, String companyId, String cacheKey) throws Exception {
         File dir = companyDir(serverOrigin, companyId);
-        if (dir == null || cacheKey == null || cacheKey.isBlank() || cacheKey.length() > 2048) return null;
+        if (dir == null || cacheKey == null || cacheKey.trim().isEmpty() || cacheKey.length() > 2048) return null;
         return new File(dir, hash(cacheKey) + ".bin");
     }
 
     private File companyDir(String serverOrigin, String companyId) throws Exception {
-        if (serverOrigin == null || serverOrigin.isBlank() || companyId == null || !companyId.matches("[1-9][0-9]{0,9}")) return null;
+        if (serverOrigin == null || serverOrigin.trim().isEmpty() || companyId == null || !companyId.matches("[1-9][0-9]{0,9}")) return null;
         return new File(new File(new File(context.getFilesDir(), "company-cache"), hash(serverOrigin.toLowerCase(Locale.ROOT))), companyId);
     }
 

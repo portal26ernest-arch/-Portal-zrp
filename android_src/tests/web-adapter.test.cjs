@@ -44,3 +44,13 @@ test('Desktop cache is company-scoped, encrypted by native bridge and never used
   assert.ok(adapter.includes("verb === 'GET' && !!token && !!cacheCompany"));
   assert.ok(adapter.includes("INVALIDATES_CACHE.test(target)"));
 });
+
+test('local-first performance contract uses long cache, 10-minute sync, bulk tariffs and parallel dashboard',()=>{
+  const production=fs.readFileSync(path.join(root,'production.js'),'utf8');
+  assert.match(adapter,/CACHE_MAX_AGE_MS = 30 \* 24 \* 60 \* 60 \* 1000/);
+  assert.match(production,/LOCAL_SYNC_INTERVAL_MS=10\*60\*1000/);
+  assert.match(production,/productionGet\('tariff-history'\)/);
+  assert.doesNotMatch(production,/c\.operations\.map\(async o=>\[o\.id,await productionGet\('tariff-history\?operation_id='/);
+  assert.match(production,/const \[d,organizerRows,organizerRequestIncoming,organizerRequestMine,timers\]=await Promise\.all/);
+  assert.match(production,/queueLocalWork\(payload,requestId\)/);
+});
