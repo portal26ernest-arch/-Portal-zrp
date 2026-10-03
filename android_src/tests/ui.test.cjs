@@ -865,7 +865,7 @@ test('browser UI regression',async t=>{
       await page.locator('#otherWorkForm [type=submit]').click();
       await page.waitForFunction(()=>mock.calls.some(c=>c.url==='/api/v3/work'&&c.body?.quantity===3));
       const free=await page.evaluate(()=>mock.calls.find(c=>c.url==='/api/v3/work'));
-      assert.equal(free.body.client_id,1);assert.equal(free.body.operation_id,1);assert.equal(free.body.batch_id,null);
+      assert.equal(free.body.client_id,1);assert.equal(free.body.operation_id,1);assert.equal(Object.hasOwn(free.body,'batch_id'),false);
       assert.equal(Object.hasOwn(free.body,'employee_rate'),false);
       await page.locator('[data-action=productionHistory]').click();
       await page.waitForFunction(()=>document.querySelector('#content').textContent.includes('Без задания'));
