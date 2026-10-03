@@ -7,10 +7,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>PORTAL.Desktop</AssemblyName>
     <RootNamespace>Portal.Desktop</RootNamespace>
-    <Version>4.5.0</Version>
-    <FileVersion>4.5.0.45</FileVersion>
-    <AssemblyVersion>4.5.0.0</AssemblyVersion>
-    <InformationalVersion>4.5-organizer-chat</InformationalVersion>
+    <Version>5.5.0</Version>
+    <FileVersion>5.5.0.55</FileVersion>
+    <AssemblyVersion>5.5.0.0</AssemblyVersion>
+    <InformationalVersion>5.5-excel2</InformationalVersion>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <PublishSingleFile>false</PublishSingleFile>
