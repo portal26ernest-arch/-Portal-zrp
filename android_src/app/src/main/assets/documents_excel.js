@@ -355,7 +355,7 @@
     paint(
       heading('Импорт Excel', 'Шаблон · проверка · подтверждение · результат') +
       `<div class="card">
-        <p class="meta">PORTAL Excel ${h(state.templateInfo?.template_version || '2.0')}. Заполняйте обычные названия и значения — служебные строки и ID скрыты.</p>
+        <p class="meta">PORTAL Excel ${h(state.templateInfo?.template_version || '2.0')}. Заполняйте обычные названия и значения — служебные строки и ID скрыты. Для роли и активности в Excel есть готовые выпадающие списки.</p>
         <p class="meta">Листы: ${SHEETS.join(' · ')}</p>
         <div class="stack">
           ${btn('Скачать пустой шаблон', 'downloadExcelTemplate', 'data-kind="blank"', 'secondary block')}

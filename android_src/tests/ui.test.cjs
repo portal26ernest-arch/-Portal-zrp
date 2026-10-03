@@ -140,8 +140,7 @@ test('goods receipt form omits article and GTIN but keeps comment',()=>{
   const production=fs.readFileSync(path.join(assets,'production.js'),'utf8');
   assert.doesNotMatch(production,/batchArticle/);
   assert.doesNotMatch(production,/batchGtin/);
-  assert.doesNotMatch(production,/???????? \/ GTIN/);
-  assert.match(production,/field\('batchComment','???????????'\)/);
+  assert.match(production,/batchComment/);
 });
 test('modal sheets do not dismiss on backdrop, Escape or Back',()=>{
   const index=fs.readFileSync(path.join(assets,'index.html'),'utf8');

@@ -9,28 +9,44 @@ from document_domain import XLSX_MIME
 
 TEMPLATE_VERSION='2.0'
 REQUISITES=('legal_name','inn','kpp','ogrn','legal_address','settlement_account','bank_name','bik','correspondent_account','phone','email','tax_info')
+ROLE_LABELS={'admin':'Управляющий','director':'Директор','manager':'Менеджер','accountant':'Бухгалтер','shift':'Старший смены','packer':'Упаковщик'}
 LABELS={'legal_name':'Юридическое наименование','inn':'ИНН','kpp':'КПП','ogrn':'ОГРН','legal_address':'Юридический адрес',
         'settlement_account':'Расчётный счёт','bank_name':'Банк','bik':'БИК','correspondent_account':'Корреспондентский счёт',
         'phone':'Телефон','email':'Email','tax_info':'Налогообложение','director':'Руководитель','contact_person':'Контактное лицо'}
 SHEETS={
  'Компания':[('name','Название компании (не менять)')]+[(k,LABELS[k]) for k in REQUISITES]+[('director',LABELS['director']),('company_id','ID компании · авто')],
- 'Сотрудники':[('full_name','ФИО'),('profile_username','Логин'),('role','Роль'),('active','Активен: 1 = да, 0 = нет'),
+ 'Сотрудники':[('full_name','ФИО'),('profile_username','Логин'),('role','Роль'),('active','Активен'),
                ('initial_pin','Пароль нового доступа (4–128 символов)'),('employee_ref','Ключ строки · авто'),('employee_id','ID сотрудника · авто'),('user_id','ID доступа · авто')],
- 'Клиенты':[('name','Название клиента'),('active','Активен: 1 = да, 0 = нет')]+[(k,LABELS[k]) for k in REQUISITES]+
+ 'Клиенты':[('name','Название клиента'),('active','Активен')]+[(k,LABELS[k]) for k in REQUISITES]+
             [('contact_person',LABELS['contact_person']),('client_ref','Ключ клиента · авто'),('client_id','ID клиента · авто')],
  'Операции_Тарифы':[('client_name','Клиент'),('name','Операция'),('employee_rate','Ставка сотруднику, ₽'),('client_rate','Цена клиенту, ₽'),
-                    ('active','Активна: 1 = да, 0 = нет'),('effective_from','Новая ставка действует с даты'),('effective_to','Окончание · авто'),
+                    ('active','Активна'),('effective_from','Дата начала новой ставки — необязательно'),('effective_to','Окончание · авто'),
                     ('client_ref','Ключ клиента · авто'),('client_id','ID клиента · авто'),('operation_id','ID операции · авто')],
  'Материалы':[('name','Материал'),('unit','Ед. изм.'),('unit_cost','Стоимость единицы, ₽'),('min_stock','Минимальный остаток'),
-              ('active','Активен: 1 = да, 0 = нет'),('material_ref','Ключ материала · авто'),('material_id','ID материала · авто')],
+              ('active','Активен'),('material_ref','Ключ материала · авто'),('material_id','ID материала · авто')],
  'Приход_материалов':[('material_name','Материал'),('quantity','Количество прихода'),('unit_cost','Стоимость единицы, ₽'),('note','Комментарий'),
                       ('material_ref','Ключ материала · авто'),('material_id','ID материала · авто')],
  'Нормы_материалов':[('client_name','Клиент'),('operation_name','Операция'),('material_name','Материал'),('qty_per_unit','Расход на 1 ед.'),
-                     ('active','Активна: 1 = да, 0 = нет'),('operation_id','ID операции · авто'),('material_id','ID материала · авто'),('norm_id','ID нормы · авто')],
+                     ('active','Активна'),('operation_id','ID операции · авто'),('material_id','ID материала · авто'),('norm_id','ID нормы · авто')],
  'Выработка':[('employee_name','Сотрудник'),('client_name','Клиент'),('operation_name','Операция'),('quantity','Количество'),('product','Товар / комментарий'),
               ('employee_id','ID сотрудника · авто'),('client_id','ID клиента · авто'),('operation_id','ID операции · авто')],
 }
 TECHNICAL_KEYS={'company_id','employee_ref','employee_id','user_id','client_ref','client_id','operation_id','material_ref','material_id','norm_id','effective_to'}
+
+def display_value(key,value):
+    if key=='active' and value in (0,1,False,True):return 'Да' if bool(value) else 'Нет'
+    if key=='role' and value in ROLE_LABELS:return ROLE_LABELS[value]
+    return value
+
+def validation_xml(columns):
+    rules=[]
+    for index,(key,_) in enumerate(columns,1):
+        if key=='active':options='Да,Нет'
+        elif key=='role':options=','.join(ROLE_LABELS.values())
+        else:continue
+        column=_column(index)
+        rules.append(f'<dataValidation type="list" allowBlank="1" showErrorMessage="1" sqref="{column}4:{column}10003"><formula1>"{escape(options)}"</formula1></dataValidation>')
+    return '' if not rules else '<dataValidations count="'+str(len(rules))+'">'+''.join(rules)+'</dataValidations>'
 
 def table_rows(repo,table,fields):
     if not repo.has_table(table):return []
@@ -97,10 +113,10 @@ def workbook(data=None):
 <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>''')
         for i,name in enumerate(names,1):
             columns=SHEETS[name];rows=[['PORTAL_TEMPLATE_VERSION',TEMPLATE_VERSION],[(key,2) for key,_ in columns],[(label,1) for _,label in columns]]
-            for source in data.get(name,[]):rows.append([source.get(key,'') if source.get(key) is not None else '' for key,_ in columns])
+            for source in data.get(name,[]):rows.append([display_value(key,source.get(key,'')) if source.get(key) is not None else '' for key,_ in columns])
             body=''.join('<row r="'+str(n)+'"'+(' hidden="1"' if n in (1,2) else ' ht="40" customHeight="1"' if n==3 else '')+'>'+''.join(_cell(f'{_column(c)}{n}',value) for c,value in enumerate(row,1))+'</row>' for n,row in enumerate(rows,1))
             cols=''.join(f'<col min="{c}" max="{c}" width="{2 if key in TECHNICAL_KEYS else 36 if key in ("name","full_name","legal_name","legal_address","effective_from","product") else 24}" customWidth="1"'+(' hidden="1"' if key in TECHNICAL_KEYS else '')+'/>' for c,(key,_) in enumerate(columns,1))
-            sheet=XML+'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="3" topLeftCell="A4" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols>'+cols+'</cols><sheetData>'+body+'</sheetData><autoFilter ref="A3:'+_column(len(columns))+str(max(3,len(rows)))+'"/></worksheet>'
+            sheet=XML+'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="3" topLeftCell="A4" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols>'+cols+'</cols><sheetData>'+body+'</sheetData><autoFilter ref="A3:'+_column(len(columns))+str(max(3,len(rows)))+'"/>'+validation_xml(columns)+'</worksheet>'
             book.writestr(f'xl/worksheets/sheet{i}.xml',sheet)
     return deterministic_zip(out.getvalue())
 

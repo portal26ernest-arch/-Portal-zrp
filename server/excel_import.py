@@ -27,6 +27,14 @@ LOG.propagate=False
 _SIGNING_KEY=secrets.token_bytes(32)
 IMPORT_ACTIONS={'excel-import-preview','excel-import-apply','excel-import-result'}
 ROLES={'admin','director','manager','accountant','shift','packer'}
+ROLE_ALIASES={
+    'admin':'admin','управляющий':'admin','администратор':'admin',
+    'director':'director','директор':'director',
+    'manager':'manager','менеджер':'manager',
+    'accountant':'accountant','бухгалтер':'accountant',
+    'shift':'shift','старший смены':'shift',
+    'packer':'packer','упаковщик':'packer','сборщик':'packer','сотрудник':'packer',
+}
 
 def canonical(value):return json.dumps(value,ensure_ascii=False,sort_keys=True,separators=(',',':'))
 def digest(value):return hashlib.sha256(canonical(value).encode()).hexdigest()
@@ -37,8 +45,15 @@ def identifier(value,optional=False):
     return int(value)
 def active(value,default=1):
     if value in (None,''):return default
-    if str(value).lower() not in ('0','1','true','false'):raise ValueError('invalid_status')
-    return 1 if str(value).lower() in ('1','true') else 0
+    normalized=str(value).strip().casefold()
+    if normalized not in ('0','1','true','false','да','нет','yes','no'):raise ValueError('invalid_status')
+    return 1 if normalized in ('1','true','да','yes') else 0
+
+def role_code(value):
+    if value in (None,''):return ''
+    result=ROLE_ALIASES.get(str(value).strip().casefold())
+    if not result:raise ValueError('invalid_role')
+    return result
 def money(value,optional=False):
     if optional and value=='':return None
     if not isinstance(value,str) or len(value)>32 or not re.fullmatch(r'[0-9]+(?:\.[0-9]{1,2})?',value):raise ValueError('invalid_money')
@@ -233,8 +248,7 @@ class ExcelImport:
                         if eid is None and (name_key in seen_names[sheet] or any(employee_name_key(e['full_name'])==name_key for e in state['_employees'])):
                             issue(row,'employee_identity_ambiguous','conflict')
                         seen_names[sheet].add(name_key)
-                        role=value['role'];enabled=active(value['active'],None);pin=value.get('initial_pin','')
-                        if role and role not in ROLES:raise ValueError('invalid_role')
+                        role=role_code(value['role']);enabled=active(value['active'],None);pin=value.get('initial_pin','')
                         create_access=uid is None and bool(role or pin or value['active'])
                         if uid is None and create_access:
                             username=clean_text(value['profile_username'],128)
