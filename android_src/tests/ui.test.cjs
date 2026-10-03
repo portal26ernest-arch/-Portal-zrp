@@ -452,8 +452,12 @@ test('browser UI regression',async t=>{
       await page.evaluate(()=>mock.stage3Permissions=['users.manage']);await login(page);
       await page.evaluate(()=>go('users'));await page.locator('[data-action=createAccessInvite]').click();
       await page.locator('#inviteName').fill('Новый сотрудник');await page.locator('#inviteUsername').fill('new-staff');
+      await page.evaluate(()=>{Object.defineProperty(navigator,'share',{configurable:true,value:async()=>{throw new Error('WebView2 share unavailable');}});Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async value=>{mock.copiedInvite=value;}}});});
       await page.locator('#accessInviteForm [type=submit]').click();await page.waitForSelector('#oneTimeInviteToken');
       const token=await page.locator('#oneTimeInviteToken').inputValue();assert.ok(token.length>=40);
+      assert.equal(await page.locator('[data-action=shareAccessInvite]').count(),1);await page.locator('[data-action=shareAccessInvite]').click();
+      await page.waitForFunction(()=>document.querySelector('#toast').textContent.includes('Код скопирован'));
+      assert.equal(await page.evaluate(()=>mock.copiedInvite),token);assert.doesNotMatch(await page.locator('#toast').textContent(),/Не удалось открыть системное меню отправки/);
       const calls=await page.evaluate(()=>mock.calls);const create=calls.find(c=>c.method==='POST'&&c.url==='/api/v3/invitations');
       assert.equal(create.body.action,'create');assert.equal(Object.hasOwn(create.body,'pin'),false);
       assert.equal(calls.some(c=>c.url.includes(encodeURIComponent(token))||c.url.includes('pin=')),false);
