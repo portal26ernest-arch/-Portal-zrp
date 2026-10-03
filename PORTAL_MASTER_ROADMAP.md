@@ -361,3 +361,11 @@ Current roadmap counts are **93 ✅ / 15 🟡 / 6 ⏳ / 12 🔌**. Current-SHA S
 - ⏳ Свежий post-write-freeze SQLite snapshot после 01.10 не подтверждён (item 96).
 - ⏳ Production domain/HTTPS, финальная lineage/reconciliation, signed Android release и authenticated cutover smoke остаются release gates.
 - 📄 Evidence: `PORTAL_PRODUCTION_RECONCILIATION.json` schema v2 и `PORTAL_PRODUCTION_FOLLOWUP_20261002.md`.
+
+## M. Production release candidate — 2026-10-03
+- TalAnt/WMS/ТСД исключены из блокеров первого официального релиза и остаются отдельным будущим этапом.
+- Создана чистая релизная линия `assistant/portal-release-20261003` на базе консолидированного Desktop 4.5; незавершённый Excel 2.0 сохранён отдельно и в релиз не включён.
+- Production PostgreSQL переведён со Stage-7 login-ролей на отдельные `portal_prod_*_runtime`; старые Stage-7 роли отключены для LOGIN после успешного `/api/ping` и `/api/ready` smoke.
+- Перед изменениями создан fresh pre-cutover backup control DB, tenant DB и central storage; копия вынесена с VPS и SHA-256 совпали.
+- Release CI выявил две UI-регрессии в новом модуле счетов: legacy fallback без v3 и доступ к дебиторке для read-only permission. Обе исправлены; повторный Android UI/master-control gate обязателен перед merge.
+- Не закрытые внешние gate после программной проверки: собственный production domain/DNS/HTTPS, финальный authenticated device smoke и формальное объявление VPS/PostgreSQL единственным source of truth после успешного cutover.

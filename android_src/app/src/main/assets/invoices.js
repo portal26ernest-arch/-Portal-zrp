@@ -4,6 +4,7 @@
   const XLSX='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
   const PDF='application/pdf';
   const legacyNewInvoice=actions.newInvoice;
+  const legacyInvoices=screens.invoices;
   const invoiceStatus={paid:'Оплачен',partial:'Частично оплачен',unpaid:'Не оплачен'};
   const stateLabel={editing:'На редактировании',finalized:'Зафиксирован'};
 
@@ -47,16 +48,16 @@
   }
 
   screens.invoices=async()=>{
-    if(!S.stage3)throw new Error('Модуль счетов ещё не подключён для этой компании');
+    if(!S.stage3)return legacyInvoices();
     const [rows,catalog]=await Promise.all([productionGet('invoices'),productionCatalog()]);
     S.productionInvoices=rows;S.invoiceCatalog=catalog;
     const outstanding=rows.reduce((sum,row)=>sum+Number(row.remaining||0),0);
     const unpaid=rows.filter(row=>row.remaining>0).length;
     const paid=rows.filter(row=>row.status==='paid').length;
-    const toolbar=allowed('invoices.create')?
+    const toolbar=allowed('invoices.create')||allowed('invoices.read')?
       `<div class="invoice-toolbar">
-        ${btn('Новый счёт','invoiceNew','','block')}
-        ${btn('Из выработки','invoiceFromWork','','secondary')}
+        ${allowed('invoices.create')?btn('Новый счёт','invoiceNew','','block'):''}
+        ${allowed('invoices.create')?btn('Из выработки','invoiceFromWork','','secondary'):''}
         ${allowed('invoices.read')?btn('Дебиторка','viewReceivables','','secondary'):''}
       </div>`:'';
     paint(heading('Счета на оплату','Создание, PDF, Excel и контроль оплаты')+
