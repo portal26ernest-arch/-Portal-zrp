@@ -34,7 +34,7 @@ jobs:
           python3 - <<'PY'
           import re, subprocess
           text=subprocess.check_output(['xcodebuild','-version'], text=True)
-          match=re.search(r'Xcode (\\d+)', text)
+          match=re.search(r'Xcode ([0-9]+)', text)
           assert match and int(match.group(1)) >= 26, text
           PY
 

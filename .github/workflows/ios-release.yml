@@ -45,7 +45,7 @@ jobs:
           python3 - <<'PY'
           import re, subprocess
           text=subprocess.check_output(['xcodebuild','-version'], text=True)
-          m=re.search(r'Xcode (\d+)', text)
+          m=re.search(r'Xcode ([0-9]+)', text)
           assert m and int(m.group(1)) >= 26, text
           PY
       - name: Check release secrets
