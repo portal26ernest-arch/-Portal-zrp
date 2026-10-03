@@ -1,0 +1,60 @@
+name: iOS CI
+
+on:
+  push:
+    branches:
+      - main
+      - 'assistant/**'
+    paths:
+      - 'ios_src/**'
+      - 'android_src/app/src/main/assets/**'
+      - 'android_src/release.properties'
+      - '.github/workflows/ios-ci.yml'
+      - 'PORTAL_MASTER_ROADMAP.md'
+  pull_request:
+    paths:
+      - 'ios_src/**'
+      - 'android_src/app/src/main/assets/**'
+      - 'android_src/release.properties'
+      - '.github/workflows/ios-ci.yml'
+      - 'PORTAL_MASTER_ROADMAP.md'
+
+permissions:
+  contents: read
+
+jobs:
+  ios-build-test:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Android iOS parity contract
+        run: python3 ios_src/tools/check_mobile_parity.py
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        working-directory: ios_src
+        run: xcodegen generate
+
+      - name: Build iOS app without signing
+        working-directory: ios_src
+        run: |
+          xcodebuild \
+            -project PortalIOS.xcodeproj \
+            -scheme PortalIOS \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+      - name: Run iOS unit tests
+        working-directory: ios_src
+        run: |
+          DEVICE_ID="$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin)["devices"]; print(next(x["udid"] for runtime,items in d.items() if ".iOS-" in runtime for x in items if x.get("isAvailable")))')"
+          xcodebuild \
+            -project PortalIOS.xcodeproj \
+            -scheme PortalIOS \
+            -destination "platform=iOS Simulator,id=$DEVICE_ID" \
+            CODE_SIGNING_ALLOWED=NO \
+            test

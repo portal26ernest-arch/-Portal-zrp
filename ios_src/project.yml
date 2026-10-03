@@ -1,0 +1,47 @@
+name: PortalIOS
+options:
+  bundleIdPrefix: ru.portal
+  deploymentTarget:
+    iOS: "16.0"
+settings:
+  base:
+    SWIFT_VERSION: 5.0
+    IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+    MARKETING_VERSION: "4.2"
+    CURRENT_PROJECT_VERSION: "42"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+targets:
+  PortalIOS:
+    type: application
+    platform: iOS
+    sources:
+      - path: PortalIOS
+      - path: ../android_src/app/src/main/assets
+        type: folder
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ru.portal.app.ios
+        INFOPLIST_FILE: PortalIOS/Info.plist
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: ""
+  PortalIOSTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: PortalIOSTests
+    dependencies:
+      - target: PortalIOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ru.portal.app.ios.tests
+schemes:
+  PortalIOS:
+    build:
+      targets:
+        PortalIOS: all
+        PortalIOSTests: [test]
+    test:
+      targets:
+        - PortalIOSTests

@@ -1,0 +1,329 @@
+import Foundation
+import UIKit
+import WebKit
+
+final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
+    static let handlerName = "portalNative"
+    static let allowedExternalHosts: Set<String> = ["seller.ozon.ru", "seller.wildberries.ru"]
+    weak var webView: WKWebView?
+
+    private let defaults = UserDefaults.standard
+    private var userContentController: WKUserContentController?
+
+    private var defaultServer: String {
+        (Bundle.main.object(forInfoDictionaryKey: "PORTALDefaultAPIURL") as? String) ?? "https://portal.invalid"
+    }
+
+    private var serverURL: String {
+        let saved = defaults.string(forKey: "portal_server_url") ?? ""
+        return Self.isValidServerURL(saved) ? saved : defaultServer
+    }
+
+    static func isValidServerURL(_ value: String) -> Bool {
+        guard let components = URLComponents(string: value.trimmingCharacters(in: .whitespacesAndNewlines)),
+              ["http", "https"].contains(components.scheme?.lowercased() ?? ""),
+              components.host != nil, components.user == nil, components.password == nil,
+              components.query == nil, components.fragment == nil else { return false }
+        return components.path.isEmpty || components.path == "/"
+    }
+    static func isAllowedExternalURL(_ url: URL) -> Bool {
+        guard url.scheme?.lowercased() == "https",
+              let host = url.host?.lowercased(),
+              allowedExternalHosts.contains(host),
+              url.user == nil, url.password == nil,
+              url.port == nil || url.port == 443 else { return false }
+        return true
+    }
+
+    private static func jsonString(_ value: String) -> String {
+        let data = try! JSONEncoder().encode(value)
+        return String(data: data, encoding: .utf8)!
+    }
+
+    private static func jsonObjectString(_ object: [String: Any]) -> String {
+        guard JSONSerialization.isValidJSONObject(object),
+              let data = try? JSONSerialization.data(withJSONObject: object),
+              let value = String(data: data, encoding: .utf8) else { return "{}" }
+        return value
+    }
+
+    private var metadata: [String: Any] {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let version = info["CFBundleShortVersionString"] as? String ?? "0"
+        let build = info["CFBundleVersion"] as? String ?? "0"
+        return [
+            "applicationId": Bundle.main.bundleIdentifier ?? "ru.portal.app.ios",
+            "versionName": version,
+            "versionCode": Int(build) ?? 0,
+            "buildNumber": info["PORTALBuildNumber"] as? String ?? version,
+            "buildDate": info["PORTALBuildDate"] as? String ?? "",
+            "channel": info["PORTALReleaseChannel"] as? String ?? "development",
+            "updatesConfigured": true,
+            "platform": "ios"
+        ]
+    }
+    private func bootstrapScript() -> String {
+        let metadataJSON = Self.jsonObjectString(metadata)
+        let metadataLiteral = Self.jsonString(metadataJSON)
+        let serverLiteral = Self.jsonString(serverURL)
+        let buildLiteral = Self.jsonString("PORTAL iOS · Build \(metadata["versionName"] ?? "0")")
+
+        return """
+        (function(){
+          const native = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.\(Self.handlerName);
+          if (!native) return;
+          let server = \(serverLiteral);
+          let cacheCompany = '';
+          const metadata = \(metadataLiteral);
+          const send = (action, payload) => native.postMessage(Object.assign({action:action}, payload || {}));
+          const validServer = value => {
+            try {
+              const u = new URL(String(value || '').trim());
+              return (u.protocol === 'http:' || u.protocol === 'https:') &&
+                !u.username && !u.password && !u.search && !u.hash && (u.pathname === '/' || u.pathname === '');
+            } catch { return false; }
+          };
+          window.PortalNative = {
+            getBuild: () => \(buildLiteral),
+            getAppMetadata: () => metadata,
+            getServerUrl: () => server,
+            setServerUrl: value => {
+              const next = String(value || '').trim().replace(/[/]+$/, '');
+              if (!validServer(next)) return false;
+              server = next; send('setServerUrl', {value:next}); return true;
+            },
+            setCacheCompany: value => {
+              const next = String(value || '');
+              cacheCompany = /^[1-9][0-9]{0,9}$/.test(next) ? next : '';
+              send('setCacheCompany', {value:cacheCompany}); return !!cacheCompany;
+            },
+            clearCompanyCache: () => true,
+            requestAsync: (id, method, path, body, token, company) =>
+              send('requestAsync', {id:String(id), method:String(method||'GET'), path:String(path||''), body:String(body||''), token:String(token||''), company:String(company||'')}),
+            request: () => JSON.stringify({ok:false,httpStatus:0,error:'Используйте requestAsync'}),
+            requestForCompany: () => JSON.stringify({ok:false,httpStatus:0,error:'Используйте requestAsync'}),
+            checkUpdates: id => send('checkUpdates', {id:String(id)}),
+            downloadAndInstallUpdate: (id, manifest) => send('installUpdate', {id:String(id), manifest:String(manifest||'')}),
+            saveBase64FileAsync: (id, name, mime, b64) =>
+              send('saveFile', {id:String(id), name:String(name||''), mime:String(mime||''), b64:String(b64||'')}),
+            shareBase64FileAsync: (id, name, mime, b64, recipient, subject, message) =>
+              send('shareFile', {id:String(id), name:String(name||''), mime:String(mime||''), b64:String(b64||''), recipient:String(recipient||''), subject:String(subject||''), message:String(message||'')})
+          };
+          window.__PORTAL_IOS__ = true;
+          document.documentElement.classList.add('ios-client');
+        })();
+        """
+    }
+
+    func install(into controller: WKUserContentController) {
+        userContentController = controller
+        controller.add(self, name: Self.handlerName)
+        controller.addUserScript(WKUserScript(source: bootstrapScript(), injectionTime: .atDocumentStart, forMainFrameOnly: true))
+    }
+
+    func detach() {
+        userContentController?.removeScriptMessageHandler(forName: Self.handlerName)
+        userContentController = nil
+        webView = nil
+    }
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.name == Self.handlerName,
+              let payload = message.body as? [String: Any],
+              let action = payload["action"] as? String else { return }
+
+        switch action {
+        case "setServerUrl":
+            if let value = payload["value"] as? String, Self.isValidServerURL(value) {
+                defaults.set(value, forKey: "portal_server_url")
+            }
+        case "requestAsync":
+            request(payload)
+        case "checkUpdates":
+            deliver(id: payload["id"] as? String, object: [
+                "ok": true, "configured": false, "storeManaged": true, "platform": "ios"
+            ])
+        case "installUpdate":
+            deliver(id: payload["id"] as? String, object: [
+                "ok": false, "errorCode": "app_store_managed",
+                "error": "Обновления iPhone устанавливаются через App Store по ссылке PORTAL."
+            ])
+        case "saveFile":
+            saveFile(payload)
+        case "shareFile":
+            shareFile(payload)
+        default:
+            break
+        }
+    }
+
+    private func deliver(id: String?, object: [String: Any]) {
+        guard let id, let webView else { return }
+        let raw = Self.jsonObjectString(object)
+        let script = "window.PortalBridgeResult(\(Self.jsonString(id)),\(Self.jsonString(raw)))"
+        DispatchQueue.main.async {
+            webView.evaluateJavaScript(script)
+        }
+    }
+    private func request(_ payload: [String: Any]) {
+        guard let id = payload["id"] as? String,
+              let path = payload["path"] as? String,
+              path.hasPrefix("/api/"), !path.hasPrefix("//"),
+              !path.contains("\\"), !path.contains("#") else {
+            deliver(id: payload["id"] as? String, object: ["ok": false, "httpStatus": 0, "error": "Недопустимый API-запрос"])
+            return
+        }
+
+        let method = (payload["method"] as? String ?? "GET").uppercased()
+        guard ["GET", "POST"].contains(method),
+              let url = URL(string: serverURL + path) else {
+            deliver(id: id, object: ["ok": false, "httpStatus": 0, "error": "Недопустимый API-запрос"])
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.timeoutInterval = 20
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("iOS", forHTTPHeaderField: "X-Portal-Client")
+
+        let token = payload["token"] as? String ?? ""
+        if !token.isEmpty, token.count <= 8192, !token.contains("\n"), !token.contains("\r") {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        let company = payload["company"] as? String ?? ""
+        if !company.isEmpty {
+            guard let companyID = Int(company), companyID > 0 else {
+                deliver(id: id, object: ["ok": false, "httpStatus": 0, "error": "Недопустимый контекст компании"])
+                return
+            }
+            request.setValue(String(companyID), forHTTPHeaderField: "X-Portal-Company")
+        }
+
+        let body = payload["body"] as? String ?? ""
+        if method == "POST", !body.isEmpty {
+            guard body.utf8.count <= 24 * 1024 * 1024 else {
+                deliver(id: id, object: ["ok": false, "httpStatus": 0, "error": "Недопустимые данные запроса"])
+                return
+            }
+            request.httpBody = Data(body.utf8)
+            request.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
+        }
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            guard let self else { return }
+            if error != nil {
+                self.deliver(id: id, object: ["ok": false, "httpStatus": 0, "network": true, "error": "Не удалось связаться с сервером. Проверьте подключение."])
+                return
+            }
+
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            let limit = path.hasPrefix("/api/v3/document-file") ? 30 * 1024 * 1024 :
+                (path.hasPrefix("/api/v3/chat-file") ? 4 * 1024 * 1024 : 2 * 1024 * 1024)
+            guard let data, data.count <= limit,
+                  var object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+                self.deliver(id: id, object: ["ok": false, "httpStatus": status, "error": "Сервер вернул некорректный ответ"])
+                return
+            }
+            object["httpStatus"] = status
+            self.deliver(id: id, object: object)
+        }.resume()
+    }
+    private enum FileBridgeError: Error {
+        case invalid
+    }
+
+    private func decodedFile(_ payload: [String: Any]) throws -> (id: String, name: String, mime: String, data: Data) {
+        guard let id = payload["id"] as? String,
+              let rawName = payload["name"] as? String,
+              let mime = payload["mime"] as? String,
+              let encoded = payload["b64"] as? String,
+              encoded.count <= 28 * 1024 * 1024 else { throw FileBridgeError.invalid }
+
+        let allowed: [String: [String]] = [
+            "application/pdf": [".pdf"],
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
+            "application/json": [".json"],
+            "image/jpeg": [".jpg", ".jpeg"],
+            "image/png": [".png"],
+            "image/webp": [".webp"],
+            "text/plain": [".txt"]
+        ]
+        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard name.range(of: #"^[A-Za-z0-9._-]{1,120}$"#, options: .regularExpression) != nil,
+              let suffixes = allowed[mime],
+              suffixes.contains(where: { name.lowercased().hasSuffix($0) }),
+              let data = Data(base64Encoded: encoded, options: .ignoreUnknownCharacters),
+              !data.isEmpty, data.count <= 20 * 1024 * 1024 else { throw FileBridgeError.invalid }
+        return (id, name, mime, data)
+    }
+
+    private func saveFile(_ payload: [String: Any]) {
+        do {
+            let file = try decodedFile(payload)
+            let manager = FileManager.default
+            let documents = try manager.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+            let directory = documents.appendingPathComponent("PORTAL", isDirectory: true)
+            try manager.createDirectory(at: directory, withIntermediateDirectories: true)
+            let target = directory.appendingPathComponent(file.name)
+            try file.data.write(to: target, options: .atomic)
+            deliver(id: file.id, object: ["ok": true, "location": "Файлы/PORTAL/\(file.name)"])
+        } catch {
+            deliver(id: payload["id"] as? String, object: ["ok": false, "error": "Не удалось сохранить документ."])
+        }
+    }
+    private func shareFile(_ payload: [String: Any]) {
+        do {
+            let file = try decodedFile(payload)
+            let manager = FileManager.default
+            let directory = manager.temporaryDirectory.appendingPathComponent("PORTALShare", isDirectory: true)
+            try manager.createDirectory(at: directory, withIntermediateDirectories: true)
+            let target = directory.appendingPathComponent("\(UUID().uuidString)_\(file.name)")
+            try file.data.write(to: target, options: .atomic)
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let presenter = self.topViewController() else {
+                    self?.deliver(id: file.id, object: ["ok": false, "error": "Не удалось открыть системное меню отправки."])
+                    return
+                }
+                var items: [Any] = [target]
+                let message = (payload["message"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if !message.isEmpty { items.append(String(message.prefix(2000))) }
+                let controller = UIActivityViewController(activityItems: items, applicationActivities: nil)
+                let subject = (payload["subject"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if !subject.isEmpty { controller.setValue(String(subject.prefix(160)), forKey: "subject") }
+                controller.completionWithItemsHandler = { _, completed, _, _ in
+                    try? manager.removeItem(at: target)
+                    self.deliver(id: file.id, object: completed
+                        ? ["ok": true, "shared": true]
+                        : ["ok": false, "cancelled": true, "error": "Отправка отменена"])
+                }
+                presenter.present(controller, animated: true)
+            }
+        } catch {
+            deliver(id: payload["id"] as? String, object: ["ok": false, "error": "Не удалось подготовить документ."])
+        }
+    }
+
+    private func topViewController() -> UIViewController? {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        var controller = scenes.flatMap(\.windows).first(where: { $0.isKeyWindow })?.rootViewController
+        while let presented = controller?.presentedViewController { controller = presented }
+        return controller
+    }
+    func webView(_ webView: WKWebView,
+                 decidePolicyFor navigationAction: WKNavigationAction,
+                 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        guard let url = navigationAction.request.url else {
+            decisionHandler(.cancel)
+            return
+        }
+        if url.isFileURL || url.scheme == "about" {
+            decisionHandler(.allow)
+            return
+        }
+        if Self.isAllowedExternalURL(url) {
+            UIApplication.shared.open(url)
+        }
+        decisionHandler(.cancel)
+    }
+}

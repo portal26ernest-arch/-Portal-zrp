@@ -1133,18 +1133,18 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
         retry=self.request('/api/v3/payroll-settlements',self.tokens[1],payout_body,method='POST')['data']
         self.assertEqual(payout['id'],retry['id'])
         accountant=self.role_token('accountant')
-        accountant_payout=self.request('/api/v3/payroll-settlements',accountant,
+        self.request('/api/v3/payroll-settlements',accountant,
             dict(payout_body,amount='0.50',reason='Disposable PostgreSQL accountant role-flow',
-                 request_id='pg-settlement-accountant-once'),method='POST')['data']
-        self.assertEqual(accountant_payout['entry_type'],'payout')
+                 request_id='pg-settlement-accountant-denied'),method='POST',status=403)
+        self.request('/api/v3/payroll-settlements?payroll_period_id='+period['id'],accountant,status=403)
         totals=self.request('/api/v3/payroll-settlements?payroll_period_id='+period['id'],self.tokens[1])['data']['totals']
-        self.assertEqual((totals['accrued'],totals['paid'],totals['balance']),(400,150,250))
+        self.assertEqual((totals['accrued'],totals['paid'],totals['balance']),(400,100,300))
         self.request('/api/v3/payroll-settlements?payroll_period_id='+period['id'],self.tokens['company_1_packer'],status=403)
         self.request('/api/v3/payroll-settlements?payroll_period_id='+period['id'],self.tokens[2],status=400)
         with self.portal.tenants.company_scope(1),self.portal.db() as conn:
             repo=Repository(conn,1)
             self.assertEqual(repo.get('payroll_periods',period['id'])['snapshot'],snapshot_before)
-            self.assertEqual(conn.execute('SELECT COUNT(*),SUM(amount_minor),pg_typeof(amount_minor)::text FROM payroll_settlement_entries WHERE payroll_period_id=? GROUP BY pg_typeof(amount_minor)',(period['id'],)).fetchone()[:],(2,150,'bigint'))
+            self.assertEqual(conn.execute('SELECT COUNT(*),SUM(amount_minor),pg_typeof(amount_minor)::text FROM payroll_settlement_entries WHERE payroll_period_id=? GROUP BY pg_typeof(amount_minor)',(period['id'],)).fetchone()[:],(1,100,'bigint'))
 
     @unittest.skipUnless(_WEB_E2E,'Web browser gate only')
     def test_real_web_static_login_meta_and_company_scope_in_browser(self):

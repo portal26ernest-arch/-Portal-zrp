@@ -1079,7 +1079,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(dict(ok=True,ready=bool(repo.ready()),permissions=sorted(business_rights.effective(repo,self.request_user)) if repo.ready() else [],catalog=business_rights.public_catalog(),heartbeat_seconds=activity.configuration(repo)[0] if repo.ready() else None))
             if not repo.ready(): raise ValueError('Этап 3 ещё не подключён оператором к этой компании')
             if action=='company-access' and method=='GET':
-                service=Production(repo,self.request_user)
+                service=Production(repo,self.request_user);service.need_management_role()
                 if not ({'users.manage','company.settings'}&service.permissions):raise PermissionError('Недостаточно прав для настроек компании')
                 company=tenants.get_company(DB_PATH,repo.company_id)
                 active=conn.execute('SELECT COUNT(*) FROM app_users WHERE active=1').fetchone()[0]
@@ -1088,7 +1088,7 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError('Безопасные приглашения ещё не подключены оператором к этой компании')
             if action=='invitations':
                 import access_invites
-                service=Production(repo,self.request_user)
+                service=Production(repo,self.request_user);service.need_management_role()
                 service.need('users.manage')
                 if method=='GET':
                     query=parse_qs(urlparse(self.path).query)
@@ -1111,7 +1111,7 @@ class Handler(BaseHTTPRequestHandler):
                 conn.commit()
                 return self.send_json({'ok':True,'data':result})
             if action=='audit' and method=='GET':
-                service=Production(repo,self.request_user)
+                service=Production(repo,self.request_user);service.need_management_role()
                 service.need('users.manage')
                 query=parse_qs(urlparse(self.path).query)
                 def number(key,default,minimum,maximum):
