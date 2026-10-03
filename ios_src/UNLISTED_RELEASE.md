@@ -68,7 +68,7 @@ Unlisted release запрещён до выполнения всех пункт�
 - Apple signing configured without secrets in Git;
 - TestFlight physical-device smoke green;
 - privacy/App Store metadata complete;
-- app icon and final screenshots ready;
+- app icon and final screenshots ready; current 6.9-inch ru-RU set is generated from shared UI as JPEG 1290×2796 and validated by `validate_release_config.py`;
 - App Review passed;
 - Unlisted distribution approved by Apple;
 - final App Store link recorded in PORTAL master roadmap/release evidence.

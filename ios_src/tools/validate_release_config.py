@@ -15,6 +15,7 @@ PRIVACY = IOS / "PrivacyInfo.xcprivacy"
 ICON = IOS / "Assets.xcassets" / "AppIcon.appiconset" / "AppIcon.png"
 PROJECT = ROOT / "ios_src" / "project.yml"
 ASSETS = ROOT / "android_src" / "app" / "src" / "main" / "assets"
+SCREENSHOTS = ROOT / "ios_src" / "app_store" / "screenshots" / "ru-RU" / "6.9"
 
 def fail(message: str) -> None:
     raise SystemExit(f"IOS RELEASE CONFIG FAIL: {message}")
@@ -51,6 +52,43 @@ def validate_png() -> None:
         fail("AppIcon.png must be exactly 1024x1024")
     if bit_depth != 8 or color_type in (4, 6):
         fail("AppIcon.png must be 8-bit RGB without alpha")
+
+def jpeg_size(path: pathlib.Path) -> tuple[int, int]:
+    raw = path.read_bytes()
+    if raw[:2] != b"\xff\xd8":
+        fail(f"{path.name} is not a JPEG")
+    index = 2
+    while index + 9 < len(raw):
+        if raw[index] != 0xFF:
+            index += 1
+            continue
+        marker = raw[index + 1]
+        index += 2
+        if marker in (0xD8, 0xD9):
+            continue
+        if index + 2 > len(raw):
+            break
+        length = int.from_bytes(raw[index:index + 2], "big")
+        if length < 2 or index + length > len(raw):
+            break
+        if marker in {0xC0,0xC1,0xC2,0xC3,0xC5,0xC6,0xC7,0xC9,0xCA,0xCB,0xCD,0xCE,0xCF}:
+            height = int.from_bytes(raw[index + 3:index + 5], "big")
+            width = int.from_bytes(raw[index + 5:index + 7], "big")
+            return width, height
+        index += length
+    fail(f"{path.name} has no JPEG size marker")
+    raise AssertionError
+
+
+def validate_screenshots() -> None:
+    required = ["01-login.jpg", "02-dashboard.jpg", "03-sections.jpg", "04-documents.jpg"]
+    for name in required:
+        image = SCREENSHOTS / name
+        if not image.is_file():
+            fail(f"App Store screenshot is missing: {name}")
+        if jpeg_size(image) != (1290, 2796):
+            fail(f"{name} must be 1290x2796 for iPhone 6.9-inch")
+
 
 def validate_privacy() -> None:
     with PRIVACY.open("rb") as handle:
@@ -96,6 +134,7 @@ def main() -> None:
 
     validate_png()
     validate_privacy()
+    validate_screenshots()
 
     for name in ("privacy.html", "support.html"):
         if not (ASSETS / name).is_file():

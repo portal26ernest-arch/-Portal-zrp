@@ -50,3 +50,18 @@ There is no public self-registration. Access is issued by the company administra
 The app uses the PORTAL server over HTTPS and does not use advertising tracking.
 Provide the dedicated App Review username/PIN in the App Review credentials fields before submission.
 In Review Notes state explicitly that the app is intended for Unlisted App distribution.
+
+## Screenshots
+
+Готовый набор для iPhone 6.9" (portrait, ru-RU):
+- 01-login.jpg — вход в PORTAL;
+- 02-dashboard.jpg — рабочая главная/показатели;
+- 03-sections.jpg — доступные разделы;
+- 04-documents.jpg — документы.
+
+Все файлы: 1290×2796, JPEG/RGB без alpha.
+Они генерируются из того же shared UI с демонстрационными данными
+командой: node ios_src/tools/generate_app_store_screenshots.cjs
+
+Реальные production-данные и персональные сведения в screenshots не используются.
+Перед финальным App Review повторно визуально проверить screenshots против текущего release UI.
