@@ -371,3 +371,12 @@ Current roadmap counts are **93 ✅ / 15 🟡 / 6 ⏳ / 12 🔌**. Current-SHA S
 - Не закрытые внешние gate после программной проверки: собственный production domain/DNS/HTTPS, финальный authenticated device smoke и формальное объявление VPS/PostgreSQL единственным source of truth после успешного cutover.
 
 - Release CI hardening: `main` добавлен в push-триггеры `server-tests.yml` и `android-ui-tests.yml`, чтобы официальный main всегда проверял server isolation и Android UI, а не полагался только на проверки release-ветки.
+
+## N. Desktop 4.6 automatic update check — 2026-10-03
+
+- Desktop version advanced to `4.6.0` / build `46` on a clean branch from current `main`.
+- After the first successful WebView navigation in each process, Desktop performs one background update check. If a newer verified release exists, the user receives the existing safe install confirmation; silent installation is not enabled.
+- Manual «Обновить PORTAL» remains available and reports current/error state; startup network errors stay non-blocking and silent.
+- Local focused Desktop/Web adapter tests: 5/5 passed. Full local Node discovery: 37 passed, 0 failed, 2 skipped only because Playwright is unavailable in this isolated worktree.
+- No PostgreSQL, production data, tenant scope, cache format or server API contract was changed by this checkpoint.
+- Exact NEXT: require green Windows Desktop build plus Android UI/master-control CI, then publish the verified Desktop release and install it on the authorized test PC.
