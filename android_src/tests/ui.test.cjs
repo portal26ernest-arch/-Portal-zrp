@@ -135,6 +135,14 @@ test('desktop web branding uses the PORTAL blue shell',()=>{
   assert.match(css,/\.web-client \.top\{background:var\(--portal-blue\)/);
   assert.match(css,/@media\(min-width:900px\)/);
 });
+test('modal sheets do not dismiss on backdrop, Escape or Back',()=>{
+  const index=fs.readFileSync(path.join(assets,'index.html'),'utf8');
+  const app=fs.readFileSync(path.join(assets,'app.js'),'utf8');
+  assert.match(index,/id="sheetBackdrop"[\s\S]*data-action="closeSheet"[^>]*aria-label="Закрыть"/);
+  assert.match(app,/window\.portalBack=\(\)=>\{if\(!\$\('sheetBackdrop'\)\.classList\.contains\('hidden'\)\)return true;/);
+  assert.match(app,/if\(event\.key==='Escape'\)\{event\.preventDefault\(\);return;\}/);
+  assert.doesNotMatch(app,/sheetBackdrop'\)\.addEventListener\('click'/);
+});
 
 // Emulate only the Java bridge transport; run the actual shipped UI and events.
 async function fixture(browser,role='manager',viewport={width:390,height:844},stage3=false,web=false){
