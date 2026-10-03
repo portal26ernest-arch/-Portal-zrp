@@ -14,7 +14,7 @@ namespace Portal.Desktop;
 
 public partial class MainWindow : Window
 {
-    private const int CurrentBuild = 47;
+    private const int CurrentBuild = 48;
     private const long MaxInstallerBytes = 250L * 1024 * 1024;
     private const string GithubRepository = "portal26ernest-arch/-Portal-zrp";
     private const string WebViewCompatibilityArguments = "--disable-gpu --disable-gpu-compositing";
@@ -198,6 +198,7 @@ public partial class MainWindow : Window
                 _pendingPersistOrigin = null;
             }
             await ApplyDesktopExperienceAsync();
+            await ApplyDesktopMetadataAsync();
             _ = CheckForUpdateAsync(interactive: false);
         };
         Browser.CoreWebView2.ProcessFailed += (_, _) =>
@@ -264,6 +265,29 @@ public partial class MainWindow : Window
 })()
 """;
         await Browser.ExecuteScriptAsync(sidebarScript);
+    }
+
+    private async Task ApplyDesktopMetadataAsync()
+    {
+        if (Browser.CoreWebView2 is null || _cacheBridge is null) return;
+        var metadata = _cacheBridge.GetAppMetadata();
+        if (string.IsNullOrWhiteSpace(metadata) || metadata == "{}") return;
+        var rawJson = JsonSerializer.Serialize(metadata);
+        var script = """
+(() => {
+  try {
+    const raw = __PORTAL_METADATA__;
+    if (window.PortalNative) window.PortalNative.getAppMetadata = () => raw;
+    const parsed = JSON.parse(raw);
+    if (typeof S !== 'undefined') S.metadata = parsed;
+    const label = document.getElementById('buildLabel');
+    if (label && parsed.versionName) label.textContent = parsed.versionName + ' · рабочая сборка';
+    if (typeof S !== 'undefined' && typeof screens !== 'undefined' && S.page === 'about' && typeof screens.about === 'function') screens.about();
+    return true;
+  } catch { return false; }
+})()
+""".Replace("__PORTAL_METADATA__", rawJson);
+        await Browser.ExecuteScriptAsync(script);
     }
 
     private void ConfigureDesktopCache(string origin)
@@ -445,7 +469,7 @@ public partial class MainWindow : Window
     {
         using var request = new HttpRequestMessage(HttpMethod.Get,
             $"https://api.github.com/repos/{GithubRepository}/releases?per_page=50");
-        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/4.7.0");
+        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/4.8.0");
         request.Headers.Accept.ParseAdd("application/vnd.github+json");
         using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();

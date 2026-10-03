@@ -390,3 +390,13 @@ Current roadmap counts are **93 ✅ / 15 🟡 / 6 ⏳ / 12 🔌**. Current-SHA S
 - Local focused Desktop/Web adapter tests: 6/6 passed. Full local Node discovery: 38 passed, 0 failed, 2 skipped only because Playwright is unavailable in this isolated worktree.
 - No PostgreSQL, tenant data, cache content, permissions or financial logic changed.
 - Exact NEXT: require green Windows/Desktop and Android UI CI, publish Desktop 4.7, deploy the compatible `web_adapter.js`, install on the authorized PC and verify file/assembly metadata.
+
+## P. Desktop 4.8 metadata injection fallback — 2026-10-03
+
+- Desktop version advanced to `4.8.0` / build `48` as a resilience follow-up to 4.7.
+- After every successful Desktop page navigation, the native shell now injects its verified metadata into the loaded shared UI and refreshes the About screen when it is open.
+- This makes Desktop version/build/date display independent of whether the VPS has already received the newer `web_adapter.js`; server-side adapter rollout remains compatible but is no longer required for correctness.
+- The injected payload is produced by the same native `GetAppMetadata()` method and is JSON-serialized before JavaScript execution; no credentials, tenant data or secrets are included.
+- Local focused Desktop/Web adapter tests: 6/6 passed; diff check passed.
+- No PostgreSQL, API permission, cache scope, financial logic or tenant data changed.
+- Exact NEXT: require green Windows/Desktop and Android UI CI, publish Desktop 4.8, install on the authorized PC, verify file version and embedded build date, then confirm the About screen shows the metadata.

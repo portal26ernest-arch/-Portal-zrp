@@ -7,10 +7,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>PORTAL.Desktop</AssemblyName>
     <RootNamespace>Portal.Desktop</RootNamespace>
-    <Version>4.7.0</Version>
-    <FileVersion>4.7.0.47</FileVersion>
-    <AssemblyVersion>4.7.0.0</AssemblyVersion>
-    <InformationalVersion>4.7-desktop-metadata</InformationalVersion>
+    <Version>4.8.0</Version>
+    <FileVersion>4.8.0.48</FileVersion>
+    <AssemblyVersion>4.8.0.0</AssemblyVersion>
+    <InformationalVersion>4.8-desktop-metadata-injection</InformationalVersion>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <PublishSingleFile>false</PublishSingleFile>
