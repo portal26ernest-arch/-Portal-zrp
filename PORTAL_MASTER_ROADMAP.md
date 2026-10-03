@@ -410,3 +410,14 @@ Current roadmap counts are **93 ✅ / 15 🟡 / 6 ⏳ / 12 🔌**. Current-SHA S
 - Local focused Desktop/Web adapter tests: 6/6 passed; diff check passed.
 - No PostgreSQL, tenant data, permissions, payroll, invoices or cache scope changed.
 - Exact NEXT: require green Windows Desktop, Android UI/APK and master-control CI; publish Desktop 4.9, install on the authorized PC and verify embedded build metadata.
+
+## R. Desktop 5.0 visible metadata overlay — 2026-10-03
+
+- Desktop version advanced to `5.0.0` / build `50` after real-PC verification showed the 4.9 preload bridge still did not visibly populate metadata.
+- Desktop now applies version/build/date directly to the rendered DOM after navigation and installs a MutationObserver so the values are re-applied whenever the shared UI renders or re-renders the About screen.
+- The login screen `buildLabel` is also populated (`version · build · date`), allowing verification without credentials.
+- The About screen `.info-grid` is patched with version, build and build date, and the channel badge is shown as «Стабильная версия» for release builds.
+- This path is independent of server `web_adapter.js`, app lexical state and Android metadata timing. Existing native/preload bridges remain compatible as fallbacks.
+- Local focused Desktop/Web adapter tests: 6/6 passed; diff check passed.
+- No PostgreSQL, tenant data, permissions, payroll, invoices or cache scope changed.
+- Exact NEXT: require green Windows Desktop, Android UI/APK and master-control CI; publish Desktop 5.0, install on the authorized PC and verify the visible login build label by screenshot before closing the issue.
