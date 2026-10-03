@@ -33,19 +33,11 @@ globalThis.PortalCore = (() => {
     if (company?.module_toggles?.[page] === false) return false;
     if (!user || !roles[user.role]) return false;
     if (Array.isArray(user.permissions) && (user.role!=='platform_owner'||company)) {
-      if(user.role==='packer'){
-        if(['dashboard','sections'].includes(page))return true;
-        if(page==='work')return !!user.employee_id && ['work.write','tasks.read'].every(p=>user.permissions.includes(p));
-        if(page==='payroll')return !!user.employee_id && user.permissions.includes('payroll.own');
-        if(page==='materials')return user.permissions.includes('materials.read');
-        if(page==='jobs')return user.permissions.includes('tasks.read');
-        return false;
-      }
       if(page==='excelImport'){
         const needed=['imports.manage','users.manage','clients.manage','rates.employee','rates.client','company.settings','documents.manage','documents.read'];
         return ['admin','director','platform_owner'].includes(user.role)&&needed.every(p=>user.permissions.includes(p));
       }
-      const map={work:['work.write','tasks.read'],payroll:['payroll.own'],payrollPeriods:['payroll.all','payroll.close'],teamChat:['chat.read'],organizer:['organizer.read'],clients:['clients.read'],catalogue:['clients.manage'],materials:['materials.read'],invoices:['invoices.read'],users:['users.manage'],jobs:['tasks.read'],batches:['batches.receive','tasks.read','work.write'],permissions:['users.manage'],tariffs:['rates.employee','rates.client'],radar:['finance.read'],expenses:['expenses.read','expenses.manage'],analytics:['analytics.read','work.write'],documents:['documents.read','documents.manage'],reports:['finance.read','analytics.read'],control:['company.settings'],news:['chat.read','clients.read','tasks.read'],wms:['tasks.read','batches.receive','work.write'],notifications:['tasks.read','invoices.read','materials.read','payroll.own']};
+      const map={work:['work.write','tasks.read'],payroll:['payroll.own'],payrollPeriods:['payroll.all','payroll.close'],teamChat:['chat.read'],organizer:['organizer.read'],clients:['clients.read'],catalogue:['clients.manage'],materials:['materials.read'],invoices:['invoices.read'],users:['users.manage'],jobs:['tasks.read'],batches:['batches.receive'],permissions:['users.manage'],tariffs:['rates.employee','rates.client'],radar:['finance.read'],expenses:['expenses.read','expenses.manage'],analytics:['analytics.read'],documents:['documents.read','documents.manage'],reports:['finance.read','analytics.read'],control:['company.settings'],news:['chat.read','clients.read'],wms:['batches.receive'],notifications:['organizer.read','invoices.read','chat.read']};
       if(map[page])return map[page].some(p=>user.permissions.includes(p));
       if(['dashboard','sections'].includes(page))return true;
     }
