@@ -160,13 +160,17 @@ public class MainActivity extends Activity {
         private final Context context;
         private final SharedPreferences prefs;
         private final WebView webView;
+        private final PortalLocalCache localCache;
         private final ExecutorService executor = Executors.newFixedThreadPool(3);
         private volatile boolean closed;
+        private volatile String cacheCompany = "";
+        private static final long CACHE_MAX_AGE_MS = 30L * 24 * 60 * 60 * 1000;
         private static final String DEFAULT_URL = BuildConfig.DEFAULT_API_URL;
 
         PortalBridge(Context context, WebView webView) {
             this.context = context;
             this.webView = webView;
+            this.localCache = new PortalLocalCache(context);
             prefs = context.getSharedPreferences("portal_settings", Context.MODE_PRIVATE);
         }
 
@@ -197,7 +201,110 @@ public class MainActivity extends Activity {
             // Capture the server now, before queuing, so changing settings never
             // sends an old credential to the newly selected server.
             String base = getServerUrl();
-            executor.execute(() -> deliver(id, requestAt(base, method, path, body, token, company)));
+            String verb = method == null ? "GET" : method.toUpperCase(Locale.ROOT);
+            String localCompany = cacheCompany;
+            executor.execute(() -> {
+                boolean cacheable = cacheableGet(verb, path, token, localCompany);
+                if (cacheable) {
+                    String cached = localCache.read(base, localCompany, path);
+                    String ready = cachedResponse(cached);
+                    if (ready != null) {
+                        deliver(id, ready);
+                        String fresh = requestAt(base, verb, path, body, token, company);
+                        if (responseOk(fresh)) localCache.write(base, localCompany, path, fresh);
+                        return;
+                    }
+                }
+                String result = requestAt(base, verb, path, body, token, company);
+                if (cacheable && responseOk(result)) localCache.write(base, localCompany, path, result);
+                if ("POST".equals(verb) && responseOk(result) && !localCompany.isEmpty() && invalidatesCache(path))
+                    localCache.clearCompany(base, localCompany);
+                deliver(id, result);
+            });
+        }
+
+        @JavascriptInterface
+        public boolean setCacheCompany(String value) {
+            String next = value == null ? "" : value.trim();
+            cacheCompany = next.matches("[1-9][0-9]{0,9}") ? next : "";
+            return !cacheCompany.isEmpty();
+        }
+
+        @JavascriptInterface
+        public boolean clearCompanyCache() {
+            String company = cacheCompany;
+            return company.isEmpty() || localCache.clearCompany(getServerUrl(), company);
+        }
+
+        private boolean cacheableGet(String method, String path, String token, String company) {
+            if (!"GET".equals(method) || token == null || token.isEmpty() || company == null || company.isEmpty() || path == null) return false;
+            return path.matches("/api/company")
+                    || path.matches("/api/(?:admin/)?clients(?:\\?.*)?")
+                    || path.matches("/api/clients/[0-9]+(?:/operations)?(?:\\?.*)?")
+                    || path.matches("/api/admin/clients/[0-9]+/operations(?:\\?.*)?")
+                    || path.matches("/api/(?:users|materials|jobs)(?:\\?.*)?")
+                    || path.matches("/api/v3/(?:catalog|products|client-requisites|client-name-history|tariff-history|today|tasks|timers|batches|invoices|receivables|finance|analytics|payroll-periods|documents|settings|permissions|chat-users)(?:\\?.*)?");
+        }
+
+        private boolean invalidatesCache(String path) {
+            if (path == null) return false;
+            return path.matches(".*/(?:clients?|users?|materials?|operations?|tariffs?|products?|invitations?|company-access)(?:/|\\?|$).*");
+        }
+
+        private String cachedResponse(String envelopeJson) {
+            if (envelopeJson == null || envelopeJson.isEmpty()) return null;
+            try {
+                JSONObject envelope = new JSONObject(envelopeJson);
+                long savedAt = envelope.optLong("savedAt", 0);
+                JSONObject data = envelope.optJSONObject("data");
+                if (envelope.optInt("v", 0) != 1 || savedAt <= 0 || data == null ||
+                        System.currentTimeMillis() - savedAt > CACHE_MAX_AGE_MS) return null;
+                JSONObject copy = new JSONObject(data.toString());
+                copy.put("cached", true);
+                return copy.toString();
+            } catch (Exception ignored) { return null; }
+        }
+
+        private boolean responseOk(String json) {
+            try { return new JSONObject(json).optBoolean("ok", false); }
+            catch (Exception ignored) { return false; }
+        }
+
+
+        @JavascriptInterface
+        public boolean queueMutation(String json) {
+            try {
+                String company = cacheCompany;
+                if (company.isEmpty() || json == null || json.length() > 512 * 1024) return false;
+                JSONObject row = new JSONObject(json);
+                String requestId = row.optString("request_id", "");
+                String method = row.optString("method", "");
+                String path = row.optString("path", "");
+                JSONObject body = row.optJSONObject("body");
+                if (!"POST".equals(method) || !"/api/v3/work".equals(path) || body == null ||
+                        !requestId.matches("[0-9a-fA-F-]{36}") || !requestId.equals(body.optString("request_id", ""))) return false;
+                return localCache.enqueueMutation(getServerUrl(), company, requestId, row.toString());
+            } catch (Exception ignored) {
+                return false;
+            }
+        }
+
+        @JavascriptInterface
+        public String pendingMutations() {
+            String company = cacheCompany;
+            return company.isEmpty() ? "[]" : localCache.pendingMutations(getServerUrl(), company);
+        }
+
+        @JavascriptInterface
+        public boolean removeMutation(String requestId) {
+            String company = cacheCompany;
+            return !company.isEmpty() && localCache.removeMutation(getServerUrl(), company, requestId);
+        }
+
+        @JavascriptInterface
+        public int pendingMutationCount() {
+            String company = cacheCompany;
+            return company.isEmpty() ? 0 : localCache.pendingMutationCount(getServerUrl(), company);
         }
 
         @JavascriptInterface

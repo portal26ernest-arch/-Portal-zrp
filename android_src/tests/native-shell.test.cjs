@@ -3,6 +3,7 @@ const path=require('node:path');
 const assert=require('node:assert/strict');
 
 const main=fs.readFileSync(path.join(__dirname,'../app/src/main/java/ru/portal/app/MainActivity.java'),'utf8');
+const localCache=fs.readFileSync(path.join(__dirname,'../app/src/main/java/ru/portal/app/PortalLocalCache.java'),'utf8');
 assert.match(main,/SYSTEM_UI_FLAG_IMMERSIVE_STICKY/);
 assert.match(main,/SYSTEM_UI_FLAG_HIDE_NAVIGATION/);
 assert.match(main,/SYSTEM_UI_FLAG_FULLSCREEN/);
@@ -64,6 +65,16 @@ assert.doesNotMatch(main,/github-releases\.githubusercontent\.com|s3\.amazonaws\
 assert.doesNotMatch(main,/Uri\.fromFile/);
 assert.doesNotMatch(main,/api\.telegram\.org|BOT_TOKEN|OWNER_TELEGRAM_ID/);
 assert.doesNotMatch(main,/Uri\.fromFile|"file:\/\/"/);
+assert.match(main,/CACHE_MAX_AGE_MS = 30L \* 24 \* 60 \* 60 \* 1000/);
+assert.match(main,/setCacheCompany/);
+assert.match(main,/queueMutation/);
+assert.match(main,/pendingMutations/);
+assert.match(main,/removeMutation/);
+assert.match(localCache,/AndroidKeyStore/);
+assert.match(localCache,/AES\/GCM\/NoPadding/);
+assert.match(localCache,/company-cache/);
+assert.match(localCache,/company-outbox/);
+assert.match(localCache,/MAX_OUTBOX_ITEMS = 1000/);
 const manifest=fs.readFileSync(path.join(__dirname,'../app/src/main/AndroidManifest.xml'),'utf8');
 assert.match(manifest,/androidx\.core\.content\.FileProvider/);
 assert.match(manifest,/android\.permission\.REQUEST_INSTALL_PACKAGES/);

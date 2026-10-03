@@ -187,8 +187,9 @@ class Production:
         if not op: raise ValueError('Выберите существующую активную операцию клиента')
         return op
 
-    def tariff(self,operation_id,at=None):
-        versions=[t for t in self.r.list('tariffs') if t['operation_id']==operation_id and t['effective_from']<=(at or self.clock())]
+    def tariff(self,operation_id,at=None,tariff_rows=None):
+        source_rows=self.r.list('tariffs') if tariff_rows is None else tariff_rows
+        versions=[t for t in source_rows if t['operation_id']==operation_id and t['effective_from']<=(at or self.clock())]
         if not versions: raise ValueError('Для операции требуется действующий тариф')
         versions.sort(key=lambda t:(t['effective_from'],t['created_at'],t['id']))
         current=dict(versions[-1],sources={})
@@ -1710,10 +1711,12 @@ class Production:
             return [dict(u,permissions=sorted(rights.effective(self.r,u))) for u in self.r.catalog('users')]
         if action=='catalog':
             operations=[]
+            tariff_rows=self.r.list('tariffs')
+            tariff_at=self.clock()
             for op in self.r.catalog('operations'):
                 if not op['active'] or not self.visible(op['client_id']):continue
                 item={k:op[k] for k in ('id','client_id','name')}
-                try:t=self.tariff(op['id'])
+                try:t=self.tariff(op['id'],tariff_at,tariff_rows)
                 except ValueError:t={}
                 if {'rates.employee','payroll.own'}&self.permissions:item['employee_rate']=t.get('employee_rate')
                 if {'rates.client','finance.read'}&self.permissions:item['client_rate']=t.get('client_rate')
@@ -1727,12 +1730,18 @@ class Production:
             return [p for p in self.r.list('products') if self.visible(p['client_id'])]
         if action=='tariff-history':
             if not ({'rates.employee','rates.client','finance.read','payroll.own'}&self.permissions):raise PermissionError('Нет доступа к истории тарифов')
-            try:operation_id=int(params.get('operation_id',[''])[0])
-            except (TypeError,ValueError):raise ValueError('Укажите операцию тарифа')
-            op=next((item for item in self.r.catalog('operations') if item['id']==operation_id),None)
-            if not op:raise ValueError('Операция не найдена')
-            self.client(op['client_id'])
-            rows=sorted((dict(t) for t in self.r.list('tariffs') if t['operation_id']==operation_id),key=lambda t:(t['effective_from'],t['created_at'],t['id']),reverse=True)
+            raw=params.get('operation_id',[''])[0]
+            catalog=self.r.catalog('operations')
+            if raw not in ('',None):
+                try:operation_id=int(raw)
+                except (TypeError,ValueError):raise ValueError('Укажите операцию тарифа')
+                op=next((item for item in catalog if item['id']==operation_id),None)
+                if not op:raise ValueError('Операция не найдена')
+                self.client(op['client_id'])
+                visible_operations={operation_id}
+            else:
+                visible_operations={item['id'] for item in catalog if item.get('active') and self.visible(item['client_id'])}
+            rows=sorted((dict(t) for t in self.r.list('tariffs') if t['operation_id'] in visible_operations),key=lambda t:(t['effective_from'],t['created_at'],t['id']),reverse=True)
             for row in rows:
                 if 'rates.employee' not in self.permissions:row.pop('employee_rate',None)
                 if 'rates.client' not in self.permissions:row.pop('client_rate',None)

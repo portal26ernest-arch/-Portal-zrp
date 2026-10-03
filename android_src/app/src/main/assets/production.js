@@ -1,17 +1,63 @@
 'use strict';
 // Progressive activation: companies without the explicit migration keep Stage 2.
+const LOCAL_SYNC_INTERVAL_MS=10*60*1000;
+let localSyncBusy=false;
 async function configureProduction(){
   const r=await api('GET','/api/v3/meta',undefined,{global:true});
   S.stage3=!!r.ready;
-  if(S.stage3){S.me.permissions=r.permissions;S.permissionCatalog=r.catalog;S.heartbeatSeconds=r.heartbeat_seconds||60;clearInterval(S.heartbeatTimer);S.heartbeatTimer=setInterval(()=>{if(S.token&&!document.hidden)api('POST','/api/v3/heartbeat',{}, {global:true}).catch(()=>{});},S.heartbeatSeconds*1000);startOrganizerReminderWatch();}
+  if(S.stage3){S.me.permissions=r.permissions;S.permissionCatalog=r.catalog;S.heartbeatSeconds=r.heartbeat_seconds||60;clearInterval(S.heartbeatTimer);S.heartbeatTimer=setInterval(()=>{if(S.token&&!document.hidden)api('POST','/api/v3/heartbeat',{}, {global:true}).catch(()=>{});},S.heartbeatSeconds*1000);startOrganizerReminderWatch();startLocalSyncWatch();}
 }
 const allowed=permission=>S.me?.permissions?.includes(permission);
 const rub=cents=>money(Number(cents||0)/100);
 const utc=value=>value?new Date(value).toISOString().slice(0,-1):null;
 const productionGet=async path=>(await api('GET','/api/v3/'+path)).data;
+function canUseLocalOutbox(){return !isOwner()&&S.company&&typeof window.PortalNative?.queueMutation==='function'&&typeof window.PortalNative?.pendingMutations==='function'&&typeof window.PortalNative?.removeMutation==='function';}
+function queueLocalWork(body,requestId){
+  if(!canUseLocalOutbox())return false;
+  const row={v:1,method:'POST',path:'/api/v3/work',request_id:requestId,queued_at:new Date().toISOString(),body};
+  try{return !!PortalNative.queueMutation(JSON.stringify(row));}catch{return false;}
+}
+async function syncLocalOutbox(){
+  if(localSyncBusy||!canUseLocalOutbox()||!S.token||navigator.onLine===false)return;
+  localSyncBusy=true;
+  try{
+    let raw=[];try{raw=JSON.parse(PortalNative.pendingMutations()||'[]');}catch{return;}
+    if(!Array.isArray(raw)||!raw.length)return;
+    for(const value of raw){
+      let row=value;try{if(typeof row==='string')row=JSON.parse(row);}catch{continue;}
+      if(!row||row.method!=='POST'||row.path!=='/api/v3/work'||!row.body||row.body.request_id!==row.request_id)continue;
+      try{
+        await api('POST',row.path,row.body,{global:true});
+        PortalNative.removeMutation(String(row.request_id));
+        S.lastLocalSync=Date.now();
+      }catch(error){
+        if(error?.network)break;
+        S.localSyncError=error?.message||'Не удалось синхронизировать локальную запись';
+        break;
+      }
+    }
+  }finally{localSyncBusy=false;}
+}
+function startLocalSyncWatch(){
+  clearInterval(S.localSyncTimer);
+  if(!canUseLocalOutbox())return;
+  S.localSyncTimer=setInterval(()=>{if(!document.hidden)void syncLocalOutbox();},LOCAL_SYNC_INTERVAL_MS);
+  setTimeout(()=>void syncLocalOutbox(),1200);
+  if(!globalThis.__portalLocalSyncOnline){globalThis.__portalLocalSyncOnline=true;addEventListener('online',()=>void syncLocalOutbox());}
+}
 async function productionPost(path,body,form){
   const requestId=form?(form.dataset.requestId||(form.dataset.requestId=crypto.randomUUID())):crypto.randomUUID();
-  return (await api('POST','/api/v3/'+path,{...body,request_id:requestId})).data;
+  const payload={...body,request_id:requestId};
+  const journaled=path==='work'&&queueLocalWork(payload,requestId);
+  try{
+    const result=(await api('POST','/api/v3/'+path,payload)).data;
+    if(journaled)try{PortalNative.removeMutation(String(requestId));}catch{}
+    return result;
+  }catch(error){
+    if(path==='work'&&error?.network&&journaled)return {queued:true,request_id:requestId};
+    if(journaled)try{PortalNative.removeMutation(String(requestId));}catch{}
+    throw error;
+  }
 }
 const options=(items,label='name')=>items.map(i=>`<option value="${esc(i.id)}">${esc(i[label])}</option>`).join('');
 async function productionCatalog(){return S.productionCatalog=await productionGet('catalog');}
@@ -33,11 +79,14 @@ const statusLabel={received:'Принята',in_progress:'В работе',ready
 function taskStatusLabel(task){return task.status==='done'?'Завершено':task.status==='in_progress'?'В работе':'Ожидает начала';}
 screens.dashboard=async()=>{
   if(!S.stage3)return previous.dashboard();
-  const d=await productionGet('today');
-  const organizerRows=globalThis.__PORTAL_DESKTOP__&&allowed('organizer.read')?await productionGet('organizer?scope=incoming'):[];
-  const organizerRequestIncoming=globalThis.__PORTAL_DESKTOP__&&allowed('organizer.request.decide')?await productionGet('organizer-requests?scope=incoming'):[];
-  const organizerRequestMine=globalThis.__PORTAL_DESKTOP__&&canCreateDirectorRequest()?await productionGet('organizer-requests?scope=mine'):[];
-  S.productionTasks=d.tasks||[];S.activeTimers=allowed('work.write')||allowed('tasks.read')?await productionGet('timers'):[];
+  const [d,organizerRows,organizerRequestIncoming,organizerRequestMine,timers]=await Promise.all([
+    productionGet('today'),
+    globalThis.__PORTAL_DESKTOP__&&allowed('organizer.read')?productionGet('organizer?scope=incoming'):Promise.resolve([]),
+    globalThis.__PORTAL_DESKTOP__&&allowed('organizer.request.decide')?productionGet('organizer-requests?scope=incoming'):Promise.resolve([]),
+    globalThis.__PORTAL_DESKTOP__&&canCreateDirectorRequest()?productionGet('organizer-requests?scope=mine'):Promise.resolve([]),
+    allowed('work.write')||allowed('tasks.read')?productionGet('timers'):Promise.resolve([])
+  ]);
+  S.productionTasks=d.tasks||[];S.activeTimers=timers;
   const management=d.mode==='management';
   const inWorkTasks=new Set([...S.productionTasks.filter(t=>t.status==='in_progress').map(t=>t.id),...S.activeTimers.map(t=>t.task_id)]);
   const taskMetrics=allowed('tasks.read')?metric('Задания в работе',num(inWorkTasks.size)):'';
@@ -146,7 +195,7 @@ actions.otherWork=async()=>{
   openSheet('Другая работа',`<p class="meta">Без задания — зарплата начисляется сразу. Новые операции создаёт руководитель.</p><form id="otherWorkForm">${selectField('freeClient','Клиент','<option value="">Выберите клиента</option>'+options(c.clients))}${selectField('freeOperation','Операция','<option value="">Выберите клиента</option>')}${field('freeQuantity','Количество','','number','required min="1" max="1000000" step="1"')}<button class="btn block" type="submit">Внести работу</button></form>`);
   $('freeClient').addEventListener('change',()=>{const id=Number($('freeClient').value);$('freeOperation').innerHTML='<option value="">Выберите операцию</option>'+options(c.operations.filter(o=>o.client_id===id));});
 };
-forms.otherWorkForm=async form=>{const w=await productionPost('work',{client_id:Number($('freeClient').value),operation_id:Number($('freeOperation').value),quantity:Number($('freeQuantity').value)},form);closeSheet();toast(w.salary===undefined?'Выполнено без задания':'Выполнено без задания · '+rub(w.salary));await go('work');};
+forms.otherWorkForm=async form=>{const w=await productionPost('work',{client_id:Number($('freeClient').value),operation_id:Number($('freeOperation').value),quantity:Number($('freeQuantity').value)},form);closeSheet();toast(w.queued?'Сохранено на устройстве · отправим на сервер автоматически':w.salary===undefined?'Выполнено без задания':'Выполнено без задания · '+rub(w.salary));await go('work');};
 actions.productionHistory=async()=>{
   const rows=await productionGet('works');S.productionWorks=rows;
   paint(heading('Выработка','История записей сохраняется')+`<div class="list">${rows.map(w=>`<div class="item"><b>${esc(w.client_name)} · ${esc(w.operation_name)}</b><p>${num(w.quantity)} шт. ${w.salary===undefined?'':'· '+rub(w.salary)}</p><p class="meta">${date(w.completed_at)}${w.without_task?' · ':''}${w.without_task?'<span class="badge">Без задания</span>':''}</p>${!w.batch_id&&allowed('work.link')?btn('Привязать к партии','linkWork',`data-id="${w.id}"`,'secondary'):''}</div>`).join('')||'<p class="empty">Записей ещё нет</p>'}</div>`);
@@ -175,7 +224,7 @@ actions.editPermissions=button=>{
 forms.permissionsForm=async form=>{const permissions=Object.fromEntries(Array.from(form.querySelectorAll('[data-permission]:not(:disabled)'),i=>[i.dataset.permission,i.checked]));await productionPost('permissions',{user_id:S.permissionTarget.id,permissions},form);closeSheet();await configureProduction();await go('permissions');};
 actions.resetPermissions=async button=>{await productionPost('permissions',{user_id:S.permissionTarget.id,mode:button.dataset.mode});closeSheet();await configureProduction();await go('permissions');};
 forms.copyPermissionsForm=async form=>{await productionPost('permissions',{user_id:S.permissionTarget.id,mode:'copy',source_id:Number($('copyUser').value)},form);closeSheet();await configureProduction();await go('permissions');};
-screens.tariffs=async()=>{const c=await productionCatalog(),history=new Map(await Promise.all(c.operations.map(async o=>[o.id,await productionGet('tariff-history?operation_id='+encodeURIComponent(o.id))])));paint(heading('Тарифы','Новая версия не пересчитывает прошлые работы')+`<div class="list">${c.operations.map(o=>`<article class="item"><h3>${esc(o.name)}</h3><p class="meta">${esc(c.clients.find(c=>c.id===o.client_id)?.name)}</p><p>${o.employee_rate===undefined?'':'Сотруднику '+rub(o.employee_rate)} ${o.client_rate===undefined?'':'· Клиенту '+rub(o.client_rate)}</p><details><summary>История ставок · ${(history.get(o.id)||[]).length}</summary><div class="list">${(history.get(o.id)||[]).map((v,index)=>`<div class="item"><b>${index===0?'Текущая версия':'Историческая версия'}</b><p class="meta">Действует с ${esc(v.effective_from)}</p><p>${v.employee_rate===undefined?'':'Сотруднику '+rub(v.employee_rate)} ${v.client_rate===undefined?'':'· Клиенту '+rub(v.client_rate)}</p></div>`).join('')||'<p class="empty">Истории ставок нет</p>'}</div></details>${allowed('rates.employee')||allowed('rates.client')?btn('Новая версия','newTariff',`data-id="${o.id}"`,'secondary'):''}</article>`).join('')||'<p class="empty">Доступных тарифов нет</p>'}</div>`);};
+screens.tariffs=async()=>{const [c,historyRows]=await Promise.all([productionCatalog(),productionGet('tariff-history')]),history=new Map();for(const row of historyRows){const key=Number(row.operation_id),items=history.get(key)||[];items.push(row);history.set(key,items);}paint(heading('Тарифы','Новая версия не пересчитывает прошлые работы')+`<div class="list">${c.operations.map(o=>`<article class="item"><h3>${esc(o.name)}</h3><p class="meta">${esc(c.clients.find(c=>c.id===o.client_id)?.name)}</p><p>${o.employee_rate===undefined?'':'Сотруднику '+rub(o.employee_rate)} ${o.client_rate===undefined?'':'· Клиенту '+rub(o.client_rate)}</p><details><summary>История ставок · ${(history.get(o.id)||[]).length}</summary><div class="list">${(history.get(o.id)||[]).map((v,index)=>`<div class="item"><b>${index===0?'Текущая версия':'Историческая версия'}</b><p class="meta">Действует с ${esc(v.effective_from)}</p><p>${v.employee_rate===undefined?'':'Сотруднику '+rub(v.employee_rate)} ${v.client_rate===undefined?'':'· Клиенту '+rub(v.client_rate)}</p></div>`).join('')||'<p class="empty">Истории ставок нет</p>'}</div></details>${allowed('rates.employee')||allowed('rates.client')?btn('Новая версия','newTariff',`data-id="${o.id}"`,'secondary'):''}</article>`).join('')||'<p class="empty">Доступных тарифов нет</p>'}</div>`);};
 actions.newTariff=button=>{const o=S.productionCatalog.operations.find(o=>o.id===Number(button.dataset.id));S.tariffOperation=o;S.tariffReturnToClient=button.dataset.returnToClient==='true'?o.client_id:null;openSheet('Новая версия тарифа',`<form id="tariffForm">${allowed('rates.employee')?field('tariffEmployee','Ставка сотруднику, ₽',(o.employee_rate||0)/100,'number','min="0" step="0.01" required'):''}${allowed('rates.client')?field('tariffClient','Цена клиенту, ₽',(o.client_rate||0)/100,'number','min="0" step="0.01" required'):''}${field('tariffFrom','Начало действия — пусто означает сейчас','','datetime-local')}<button class="btn block" type="submit">Сохранить новую версию</button></form>`);};
 forms.tariffForm=async form=>{const o=S.tariffOperation,b={client_id:o.client_id,operation_id:o.id};if($('tariffEmployee'))b.employee_rate=$('tariffEmployee').value;if($('tariffClient'))b.client_rate=$('tariffClient').value;if($('tariffFrom').value)b.effective_from=utc($('tariffFrom').value);await productionPost('tariffs',b,form);closeSheet();const clientId=S.tariffReturnToClient;S.tariffReturnToClient=null;if(clientId)return actions.openClient({dataset:{id:String(clientId)}});await go('tariffs');};
 screens.invoices=async()=>{

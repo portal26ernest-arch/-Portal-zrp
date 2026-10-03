@@ -37,7 +37,7 @@ test('Web Share cancellation is explicit and native-only controls are hidden',()
 });
 
 test('Desktop cache is company-scoped, encrypted by native bridge and never used for auth',()=>{
-  for(const value of ['portalDesktopCache','setCacheCompany','cacheCompany','CACHEABLE','cacheRead','cacheWrite','ClearCompany']) assert.ok(adapter.includes(value),value);
+  for(const value of ['portalDesktopCache','setCacheCompany','cacheCompany','CACHEABLE','cacheRead','cacheWrite','ClearCompany','30 * 24 * 60 * 60 * 1000','queueMutation','pendingMutations','removeMutation']) assert.ok(adapter.includes(value),value);
   assert.ok(app.includes("PortalNative.setCacheCompany(String(S.company?.id||S.me.company_id||''))"));
   assert.ok(app.includes("PortalNative.setCacheCompany(String(c.id))"));
   assert.ok(!adapter.includes("CACHEABLE = [/^\\/api\\/(?:login|me|platform)"));

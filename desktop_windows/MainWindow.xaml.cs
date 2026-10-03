@@ -17,7 +17,7 @@ public partial class MainWindow : Window
     private const int CurrentBuild = 55;
     private const long MaxInstallerBytes = 250L * 1024 * 1024;
     private const string GithubRepository = "portal26ernest-arch/-Portal-zrp";
-    private const string WebViewCompatibilityArguments = "--disable-gpu --disable-gpu-compositing";
+    private const string WebViewSoftwareRenderingArguments = "--disable-gpu --disable-gpu-compositing";
     private static readonly HttpClient Http = new(new HttpClientHandler { AllowAutoRedirect = false })
     {
         Timeout = TimeSpan.FromMinutes(5)
@@ -48,6 +48,15 @@ public partial class MainWindow : Window
         }
 
         ShowSetup(candidate is null ? null : error);
+    }
+
+    private string WebViewArguments()
+    {
+        var forced = Environment.GetEnvironmentVariable("PORTAL_WEBVIEW_SOFTWARE_RENDERING");
+        var marker = Path.Combine(_settingsDir, "software-rendering.flag");
+        return string.Equals(forced, "1", StringComparison.Ordinal) || File.Exists(marker)
+            ? WebViewSoftwareRenderingArguments
+            : string.Empty;
     }
 
     private string? LoadStoredOrigin()
@@ -111,7 +120,9 @@ public partial class MainWindow : Window
                     // On some Windows/GPU driver combinations WebView2 loads the DOM but
                     // leaves a blank white surface. PORTAL is a forms/data client, so
                     // software compositing is a safe compatibility default.
-                    AdditionalBrowserArguments = WebViewCompatibilityArguments
+                    // GPU rendering is the fast default. Software rendering remains an explicit
+                    // compatibility fallback for machines with broken WebView2/GPU drivers.
+                    AdditionalBrowserArguments = WebViewArguments()
                 };
                 var env = await CoreWebView2Environment.CreateAsync(
                     browserExecutableFolder: null,

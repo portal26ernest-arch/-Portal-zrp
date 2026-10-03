@@ -14,15 +14,16 @@
     ['text/plain', ['.txt']]
   ]);
 
-  const CACHE_MAX_AGE_MS = 5 * 60 * 1000;
+  // Local-first company snapshot. Keep the last known-good data for 30 days
+  // and refresh it silently whenever the section is read.
+  const CACHE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
   const CACHEABLE = [
+    /^\/api\/company$/,
     /^\/api\/(?:admin\/)?clients(?:\?.*)?$/,
     /^\/api\/clients\/\d+(?:\/operations)?(?:\?.*)?$/,
     /^\/api\/admin\/clients\/\d+\/operations(?:\?.*)?$/,
-    /^\/api\/users(?:\?.*)?$/,
-    /^\/api\/materials(?:\?.*)?$/,
-    /^\/api\/jobs(?:\?.*)?$/,
-    /^\/api\/v3\/(?:catalog|products|client-requisites|client-name-history|tariff-history)(?:\?.*)?$/
+    /^\/api\/(?:users|materials|jobs)(?:\?.*)?$/,
+    /^\/api\/v3\/(?:catalog|products|client-requisites|client-name-history|tariff-history|today|tasks|timers|batches|invoices|receivables|finance|analytics|payroll-periods|documents|settings|permissions|chat-users)(?:\?.*)?$/
   ];
   const INVALIDATES_CACHE = /\/(?:clients?|users?|materials?|operations?|tariffs?|products?|invitations?|company-access)(?:\/|\?|$)/i;
   let cacheCompany = '';
@@ -128,6 +129,38 @@
       return !!cacheCompany;
     },
     clearCompanyCache: () => cacheCompany ? cacheClearCompany(cacheCompany) : true,
+    queueMutation: json => {
+      try {
+        if (!cacheCompany || typeof json !== 'string' || json.length > 512 * 1024) return false;
+        const row = JSON.parse(json);
+        if (!row || row.method !== 'POST' || row.path !== '/api/v3/work' || !/^[0-9a-f-]{36}$/i.test(String(row.request_id || ''))
+            || !row.body || row.body.request_id !== row.request_id) return false;
+        return !!desktopCache()?.EnqueueMutation(String(cacheCompany), String(row.request_id), JSON.stringify(row));
+      } catch { return false; }
+    },
+    pendingMutations: () => {
+      try {
+        if (!cacheCompany) return '[]';
+        const raw = desktopCache()?.PendingMutations(String(cacheCompany));
+        if (!raw) return '[]';
+        const rows = JSON.parse(String(raw));
+        if (!Array.isArray(rows)) return '[]';
+        const parsed = rows.map(value => {
+          try { return JSON.parse(String(value)); } catch { return null; }
+        }).filter(Boolean);
+        return JSON.stringify(parsed);
+      } catch { return '[]'; }
+    },
+    removeMutation: requestId => {
+      try {
+        return !!cacheCompany && /^[0-9a-f-]{36}$/i.test(String(requestId || ''))
+          && !!desktopCache()?.RemoveMutation(String(cacheCompany), String(requestId));
+      } catch { return false; }
+    },
+    pendingMutationCount: () => {
+      try { return cacheCompany ? Number(desktopCache()?.PendingMutationCount(String(cacheCompany)) || 0) : 0; }
+      catch { return 0; }
+    },
     checkUpdates: id => result(id, {ok:true, configured:false, web:true}),
     requestAsync: async (id, method, path, body, token, company) => {
       const verb = String(method || 'GET').toUpperCase();
