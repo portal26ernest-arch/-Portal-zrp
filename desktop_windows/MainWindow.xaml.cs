@@ -14,7 +14,7 @@ namespace Portal.Desktop;
 
 public partial class MainWindow : Window
 {
-    private const int CurrentBuild = 48;
+    private const int CurrentBuild = 49;
     private const long MaxInstallerBytes = 250L * 1024 * 1024;
     private const string GithubRepository = "portal26ernest-arch/-Portal-zrp";
     private const string WebViewCompatibilityArguments = "--disable-gpu --disable-gpu-compositing";
@@ -31,6 +31,7 @@ public partial class MainWindow : Window
     private DesktopCacheBridge? _cacheBridge;
     private bool _startupUpdateChecked;
     private bool _updateCheckInProgress;
+    private bool _metadataBootstrapRegistered;
 
     public MainWindow()
     {
@@ -128,7 +129,7 @@ public partial class MainWindow : Window
             }
 
             _serverOrigin = origin;
-            ConfigureDesktopCache(origin);
+            await ConfigureDesktopCacheAsync(origin);
             _pendingPersistOrigin = persist ? origin : null;
             SetupPanel.Visibility = Visibility.Collapsed;
             Browser.Visibility = Visibility.Visible;
@@ -290,12 +291,37 @@ public partial class MainWindow : Window
         await Browser.ExecuteScriptAsync(script);
     }
 
-    private void ConfigureDesktopCache(string origin)
+    private async Task ConfigureDesktopCacheAsync(string origin)
     {
         if (Browser.CoreWebView2 is null) return;
         try { Browser.CoreWebView2.RemoveHostObjectFromScript("portalDesktopCache"); } catch { }
         _cacheBridge = new DesktopCacheBridge(_settingsDir, origin);
         Browser.CoreWebView2.AddHostObjectToScript("portalDesktopCache", _cacheBridge);
+        if (_metadataBootstrapRegistered) return;
+
+        var metadata = _cacheBridge.GetAppMetadata();
+        var metadataLiteral = JsonSerializer.Serialize(metadata);
+        var bootstrapScript = """
+(() => {
+  try {
+    const metadata = __PORTAL_METADATA__;
+    let nativeValue;
+    Object.defineProperty(window, 'PortalNative', {
+      configurable: true,
+      enumerable: true,
+      get() { return nativeValue; },
+      set(value) {
+        if (value && (typeof value === 'object' || typeof value === 'function')) {
+          try { value.getAppMetadata = () => metadata; } catch {}
+        }
+        nativeValue = value;
+      }
+    });
+  } catch {}
+})();
+""".Replace("__PORTAL_METADATA__", metadataLiteral);
+        await Browser.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(bootstrapScript);
+        _metadataBootstrapRegistered = true;
     }
 
     private static bool SameOrigin(Uri target, string origin) =>
@@ -469,7 +495,7 @@ public partial class MainWindow : Window
     {
         using var request = new HttpRequestMessage(HttpMethod.Get,
             $"https://api.github.com/repos/{GithubRepository}/releases?per_page=50");
-        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/4.8.0");
+        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/4.9.0");
         request.Headers.Accept.ParseAdd("application/vnd.github+json");
         using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();

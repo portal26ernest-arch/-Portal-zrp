@@ -400,3 +400,13 @@ Current roadmap counts are **93 ✅ / 15 🟡 / 6 ⏳ / 12 🔌**. Current-SHA S
 - Local focused Desktop/Web adapter tests: 6/6 passed; diff check passed.
 - No PostgreSQL, API permission, cache scope, financial logic or tenant data changed.
 - Exact NEXT: require green Windows/Desktop and Android UI CI, publish Desktop 4.8, install on the authorized PC, verify file version and embedded build date, then confirm the About screen shows the metadata.
+
+## Q. Desktop 4.9 preloaded metadata bridge — 2026-10-03
+
+- Desktop version advanced to `4.9.0` / build `49` after the 4.8 post-load metadata path proved too late for the shared About screen on a real PC.
+- Before `/web/` navigation starts, WebView2 now registers a document-created bootstrap script. The script preserves normal browser adapter startup, then injects native `getAppMetadata()` into `PortalNative` at the moment the adapter creates it.
+- Therefore `app.js` reads Desktop version/build/date correctly during its normal `DOMContentLoaded` path, before the About screen is rendered. The 4.8 post-load injection remains only as a fallback.
+- The mechanism is local to PORTAL Desktop and no longer depends on the VPS receiving a newer `web_adapter.js` first.
+- Local focused Desktop/Web adapter tests: 6/6 passed; diff check passed.
+- No PostgreSQL, tenant data, permissions, payroll, invoices or cache scope changed.
+- Exact NEXT: require green Windows Desktop, Android UI/APK and master-control CI; publish Desktop 4.9, install on the authorized PC and verify embedded build metadata.
