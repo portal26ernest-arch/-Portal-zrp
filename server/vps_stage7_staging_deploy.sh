@@ -81,10 +81,15 @@ echo "[3/9] Секреты staging-БД"
 if [[ ! -f "$SECRETS_FILE" ]]; then
   TENANT_PASSWORD="$(openssl rand -hex 24)"
   CONTROL_PASSWORD="$(openssl rand -hex 24)"
+  SETUP_TOKEN="$(openssl rand -hex 32)"
   cat >"$SECRETS_FILE" <<EOF
 TENANT_PASSWORD=$TENANT_PASSWORD
 CONTROL_PASSWORD=$CONTROL_PASSWORD
+SETUP_TOKEN=$SETUP_TOKEN
 EOF
+  chmod 0600 "$SECRETS_FILE"
+elif ! grep -q '^SETUP_TOKEN=' "$SECRETS_FILE"; then
+  printf 'SETUP_TOKEN=%s\n' "$(openssl rand -hex 32)" >>"$SECRETS_FILE"
   chmod 0600 "$SECRETS_FILE"
 fi
 # shellcheck disable=SC1090
@@ -93,6 +98,8 @@ source "$SECRETS_FILE"
   fail "повреждён staging tenant secret"
 [[ "$CONTROL_PASSWORD" =~ ^[0-9a-f]{48}$ ]] ||
   fail "повреждён staging control secret"
+[[ "$SETUP_TOKEN" =~ ^[0-9a-f]{64}$ ]] ||
+  fail "повреждён staging setup secret"
 runuser -u postgres -- psql -v ON_ERROR_STOP=1 -q <<SQL
 DO \$\$
 BEGIN
@@ -202,6 +209,7 @@ PORTAL_ENV=test
 PORTAL_DB_BACKEND=postgresql
 PORTAL_DATABASE_URL=postgresql://$TENANT_ROLE:$TENANT_PASSWORD@127.0.0.1:5432/$DB
 PORTAL_CONTROL_DATABASE_URL=postgresql://$CONTROL_ROLE:$CONTROL_PASSWORD@127.0.0.1:5432/$DB
+PORTAL_SETUP_TOKEN=$SETUP_TOKEN
 PORTAL_APP_HOST=127.0.0.1
 PORTAL_APP_PORT=$API_PORT
 PORTAL_PUBLIC_API_URL=http://127.0.0.1:$API_PORT
@@ -270,7 +278,7 @@ if [[ "$PING" == *'"setup_required": true'* || "$PING" == *'"setup_required":tru
   [[ ! -f "$LOGIN_FILE" ]] || fail "API просит setup, но first-login уже существует"
   ADMIN_PIN="$(openssl rand -hex 6)"
   BODY="$(printf '{"username":"admin","display_name":"Администратор","pin":"%s"}' "$ADMIN_PIN")"
-  curl -fsS --max-time 5 -X POST -H 'Content-Type: application/json'     --data "$BODY" "http://127.0.0.1:$API_PORT/api/setup" >/dev/null
+  curl -fsS --max-time 5 -X POST -H 'Content-Type: application/json' -H "X-Portal-Setup-Token: $SETUP_TOKEN" --data "$BODY" "http://127.0.0.1:$API_PORT/api/setup" >/dev/null
   cat >"$LOGIN_FILE" <<EOF
 username=admin
 pin=$ADMIN_PIN

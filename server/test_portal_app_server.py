@@ -14,6 +14,7 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import threading
+from dataclasses import replace
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -201,6 +202,21 @@ class PortalAPITest(unittest.TestCase):
             self.assertEqual(data["build"], 37)
             self.assertNotIn("token", data)
             self.request("/api/desktop-update", body={}, status=405)
+
+    def test_setup_requires_one_time_local_secret_and_cannot_repeat(self):
+        secret = "a" * 64
+        with portal.db() as conn:
+            conn.execute("DELETE FROM app_sessions")
+            conn.execute("DELETE FROM app_users")
+        with patch.object(portal, "CONFIG", replace(portal.CONFIG, setup_token=secret)):
+            self.request("/api/setup", body={"username":"bootstrap","pin":"1234"}, status=403)
+            self.request("/api/setup", body={"username":"bootstrap","pin":"1234"},
+                         extra_headers={"X-Portal-Setup-Token":"wrong"}, status=403)
+            created = self.request("/api/setup", body={"username":"bootstrap","display_name":"Bootstrap","pin":"1234"},
+                                   extra_headers={"X-Portal-Setup-Token":secret})
+            self.assertEqual(created["user"]["username"], "bootstrap")
+            self.request("/api/setup", body={"username":"second","pin":"1234"},
+                         extra_headers={"X-Portal-Setup-Token":secret}, status=403)
 
     def test_anonymous_denied_all_data_and_writes(self):
         for path in ("/api/me","/api/dashboard","/api/clients",f"/api/clients/{self.cid}",

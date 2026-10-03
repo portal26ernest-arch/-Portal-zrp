@@ -214,8 +214,13 @@ class MigrationImportTest(unittest.TestCase):
         self.assertEqual(prod_config.environment,'production')
         self.assertEqual(prod_config.host,'127.0.0.1')
         self.assertEqual(prod_config.postgres_pool_size,8)
-        tuned=load_config(dict(production,PORTAL_ENABLE_POSTGRES_PRODUCTION='true',PORTAL_PG_POOL_SIZE='12'))
+        tuned=load_config(dict(production,PORTAL_ENABLE_POSTGRES_PRODUCTION='true',PORTAL_PG_POOL_SIZE='12',PORTAL_SETUP_TOKEN='a'*64))
         self.assertEqual(tuned.postgres_pool_size,12)
+        self.assertEqual(tuned.setup_token,'a'*64)
+        self.assertNotIn('a'*64,repr(tuned))
+        for bad_setup in ('short','a b'*16,'a'*257):
+            with self.assertRaises(ValueError):
+                load_config(dict(production,PORTAL_ENABLE_POSTGRES_PRODUCTION='true',PORTAL_SETUP_TOKEN=bad_setup))
         for bad_pool in ('-1','65','bad'):
             with self.assertRaises(ValueError):
                 load_config(dict(production,PORTAL_ENABLE_POSTGRES_PRODUCTION='true',PORTAL_PG_POOL_SIZE=bad_pool))

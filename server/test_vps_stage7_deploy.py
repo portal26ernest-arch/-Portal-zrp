@@ -60,6 +60,11 @@ class Stage7DeploySafetyTests(unittest.TestCase):
             with self.subTest(directive=directive):
                 self.assertIn(directive, DEPLOY)
 
+    def test_setup_bootstrap_uses_generated_local_secret(self):
+        self.assertIn('SETUP_TOKEN="$(openssl rand -hex 32)"', DEPLOY)
+        self.assertIn('PORTAL_SETUP_TOKEN=$SETUP_TOKEN', DEPLOY)
+        self.assertIn('X-Portal-Setup-Token: $SETUP_TOKEN', DEPLOY)
+
     def test_https_proxy_blocks_external_setup_and_has_renewal_reload_hook(self):
         self.assertGreaterEqual(DEPLOY.count('location = /api/setup'), 2)
         self.assertIn('return 403;', DEPLOY)

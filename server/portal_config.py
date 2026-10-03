@@ -15,6 +15,7 @@ class Config:
     public_api_url: str
     control_dsn: str = field(default='', repr=False)
     postgres_pool_size: int = 0
+    setup_token: str = field(default='', repr=False)
 
 
 def load_config(env):
@@ -62,7 +63,10 @@ def load_config(env):
         raise ValueError('Invalid PORTAL_PG_POOL_SIZE') from exc
     if not 0 <= postgres_pool_size <= 64:
         raise ValueError('Invalid PORTAL_PG_POOL_SIZE')
+    setup_token = env.get('PORTAL_SETUP_TOKEN', '')
+    if setup_token and (len(setup_token) < 32 or len(setup_token) > 256 or any(ch.isspace() for ch in setup_token)):
+        raise ValueError('Invalid PORTAL_SETUP_TOKEN')
     return Config(environment, backend,
                   env.get('PORTAL_DB', str(Path.cwd() / 'portal.db')),
                   dsn, env.get('PORTAL_APP_HOST', '127.0.0.1' if environment == 'production' or backend == 'postgresql' else '0.0.0.0'),
-                  port, url, control_dsn, postgres_pool_size)
+                  port, url, control_dsn, postgres_pool_size, setup_token)

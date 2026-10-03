@@ -1285,7 +1285,14 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"ok":True,"build":BUILD_ID,"setup_required":count==0})
         if path=="/api/setup" and method=="POST":
             if self.client_address[0] not in {"127.0.0.1", "::1"}:
-                raise PermissionError("Первого администратора создайте на телефоне сервера через 127.0.0.1")
+                raise PermissionError("Первичная настройка доступна только локально")
+            with db() as conn:
+                if conn.execute("SELECT COUNT(*) FROM app_users").fetchone()[0]>0:
+                    raise PermissionError("Первичная настройка уже выполнена")
+            expected_setup_token=CONFIG.setup_token
+            supplied_setup_token=self.headers.get("X-Portal-Setup-Token","")
+            if not expected_setup_token or len(supplied_setup_token)>256 or not secrets.compare_digest(supplied_setup_token,expected_setup_token):
+                raise PermissionError("Первичная настройка требует одноразовый секрет")
             body=parse_body(self); username=(body.get("username") or "admin").strip(); name=(body.get("display_name") or "Администратор").strip(); pin=str(body.get("pin") or "")
             if len(pin)<4: raise ValueError("PIN должен содержать минимум 4 символа")
             with db() as conn:
