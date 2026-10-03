@@ -141,7 +141,10 @@ test('modal sheets do not dismiss on backdrop, Escape or Back',()=>{
   const app=fs.readFileSync(path.join(assets,'app.js'),'utf8');
   assert.match(index,/id="sheetBackdrop"[\s\S]*data-action="closeSheet"[^>]*aria-label="Закрыть"/);
   assert.match(app,/window\.portalBack=\(\)=>\{if\(!\$\('sheetBackdrop'\)\.classList\.contains\('hidden'\)\)return true;/);
-  assert.match(app,/if\(event\.key==='Escape'\)\{event\.preventDefault\(\);return;\}/);
+  assert.match(app,/function guardModalDismiss\(event\)/);
+  assert.match(app,/document\.addEventListener\('pointerdown',guardModalDismiss,true\)/);
+  assert.match(app,/document\.addEventListener\('click',guardModalDismiss,true\)/);
+  assert.match(app,/if\(event\.key==='Escape'\)\{event\.preventDefault\(\);event\.stopPropagation\(\);event\.stopImmediatePropagation\(\);return;\}/);
   assert.doesNotMatch(app,/sheetBackdrop'\)\.addEventListener\('click'/);
 });
 
@@ -262,6 +265,18 @@ test('browser UI regression',async t=>{
         assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
         assert.deepEqual(errors,[]);await page.close();
       }
+    });
+    await t.test('modal stays open on backdrop click, Escape and Back until explicit close',async()=>{
+      const {page,errors}=await fixture(browser,'manager',{width:1280,height:900},true,true);await login(page);
+      await page.evaluate(()=>openSheet('Проверка окна','<button id="modalInside">Внутри</button>'));
+      await page.waitForSelector('#sheetBackdrop:not(.hidden)');
+      await page.locator('#sheetBackdrop').click({position:{x:8,y:8}});
+      assert.equal(await page.locator('#sheetBackdrop').isVisible(),true);
+      await page.keyboard.press('Escape');assert.equal(await page.locator('#sheetBackdrop').isVisible(),true);
+      assert.equal(await page.evaluate(()=>window.portalBack()),true);assert.equal(await page.locator('#sheetBackdrop').isVisible(),true);
+      await page.locator('#sheet .sheet-header [data-action=closeSheet]').click();
+      await page.waitForFunction(()=>document.querySelector('#sheetBackdrop').classList.contains('hidden'));assert.equal(await page.locator('#sheetBackdrop').isVisible(),false);
+      assert.deepEqual(errors,[]);await page.close();
     });
     await t.test('offline login displays error and preserves unauthenticated state',async()=>{
       const {page,errors}=await fixture(browser);await page.evaluate(()=>mock.offline=true);
