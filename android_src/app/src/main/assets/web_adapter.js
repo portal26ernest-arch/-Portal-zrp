@@ -14,7 +14,9 @@
     ['text/plain', ['.txt']]
   ]);
 
-  const CACHE_MAX_AGE_MS = 5 * 60 * 1000;
+  // Keep an encrypted company snapshot for a full working day. Cached GETs are
+  // returned immediately and refreshed in the background on every read.
+  const CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
   const CACHEABLE = [
     /^\/api\/(?:admin\/)?clients(?:\?.*)?$/,
     /^\/api\/clients\/\d+(?:\/operations)?(?:\?.*)?$/,

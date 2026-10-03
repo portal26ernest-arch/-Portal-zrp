@@ -136,6 +136,14 @@ test('desktop web branding uses the PORTAL blue shell',()=>{
   assert.match(css,/\.web-client \.top\{background:var\(--portal-blue\)/);
   assert.match(css,/@media\(min-width:900px\)/);
 });
+test('desktop cache keeps company snapshots for a working day and tariff screen uses one bulk history request',()=>{
+  const adapter=fs.readFileSync(path.join(assets,'web_adapter.js'),'utf8');
+  const production=fs.readFileSync(path.join(assets,'production.js'),'utf8');
+  assert.match(adapter,/CACHE_MAX_AGE_MS = 24 \* 60 \* 60 \* 1000/);
+  assert.match(adapter,/fetchJson\(verb, target, body, token, company\)\.then\(fresh =>/);
+  assert.match(production,/productionGet\('tariff-history'\)/);
+  assert.doesNotMatch(production,/c\.operations\.map\(async o=>\[o\.id,await productionGet\('tariff-history\?operation_id='/);
+});
 test('modal sheets do not dismiss on backdrop, Escape or Back',()=>{
   const index=fs.readFileSync(path.join(assets,'index.html'),'utf8');
   const app=fs.readFileSync(path.join(assets,'app.js'),'utf8');
@@ -195,7 +203,8 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
       else if(stage3&&url.startsWith('/api/v3/client-aliases'))data.data=mock.clientAliases;
       else if(stage3&&url.startsWith('/api/v3/client-requisites?'))data.data=mock.clientRequisites;
       else if(stage3&&url==='/api/v3/client-requisites'&&method==='POST'){mock.clientRequisites={...mock.clientRequisites,...JSON.parse(payload)};data.data=mock.clientRequisites;}
-      else if(stage3&&url.startsWith('/api/v3/tariff-history?operation_id='))data.data=mock.tariffHistory;
+      else if(stage3&&url==='/api/v3/tariff-history')data.data=mock.tariffHistory;
+      else if(stage3&&url.startsWith('/api/v3/tariff-history?operation_id='))data.data=mock.tariffHistory.filter(row=>String(row.operation_id)===new URLSearchParams(url.split('?')[1]).get('operation_id'));
       else if(stage3&&url==='/api/v3/products'&&method==='POST'){const body=JSON.parse(payload);let product;if(body.action==='create'){product={id:'product-1',company_id:1,client_id:body.client_id,name:body.name,active:true};mock.products.push(product);}else{product=mock.products.find(p=>p.id===body.product_id);if(product){if(body.action==='archive')product.active=false;else product.name=body.name;}}data.data=product;}
       else if(stage3&&url==='/api/v3/products')data.data=mock.products;
       else if(stage3&&url==='/api/v3/works')data.data=[{id:'work-free',client_id:1,client_name:'Клиент',operation_name:'Упаковка',quantity:3,salary:300,completed_at:'2026-09-25T09:20:00',without_task:true,batch_id:null}];
@@ -276,6 +285,15 @@ test('browser UI regression',async t=>{
       assert.equal(await page.evaluate(()=>window.portalBack()),true);assert.equal(await page.locator('#sheetBackdrop').isVisible(),true);
       await page.locator('#sheet .sheet-header [data-action=closeSheet]').click();
       await page.waitForFunction(()=>document.querySelector('#sheetBackdrop').classList.contains('hidden'));assert.equal(await page.locator('#sheetBackdrop').isVisible(),false);
+      assert.deepEqual(errors,[]);await page.close();
+    });
+    await t.test('tariffs loads one bulk history request instead of one request per operation',async()=>{
+      const {page,errors}=await fixture(browser,'director',{width:1280,height:900},true,true);
+      await page.evaluate(()=>{mock.stage3Permissions=['rates.employee','rates.client','finance.read'];mock.tariffHistory=[{id:'tariff-1',operation_id:1,effective_from:'2026-09-01T00:00:00',employee_rate:300,client_rate:500}];});
+      await login(page);await page.evaluate(()=>{mock.calls=[];return go('tariffs');});
+      await page.waitForFunction(()=>document.querySelector('#content').innerText.includes('История ставок · 1'));
+      const calls=await page.evaluate(()=>mock.calls.filter(c=>c.url.startsWith('/api/v3/tariff-history')).map(c=>c.url));
+      assert.deepEqual(calls,['/api/v3/tariff-history']);
       assert.deepEqual(errors,[]);await page.close();
     });
     await t.test('offline login displays error and preserves unauthenticated state',async()=>{
@@ -829,13 +847,14 @@ test('browser UI regression',async t=>{
       await page.waitForTimeout(300);
       assert.equal(await page.evaluate(()=>S.page),'work',await page.locator('#toast').innerText()+' / '+await page.locator('#content').innerText());
       await page.locator('[data-action=otherWork]').click();
+      assert.equal(await page.locator('#freeBatch').count(),0);
       await page.locator('#freeClient').selectOption('1');
       await page.locator('#freeOperation').selectOption('1');
       await page.locator('#freeQuantity').fill('3');
       await page.locator('#otherWorkForm [type=submit]').click();
       await page.waitForFunction(()=>mock.calls.some(c=>c.url==='/api/v3/work'&&c.body?.quantity===3));
       const free=await page.evaluate(()=>mock.calls.find(c=>c.url==='/api/v3/work'));
-      assert.equal(free.body.client_id,1);assert.equal(free.body.operation_id,1);assert.equal(free.body.batch_id,null);
+      assert.equal(free.body.client_id,1);assert.equal(free.body.operation_id,1);assert.equal(Object.hasOwn(free.body,'batch_id'),false);
       assert.equal(Object.hasOwn(free.body,'employee_rate'),false);
       await page.locator('[data-action=productionHistory]').click();
       await page.waitForFunction(()=>document.querySelector('#content').textContent.includes('Без задания'));

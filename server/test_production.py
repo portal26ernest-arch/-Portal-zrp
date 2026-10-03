@@ -507,6 +507,8 @@ class ProductionTest(unittest.TestCase):
         self.assertEqual(len(history),3)
         self.assertEqual(history[0]['employee_rate'],9900)
         self.assertEqual(history[-1]['employee_rate'],200)
+        bulk=self.get('tariff-history')['data']
+        self.assertEqual([row for row in bulk if row['operation_id']==1],history)
         self.get('tariff-history?operation_id=1&company_id=2',status=403)
         self.post('permissions',dict(user_id=self.worker_id,permissions={'rates.client':True}))
         manager_history=self.get('tariff-history?operation_id=1',self.worker)['data']
