@@ -432,3 +432,11 @@ Current roadmap counts are **93 ✅ / 15 🟡 / 6 ⏳ / 12 🔌**. Current-SHA S
 - Local focused Desktop/Web adapter tests: 6/6 passed; diff check passed.
 - No PostgreSQL, tenant data, permissions, payroll, invoices or cache scope changed.
 - Exact NEXT: require green Windows Desktop, Android UI/APK and master-control CI; publish Desktop 5.1, install on the authorized PC and verify both native top status and visible login metadata by screenshot.
+
+## Q. Desktop 5.1 login responsiveness regression fix — 2026-10-03
+
+- Regression found in Desktop 5.0 visible-metadata patch: a global `MutationObserver` watched the whole DOM and rewrote metadata fields on every mutation, which could interfere with normal interaction/focus on the authentication screen.
+- Desktop 5.1 removes the global DOM observer completely. Metadata is injected before page scripts through `AddScriptToExecuteOnDocumentCreatedAsync`, then applied once after navigation and whenever the About renderer itself is invoked.
+- Login form logic, API authentication, credentials, PostgreSQL and tenant data are unchanged.
+- Focused Desktop/Web adapter regression suite: 6/6 passed; source-level test now explicitly rejects any `MutationObserver` in the Desktop shell.
+- Exact NEXT: run GitHub Windows/Desktop + Android UI gates, publish `portal-desktop-v5.1.0`, install on the authorized PC and verify login/password/submit are interactive.
