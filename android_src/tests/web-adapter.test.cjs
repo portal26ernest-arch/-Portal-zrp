@@ -52,8 +52,13 @@ test('local-first performance contract uses long cache, 10-minute sync, bulk tar
   assert.match(production,/productionGet\('tariff-history'\)/);
   assert.doesNotMatch(production,/c\.operations\.map\(async o=>\[o\.id,await productionGet\('tariff-history\?operation_id='/);
   assert.match(production,/const \[d,organizerRows,organizerRequestIncoming,organizerRequestMine,timers\]=await Promise\.all/);
-  assert.match(production,/queueLocalWork\(payload,requestId\)/);
+  assert.match(production,/queueLocalMutation\(path,payload,requestId\)/);
   assert.match(production,/api\('GET','\/api\/v3\/meta'/);
   assert.match(production,/applyProductionMeta\(meta\)/);
   assert.match(production,/S\.company=\{\.\.\.S\.company,\.\.\.r\.company\}/);
+  for(const action of ['work','links','batches','tasks','shipments','returns']) assert.ok(production.includes(`'${action}'`),action);
+  assert.doesNotMatch(production,/LOCAL_OUTBOX_PATHS[^\n]*(?:timers|payments|invoices|permissions|settings|tariffs|payroll)/);
+  for(const pathName of ['/api/v3/work','/api/v3/links','/api/v3/batches','/api/v3/tasks','/api/v3/shipments','/api/v3/returns']) assert.ok(adapter.includes(`'${pathName}'`),pathName);
+  assert.match(production,/if\(error\?\.network\)\{queueError='Нет соединения с сервером';break;\}/);
+  assert.match(production,/queueError=error\?\.message\|\|'Одна из локальных записей требует проверки';\s*continue;/);
 });

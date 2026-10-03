@@ -23,35 +23,39 @@ const allowed=permission=>S.me?.permissions?.includes(permission);
 const rub=cents=>money(Number(cents||0)/100);
 const utc=value=>value?new Date(value).toISOString().slice(0,-1):null;
 const productionGet=async path=>(await api('GET','/api/v3/'+path)).data;
+const LOCAL_OUTBOX_PATHS=new Set(['work','links','batches','tasks','shipments','returns']);
 function canUseLocalOutbox(){return !isOwner()&&S.company&&typeof window.PortalNative?.queueMutation==='function'&&typeof window.PortalNative?.pendingMutations==='function'&&typeof window.PortalNative?.removeMutation==='function';}
+function canQueueLocalMutation(path){return LOCAL_OUTBOX_PATHS.has(path);}
 async function nativeOutboxCall(name,...args){try{return await Promise.resolve(PortalNative[name](...args));}catch{return null;}}
 async function refreshLocalPendingCount(){
   if(!canUseLocalOutbox()){S.localPendingCount=0;return 0;}
   const value=Number(await nativeOutboxCall('pendingMutationCount')||0);S.localPendingCount=Number.isFinite(value)?value:0;return S.localPendingCount;
 }
-async function queueLocalWork(body,requestId){
-  if(!canUseLocalOutbox())return false;
-  const row={v:1,method:'POST',path:'/api/v3/work',request_id:requestId,queued_at:new Date().toISOString(),body};
+async function queueLocalMutation(path,body,requestId){
+  if(!canUseLocalOutbox()||!canQueueLocalMutation(path))return false;
+  const row={v:1,method:'POST',path:'/api/v3/'+path,request_id:requestId,queued_at:new Date().toISOString(),body};
   const stored=!!(await nativeOutboxCall('queueMutation',JSON.stringify(row)));if(stored)await refreshLocalPendingCount();return stored;
 }
 async function syncLocalOutbox(){
   if(localSyncBusy||!S.token||isOwner()||!S.company||navigator.onLine===false)return;
   localSyncBusy=true;
+  let queueError='';
   try{
     if(canUseLocalOutbox()){
       let raw=[];try{raw=JSON.parse(String(await nativeOutboxCall('pendingMutations')||'[]'));}catch{raw=[];}
       if(Array.isArray(raw)){
         for(const value of raw){
           let row=value;try{if(typeof row==='string')row=JSON.parse(row);}catch{continue;}
-          if(!row||row.method!=='POST'||row.path!=='/api/v3/work'||!row.body||row.body.request_id!==row.request_id)continue;
+          const action=typeof row?.path==='string'&&row.path.startsWith('/api/v3/')?row.path.slice(8):'';
+          if(!row||row.method!=='POST'||!canQueueLocalMutation(action)||!row.body||row.body.request_id!==row.request_id)continue;
           try{
             await api('POST',row.path,row.body,{global:true});
             await nativeOutboxCall('removeMutation',String(row.request_id));
             await refreshLocalPendingCount();
           }catch(error){
-            if(error?.network)break;
-            S.localSyncError=error?.message||'Не удалось синхронизировать локальную запись';
-            break;
+            if(error?.network){queueError='Нет соединения с сервером';break;}
+            queueError=error?.message||'Одна из локальных записей требует проверки';
+            continue;
           }
         }
       }
@@ -60,11 +64,11 @@ async function syncLocalOutbox(){
       const meta=await api('GET','/api/v3/meta',undefined,{global:true});
       applyProductionMeta(meta);
       S.lastLocalSync=Date.now();
-      S.localSyncError='';
+      S.localSyncError=queueError;
     }catch(error){
-      if(!error?.network)S.localSyncError=error?.message||'Не удалось получить обновления с сервера';
+      S.localSyncError=queueError||(!error?.network?(error?.message||'Не удалось получить обновления с сервера'):'Нет соединения с сервером');
     }
-  }finally{localSyncBusy=false;}
+  }finally{await refreshLocalPendingCount();localSyncBusy=false;}
 }
 function startLocalSyncWatch(){
   clearInterval(S.localSyncTimer);
@@ -76,13 +80,13 @@ function startLocalSyncWatch(){
 async function productionPost(path,body,form){
   const requestId=form?(form.dataset.requestId||(form.dataset.requestId=crypto.randomUUID())):crypto.randomUUID();
   const payload={...body,request_id:requestId};
-  const journaled=path==='work'&&await queueLocalWork(payload,requestId);
+  const journaled=canQueueLocalMutation(path)&&await queueLocalMutation(path,payload,requestId);
   try{
     const result=(await api('POST','/api/v3/'+path,payload)).data;
     if(journaled){await nativeOutboxCall('removeMutation',String(requestId));await refreshLocalPendingCount();}
     return result;
   }catch(error){
-    if(path==='work'&&error?.network&&journaled)return {queued:true,request_id:requestId};
+    if(error?.network&&journaled)return {queued:true,request_id:requestId,path};
     if(journaled){await nativeOutboxCall('removeMutation',String(requestId));await refreshLocalPendingCount();}
     throw error;
   }
@@ -229,18 +233,18 @@ actions.productionHistory=async()=>{
   paint(heading('Выработка','История записей сохраняется')+`<div class="list">${rows.map(w=>`<div class="item"><b>${esc(w.client_name)} · ${esc(w.operation_name)}</b><p>${num(w.quantity)} шт. ${w.salary===undefined?'':'· '+rub(w.salary)}</p><p class="meta">${date(w.completed_at)}${w.without_task?' · ':''}${w.without_task?'<span class="badge">Без задания</span>':''}</p>${!w.batch_id&&allowed('work.link')?btn('Привязать к партии','linkWork',`data-id="${w.id}"`,'secondary'):''}</div>`).join('')||'<p class="empty">Записей ещё нет</p>'}</div>`);
 };
 actions.linkWork=async button=>{const w=S.productionWorks.find(w=>w.id===button.dataset.id),batches=await productionGet('batches');S.linkWorkId=w.id;openSheet('Привязать работу',`<p class="meta">Начисленная зарплата и цена клиенту не изменятся.</p><form id="linkWorkForm">${selectField('linkBatch','Партия',options(batches.filter(b=>b.client_id===w.client_id),'product'))}<button class="btn block" type="submit">Привязать</button></form>`);};
-forms.linkWorkForm=async form=>{await productionPost('links',{work_id:S.linkWorkId,batch_id:$('linkBatch').value},form);closeSheet();await actions.productionHistory();};
+forms.linkWorkForm=async form=>{const result=await productionPost('links',{work_id:S.linkWorkId,batch_id:$('linkBatch').value},form);closeSheet();toast(result.queued?'Привязка сохранена на устройстве · отправим на сервер автоматически':'Работа привязана к партии');await actions.productionHistory();};
 screens.batches=async()=>{const [batches,tasks]=await Promise.all([productionGet('batches'),allowed('tasks.read')?productionGet('tasks'):Promise.resolve([])]);S.productionBatches=batches;const grouped=new Map();for(const t of tasks){const list=grouped.get(t.batch_id)||[];list.push(t);grouped.set(t.batch_id,list);}
   paint(heading('Партии и задания','Поступление и ход работ',allowed('batches.receive')?btn('Принять товар','receiveBatch'):'')+`<div class="list">${batches.map(b=>{const related=grouped.get(b.id)||[];return `<article class="item batch-card"><span class="eyebrow">${esc(b.client_name)}</span><h3>${esc(b.product)}</h3><p class="meta batch-number">${esc(b.number)}</p><p class="meta">Поступила ${esc(date(b.received_at))}</p><p>Принято ${num(b.quantity)} · Выполнено ${num(b.done)} · Осталось <strong>${num(b.remaining)}</strong></p>${b.returned_quantity?`<p class="meta">Возвращено ${num(b.returned_quantity)} · Можно принять ещё ${num(b.returnable_quantity)}</p>`:''}<span class="badge ${b.stage==='ready'?'green':''}">${esc(statusLabel[b.stage]||'Статус не указан')}</span>${related.length?`<section class="related-tasks"><h4>Связанные задания</h4><div class="list">${related.map(t=>`<div class="related-task"><b>${esc(t.operation_name)}</b><span class="meta">${num(t.done)} / ${num(t.quantity)} · ${taskStatusLabel(t)}</span></div>`).join('')}</div></section>`:b.operations?.length?`<section class="related-tasks"><h4>Операции партии</h4>${b.operations.map(o=>`<div class="related-task"><b>${esc(o.operation)}</b><span class="meta">${num(o.done)} / ${num(o.planned)}</span></div>`).join('')}</section>`:''}<div class="item-actions">${allowed('tasks.manage')&&!['shipped','partially_returned','returned'].includes(b.stage)?btn('Создать задание','createTask',`data-id="${b.id}"`,'secondary'):''}${allowed('finance.read')?btn('План / факт','batchEconomy',`data-id="${b.id}"`,'text'):''}${b.ready&&b.stage!=='shipped'&&allowed('batches.receive')?btn('Отгрузить','shipBatch',`data-id="${b.id}"`,'secondary'):''}${b.returnable_quantity>0&&['shipped','partially_returned'].includes(b.stage)&&allowed('batches.receive')?btn('Оформить возврат','returnBatch',`data-id="${b.id}"`,'secondary'):''}</div></article>`;}).join('')||'<p class="empty">Пока нет партий</p>'}</div>`);};
 actions.receiveBatch=async()=>{const c=await productionCatalog(),productOptions=clientId=>'<option value="">Свободное название / исторический товар</option>'+options((c.products||[]).filter(p=>p.client_id===clientId),'name');openSheet('Поступление товара',`<form id="batchForm">${selectField('batchClient','Клиент',options(c.clients))}${selectField('batchProductId','Товар из каталога',productOptions(c.clients[0]?.id))}${field('batchProduct','Название товара','','text','required maxlength="200"')}<p class="meta">При выборе каталожного товара партия сохранит его стабильный ID и снимок названия.</p>${field('batchQty','Принятое количество','','number','required min="1" step="1"')}${field('batchDate','Дата поступления',new Date().toISOString().slice(0,10),'date','required')}${field('batchExternal','Номер документа клиента — необязательно')}${field('batchDue','Срок готовности','','datetime-local')}${field('batchComment','Комментарий')}<p class="meta">Внутренний номер присвоит PORTAL.</p><button class="btn block" type="submit">Принять товар</button></form>`);$('batchClient').addEventListener('change',()=>{$('batchProductId').innerHTML=productOptions(Number($('batchClient').value));});$('batchProductId').addEventListener('change',()=>{const p=(c.products||[]).find(row=>row.id===$('batchProductId').value);if(p)$('batchProduct').value=p.name;});};
-forms.batchForm=async form=>{await productionPost('batches',{client_id:Number($('batchClient').value),product_id:$('batchProductId').value||null,product:$('batchProduct').value,quantity:Number($('batchQty').value),received_at:$('batchDate').value,external_number:$('batchExternal').value,due_at:utc($('batchDue').value),comment:$('batchComment').value},form);closeSheet();await go('batches');};
+forms.batchForm=async form=>{const result=await productionPost('batches',{client_id:Number($('batchClient').value),product_id:$('batchProductId').value||null,product:$('batchProduct').value,quantity:Number($('batchQty').value),received_at:$('batchDate').value,external_number:$('batchExternal').value,due_at:utc($('batchDue').value),comment:$('batchComment').value},form);closeSheet();toast(result.queued?'Поступление сохранено на устройстве · отправим на сервер автоматически':'Поступление сохранено');await go('batches');};
 actions.createTask=async button=>{const b=S.productionBatches.find(b=>b.id===button.dataset.id),c=await productionCatalog();S.taskBatch=b;openSheet('Новое задание',`<p>${esc(b.product)} · ${num(b.quantity)} шт.</p><form id="createTaskForm">${selectField('taskOperation','Операция',options(c.operations.filter(o=>o.client_id===b.client_id)))}<label class="field"><span>Исполнители — можно выбрать нескольких</span><select id="taskAssignees" multiple required>${options(c.users.filter(u=>u.active&&employeeId(u)),'display_name')}</select></label>${field('taskDue','Срок','','datetime-local')}${allowed('finance.read')?field('taskOther','План других расходов, ₽',0,'number','min="0" step="0.01"'):''}<button class="btn block" type="submit">Создать задание</button></form>`);};
-forms.createTaskForm=async form=>{const body={batch_id:S.taskBatch.id,operation_id:Number($('taskOperation').value),quantity:S.taskBatch.quantity,assignees:Array.from($('taskAssignees').selectedOptions,o=>Number(o.value)),due_at:utc($('taskDue').value),...($('taskOther')?{other_cost:$('taskOther').value}:{})};await productionPost('tasks',body,form);closeSheet();await go('batches');};
+forms.createTaskForm=async form=>{const body={batch_id:S.taskBatch.id,operation_id:Number($('taskOperation').value),quantity:S.taskBatch.quantity,assignees:Array.from($('taskAssignees').selectedOptions,o=>Number(o.value)),due_at:utc($('taskDue').value),...($('taskOther')?{other_cost:$('taskOther').value}:{})};const result=await productionPost('tasks',body,form);closeSheet();toast(result.queued?'Задание сохранено на устройстве · отправим на сервер автоматически':'Задание создано');await go('batches');};
 actions.batchEconomy=async button=>{const d=await productionGet('economy?batch_id='+encodeURIComponent(button.dataset.id)),money=value=>value==null?'Недоступно':rub(value),volume=value=>value==null?'Недоступно':num(value),rate=value=>value==null?'Недоступно':num(value/100)+'%';openSheet('План / Факт / Отклонение',`<div class="list">${[['revenue','Выручка'],['salary','Зарплата'],['materials','Материалы'],['other','Другие расходы'],['profit','Прибыль']].map(([k,l])=>`<div class="item"><b>${l}</b><p>${money(d.plan[k])} → ${money(d.fact[k])}</p><span class="meta">Отклонение ${money(d.deviation[k])}</span></div>`).join('')}<div class="item"><b>Маржа</b><p>${rate(d.margin_bps?.plan)} → ${rate(d.margin_bps?.fact)}</p><span class="meta">Отклонение ${rate(d.margin_bps?.deviation)}</span></div></div><p class="meta">Объём операций: ${volume(d.plan.volume)} → ${volume(d.fact.volume)}. Готовых единиц: ${num(d.finished_units)} · Себестоимость единицы: ${money(d.cost_per_unit)} · Прибыль на единицу: ${money(d.profit_per_unit)}.</p>`);};
 actions.shipBatch=button=>{S.shipBatch=button.dataset.id;openSheet('Направление отгрузки',`<form id="shipForm">${selectField('shipDirection','Направление','<option value="FBO">FBO</option><option value="FBS">FBS</option><option value="shipment">Другая отгрузка</option>')}<button class="btn block" type="submit">Подтвердить отгрузку</button></form>`);};
-forms.shipForm=async form=>{await productionPost('shipments',{batch_id:S.shipBatch,direction:$('shipDirection').value},form);closeSheet();await go('batches');};
+forms.shipForm=async form=>{const result=await productionPost('shipments',{batch_id:S.shipBatch,direction:$('shipDirection').value},form);closeSheet();toast(result.queued?'Отгрузка сохранена на устройстве · отправим на сервер автоматически':'Отгрузка сохранена');await go('batches');};
 actions.returnBatch=button=>{const batch=S.productionBatches?.find(item=>item.id===button.dataset.id);if(!batch)return;S.returnBatch=batch;openSheet('Возврат товара',`<p>Доступно к возврату: ${num(batch.returnable_quantity)} шт.</p><form id="returnForm">${field('returnQuantity','Количество','','number',`required min="1" max="${batch.returnable_quantity}" step="1"`)}${selectField('returnCondition','Состояние','<option value="unknown">Не определено</option><option value="resalable">Можно использовать</option><option value="damaged">Повреждено</option>')}${field('returnComment','Комментарий','','text','maxlength="1000"')}<button class="btn block" type="submit">Зафиксировать возврат</button></form>`);};
-forms.returnForm=async form=>{await productionPost('returns',{batch_id:S.returnBatch.id,quantity:Number($('returnQuantity').value),condition:$('returnCondition').value,comment:$('returnComment').value},form);closeSheet();toast('Возврат сохранён');await go('batches');};
+forms.returnForm=async form=>{const result=await productionPost('returns',{batch_id:S.returnBatch.id,quantity:Number($('returnQuantity').value),condition:$('returnCondition').value,comment:$('returnComment').value},form);closeSheet();toast(result.queued?'Возврат сохранён на устройстве · отправим на сервер автоматически':'Возврат сохранён');await go('batches');};
 screens.permissions=async()=>{
   S.permissionUsers=await productionGet('permissions');paint(heading('Права доступа','Роль задаёт рекомендации, индивидуальные права — доступ')+`<div class="list">${S.permissionUsers.map(u=>`<button class="choice" data-action="editPermissions" data-id="${u.id}"><span><b>${esc(u.display_name)}</b><span class="meta">${esc(PortalCore.roles[u.role])}</span></span></button>`).join('')}</div>`);
 };

@@ -144,6 +144,24 @@ class PostgreSQLAdapterTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             repo.list_by('tariffs', **{'bad-field': 7})
 
+    def test_repository_range_and_recent_push_filters_into_postgresql(self):
+        raw = FakeConnection()
+        raw.result = [(json.dumps({'id':'w1','company_id':1,'completed_at':'2026-10-03T10:00:00'}),)]
+        repo = Repository(pg.Connection(raw, 1, 'x' * 64), 1)
+        rows = repo.list_range('works','completed_at','2026-10-01T00:00:00','2026-11-01T00:00:00',user_id=7)
+        self.assertEqual(rows[0]['id'],'w1')
+        sql,params=raw.calls[-1]
+        self.assertIn("payload::jsonb ->> 'user_id'=%s",sql)
+        self.assertIn("payload::jsonb ->> 'completed_at'>=%s",sql)
+        self.assertIn("payload::jsonb ->> 'completed_at'<%s",sql)
+        self.assertEqual(params,(1,'works','7','2026-10-01T00:00:00','2026-11-01T00:00:00'))
+        raw.result=[(json.dumps({'id':'n1','company_id':1,'occurred_at':'2026-10-03T10:00:00'}),)]
+        recent=repo.list_recent('notifications',20,'occurred_at')
+        self.assertEqual(recent[0]['id'],'n1')
+        sql,params=raw.calls[-1]
+        self.assertIn("ORDER BY payload::jsonb ->> 'occurred_at' DESC",sql)
+        self.assertEqual(params,(1,'notifications',20))
+
     def test_bounded_pool_reuses_raw_connection_and_rebinds_tenant(self):
         created = []
         def driver(*args, **kwargs):

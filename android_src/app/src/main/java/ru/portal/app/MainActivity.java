@@ -251,6 +251,12 @@ public class MainActivity extends Activity {
             String[] keys;
             if (path.matches("/api/v3/work(?:\\?.*)?")) {
                 keys = new String[]{"/api/v3/today","/api/v3/tasks","/api/v3/timers","/api/v3/finance","/api/v3/analytics","/api/v3/invoices","/api/v3/receivables"};
+            } else if (path.matches("/api/v3/links(?:\\?.*)?")) {
+                keys = new String[]{"/api/v3/today","/api/v3/tasks","/api/v3/batches","/api/v3/finance","/api/v3/analytics","/api/v3/invoices","/api/v3/receivables"};
+            } else if (path.matches("/api/v3/(?:batches|tasks)(?:\\?.*)?")) {
+                keys = new String[]{"/api/v3/today","/api/v3/tasks","/api/v3/timers","/api/v3/batches","/api/v3/finance","/api/v3/analytics"};
+            } else if (path.matches("/api/v3/(?:shipments|returns)(?:\\?.*)?")) {
+                keys = new String[]{"/api/v3/today","/api/v3/tasks","/api/v3/batches","/api/v3/finance","/api/v3/analytics","/api/v3/invoices","/api/v3/receivables"};
             } else if (path.matches(".*/(?:tariffs?|operations?|products?)(?:/|\\?|$).*")) {
                 keys = new String[]{"/api/v3/catalog","/api/v3/tariff-history","/api/v3/products","/api/v3/today","/api/v3/finance","/api/v3/analytics"};
             } else if (path.matches(".*/clients?(?:/|\\?|$).*")) {
@@ -289,6 +295,11 @@ public class MainActivity extends Activity {
         }
 
 
+        private boolean queueableMutationPath(String path) {
+            return "/api/v3/work".equals(path) || "/api/v3/links".equals(path) || "/api/v3/batches".equals(path)
+                    || "/api/v3/tasks".equals(path) || "/api/v3/shipments".equals(path) || "/api/v3/returns".equals(path);
+        }
+
         @JavascriptInterface
         public boolean queueMutation(String json) {
             try {
@@ -299,7 +310,7 @@ public class MainActivity extends Activity {
                 String method = row.optString("method", "");
                 String path = row.optString("path", "");
                 JSONObject body = row.optJSONObject("body");
-                if (!"POST".equals(method) || !"/api/v3/work".equals(path) || body == null ||
+                if (!"POST".equals(method) || !queueableMutationPath(path) || body == null ||
                         !requestId.matches("[0-9a-fA-F-]{36}") || !requestId.equals(body.optString("request_id", ""))) return false;
                 return localCache.enqueueMutation(getServerUrl(), company, requestId, row.toString());
             } catch (Exception ignored) {
