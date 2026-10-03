@@ -151,7 +151,10 @@ public partial class MainWindow : Window
         Browser.CoreWebView2.Settings.AreDevToolsEnabled = false;
         Browser.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
         Browser.CoreWebView2.Settings.IsStatusBarEnabled = false;
-        Browser.CoreWebView2.Settings.IsPasswordAutosaveEnabled = false;
+        // Use WebView2's built-in password manager. The credential is kept in the
+        // per-user WebView2 profile, never serialized into PORTAL desktop.json.
+        // WebView2 asks the user before saving/updating and can autofill it later.
+        Browser.CoreWebView2.Settings.IsPasswordAutosaveEnabled = true;
         Browser.CoreWebView2.Settings.AreHostObjectsAllowed = true;
         if (_browserEventsAttached) return;
         Browser.CoreWebView2.NavigationStarting += (_, e) =>

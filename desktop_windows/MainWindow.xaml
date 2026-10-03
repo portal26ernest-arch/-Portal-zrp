@@ -51,7 +51,7 @@
                         <TextBlock x:Name="SetupError" Foreground="#B91C1C" TextWrapping="Wrap" Margin="0,0,0,12"/>
                         <Button x:Name="ConnectButton" Content="Подключиться" Height="40" Click="Connect_Click" Background="#0B5ED7" Foreground="White" BorderBrush="#0B5ED7"/>
                         <TextBlock Margin="0,18,0,0" Foreground="#9CA3AF" TextWrapping="Wrap"
-                                   Text="PORTAL Desktop не хранит пароль, PIN или API-секреты. Сохраняется только адрес выбранного сервера."/>
+                                   Text="PORTAL Desktop может запомнить логин и пароль через встроенный менеджер паролей WebView2. После входа подтвердите «Сохранить пароль». Пароль не записывается в desktop.json или в код PORTAL."/>
                     </StackPanel>
                 </Border>
             </Border>
