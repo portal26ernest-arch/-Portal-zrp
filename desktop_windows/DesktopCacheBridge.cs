@@ -1,7 +1,10 @@
+using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 
 namespace Portal.Desktop;
 
@@ -90,6 +93,37 @@ public sealed class DesktopCacheBridge
             return false;
         }
     }
+
+    public string GetAppMetadata()
+    {
+        try
+        {
+            var assembly = Assembly.GetExecutingAssembly();
+            var executable = Environment.ProcessPath ?? assembly.Location;
+            var fileVersionText = FileVersionInfo.GetVersionInfo(executable).FileVersion ?? "0.0.0.0";
+            _ = Version.TryParse(fileVersionText, out var fileVersion);
+            var versionName = fileVersion is null ? "Недоступна" : fileVersion.ToString(3);
+            var build = fileVersion?.Revision is > 0 ? fileVersion.Revision : 0;
+            var buildDate = assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+                .FirstOrDefault(attribute => attribute.Key == "PortalBuildDate")?.Value ?? string.Empty;
+            return JsonSerializer.Serialize(new
+            {
+                versionName,
+                buildNumber = build > 0 ? build.ToString() : "-",
+                versionCode = build,
+                buildDate,
+                applicationId = "ru.portal.desktop",
+                channel = "release",
+                updatesConfigured = true,
+                client = "desktop"
+            });
+        }
+        catch
+        {
+            return "{}";
+        }
+    }
+
     private string? CachePath(string companyId, string cacheKey)
     {
         var dir = CompanyDirectory(companyId);

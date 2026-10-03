@@ -44,3 +44,9 @@ test('Desktop cache is company-scoped, encrypted by native bridge and never used
   assert.ok(adapter.includes("verb === 'GET' && !!token && !!cacheCompany"));
   assert.ok(adapter.includes("INVALIDATES_CACHE.test(target)"));
 });
+
+test('Desktop exposes native build metadata to the shared About screen',()=>{
+  assert.ok(adapter.includes('getAppMetadata: () =>'));
+  assert.ok(adapter.includes("desktopCache()?.GetAppMetadata()"));
+  assert.ok(app.includes("PortalNative?.getAppMetadata?.()"));
+});

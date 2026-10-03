@@ -7,17 +7,19 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>PORTAL.Desktop</AssemblyName>
     <RootNamespace>Portal.Desktop</RootNamespace>
-    <Version>4.6.0</Version>
-    <FileVersion>4.6.0.46</FileVersion>
-    <AssemblyVersion>4.6.0.0</AssemblyVersion>
-    <InformationalVersion>4.6-startup-update-check</InformationalVersion>
+    <Version>4.7.0</Version>
+    <FileVersion>4.7.0.47</FileVersion>
+    <AssemblyVersion>4.7.0.0</AssemblyVersion>
+    <InformationalVersion>4.7-desktop-metadata</InformationalVersion>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <PublishSingleFile>false</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <PortalBuildDate>$([System.DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ'))</PortalBuildDate>
   </PropertyGroup>
   <ItemGroup>
+    <AssemblyMetadata Include="PortalBuildDate" Value="$(PortalBuildDate)" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
   </ItemGroup>

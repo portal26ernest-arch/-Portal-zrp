@@ -121,6 +121,10 @@
 
   window.PortalNative = {
     getServerUrl: () => location.origin,
+    getAppMetadata: () => {
+      try { return String(desktopCache()?.GetAppMetadata() || '{}'); }
+      catch { return '{}'; }
+    },
     setServerUrl: () => false,
     setCacheCompany: value => {
       const next = String(value || '');
