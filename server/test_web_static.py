@@ -16,7 +16,7 @@ class FakeHandler:
 
 class WebStaticTests(unittest.TestCase):
     def test_shell_assets_and_security_headers(self):
-        for path, mime in [('/web/', 'text/html'),('/web/ui.css','text/css'),('/web/app.js','text/javascript'),('/web/brand-mark.svg','image/svg+xml'),('/web/stickers/catalog.json','application/json')]:
+        for path, mime in [('/web/', 'text/html'),('/web/privacy.html','text/html'),('/web/support.html','text/html'),('/web/ui.css','text/css'),('/web/app.js','text/javascript'),('/web/brand-mark.svg','image/svg+xml'),('/web/stickers/catalog.json','application/json')]:
             handler=FakeHandler(path); web_static.serve(handler)
             self.assertEqual(handler.status,200,path); self.assertTrue(handler.headers['Content-Type'].startswith(mime))
             self.assertEqual(handler.headers['Cache-Control'],'no-store'); self.assertEqual(handler.headers['X-Content-Type-Options'],'nosniff')

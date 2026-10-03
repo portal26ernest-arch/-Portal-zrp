@@ -1,0 +1,249 @@
+name: PORTAL iOS App Store release
+
+on:
+  push:
+    tags:
+      - 'portal-ios-v*'
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: "Optional CFBundleVersion override; blank = derived unique build"
+        required: false
+        default: ""
+        type: string
+      upload_to_testflight:
+        description: "Validate and upload the signed IPA to App Store Connect/TestFlight"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: portal-ios-app-store-release
+  cancel-in-progress: false
+
+env:
+  PORTAL_IOS_BUNDLE_ID: ru.portal.app.ios
+  PORTAL_PUBLIC_API_URL: ${{ secrets.PORTAL_PUBLIC_API_URL }}
+  PORTAL_IOS_TEAM_ID: ${{ secrets.PORTAL_IOS_TEAM_ID }}
+  PORTAL_IOS_CERTIFICATE_P12_BASE64: ${{ secrets.PORTAL_IOS_CERTIFICATE_P12_BASE64 }}
+  PORTAL_IOS_CERTIFICATE_PASSWORD: ${{ secrets.PORTAL_IOS_CERTIFICATE_PASSWORD }}
+  PORTAL_IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.PORTAL_IOS_PROVISIONING_PROFILE_BASE64 }}
+  PORTAL_ASC_KEY_ID: ${{ secrets.PORTAL_ASC_KEY_ID }}
+  PORTAL_ASC_ISSUER_ID: ${{ secrets.PORTAL_ASC_ISSUER_ID }}
+  PORTAL_ASC_PRIVATE_KEY_P8_BASE64: ${{ secrets.PORTAL_ASC_PRIVATE_KEY_P8_BASE64 }}
+
+jobs:
+  build-sign-validate:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify Xcode 26+
+        run: |
+          xcodebuild -version
+          python3 - <<'PY'
+          import re, subprocess
+          text=subprocess.check_output(['xcodebuild','-version'], text=True)
+          m=re.search(r'Xcode ([0-9]+)', text)
+          assert m and int(m.group(1)) >= 26, text
+          PY
+      - name: Check release secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in PORTAL_PUBLIC_API_URL PORTAL_IOS_TEAM_ID             PORTAL_IOS_CERTIFICATE_P12_BASE64 PORTAL_IOS_CERTIFICATE_PASSWORD             PORTAL_IOS_PROVISIONING_PROFILE_BASE64 PORTAL_ASC_KEY_ID             PORTAL_ASC_ISSUER_ID PORTAL_ASC_PRIVATE_KEY_P8_BASE64; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Missing required GitHub secret: $name"
+              exit 1
+            fi
+          done
+
+      - name: Resolve release metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="$(awk -F= '$1=="versionName"{print $2}' android_src/release.properties)"
+          VERSION_CODE="$(awk -F= '$1=="versionCode"{print $2}' android_src/release.properties)"
+          INPUT_BUILD='${{ inputs.build_number }}'
+          if [[ -n "$INPUT_BUILD" ]]; then
+            BUILD="$INPUT_BUILD"
+          else
+            BUILD="$(( VERSION_CODE * 100000 + GITHUB_RUN_NUMBER ))"
+          fi
+          [[ "$VERSION" =~ ^[0-9]+([.][0-9]+){1,2}$ ]]
+          [[ "$BUILD" =~ ^[1-9][0-9]{0,17}$ ]]
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            [[ "$GITHUB_REF_NAME" == "portal-ios-v$VERSION" ]] || { echo "::error::Tag must equal portal-ios-v$VERSION"; exit 1; }
+          fi
+          echo "PORTAL_IOS_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "PORTAL_IOS_BUILD=$BUILD" >> "$GITHUB_ENV"
+          echo "PORTAL_IOS_BUILD_DATE=$(date -u +%F)" >> "$GITHUB_ENV"
+
+      - name: Validate release configuration
+        run: |
+          python3 ios_src/tools/check_mobile_parity.py
+          python3 ios_src/tools/validate_release_config.py             --api-url "$PORTAL_PUBLIC_API_URL"             --team-id "$PORTAL_IOS_TEAM_ID"
+          python3 ios_src/tools/test_validate_release_config.py
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate Xcode project
+        working-directory: ios_src
+        run: xcodegen generate
+
+      - name: Install signing certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/portal-ios-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
+          CERT="$RUNNER_TEMP/portal-ios-distribution.p12"
+          printf '%s' "$PORTAL_IOS_CERTIFICATE_P12_BASE64" | base64 --decode > "$CERT"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$CERT" -k "$KEYCHAIN" -P "$PORTAL_IOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+          security find-identity -v -p codesigning "$KEYCHAIN"
+          echo "PORTAL_IOS_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+          echo "PORTAL_IOS_KEYCHAIN_PASSWORD=$KEYCHAIN_PASSWORD" >> "$GITHUB_ENV"
+      - name: Install App Store provisioning profile
+        shell: bash
+        run: |
+          set -euo pipefail
+          PROFILE="$RUNNER_TEMP/portal-ios.mobileprovision"
+          PROFILE_PLIST="$RUNNER_TEMP/portal-ios-profile.plist"
+          printf '%s' "$PORTAL_IOS_PROVISIONING_PROFILE_BASE64" | base64 --decode > "$PROFILE"
+          security cms -D -i "$PROFILE" > "$PROFILE_PLIST"
+
+          UUID="$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$PROFILE_PLIST")"
+          NAME="$(/usr/libexec/PlistBuddy -c 'Print :Name' "$PROFILE_PLIST")"
+          TEAM="$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$PROFILE_PLIST")"
+          APP_ID="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$PROFILE_PLIST")"
+          GET_TASK_ALLOW="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:get-task-allow' "$PROFILE_PLIST")"
+
+          [[ "$TEAM" == "$PORTAL_IOS_TEAM_ID" ]]
+          [[ "$APP_ID" == "$PORTAL_IOS_TEAM_ID.$PORTAL_IOS_BUNDLE_ID" ]]
+          [[ "$GET_TASK_ALLOW" == "false" ]]
+          if /usr/libexec/PlistBuddy -c 'Print :ProvisionedDevices' "$PROFILE_PLIST" >/dev/null 2>&1; then
+            echo "::error::Provisioning profile is device-scoped; an App Store profile is required"
+            exit 1
+          fi
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$PROFILE" "$HOME/Library/MobileDevice/Provisioning Profiles/$UUID.mobileprovision"
+          echo "PORTAL_IOS_PROFILE_NAME=$NAME" >> "$GITHUB_ENV"
+          echo "PORTAL_IOS_PROFILE_UUID=$UUID" >> "$GITHUB_ENV"
+
+      - name: Install App Store Connect API key
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$PORTAL_ASC_KEY_ID" =~ ^[A-Z0-9]{10}$ ]]
+          [[ "$PORTAL_ASC_ISSUER_ID" =~ ^[0-9a-fA-F-]{36}$ ]]
+          KEY_DIR="$HOME/.appstoreconnect/private_keys"
+          mkdir -p "$KEY_DIR"
+          KEY_PATH="$KEY_DIR/AuthKey_$PORTAL_ASC_KEY_ID.p8"
+          printf '%s' "$PORTAL_ASC_PRIVATE_KEY_P8_BASE64" | base64 --decode > "$KEY_PATH"
+          chmod 600 "$KEY_PATH"
+          grep -q 'BEGIN PRIVATE KEY' "$KEY_PATH"
+      - name: Archive signed iOS app
+        working-directory: ios_src
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARCHIVE="$RUNNER_TEMP/PORTAL.xcarchive"
+          security unlock-keychain -p "$PORTAL_IOS_KEYCHAIN_PASSWORD" "$PORTAL_IOS_KEYCHAIN"
+          xcodebuild             -project PortalIOS.xcodeproj             -scheme PortalIOS             -configuration Release             -destination 'generic/platform=iOS'             -archivePath "$ARCHIVE"             MARKETING_VERSION="$PORTAL_IOS_VERSION"             CURRENT_PROJECT_VERSION="$PORTAL_IOS_BUILD"             PORTAL_API_URL="$PORTAL_PUBLIC_API_URL"             PORTAL_RELEASE_CHANNEL="release"             PORTAL_BUILD_DATE="$PORTAL_IOS_BUILD_DATE"             DEVELOPMENT_TEAM="$PORTAL_IOS_TEAM_ID"             CODE_SIGN_STYLE=Manual             CODE_SIGN_IDENTITY="Apple Distribution"             PROVISIONING_PROFILE_SPECIFIER="$PORTAL_IOS_PROFILE_NAME"             OTHER_CODE_SIGN_FLAGS="--keychain $PORTAL_IOS_KEYCHAIN"             archive
+          echo "PORTAL_IOS_ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+
+      - name: Verify signed archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="$PORTAL_IOS_ARCHIVE/Products/Applications/PortalIOS.app"
+          test -d "$APP"
+          test -f "$APP/PrivacyInfo.xcprivacy"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist")"
+          VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist")"
+          BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist")"
+          API="$(/usr/libexec/PlistBuddy -c 'Print :PORTALDefaultAPIURL' "$APP/Info.plist")"
+          CHANNEL="$(/usr/libexec/PlistBuddy -c 'Print :PORTALReleaseChannel' "$APP/Info.plist")"
+          ENCRYPTION="$(/usr/libexec/PlistBuddy -c 'Print :ITSAppUsesNonExemptEncryption' "$APP/Info.plist")"
+          [[ "$BUNDLE_ID" == "$PORTAL_IOS_BUNDLE_ID" ]]
+          [[ "$VERSION" == "$PORTAL_IOS_VERSION" ]]
+          [[ "$BUILD" == "$PORTAL_IOS_BUILD" ]]
+          [[ "$API" == "$PORTAL_PUBLIC_API_URL" ]]
+          [[ "$CHANNEL" == "release" ]]
+          [[ "$ENCRYPTION" == "false" ]]
+
+      - name: Create App Store export options
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+          <key>method</key><string>app-store-connect</string>
+          <key>destination</key><string>export</string>
+          <key>signingStyle</key><string>manual</string>
+          <key>teamID</key><string>$PORTAL_IOS_TEAM_ID</string>
+          <key>manageAppVersionAndBuildNumber</key><false/>
+          <key>stripSwiftSymbols</key><true/>
+          <key>provisioningProfiles</key><dict>
+            <key>$PORTAL_IOS_BUNDLE_ID</key><string>$PORTAL_IOS_PROFILE_NAME</string>
+          </dict>
+          </dict></plist>
+          PLIST
+          plutil -lint "$RUNNER_TEMP/ExportOptions.plist"
+
+      - name: Export signed IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/portal-ios-export"
+          mkdir -p "$OUT"
+          xcodebuild -exportArchive             -archivePath "$PORTAL_IOS_ARCHIVE"             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"             -exportPath "$OUT"
+          IPA="$(find "$OUT" -maxdepth 1 -name '*.ipa' -print -quit)"
+          test -n "$IPA"
+          shasum -a 256 "$IPA" | tee "$OUT/PORTAL_iOS.sha256"
+          unzip -l "$IPA" | grep -q 'PrivacyInfo.xcprivacy'
+          echo "PORTAL_IOS_IPA=$IPA" >> "$GITHUB_ENV"
+          echo "PORTAL_IOS_EXPORT_DIR=$OUT" >> "$GITHUB_ENV"
+      - name: Validate IPA with App Store Connect
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun altool --validate-app             -f "$PORTAL_IOS_IPA"             -t ios             --apiKey "$PORTAL_ASC_KEY_ID"             --apiIssuer "$PORTAL_ASC_ISSUER_ID"             --output-format xml
+
+      - name: Upload IPA to TestFlight
+        if: ${{ github.event_name == 'push' || inputs.upload_to_testflight }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun altool --upload-app             -f "$PORTAL_IOS_IPA"             -t ios             --apiKey "$PORTAL_ASC_KEY_ID"             --apiIssuer "$PORTAL_ASC_ISSUER_ID"             --output-format xml
+
+      - name: Publish signed IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PORTAL-iOS-${{ env.PORTAL_IOS_VERSION }}-${{ env.PORTAL_IOS_BUILD }}
+          path: |
+            ${{ env.PORTAL_IOS_EXPORT_DIR }}/*.ipa
+            ${{ env.PORTAL_IOS_EXPORT_DIR }}/PORTAL_iOS.sha256
+          retention-days: 3
+          if-no-files-found: error
+
+      - name: Cleanup signing material
+        if: always()
+        shell: bash
+        run: |
+          rm -rf "$HOME/.appstoreconnect/private_keys"
+          rm -f "$HOME/Library/MobileDevice/Provisioning Profiles/$PORTAL_IOS_PROFILE_UUID.mobileprovision" 2>/dev/null || true
+          if [[ -n "${PORTAL_IOS_KEYCHAIN:-}" ]]; then
+            security delete-keychain "$PORTAL_IOS_KEYCHAIN" 2>/dev/null || true
+          fi
