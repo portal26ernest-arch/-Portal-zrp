@@ -9,8 +9,10 @@ _FIELDS = {
     "build": "PORTAL_DESKTOP_UPDATE_BUILD",
     "download_url": "PORTAL_DESKTOP_UPDATE_URL",
     "sha256": "PORTAL_DESKTOP_UPDATE_SHA256",
+    "signature": "PORTAL_DESKTOP_UPDATE_SIGNATURE",
 }
 _SHA256 = re.compile(r"^[0-9a-fA-F]{64}$")
+_SIGNATURE = re.compile(r"^[A-Za-z0-9+/]{512}$")
 
 
 def _safe_download_url(value: str) -> bool:
@@ -43,6 +45,8 @@ def load_manifest(environ) -> dict | None:
         raise RuntimeError("Desktop update version is invalid")
     if not _SHA256.fullmatch(values["sha256"]):
         raise RuntimeError("Desktop update SHA-256 is invalid")
+    if not _SIGNATURE.fullmatch(values["signature"]):
+        raise RuntimeError("Desktop update signature is invalid")
     if not _safe_download_url(values["download_url"]):
         raise RuntimeError("Desktop update URL must use HTTPS")
 
@@ -51,4 +55,5 @@ def load_manifest(environ) -> dict | None:
         "version": values["version"],
         "download_url": values["download_url"],
         "sha256": values["sha256"].lower(),
+        "signature": values["signature"],
     }

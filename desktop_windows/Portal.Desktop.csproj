@@ -20,5 +20,6 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
+    <EmbeddedResource Include="desktop-update-signing-public.pem" LogicalName="Portal.Desktop.desktop-update-signing-public.pem" />
   </ItemGroup>
 </Project>

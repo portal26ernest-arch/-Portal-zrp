@@ -26,6 +26,12 @@ server {
 
     client_max_body_size 25m;
 
+    # Bootstrap is available only on the application's loopback listener.
+    # A public hostname may sit behind a local tunnel/proxy, so never proxy it.
+    location = /api/setup {
+        return 403;
+    }
+
     location / {
         proxy_pass http://127.0.0.1:__PORTAL_LOOPBACK_PORT__;
         proxy_http_version 1.1;

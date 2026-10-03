@@ -5,6 +5,7 @@ const gradle = fs.readFileSync(path.join(root, 'app', 'build.gradle'), 'utf8');
 const gradleProperties = fs.readFileSync(path.join(root, 'gradle.properties'), 'utf8');
 const manifest = fs.readFileSync(path.join(root, 'app', 'src', 'main', 'AndroidManifest.xml'), 'utf8');
 const releaseWorkflow = fs.readFileSync(path.join(root, '..', '.github', 'workflows', 'android-release.yml'), 'utf8');
+const desktopReleaseWorkflow = fs.readFileSync(path.join(root, '..', '.github', 'workflows', 'windows-desktop.yml'), 'utf8');
 const stagingWorkflow = fs.readFileSync(path.join(root, '..', '.github', 'workflows', 'android-build.yml'), 'utf8');
 
 function must(condition, message) {
@@ -49,6 +50,13 @@ must(releaseWorkflow.includes('releases/latest/download/portal-update.json'),
   'Signed release must pin the stable public update manifest URL');
 must(releaseWorkflow.includes('build_update_manifest.py'),
   'Signed release must generate a machine-readable update manifest');
+must(releaseWorkflow.includes('Require release tag at current reviewed main commit') &&
+     releaseWorkflow.includes('git rev-parse refs/remotes/origin/main') &&
+     releaseWorkflow.includes('fetch-depth: 0'),
+  'Android tag releases must be pinned to the current reviewed main commit');
+must(releaseWorkflow.indexOf('Require release tag at current reviewed main commit') <
+     releaseWorkflow.indexOf('Validate release inputs'),
+  'Android release provenance must be checked before signing secrets are exposed');
 must(releaseWorkflow.includes('gh release create') && releaseWorkflow.includes('portal-update.json'),
   'Signed release must publish APK, checksum and manifest through GitHub Releases');
 must(!stagingWorkflow.includes('trycloudflare.com'),
@@ -60,4 +68,8 @@ must(stagingWorkflow.includes("'https://portal.invalid'"),
 must(gradle.includes("graph.allTasks.any") && gradle.includes("Release requires a stable owned HTTPS PORTAL API URL") &&
      gradle.includes("host.endsWith('.sslip.io')") && gradle.includes("host.endsWith('.trycloudflare.com')"),
   'Release task must reject missing, local, and temporary API endpoints');
+must(desktopReleaseWorkflow.includes('Require release tag at current reviewed main commit') &&
+     desktopReleaseWorkflow.includes('git rev-parse refs/remotes/origin/main') &&
+     desktopReleaseWorkflow.includes('fetch-depth: 0'),
+  'Windows Desktop tag releases must be pinned to the current reviewed main commit');
 console.log('Android build security checks: OK');

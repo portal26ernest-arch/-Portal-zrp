@@ -455,20 +455,23 @@ public partial class MainWindow : Window
             try { build = checked(major * 10 + minor); }
             catch (OverflowException) { continue; }
             var version = $"{major}.{minor}.0";
-            var expectedName = $"PORTAL-Desktop-win-x64-{version}.zip";
+            var expectedName = "portal-desktop-update.json";
             if (!release.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array) continue;
 
             foreach (var asset in assets.EnumerateArray())
             {
-                if (!asset.TryGetProperty("name", out var nameNode) || nameNode.GetString() != expectedName) continue;
-                if (!asset.TryGetProperty("browser_download_url", out var urlNode) ||
-                    !asset.TryGetProperty("digest", out var digestNode)) continue;
-                var url = urlNode.GetString() ?? string.Empty;
-                var digest = digestNode.GetString() ?? string.Empty;
-                if (!digest.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase)) continue;
-                var sha256 = digest["sha256:".Length..];
-                if (!Regex.IsMatch(sha256, "^[0-9a-fA-F]{64}$")) continue;
-                return new DesktopUpdateManifest(build, version, url, sha256);
+                if (!asset.TryGetProperty("name", out var nameNode) || nameNode.GetString() != expectedName ||
+                    !asset.TryGetProperty("browser_download_url", out var urlNode)) continue;
+                var manifestUri = urlNode.GetString();
+                if (!Uri.TryCreate(manifestUri, UriKind.Absolute, out var parsedUri) ||
+                    !parsedUri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase)) continue;
+                using var manifestResponse = await GetUpdateResponseAsync(parsedUri);
+                manifestResponse.EnsureSuccessStatusCode();
+                var manifest = await JsonSerializer.DeserializeAsync<DesktopUpdateManifest>(
+                    await manifestResponse.Content.ReadAsStreamAsync(),
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true, PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower });
+                if (manifest is not null && manifest.Build == build && manifest.Version == version &&
+                    ValidUpdateManifest(manifest, out _)) return manifest;
             }
         }
         return null;
@@ -490,6 +493,7 @@ public partial class MainWindow : Window
             var expectedPath = $"/{GithubRepository}/releases/download/portal-desktop-v{manifest.Version}/PORTAL-Desktop-win-x64-{manifest.Version}.zip";
             if (!uri.AbsolutePath.Equals(expectedPath, StringComparison.Ordinal)) return false;
         }
+        if (!DesktopUpdateSignature.Verify(manifest)) return false;
         downloadUri = uri;
         return true;
     }
@@ -535,6 +539,8 @@ public partial class MainWindow : Window
 
     private async Task DownloadAndInstallUpdate(DesktopUpdateManifest manifest, Uri downloadUri)
     {
+        if (!ValidUpdateManifest(manifest, out var verifiedUri) || verifiedUri != downloadUri)
+            throw new InvalidDataException("Подпись manifest обновления не прошла проверку.");
         StatusText.Text = "Загрузка обновления…";
         using var response = await GetUpdateResponseAsync(downloadUri);
         if (response.Content.Headers.ContentLength is long length && length > MaxInstallerBytes)
@@ -668,5 +674,4 @@ public partial class MainWindow : Window
     }
 
     private sealed record DesktopSettings(string ServerOrigin);
-    private sealed record DesktopUpdateManifest(int Build, string Version, string DownloadUrl, string Sha256);
 }

@@ -22,21 +22,28 @@ jobs:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
       PORTAL_PUBLIC_API_URL: ${{ secrets.PORTAL_PUBLIC_API_URL || 'https://2a03-6f00-a--1-f426.sslip.io' }}
-      PORTAL_ANDROID_STORE_PASSWORD: ${{ secrets.PORTAL_ANDROID_STORE_PASSWORD }}
-      PORTAL_ANDROID_KEY_ALIAS: ${{ secrets.PORTAL_ANDROID_KEY_ALIAS }}
-      PORTAL_ANDROID_KEY_PASSWORD: ${{ secrets.PORTAL_ANDROID_KEY_PASSWORD }}
-      PORTAL_ANDROID_CERT_SHA256: ${{ secrets.PORTAL_ANDROID_CERT_SHA256 }}
       PORTAL_ANDROID_KEYSTORE_TYPE: PKCS12
       PORTAL_RELEASE_NOTES: ${{ inputs.release_notes }}
     steps:
-      - name: Require main branch or signed release tag
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require release tag at current reviewed main commit
         shell: bash
         run: |
+          set -euo pipefail
           if [[ "$GITHUB_REF" == refs/tags/portal-android-v* ]]; then
-            exit 0
+            git fetch --no-tags origin main
+            test "$(git rev-parse "$GITHUB_SHA")" = "$(git rev-parse refs/remotes/origin/main)"
+          else
+            test "$GITHUB_REF" = "refs/heads/main"
+            git fetch --no-tags origin main
+            test "$(git rev-parse "$GITHUB_SHA")" = "$(git rev-parse refs/remotes/origin/main)"
           fi
-          test "$GITHUB_REF" = "refs/heads/main"
-      - uses: actions/checkout@v4
+      - name: Restrict manual releases to main
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: test "$GITHUB_REF" = "refs/heads/main"
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
@@ -46,6 +53,10 @@ jobs:
         shell: bash
         env:
           KEYSTORE_B64: ${{ secrets.PORTAL_ANDROID_KEYSTORE_B64 }}
+          PORTAL_ANDROID_STORE_PASSWORD: ${{ secrets.PORTAL_ANDROID_STORE_PASSWORD }}
+          PORTAL_ANDROID_KEY_ALIAS: ${{ secrets.PORTAL_ANDROID_KEY_ALIAS }}
+          PORTAL_ANDROID_KEY_PASSWORD: ${{ secrets.PORTAL_ANDROID_KEY_PASSWORD }}
+          PORTAL_ANDROID_CERT_SHA256: ${{ secrets.PORTAL_ANDROID_CERT_SHA256 }}
         run: |
           set -euo pipefail
           [[ "$PORTAL_PUBLIC_API_URL" == https://* ]]
@@ -89,10 +100,16 @@ jobs:
         with:
           gradle-version: "8.9"
       - name: Build signed HTTPS release
+        env:
+          PORTAL_ANDROID_STORE_PASSWORD: ${{ secrets.PORTAL_ANDROID_STORE_PASSWORD }}
+          PORTAL_ANDROID_KEY_ALIAS: ${{ secrets.PORTAL_ANDROID_KEY_ALIAS }}
+          PORTAL_ANDROID_KEY_PASSWORD: ${{ secrets.PORTAL_ANDROID_KEY_PASSWORD }}
         run: gradle -p android_src --stacktrace -PportalApiUrl="$PORTAL_PUBLIC_API_URL" assembleRelease
       - name: Verify and name release
         id: artifact
         shell: bash
+        env:
+          PORTAL_ANDROID_CERT_SHA256: ${{ secrets.PORTAL_ANDROID_CERT_SHA256 }}
         run: |
           set -euo pipefail
           APK=$(find android_src/app/build/outputs/apk/release -name '*.apk' -type f | head -n 1)

@@ -6,6 +6,8 @@ const xaml=fs.readFileSync(path.join(repo,'desktop_windows/MainWindow.xaml'),'ut
 const code=fs.readFileSync(path.join(repo,'desktop_windows/MainWindow.xaml.cs'),'utf8');
 const app=fs.readFileSync(path.join(repo,'android_src/app/src/main/assets/app.js'),'utf8');
 const cache=fs.readFileSync(path.join(repo,'desktop_windows/DesktopCacheBridge.cs'),'utf8');
+const windowsWorkflow=fs.readFileSync(path.join(repo,'.github/workflows/windows-desktop.yml'),'utf8');
+const signature=fs.readFileSync(path.join(repo,'desktop_windows/DesktopUpdateSignature.cs'),'utf8');
 assert.match(xaml,/x:Name="HomeButton"[^>]+Click="Home_Click"/);
 assert.match(xaml,/PreviewMouseWheel="Browser_PreviewMouseWheel"/);
 assert.match(code,/ExecuteScriptAsync\("Boolean\(window\.portalBack && window\.portalBack\(\)\)"\)/);
@@ -33,6 +35,17 @@ assert.match(code,/AllowedUpdateRedirect\(initial, next\)/);
 assert.match(code,/\.githubusercontent\.com/);
 assert.match(code,/ZipFile\.OpenRead\(packagePath\)/);
 assert.match(code,/SHA-256 пакета обновления не совпадает/);
+assert.match(code,/DesktopUpdateSignature\.Verify\(manifest\)/);
+assert.match(code,/portal-desktop-update\.json/);
+assert.match(signature,/PORTAL-DESKTOP-UPDATE-V1/);
+assert.match(signature,/RSASignaturePadding\.Pkcs1/);
+assert.match(signature,/rsa\.VerifyData/);
+assert.match(signature,/Portal\.Desktop\.desktop-update-signing-public\.pem/);
+assert.match(fs.readFileSync(path.join(repo,'desktop_windows/Portal.Desktop.csproj'),'utf8'),/EmbeddedResource Include="desktop-update-signing-public\.pem"/);
+assert.match(windowsWorkflow,/PORTAL_DESKTOP_UPDATE_SIGNING_PRIVATE_KEY/);
+assert.match(windowsWorkflow,/openssl dgst -sha256 -sign/);
+assert.match(windowsWorkflow,/portal-desktop-update\.json/);
+assert.match(windowsWorkflow,/test -n "\$PORTAL_DESKTOP_UPDATE_SIGNING_PRIVATE_KEY"/);
 assert.match(code,/githubManifest\.Build > serverManifest\.Build/);
 assert.match(code,/portal-desktop-43-style/);
 assert.match(code,/portalDesktop43Patched/);
@@ -54,4 +67,18 @@ assert.match(cache,/long\.TryParse\(companyId/);
 assert.match(code,/\['Работа',[\s\S]+\['Управление',[\s\S]+\['Учёт и финансы',[\s\S]+\['Аналитика',[\s\S]+\['Система'/);
 assert.match(code,/UpdateDesktopShortcuts\(executable, target, version\)/);
 assert.match(code,/Process\.Start\(new ProcessStartInfo\(executable\)/);
+assert.match(windowsWorkflow,/Require release tag at current reviewed main commit[\s\S]+git fetch --no-tags origin main[\s\S]+tagCommit -ne \$mainCommit/);
+assert.ok(windowsWorkflow.indexOf('Require release tag at current reviewed main commit') <
+  windowsWorkflow.indexOf('Publish self-contained Windows client'),
+  'Desktop release provenance must be checked before building a tag-triggered artifact');
+assert.ok(windowsWorkflow.indexOf('Create signed Desktop update manifest') <
+  windowsWorkflow.indexOf('gh release create'),
+  'Desktop release must sign update metadata before publishing it');
+assert.match(windowsWorkflow,/Recheck release tag before signing and publishing[\s\S]+refs\/tags\/\$\{GITHUB_REF_NAME\}:refs\/tags\/\$\{GITHUB_REF_NAME\}[\s\S]+GITHUB_SHA/);
+assert.ok(windowsWorkflow.indexOf('Recheck release tag before signing and publishing') <
+  windowsWorkflow.indexOf('Create signed Desktop update manifest'),
+  'Desktop release must revalidate tag provenance before the private key is exposed');
+assert.ok(windowsWorkflow.indexOf('Validate release tag version before signing') <
+  windowsWorkflow.indexOf('Create signed Desktop update manifest'),
+  'Desktop release must validate the tag version before exposing the private key');
 console.log('Desktop shell navigation, branding and self-update checks: OK');

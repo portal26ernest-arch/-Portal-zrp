@@ -69,6 +69,7 @@ class MemorySocket:
 
 class PortalAPITest(unittest.TestCase):
     def setUp(self):
+        portal.LOGIN_THROTTLE = portal.LoginThrottle()
         self.tmp = tempfile.TemporaryDirectory(prefix="portal-test-")
         self.old_db = portal.DB_PATH
         portal.DB_PATH = str(Path(self.tmp.name) / "fixture.db")
@@ -153,6 +154,25 @@ class PortalAPITest(unittest.TestCase):
         self.assertEqual(logged["user"]["username"],"worker")
         self.request("/api/users",self.admin,{"username":"WoRkEr","display_name":"Duplicate","pin":"4321","role":"packer"},status=400)
 
+    def test_login_attempts_are_limited_per_account_and_success_restores_access(self):
+        with patch.object(portal, "verify_pin", return_value=False) as verify:
+            for index in range(portal.LoginThrottle.ACCOUNT_LIMIT):
+                self.request("/api/login", body={"username":"worker","pin":"wrong"}, status=401,
+                             extra_headers={"X-Real-IP":f"198.51.100.{index+1}"})
+            self.request("/api/login", body={"username":"WORKER","pin":"1234"}, status=429,
+                         extra_headers={"X-Real-IP":"203.0.113.8"})
+            self.assertEqual(verify.call_count, portal.LoginThrottle.ACCOUNT_LIMIT)
+        portal.LOGIN_THROTTLE.succeeded("tenant:1:worker")
+        self.assertEqual(self.login("worker", "1234")["user"]["username"], "worker")
+
+    def test_platform_owner_throttle_is_shared_across_login_routes(self):
+        portal.create_platform_owner("owner", "Owner-secret-canary-123")
+        with patch.object(portal, "verify_pin", return_value=False) as verify:
+            for _ in range(portal.LoginThrottle.ACCOUNT_LIMIT):
+                self.request("/api/platform/login", body={"username":"owner","pin":"bad"}, status=401)
+            self.request("/api/login", body={"username":"owner","pin":"bad"}, status=429)
+            self.assertEqual(verify.call_count, portal.LoginThrottle.ACCOUNT_LIMIT)
+
     def test_self_service_pin_change_verifies_identity_revokes_other_sessions_and_preserves_current(self):
         with portal.db() as conn:
             other_session=portal.create_session(conn,self.worker_id)
@@ -185,6 +205,7 @@ class PortalAPITest(unittest.TestCase):
             "PORTAL_DESKTOP_UPDATE_BUILD": "",
             "PORTAL_DESKTOP_UPDATE_URL": "",
             "PORTAL_DESKTOP_UPDATE_SHA256": "",
+            "PORTAL_DESKTOP_UPDATE_SIGNATURE": "",
         }
         with patch.dict(os.environ, keys, clear=False):
             self.request("/api/desktop-update", status=404)
@@ -193,10 +214,12 @@ class PortalAPITest(unittest.TestCase):
             "PORTAL_DESKTOP_UPDATE_BUILD": "37",
             "PORTAL_DESKTOP_UPDATE_URL": "https://downloads.example.test/PORTAL-Desktop-win-x64-3.7.0.zip",
             "PORTAL_DESKTOP_UPDATE_SHA256": "a" * 64,
+            "PORTAL_DESKTOP_UPDATE_SIGNATURE": "B" * 512,
         }
         with patch.dict(os.environ, configured, clear=False):
             data = self.request("/api/desktop-update")
             self.assertEqual(data["build"], 37)
+            self.assertEqual(data["signature"], "B" * 512)
             self.assertNotIn("token", data)
             self.request("/api/desktop-update", body={}, status=405)
 
@@ -210,6 +233,18 @@ class PortalAPITest(unittest.TestCase):
             self.request(path,body={},status=401)
         self.assertNotIn("db",self.request("/api/ping"))
         self.request("/api/setup",body={"username":"attacker","pin":"1234"},status=403)
+
+    def test_setup_rejects_remote_identity_from_local_reverse_proxy_but_allows_local_operator(self):
+        with portal.db() as conn:
+            conn.execute("DELETE FROM app_sessions")
+            conn.execute("DELETE FROM app_users")
+        self.request("/api/setup", body={"username":"attacker","pin":"1234"}, status=403,
+                     extra_headers={"X-Real-IP":"198.51.100.7"})
+        with portal.db() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM app_users").fetchone()[0], 0)
+        response=self.request("/api/setup", body={"username":"bootstrap","pin":"1234"})
+        self.assertIn("token",response)
+        self.request("/api/setup", body={"username":"replay","pin":"1234"}, status=403)
 
     def test_packer_cannot_read_finance_or_admin(self):
         for path in (f"/api/clients/{self.cid}","/api/invoices","/api/materials","/api/users","/api/admin/clients"):

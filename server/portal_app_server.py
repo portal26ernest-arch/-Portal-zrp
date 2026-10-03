@@ -2,12 +2,16 @@
 import base64
 import hashlib
 import hmac
+import ipaddress
 import json
 import math
 import os
 import secrets
 import sqlite3
 import sys
+import threading
+import time
+from collections import OrderedDict, deque
 from decimal import Decimal
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -40,6 +44,58 @@ PORT = CONFIG.port
 SESSION_HOURS = 24 * 30
 GLOBAL_ROLE = "platform_owner"
 GLOBAL_ROLE_LABEL = "God"
+
+
+class LoginThrottle:
+    """Bound online login attempts per normalized account and observed source."""
+    WINDOW_SECONDS = 300
+    ACCOUNT_LIMIT = 5
+    SOURCE_WINDOW_SECONDS = 60
+    SOURCE_LIMIT = 120
+    MAX_BUCKETS = 20_000
+
+    def __init__(self):
+        self._buckets = OrderedDict()
+        self._lock = threading.Lock()
+
+    @staticmethod
+    def _key(value):
+        return hashlib.sha256(value.encode("utf-8", "replace")).hexdigest()
+
+    def keys(self, account, source):
+        return ("account:" + self._key(account), "source:" + self._key(source))
+
+    def begin(self, account, source, now=None):
+        now = time.monotonic() if now is None else now
+        account_key, source_key = self.keys(account, source)
+        with self._lock:
+            for key, window, limit in ((account_key, self.WINDOW_SECONDS, self.ACCOUNT_LIMIT),
+                                       (source_key, self.SOURCE_WINDOW_SECONDS, self.SOURCE_LIMIT)):
+                attempts = self._buckets.get(key)
+                if attempts is None:
+                    continue
+                while attempts and now - attempts[0] >= window:
+                    attempts.popleft()
+                if not attempts:
+                    del self._buckets[key]
+                elif len(attempts) >= limit:
+                    self._buckets.move_to_end(key)
+                    return True
+            for key in (account_key, source_key):
+                attempts = self._buckets.setdefault(key, deque())
+                attempts.append(now)
+                self._buckets.move_to_end(key)
+            while len(self._buckets) > self.MAX_BUCKETS:
+                self._buckets.popitem(last=False)
+            return False
+
+    def succeeded(self, account):
+        account_key = "account:" + self._key(account)
+        with self._lock:
+            self._buckets.pop(account_key, None)
+
+
+LOGIN_THROTTLE = LoginThrottle()
 
 ROLE_LABELS = {
     "admin": "Управляющий",
@@ -808,6 +864,20 @@ class Handler(BaseHTTPRequestHandler):
     def error_json(self, message, status=400):
         self.send_json({"ok":False,"error":str(message)},status)
 
+    def login_source(self):
+        """Trust X-Real-IP only when the immediate peer is the local reverse proxy."""
+        try:
+            peer = ipaddress.ip_address(self.client_address[0])
+        except (ValueError, IndexError, TypeError):
+            return "unknown"
+        forwarded = self.headers.get("X-Real-IP") if peer.is_loopback else None
+        if forwarded:
+            try:
+                return str(ipaddress.ip_address(forwarded.strip()))
+            except ValueError:
+                return "invalid-forwarded-address"
+        return str(peer)
+
     def token(self):
         auth=self.headers.get("Authorization","")
         if auth.startswith("Bearer "): return auth[7:].strip()
@@ -878,8 +948,13 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({'ok':True,'data':result})
         if path == "/api/platform/login" and method == "POST":
             body = parse_body(self)
+            username = str(body.get("username", ""))
+            account = "platform:" + username.strip().casefold()
+            source = self.login_source()
+            if LOGIN_THROTTLE.begin(account, source):
+                return self.error_json("Слишком много попыток входа. Попробуйте позже.", 429)
             with tenants.control(DB_PATH) as conn:
-                u = conn.execute("SELECT * FROM platform_owners WHERE username=? AND active=1", (str(body.get("username", "")),)).fetchone()
+                u = conn.execute("SELECT * FROM platform_owners WHERE username=? AND active=1", (username,)).fetchone()
                 valid = bool(u and verify_pin(str(body.get("pin", "")), u["pin_salt"], u["pin_hash"]))
                 if u:
                     tenants.audit(conn, u["id"], 1, "god_login", "success" if valid else "denied")
@@ -888,7 +963,10 @@ class Handler(BaseHTTPRequestHandler):
                     conn.execute("INSERT INTO platform_sessions(token_hash,user_id,expires_at) VALUES(?,?,?)",
                                  (hashlib.sha256(token.encode()).hexdigest(), u["id"], (datetime.now()+timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S")))
                     result = {"ok":True,"token":token,"user":{"id":u["id"],"username":u["username"],"role":GLOBAL_ROLE,"company_id":1}}
-            return self.send_json(result) if valid else self.error_json("Неверный логин или пароль", 401)
+            if valid:
+                LOGIN_THROTTLE.succeeded(account)
+                return self.send_json(result)
+            return self.error_json("Неверный логин или пароль", 401)
         if path == "/api/login" and method == "POST":
             body = parse_body(self)
             company_id = body.get("company_id", 1)
@@ -902,13 +980,18 @@ class Handler(BaseHTTPRequestHandler):
                 return self.error_json("Компания недоступна", 403)
             username=str(body.get("username", "")).strip()
             pin=str(body.get("pin", ""))
+            source=self.login_source()
+            account="tenant:"+str(company_id)+":"+username.casefold()
             with tenants.company_scope(company_id), db() as conn:
                 u = conn.execute("SELECT * FROM app_users WHERE lower(username)=lower(?) AND active=1", (username,)).fetchone()
                 if u:
+                    if LOGIN_THROTTLE.begin(account,source):
+                        return self.error_json("Слишком много попыток входа. Попробуйте позже.",429)
                     if not verify_pin(pin, u["pin_salt"], u["pin_hash"]):
                         repo=Repository(conn,company_id)
                         if repo.ready():activity.login(repo,u['username'],u['id'],False,activity.client_type(self.headers))
                         return self.error_json("Неверный логин, PIN или компания", 401)
+                    LOGIN_THROTTLE.succeeded(account)
                     token = create_session(conn, u["id"])
                     repo=Repository(conn,company_id)
                     if repo.ready():activity.login(repo,u['username'],u['id'],True,activity.client_type(self.headers),token)
@@ -917,14 +1000,20 @@ class Handler(BaseHTTPRequestHandler):
             with tenants.control(DB_PATH) as control:
                 god = control.execute("SELECT * FROM platform_owners WHERE lower(username)=lower(?) AND active=1", (username,)).fetchone()
                 if god:
+                    owner_account="platform:"+username.casefold()
+                    if LOGIN_THROTTLE.begin(owner_account,source):
+                        return self.error_json("Слишком много попыток входа. Попробуйте позже.",429)
                     valid=verify_pin(pin,god["pin_salt"],god["pin_hash"])
                     tenants.audit(control,god["id"],1,"god_login","success" if valid else "denied")
                     if not valid:
                         return self.error_json("Неверный логин, PIN или компания",401)
+                    LOGIN_THROTTLE.succeeded(owner_account)
                     token="p."+secrets.token_urlsafe(40)
                     control.execute("INSERT INTO platform_sessions(token_hash,user_id,expires_at) VALUES(?,?,?)",
                                     (hashlib.sha256(token.encode()).hexdigest(),god["id"],(datetime.now()+timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S")))
                     return self.send_json({"ok":True,"token":token,"user":{"id":god["id"],"username":god["username"],"role":GLOBAL_ROLE,"company_id":1}})
+            if LOGIN_THROTTLE.begin(account,source):
+                return self.error_json("Слишком много попыток входа. Попробуйте позже.",429)
             return self.error_json("Неверный логин, PIN или компания",401)
         if path == '/api/ready':
             if method != 'GET':
@@ -1249,7 +1338,12 @@ class Handler(BaseHTTPRequestHandler):
                 count=conn.execute("SELECT COUNT(*) FROM app_users").fetchone()[0]
             return self.send_json({"ok":True,"build":BUILD_ID,"setup_required":count==0})
         if path=="/api/setup" and method=="POST":
-            if self.client_address[0] not in {"127.0.0.1", "::1"}:
+            try:
+                peer=ipaddress.ip_address(self.client_address[0])
+                source=ipaddress.ip_address(self.login_source())
+            except (ValueError,IndexError,TypeError):
+                raise PermissionError("Первого администратора можно создать только локально")
+            if not peer.is_loopback or not source.is_loopback:
                 raise PermissionError("Первого администратора создайте на телефоне сервера через 127.0.0.1")
             body=parse_body(self); username=(body.get("username") or "admin").strip(); name=(body.get("display_name") or "Администратор").strip(); pin=str(body.get("pin") or "")
             if len(pin)<4: raise ValueError("PIN должен содержать минимум 4 символа")
