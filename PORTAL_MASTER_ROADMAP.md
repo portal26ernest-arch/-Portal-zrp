@@ -448,9 +448,9 @@ Current roadmap counts are **93 ✅ / 15 🟡 / 6 ⏳ / 12 🔌**. Current-SHA S
 - Focused Desktop/Web adapter suite: 6/6 passed; diff check passed.
 - Exact NEXT: publish and install Desktop 5.2, then verify login/password/submit interaction on the authorized PC.
 
-## S. Desktop 5.3 modal dismissal lock — 2026-10-03
+## S. Desktop 5.4 modal dismissal lock — 2026-10-03
 
 - Пользовательский smoke Desktop 5.2 показал, что прежнее исправление было неполным: общий Web asset на сервере обновился, но установленный Desktop 5.2 был собран из отдельной release-линии, где старый `app.js` всё ещё закрывал sheet по backdrop/Escape/Back. Поэтому подтверждение только серверного файла не доказывало поведение установленного Desktop.
-- Desktop 5.3 вводит двойную защиту: общий `app.js` блокирует accidental dismissal на capture-фазе (`pointerdown`/`click` вне `#sheet`, Escape, Back), а нативный WebView2 shell дополнительно инжектирует тот же modal lock после каждой навигации и оборачивает `window.portalBack`. Это защищает Desktop даже при старом/закэшированном web asset.
+- Desktop 5.4 вводит двойную защиту: общий `app.js` блокирует accidental dismissal на capture-фазе (`pointerdown`/`click` вне `#sheet`, Escape, Back), а нативный WebView2 shell дополнительно инжектирует тот же modal lock после каждой навигации и оборачивает `window.portalBack`. Это защищает Desktop даже при старом/закэшированном web asset.
 - Правило: модальное окно закрывается обычным способом только через явный крестик `×`; внутренние кнопки могут закрывать окно только как результат явного действия пользователя. Клик по подложке, Escape и Back окно не закрывают.
-- Версия Desktop: `5.3.0`, build `53`. Обязательный gate: реальный Playwright click/Escape/Back test, Desktop shell regression, Windows build, публикация `portal-desktop-v5.3.0`, установка на авторизованный ПК и пользовательский smoke.
+- Изначально hotfix планировался как 5.3.0, но этот номер уже был опубликован параллельной release-линией (`portal-desktop-v5.3.0`, pre-DOM native metadata) до завершения modal lock. Чтобы не переписывать существующий релиз, исправление выпускается как Desktop `5.4.0`, build `54`. Обязательный gate: реальный Playwright click/Escape/Back test, Desktop shell regression, Windows build, публикация `portal-desktop-v5.4.0`, установка на авторизованный ПК и пользовательский smoke.
