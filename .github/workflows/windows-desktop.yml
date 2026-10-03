@@ -101,5 +101,6 @@ jobs:
           test -f "release/${package}"
           test -f "release/${package}.sha256"
           gh release create "${GITHUB_REF_NAME}" "release/${package}" "release/${package}.sha256" \
+            --latest=false \
             --title "PORTAL Desktop ${VERSION}" \
             --notes "Официальное обновление PORTAL Desktop ${VERSION}. Устанавливается через кнопку «Обновить PORTAL» внутри приложения."
