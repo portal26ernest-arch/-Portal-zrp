@@ -17,7 +17,7 @@ assert.match(app,/S\.history\.push\(S\.page\)/);
 assert.match(app,/window\.portalHome=/);
 assert.match(app,/autoCheckUpdates\(\)/);
 assert.match(xaml,/Content="Обновить PORTAL"[^>]+Click="CheckUpdate_Click"/);
-assert.match(code,/private const int CurrentBuild = 55/);
+assert.match(code,/private const int CurrentBuild = 56/);
 assert.match(code,/WebViewSoftwareRenderingArguments = "--disable-gpu --disable-gpu-compositing"/);
 assert.match(code,/AdditionalBrowserArguments = WebViewArguments\(\)/);
 assert.match(code,/PORTAL_WEBVIEW_SOFTWARE_RENDERING/);
@@ -25,7 +25,7 @@ assert.match(code,/catch \(HttpRequestException\)[\s\S]+LoadGithubUpdateManifest
 assert.match(code,/catch \(TaskCanceledException\)[\s\S]+LoadGithubUpdateManifestAsync\(\)/);
 assert.match(code,/if \(_serverOrigin is not null\)[\s\S]+githubManifest = await LoadGithubUpdateManifestAsync\(\)/);
 assert.doesNotMatch(code,/Сначала подключитесь к серверу PORTAL/);
-assert.match(code,/PORTAL-Desktop\/5\.5\.0/);
+assert.match(code,/PORTAL-Desktop\/5\.6\.0/);
 assert.match(code,/DownloadAndInstallUpdate\(manifest, downloadUri\)/);
 assert.match(code,/PropertyNamingPolicy = JsonNamingPolicy\.SnakeCaseLower/);
 assert.match(code,/api\.github\.com\/repos\/\{GithubRepository\}\/releases\?per_page=50/);
