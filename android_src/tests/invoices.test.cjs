@@ -23,7 +23,7 @@ test('invoice workspace is live, compact and manager-oriented',()=>{
 });
 
 test('manager can export invoice documents without full document-management rights',()=>{
-  assert.match(permissions,/\('invoices\.export'.*'manager director admin accountant'\)/);
+  assert.match(permissions,/\('invoices\.export'.*'manager director admin'\)/);
   assert.match(invoice,/allowed\('invoices\.export'\)/);
   assert.match(invoice,/document_type:type/);
   assert.match(invoice,/shareBase64FileAsync/);

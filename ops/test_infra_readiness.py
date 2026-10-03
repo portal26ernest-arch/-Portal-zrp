@@ -127,6 +127,23 @@ class InfraReadinessTest(unittest.TestCase):
         self.assertTrue(service_path.name.endswith(".example"))
         self.assertTrue(timer_path.name.endswith(".example"))
 
+    def test_source_mirror_sync_timer_is_hardened_and_tracks_main(self):
+        service_path = ROOT / "ops/systemd/portal-source-sync.service"
+        timer_path = ROOT / "ops/systemd/portal-source-sync.timer"
+        self.assertTrue(service_path.is_file())
+        self.assertTrue(timer_path.is_file())
+        service = service_path.read_text(encoding="utf-8")
+        timer = timer_path.read_text(encoding="utf-8")
+        self.assertIn("PORTAL_SOURCE_BRANCH=main", service)
+        self.assertIn("ExecStart=/usr/bin/bash /srv/portal-source/repo/ops/sync_vps_source_mirror.sh", service)
+        self.assertIn("NoNewPrivileges=true", service)
+        self.assertIn("ProtectSystem=strict", service)
+        self.assertIn("ReadWritePaths=/srv/portal-source", service)
+        self.assertNotIn("password=", service.lower())
+        self.assertNotIn("token=", service.lower())
+        self.assertIn("OnUnitActiveSec=2min", timer)
+        self.assertIn("Unit=portal-source-sync.service", timer)
+
     def test_api_service_is_loopback_hardened_and_fail_closed(self):
         service = (ROOT / "deploy/systemd/portal-api.service").read_text(encoding="utf-8")
         env = (ROOT / "deploy/systemd/portal.env.example").read_text(encoding="utf-8")

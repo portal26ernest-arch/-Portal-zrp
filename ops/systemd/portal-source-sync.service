@@ -1,0 +1,19 @@
+[Unit]
+Description=PORTAL canonical GitHub source mirror sync
+Wants=network-online.target
+After=network-online.target
+ConditionPathIsDirectory=/srv/portal-source/repo/.git
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+Environment=PORTAL_SOURCE_ROOT=/srv/portal-source
+Environment=PORTAL_SOURCE_BRANCH=main
+ExecStart=/usr/bin/bash /srv/portal-source/repo/ops/sync_vps_source_mirror.sh
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/srv/portal-source
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6

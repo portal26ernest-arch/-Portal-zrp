@@ -1,0 +1,12 @@
+[Unit]
+Description=Keep PORTAL VPS source mirror aligned with canonical GitHub main
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+AccuracySec=30s
+Persistent=true
+Unit=portal-source-sync.service
+
+[Install]
+WantedBy=timers.target
