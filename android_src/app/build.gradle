@@ -6,6 +6,7 @@ def releaseInfo = new Properties()
 rootProject.file('release.properties').withInputStream { releaseInfo.load(it) }
 def quoted = { String value -> '"' + value.replace('\\', '\\\\').replace('"', '\\"') + '"' }
 def portalApiUrl = providers.gradleProperty('portalApiUrl').orElse(providers.environmentVariable('PORTAL_API_URL')).orElse('http://127.0.0.1:8765').get()
+def releaseTemporarySslipHost = providers.gradleProperty('releaseTemporarySslipHost').orElse(providers.environmentVariable('PORTAL_RELEASE_TEMPORARY_SSLIP_HOST')).orElse('').get().trim().toLowerCase(java.util.Locale.ROOT)
 
 gradle.taskGraph.whenReady { graph ->
     if (graph.allTasks.any { it.project == project && it.name.endsWith('Release') }) {
@@ -13,12 +14,13 @@ gradle.taskGraph.whenReady { graph ->
         try { endpoint = new URI(portalApiUrl) }
         catch (Exception ignored) { throw new GradleException('Release requires a stable owned HTTPS PORTAL API URL') }
         def host = endpoint.host?.toLowerCase(java.util.Locale.ROOT)
+        def temporarySslipAllowed = host && releaseTemporarySslipHost && host == releaseTemporarySslipHost && host.endsWith('.sslip.io')
         if (endpoint.scheme != 'https' || !host || endpoint.rawUserInfo ||
                 (endpoint.rawPath && endpoint.rawPath != '/') || endpoint.rawQuery || endpoint.rawFragment ||
                 !(endpoint.port in [-1, 443]) || host == 'localhost' || host.endsWith('.localhost') ||
-                host.endsWith('.sslip.io') || host.endsWith('.trycloudflare.com') ||
+                (host.endsWith('.sslip.io') && !temporarySslipAllowed) || host.endsWith('.trycloudflare.com') ||
                 host == 'portal.invalid' || host.contains(':') || (host ==~ /\d+\.\d+\.\d+\.\d+/)) {
-            throw new GradleException('Release requires a stable owned HTTPS PORTAL API URL')
+            throw new GradleException('Release requires a stable owned HTTPS PORTAL API URL or the explicitly pinned temporary sslip.io host')
         }
     }
 }
