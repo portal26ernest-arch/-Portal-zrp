@@ -13,17 +13,20 @@ class DesktopUpdateManifestTest(unittest.TestCase):
             "PORTAL_DESKTOP_UPDATE_BUILD": "37",
             "PORTAL_DESKTOP_UPDATE_URL": "https://downloads.example.test/PORTAL-Desktop-win-x64-3.7.0.zip",
             "PORTAL_DESKTOP_UPDATE_SHA256": "A" * 64,
+            "PORTAL_DESKTOP_UPDATE_SIGNATURE": "B" * 512,
         })
         self.assertEqual(data["build"], 37)
         self.assertEqual(data["sha256"], "a" * 64)
         self.assertNotIn("token", data)
         self.assertNotIn("secret", data)
+        self.assertEqual(data["signature"], "B" * 512)
 
     def test_rejects_insecure_or_credentialed_url(self):
         base = {
             "PORTAL_DESKTOP_UPDATE_VERSION": "3.7.0",
             "PORTAL_DESKTOP_UPDATE_BUILD": "37",
             "PORTAL_DESKTOP_UPDATE_SHA256": "a" * 64,
+            "PORTAL_DESKTOP_UPDATE_SIGNATURE": "B" * 512,
         }
         for url in (
             "http://example.test/setup.exe",
@@ -39,6 +42,7 @@ class DesktopUpdateManifestTest(unittest.TestCase):
             "PORTAL_DESKTOP_UPDATE_BUILD": "37",
             "PORTAL_DESKTOP_UPDATE_URL": "http://127.0.0.1:8770/PORTAL-Desktop-win-x64-3.7.0.zip",
             "PORTAL_DESKTOP_UPDATE_SHA256": "1" * 64,
+            "PORTAL_DESKTOP_UPDATE_SIGNATURE": "B" * 512,
         })
         self.assertEqual(data["build"], 37)
 
@@ -51,6 +55,15 @@ class DesktopUpdateManifestTest(unittest.TestCase):
                 "PORTAL_DESKTOP_UPDATE_BUILD": "0",
                 "PORTAL_DESKTOP_UPDATE_URL": "https://example.test/setup.exe",
                 "PORTAL_DESKTOP_UPDATE_SHA256": "bad",
+                "PORTAL_DESKTOP_UPDATE_SIGNATURE": "B" * 512,
+            })
+        with self.assertRaises(RuntimeError):
+            desktop_update.load_manifest({
+                "PORTAL_DESKTOP_UPDATE_VERSION": "3.7.0",
+                "PORTAL_DESKTOP_UPDATE_BUILD": "37",
+                "PORTAL_DESKTOP_UPDATE_URL": "https://example.test/PORTAL-Desktop-win-x64-3.7.0.zip",
+                "PORTAL_DESKTOP_UPDATE_SHA256": "a" * 64,
+                "PORTAL_DESKTOP_UPDATE_SIGNATURE": "unsigned",
             })
 
 

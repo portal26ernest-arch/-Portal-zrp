@@ -86,6 +86,9 @@ class InfraReadinessTest(unittest.TestCase):
         self.assertIn("return 301 https://$host$request_uri;", text)
         self.assertIn("Strict-Transport-Security", text)
         self.assertIn("ssl_protocols TLSv1.2 TLSv1.3;", text)
+        setup = text.split("location = /api/setup {", 1)[1].split("}", 1)[0]
+        self.assertIn("return 403;", setup)
+        self.assertNotIn("proxy_pass", setup)
         self.assertNotIn("proxy_pass http://0.0.0.0:", text)
         self.assertNotIn("proxy_pass http://127.0.0.1:8770;", text)
 

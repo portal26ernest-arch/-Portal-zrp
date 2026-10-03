@@ -6,8 +6,10 @@ on:
     tags: ["portal-desktop-v*"]
     paths:
       - "desktop_windows/**"
+      - "desktop_windows.Tests/**"
       - "android_src/app/src/main/assets/**"
       - "android_src/tests/desktop-shell.test.cjs"
+      - "android_src/tests/build-security.test.cjs"
       - "ops/install_portal_desktop.ps1"
       - "ops/test_portal_desktop_installer.ps1"
       - "ops/PORTAL_WINDOWS_DESKTOP.md"
@@ -15,8 +17,10 @@ on:
   pull_request:
     paths:
       - "desktop_windows/**"
+      - "desktop_windows.Tests/**"
       - "android_src/app/src/main/assets/**"
       - "android_src/tests/desktop-shell.test.cjs"
+      - "android_src/tests/build-security.test.cjs"
       - "ops/install_portal_desktop.ps1"
       - "ops/test_portal_desktop_installer.ps1"
       - "ops/PORTAL_WINDOWS_DESKTOP.md"
@@ -33,9 +37,22 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require release tag at current reviewed main commit
+        if: startsWith(github.ref, 'refs/tags/portal-desktop-v')
+        shell: pwsh
+        run: |
+          git fetch --no-tags origin main
+          if ($LASTEXITCODE -ne 0) { throw "Could not fetch main for release validation" }
+          $tagCommit = (git rev-parse $env:GITHUB_SHA).Trim()
+          $mainCommit = (git rev-parse refs/remotes/origin/main).Trim()
+          if ($tagCommit -ne $mainCommit) { throw "Desktop release tag must target the current main commit" }
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "8.0.x"
+      - name: Verify Desktop update signatures
+        run: dotnet run --project desktop_windows.Tests/Portal.Desktop.UpdateSignature.Tests.csproj --configuration Release
       - name: Resolve Desktop version
         id: meta
         shell: pwsh
@@ -84,10 +101,57 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Recheck release tag before signing and publishing
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          git fetch origin "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
+          test "$(git rev-parse "${GITHUB_REF_NAME}^{commit}")" = "$GITHUB_SHA"
+          test "$GITHUB_SHA" = "$(git rev-parse refs/remotes/origin/main)"
+      - name: Validate release tag version before signing
+        shell: bash
+        env:
+          VERSION: ${{ needs.windows-desktop.outputs.version }}
+        run: test "$GITHUB_REF_NAME" = "portal-desktop-v${VERSION}"
       - uses: actions/download-artifact@v4
         with:
           name: PORTAL-Desktop-win-x64-${{ needs.windows-desktop.outputs.version }}
           path: release
+      - name: Create signed Desktop update manifest
+        shell: bash
+        env:
+          PORTAL_DESKTOP_UPDATE_SIGNING_PRIVATE_KEY: ${{ secrets.PORTAL_DESKTOP_UPDATE_SIGNING_PRIVATE_KEY }}
+          VERSION: ${{ needs.windows-desktop.outputs.version }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          test -n "$PORTAL_DESKTOP_UPDATE_SIGNING_PRIVATE_KEY"
+          key="$RUNNER_TEMP/portal-desktop-update-signing.pem"
+          payload="$RUNNER_TEMP/portal-desktop-update.payload"
+          signature="$RUNNER_TEMP/portal-desktop-update.signature"
+          trap 'rm -f "$key" "$payload" "$signature"' EXIT
+          printf '%s' "$PORTAL_DESKTOP_UPDATE_SIGNING_PRIVATE_KEY" > "$key"
+          chmod 600 "$key"
+          package="PORTAL-Desktop-win-x64-${VERSION}.zip"
+          sha256=$(awk '{print tolower($1)}' "release/${package}.sha256")
+          [[ "$sha256" =~ ^[0-9a-f]{64}$ ]]
+          version_parts=(${VERSION//./ })
+          build=$((version_parts[0] * 10 + version_parts[1]))
+          download_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/${package}"
+          printf 'PORTAL-DESKTOP-UPDATE-V1\n%s\n%s\n%s\n%s\n' "$build" "$VERSION" "$download_url" "$sha256" > "$payload"
+          openssl dgst -sha256 -sign "$key" -out "$signature" "$payload"
+          signature_b64=$(base64 -w0 "$signature")
+          python - "$build" "$VERSION" "$download_url" "$sha256" "$signature_b64" > release/portal-desktop-update.json <<'PY'
+          import json, sys
+          build, version, url, sha256, signature = sys.argv[1:]
+          print(json.dumps({"build": int(build), "version": version, "download_url": url,
+                            "sha256": sha256, "signature": signature}, separators=(",", ":")))
+          PY
       - name: Validate tag and publish stable update package
         shell: bash
         env:
@@ -100,7 +164,8 @@ jobs:
           package="PORTAL-Desktop-win-x64-${VERSION}.zip"
           test -f "release/${package}"
           test -f "release/${package}.sha256"
-          gh release create "${GITHUB_REF_NAME}" "release/${package}" "release/${package}.sha256" \
+          test -f "release/portal-desktop-update.json"
+          gh release create "${GITHUB_REF_NAME}" "release/${package}" "release/${package}.sha256" "release/portal-desktop-update.json" \
             --latest=false \
             --title "PORTAL Desktop ${VERSION}" \
             --notes "Официальное обновление PORTAL Desktop ${VERSION}. Устанавливается через кнопку «Обновить PORTAL» внутри приложения."

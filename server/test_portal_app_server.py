@@ -213,6 +213,18 @@ class PortalAPITest(unittest.TestCase):
         self.assertNotIn("db",self.request("/api/ping"))
         self.request("/api/setup",body={"username":"attacker","pin":"1234"},status=403)
 
+    def test_setup_rejects_remote_identity_from_local_reverse_proxy_but_allows_local_operator(self):
+        with portal.db() as conn:
+            conn.execute("DELETE FROM app_sessions")
+            conn.execute("DELETE FROM app_users")
+        self.request("/api/setup", body={"username":"attacker","pin":"1234"}, status=403,
+                     extra_headers={"X-Real-IP":"198.51.100.7"})
+        with portal.db() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM app_users").fetchone()[0], 0)
+        response=self.request("/api/setup", body={"username":"bootstrap","pin":"1234"})
+        self.assertIn("token",response)
+        self.request("/api/setup", body={"username":"replay","pin":"1234"}, status=403)
+
     def test_packer_cannot_read_finance_or_admin(self):
         for path in (f"/api/clients/{self.cid}","/api/invoices","/api/materials","/api/users","/api/admin/clients"):
             self.request(path,self.worker,status=403)

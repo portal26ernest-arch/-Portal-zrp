@@ -8,6 +8,7 @@ import os
 import secrets
 import sqlite3
 import sys
+from ipaddress import ip_address
 from decimal import Decimal
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -1284,7 +1285,13 @@ class Handler(BaseHTTPRequestHandler):
                 count=conn.execute("SELECT COUNT(*) FROM app_users").fetchone()[0]
             return self.send_json({"ok":True,"build":BUILD_ID,"setup_required":count==0})
         if path=="/api/setup" and method=="POST":
-            if self.client_address[0] not in {"127.0.0.1", "::1"}:
+            try:
+                peer=ip_address(self.client_address[0])
+                forwarded=self.headers.get("X-Real-IP") if peer.is_loopback else None
+                source=ip_address(forwarded.strip()) if forwarded else peer
+            except (ValueError,IndexError,TypeError):
+                raise PermissionError("Первого администратора можно создать только локально")
+            if not peer.is_loopback or not source.is_loopback:
                 raise PermissionError("Первого администратора создайте на телефоне сервера через 127.0.0.1")
             body=parse_body(self); username=(body.get("username") or "admin").strip(); name=(body.get("display_name") or "Администратор").strip(); pin=str(body.get("pin") or "")
             if len(pin)<4: raise ValueError("PIN должен содержать минимум 4 символа")
