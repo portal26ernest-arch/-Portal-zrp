@@ -6,6 +6,7 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
     static let handlerName = "portalNative"
     static let replyHandlerName = "portalNativeReply"
     static let allowedExternalHosts: Set<String> = ["seller.ozon.ru", "seller.wildberries.ru"]
+    static let localOutboxPaths: Set<String> = ["/api/v3/work", "/api/v3/links", "/api/v3/batches", "/api/v3/tasks", "/api/v3/shipments", "/api/v3/returns"]
     weak var webView: WKWebView?
 
     private let defaults = UserDefaults.standard
@@ -189,7 +190,7 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
                   let data = raw.data(using: .utf8),
                   let row = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
                   row["method"] as? String == "POST",
-                  row["path"] as? String == "/api/v3/work",
+                  let mutationPath = row["path"] as? String, Self.localOutboxPaths.contains(mutationPath),
                   let requestID = row["request_id"] as? String,
                   requestID.range(of: #"^[0-9A-Fa-f-]{36}$"#, options: .regularExpression) != nil,
                   let body = row["body"] as? [String: Any],
@@ -319,6 +320,12 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
         let keys: [String]
         if mutationPath.range(of: #"^/api/v3/work(?:\?.*)?$"#, options: .regularExpression) != nil {
             keys = ["/api/v3/today","/api/v3/tasks","/api/v3/timers","/api/v3/finance","/api/v3/analytics","/api/v3/invoices","/api/v3/receivables"]
+        } else if mutationPath.range(of: #"^/api/v3/links(?:\?.*)?$"#, options: .regularExpression) != nil {
+            keys = ["/api/v3/today","/api/v3/tasks","/api/v3/batches","/api/v3/finance","/api/v3/analytics","/api/v3/invoices","/api/v3/receivables"]
+        } else if mutationPath.range(of: #"^/api/v3/(?:batches|tasks)(?:\?.*)?$"#, options: .regularExpression) != nil {
+            keys = ["/api/v3/today","/api/v3/tasks","/api/v3/timers","/api/v3/batches","/api/v3/finance","/api/v3/analytics"]
+        } else if mutationPath.range(of: #"^/api/v3/(?:shipments|returns)(?:\?.*)?$"#, options: .regularExpression) != nil {
+            keys = ["/api/v3/today","/api/v3/tasks","/api/v3/batches","/api/v3/finance","/api/v3/analytics","/api/v3/invoices","/api/v3/receivables"]
         } else if mutationPath.range(of: #"/(?:tariffs?|operations?|products?)(?:/|\?|$)"#, options: .regularExpression) != nil {
             keys = ["/api/v3/catalog","/api/v3/tariff-history","/api/v3/products","/api/v3/today","/api/v3/finance","/api/v3/analytics"]
         } else if mutationPath.range(of: #"/clients?(?:/|\?|$)"#, options: .regularExpression) != nil {

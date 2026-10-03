@@ -26,6 +26,7 @@
     /^\/api\/v3\/(?:catalog|products|client-requisites|client-name-history|tariff-history|today|tasks|timers|batches|invoices|receivables|finance|analytics|payroll-periods|documents|settings|permissions|chat-users)(?:\?.*)?$/
   ];
   const INVALIDATES_CACHE = /\/(?:clients?|users?|materials?|operations?|tariffs?|products?|invitations?|company-access)(?:\/|\?|$)/i;
+  const OUTBOX_PATHS = new Set(['/api/v3/work','/api/v3/links','/api/v3/batches','/api/v3/tasks','/api/v3/shipments','/api/v3/returns']);
   let cacheCompany = '';
   const desktopCache = () => {
     try { return window.chrome?.webview?.hostObjects?.sync?.portalDesktopCache || null; }
@@ -59,6 +60,12 @@
     const add = (...values) => values.forEach(value => keys.add(value));
     if (/\/api\/v3\/work(?:\?|$)/.test(target)) {
       add('/api/v3/today','/api/v3/tasks','/api/v3/timers','/api/v3/finance','/api/v3/analytics','/api/v3/invoices','/api/v3/receivables');
+    } else if (/\/api\/v3\/links(?:\?|$)/.test(target)) {
+      add('/api/v3/today','/api/v3/tasks','/api/v3/batches','/api/v3/finance','/api/v3/analytics','/api/v3/invoices','/api/v3/receivables');
+    } else if (/\/api\/v3\/(?:batches|tasks)(?:\?|$)/.test(target)) {
+      add('/api/v3/today','/api/v3/tasks','/api/v3/timers','/api/v3/batches','/api/v3/finance','/api/v3/analytics');
+    } else if (/\/api\/v3\/(?:shipments|returns)(?:\?|$)/.test(target)) {
+      add('/api/v3/today','/api/v3/tasks','/api/v3/batches','/api/v3/finance','/api/v3/analytics','/api/v3/invoices','/api/v3/receivables');
     } else if (/\/(?:tariffs?|operations?|products?)(?:\/|\?|$)/i.test(target)) {
       add('/api/v3/catalog','/api/v3/tariff-history','/api/v3/products','/api/v3/today','/api/v3/finance','/api/v3/analytics');
     } else if (/\/(?:clients?)(?:\/|\?|$)/i.test(target)) {
@@ -160,7 +167,7 @@
       try {
         if (!cacheCompany || typeof json !== 'string' || json.length > 512 * 1024) return false;
         const row = JSON.parse(json);
-        if (!row || row.method !== 'POST' || row.path !== '/api/v3/work' || !/^[0-9a-f-]{36}$/i.test(String(row.request_id || ''))
+        if (!row || row.method !== 'POST' || !OUTBOX_PATHS.has(row.path) || !/^[0-9a-f-]{36}$/i.test(String(row.request_id || ''))
             || !row.body || row.body.request_id !== row.request_id) return false;
         return !!desktopCache()?.EnqueueMutation(String(cacheCompany), String(row.request_id), JSON.stringify(row));
       } catch { return false; }
@@ -211,7 +218,7 @@
         const data = await fetchJson(verb, target, body, token, company);
         if (cacheEligible && data.ok) cacheWrite(cacheScope, target, data);
         if (verb === 'POST' && data.ok && cacheScope) {
-          if (INVALIDATES_CACHE.test(target) || target.startsWith('/api/v3/work') || /\/(?:invoices?|payments?|settings)(?:\/|\?|$)/i.test(target))
+          if (INVALIDATES_CACHE.test(target) || OUTBOX_PATHS.has(target.split('?',1)[0]) || /\/(?:invoices?|payments?|settings)(?:\/|\?|$)/i.test(target))
             invalidateCache(cacheScope, target);
         }
         result(id, data);
