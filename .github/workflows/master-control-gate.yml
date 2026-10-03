@@ -20,6 +20,20 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Require branch based on current main
+        if: github.ref != 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor origin/main HEAD; then
+            echo "::error::This branch is not based on current origin/main. Reconcile/rebase/merge current main before continuing."
+            echo "origin/main=$(git rev-parse origin/main)"
+            echo "HEAD=$(git rev-parse HEAD)"
+            exit 1
+          fi
+          echo "Branch freshness gate: OK"
+
       - name: Require canonical project control update
         shell: bash
         env:
