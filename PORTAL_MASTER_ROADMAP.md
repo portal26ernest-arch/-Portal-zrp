@@ -391,3 +391,12 @@ Current roadmap counts are **93 ✅ / 15 🟡 / 6 ⏳ / 12 🔌**. Current-SHA S
 - Не закрытые внешние gate после программной проверки: собственный production domain/DNS/HTTPS, финальный authenticated device smoke и формальное объявление VPS/PostgreSQL единственным source of truth после успешного cutover.
 
 - Release CI hardening: `main` добавлен в push-триггеры `server-tests.yml` и `android-ui-tests.yml`, чтобы официальный main всегда проверял server isolation и Android UI, а не полагался только на проверки release-ветки.
+
+## S. Critical work catalog cache hotfix — 2026-10-03
+
+- `/api/v3/catalog` is no longer served from the persistent Desktop company cache. Work-entry client and operation choices now always come from the live server response.
+- Existing encrypted caches remain available for non-critical reference endpoints; no tenant isolation, authentication, PostgreSQL schema, tariffs or payroll logic changed.
+- Production repair on Company 1 linked the existing Vasiliy and Nelli access accounts to their already-existing employee cards; Ernest was already linked. Ekaterina remains intentionally unlinked until a real employee card is created/selected.
+- Focused Web adapter suite: 5/5 passed. GitHub Web, Windows Desktop, Android UI and APK checks passed on commit `3599bf9`.
+- VPS hotfix deployed to the active `c03e9fe-role-matrix` web assets with a rollback copy under `/srv/portal-production/backups/catalog-cache-hotfix-20261003/`.
+- Exact NEXT: reload/restart Desktop clients so the new adapter is loaded, then retry work entry using the fresh server catalog.
