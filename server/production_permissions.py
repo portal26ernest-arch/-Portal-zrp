@@ -9,7 +9,7 @@ CATALOG = [
  ('organizer.read','Органайзер','Просматривать свои задачи и напоминания','manager director admin'),
  ('organizer.assign','Органайзер','Ставить задачи разрешённым коллегам','manager director admin'),
  ('organizer.manage','Органайзер','Контролировать задачи компании','director admin'),
- ('organizer.request.create','Органайзер','Создавать запросы директору','manager admin'),
+ ('organizer.request.create','Органайзер','Создавать запросы директору','manager director admin'),
  ('organizer.request.decide','Органайзер','Рассматривать запросы директору','director'),
  ('batches.receive','Работа','Принимать поступление товара','manager director admin'),
  ('work.link','Работа','Привязывать работу без задания к партии','manager director admin'),
