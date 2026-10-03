@@ -459,6 +459,21 @@ class ProductionTest(unittest.TestCase):
         self.assertEqual(len([row for row in self.get('shipments')['data'] if row.get('type')=='return']),2)
         self.post('returns',dict(batch_id=batch['id'],quantity=1),self.worker,status=403)
 
+    def test_first_tariff_can_be_created_when_operation_has_no_history(self):
+        with portal.tenants.company_scope(1),portal.db() as conn:
+            now=utcnow()
+            cursor=conn.execute("INSERT INTO portal_client_operations(client_id,name,employee_rate,client_rate,active,sort_order,created_at,updated_at) VALUES(?,?,?,?,1,0,?,?)",
+                                (1,'Операция без тарифа',0,0,now,now))
+            operation_id=cursor.lastrowid
+            conn.commit()
+        self.assertEqual(self.get('tariff-history?operation_id='+str(operation_id))['data'],[])
+        self.post('tariffs',dict(client_id=1,operation_id=operation_id,employee_rate=1),status=400)
+        created=self.post('tariffs',dict(client_id=1,operation_id=operation_id,employee_rate=1,client_rate=2))['data']
+        self.assertEqual((created['employee_rate'],created['client_rate']),(100,200))
+        history=self.get('tariff-history?operation_id='+str(operation_id))['data']
+        self.assertEqual(len(history),1)
+        self.assertEqual((history[0]['employee_rate'],history[0]['client_rate']),(100,200))
+
     def test_tariff_history_salary_revenue_and_future_dates(self):
         w=self.work();invoice=self.post('invoices',dict(work_ids=[w['id']]))['data']
         self.post('tariffs',dict(client_id=1,operation_id=1,employee_rate=3,client_rate=8))

@@ -195,14 +195,18 @@ class Production:
 
     def create_tariff(self,b):
         op=self.operation(b['client_id'],b['operation_id'])
-        old=self.tariff(op['id'])
-        values={k:old[k] for k in ('employee_rate','client_rate')}
+        now=self.clock()
+        versions=[t for t in self.r.list('tariffs') if t['operation_id']==op['id'] and t['effective_from']<=now]
+        old=self.tariff(op['id'],now) if versions else None
+        values={k:(old[k] if old else None) for k in ('employee_rate','client_rate')}
         changed=False
         for key,permission in [('employee_rate','rates.employee'),('client_rate','rates.client')]:
             if key in b:
                 self.need(permission);values[key]=cents(b[key]);changed=True
         if not changed: raise ValueError('Укажите новую ставку или цену')
-        effective=stamp(b.get('effective_from') or self.clock())
+        if old is None and any(values[k] is None for k in ('employee_rate','client_rate')):
+            raise ValueError('Для первого тарифа укажите ставку сотруднику и цену клиенту')
+        effective=stamp(b.get('effective_from') or now)
         if effective<self.clock():
             # A small clock gap is allowed only for immediate server-generated time.
             if b.get('effective_from'): raise ValueError('Тариф нельзя вводить задним числом')
