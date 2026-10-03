@@ -102,6 +102,7 @@ test('updates: unconfigured, offline, current, newer and invalid manifests',()=>
   const manifest={schemaVersion:1,...metadata,publishedAt:metadata.buildDate+'T12:00:00Z',changelog:'Исправления',apkUrl:`https://github.com/portal26ernest-arch/-Portal-zrp/releases/download/portal-android-v${metadata.versionName}/PORTAL_Android_${metadata.versionName}_release.apk`,sha256:'a'.repeat(64)};
   const state=m=>core.updateState(metadata,{ok:true,configured:true,manifest:m}).state;
   assert.equal(core.updateState(metadata,{ok:true,configured:false}).state,'unconfigured');
+  assert.equal(core.updateState(metadata,{ok:true,configured:false,storeManaged:true}).state,'store');
   assert.equal(core.updateState(metadata,{ok:false}).state,'error');
   assert.equal(state(manifest),'latest');
   assert.equal(state({...manifest,versionCode:metadata.versionCode+1}),'available');

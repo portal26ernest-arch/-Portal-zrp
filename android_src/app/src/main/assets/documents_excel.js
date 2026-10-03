@@ -110,7 +110,7 @@
 
   async function savePayload(file) {
     if (!window.PortalNative?.saveBase64FileAsync) {
-      throw new Error('Сохранение доступно в Android-приложении');
+      throw new Error('Сохранение доступно в мобильном приложении');
     }
     const mime = file?.mime_type;
     if (![XLSX, PDF, JSON_MIME].includes(mime)) {
@@ -124,7 +124,7 @@
   }
 
   async function sharePayload(file) {
-    if (!window.PortalNative?.shareBase64FileAsync) throw new Error('Системная отправка доступна в Android-приложении');
+    if (!window.PortalNative?.shareBase64FileAsync) throw new Error('Системная отправка доступна в мобильном приложении');
     const mime = file?.mime_type;
     if (![XLSX, PDF, JSON_MIME].includes(mime)) throw new Error('Неподдерживаемый тип файла');
     const recipient = window.prompt('Email получателя (необязательно)', '') || '';

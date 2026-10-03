@@ -50,12 +50,12 @@ async function api(method,path,body,options={}){
   }
   if(method==='POST')S.writes++;
   try{
-    if(!window.PortalNative)throw new Error('Откройте PORTAL в Android-приложении');
+    if(!window.PortalNative)throw new Error('Откройте PORTAL в мобильном приложении');
     const payload=body===undefined?'':JSON.stringify(body);
     let result;
     if(typeof PortalNative.requestAsync==='function')result=await nativePromise(id=>PortalNative.requestAsync(id,method,path,payload,options.anonymous?'':S.token,company));
     else if(company){
-      if(typeof PortalNative.requestForCompany!=='function')throw new Error('Для технического доступа обновите Android-приложение');
+      if(typeof PortalNative.requestForCompany!=='function')throw new Error('Для технического доступа обновите приложение PORTAL');
       result=JSON.parse(PortalNative.requestForCompany(method,path,payload,S.token,company));
     }else result=JSON.parse(PortalNative.request(method,path,payload,options.anonymous?'':S.token));
     if(epoch!==S.epoch||(!options.global&&view!==S.view))throw {stale:true};
@@ -135,4 +135,4 @@ async function loadOwnerAudit(){const query=new URLSearchParams({page:String(S.o
 document.addEventListener('click',event=>{const b=event.target.closest('[data-action]');if(!b||b.disabled)return;const fn=actions[b.dataset.action];if(fn)Promise.resolve().then(()=>fn(b)).catch(handleError);});
 document.addEventListener('submit',event=>{const fn=forms[event.target.id];if(!fn)return;event.preventDefault();const button=event.target.querySelector('[type=submit]');if(button?.disabled)return;if(button)button.disabled=true;Promise.resolve().then(()=>fn(event.target)).catch(handleError).finally(()=>{if(button)button.disabled=false;});});
 document.addEventListener('keydown',event=>{if($('sheetBackdrop').classList.contains('hidden'))return;if(event.key==='Escape'){event.preventDefault();return;}if(event.key==='Tab'){const focusable=Array.from($('sheet').querySelectorAll('button,input,select,textarea')).filter(e=>!e.disabled);const first=focusable[0],last=focusable[focusable.length-1];if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}}});
-document.addEventListener('DOMContentLoaded',async()=>{hydrateIcons();$('authCredit').innerHTML=brandCredit();theme(storage.get('portalTheme')||'system');try{S.metadata=JSON.parse(window.PortalNative?.getAppMetadata?.()||'{}');}catch{}$('buildLabel').textContent=S.metadata.versionName?S.metadata.versionName+' · рабочая сборка':'Версия доступна в Android-приложении';void autoCheckUpdates();await checkServer();try{let session=JSON.parse(storage.get('portalSession')||'null');if(!session&&storage.get('portalToken')&&window.PortalNative)session={server:PortalNative.getServerUrl(),token:storage.get('portalToken')};if(session&&window.PortalNative&&session.server===PortalNative.getServerUrl()){S.token=session.token;S.me=(await api('GET','/api/me',undefined,{global:true})).user;await enterApp();}}catch{S.token='';S.me=null;storage.remove('portalSession');storage.remove('portalToken');}});
+document.addEventListener('DOMContentLoaded',async()=>{hydrateIcons();$('authCredit').innerHTML=brandCredit();theme(storage.get('portalTheme')||'system');try{S.metadata=JSON.parse(window.PortalNative?.getAppMetadata?.()||'{}');}catch{}$('buildLabel').textContent=S.metadata.versionName?S.metadata.versionName+' · рабочая сборка':'Версия доступна в мобильном приложении';void autoCheckUpdates();await checkServer();try{let session=JSON.parse(storage.get('portalSession')||'null');if(!session&&storage.get('portalToken')&&window.PortalNative)session={server:PortalNative.getServerUrl(),token:storage.get('portalToken')};if(session&&window.PortalNative&&session.server===PortalNative.getServerUrl()){S.token=session.token;S.me=(await api('GET','/api/me',undefined,{global:true})).user;await enterApp();}}catch{S.token='';S.me=null;storage.remove('portalSession');storage.remove('portalToken');}});
