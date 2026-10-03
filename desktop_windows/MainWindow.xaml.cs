@@ -14,7 +14,7 @@ namespace Portal.Desktop;
 
 public partial class MainWindow : Window
 {
-    private const int CurrentBuild = 45;
+    private const int CurrentBuild = 46;
     private const long MaxInstallerBytes = 250L * 1024 * 1024;
     private const string GithubRepository = "portal26ernest-arch/-Portal-zrp";
     private const string WebViewCompatibilityArguments = "--disable-gpu --disable-gpu-compositing";
@@ -29,6 +29,8 @@ public partial class MainWindow : Window
     private bool _webRecoveryPending;
     private string? _pendingPersistOrigin;
     private DesktopCacheBridge? _cacheBridge;
+    private bool _startupUpdateChecked;
+    private bool _updateCheckInProgress;
 
     public MainWindow()
     {
@@ -196,6 +198,7 @@ public partial class MainWindow : Window
                 _pendingPersistOrigin = null;
             }
             await ApplyDesktopExperienceAsync();
+            _ = CheckForUpdateAsync(interactive: false);
         };
         Browser.CoreWebView2.ProcessFailed += (_, _) =>
         {
@@ -368,13 +371,21 @@ public partial class MainWindow : Window
     }
     private async void CheckUpdate_Click(object sender, RoutedEventArgs e)
     {
+        await CheckForUpdateAsync(interactive: true);
+    }
+
+    private async Task CheckForUpdateAsync(bool interactive)
+    {
+        if (_updateCheckInProgress || (!interactive && _startupUpdateChecked)) return;
+        if (!interactive) _startupUpdateChecked = true;
+        _updateCheckInProgress = true;
         try
         {
-            StatusText.Text = "Проверка версии…";
+            if (interactive) StatusText.Text = "Проверка версии…";
             var manifest = await LoadUpdateManifestAsync();
             if (manifest is null || manifest.Build <= CurrentBuild)
             {
-                MessageBox.Show("Установлена актуальная версия PORTAL Desktop.", "PORTAL Desktop");
+                if (interactive) MessageBox.Show("Установлена актуальная версия PORTAL Desktop.", "PORTAL Desktop");
                 return;
             }
             if (!ValidUpdateManifest(manifest, out var downloadUri))
@@ -386,11 +397,14 @@ public partial class MainWindow : Window
         }
         catch
         {
-            MessageBox.Show("Не удалось безопасно проверить обновление. Попробуйте позже.", "PORTAL Desktop");
+            if (interactive)
+                MessageBox.Show("Не удалось безопасно проверить обновление. Попробуйте позже.", "PORTAL Desktop");
         }
         finally
         {
-            StatusText.Text = Browser.Visibility == Visibility.Visible ? "Подключено" : "Требуется подключение";
+            _updateCheckInProgress = false;
+            if (interactive)
+                StatusText.Text = Browser.Visibility == Visibility.Visible ? "Подключено" : "Требуется подключение";
         }
     }
     private async Task<DesktopUpdateManifest?> LoadUpdateManifestAsync()
@@ -431,7 +445,7 @@ public partial class MainWindow : Window
     {
         using var request = new HttpRequestMessage(HttpMethod.Get,
             $"https://api.github.com/repos/{GithubRepository}/releases?per_page=50");
-        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/4.5.0");
+        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/4.6.0");
         request.Headers.Accept.ParseAdd("application/vnd.github+json");
         using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();
