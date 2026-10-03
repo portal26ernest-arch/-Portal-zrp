@@ -229,8 +229,8 @@ class PayrollSettlementTest(unittest.TestCase):
         original=self.post('payroll-settlements',body)['data']
         for key,value in [('amount','2.00'),('reason','Другая причина'),('reference','Другое основание'),('entry_type','adjustment')]:
             self.post('payroll-settlements',dict(body,**{key:value}),status=400)
-        accountant=self.role_token('accountant')
-        self.post('payroll-settlements',body,accountant,status=400)
+        director=self.role_token('director')
+        self.post('payroll-settlements',body,director,status=400)
         self.post('payroll-periods',dict(period_start='2018-01-01',period_end='2018-01-15',request_id=body['request_id']),status=400)
         with portal.db() as conn:
             repo=Repository(conn,1)
@@ -390,11 +390,10 @@ class PayrollSettlementTest(unittest.TestCase):
 
     def test_default_roles_granted_capability_and_owner_scope(self):
         period=self.closed_period()
-        for role in ('manager','packer','shift'):
+        for role in ('manager','packer','shift','accountant'):
             token=self.role_token(role)
             self.post('payroll-settlements',self.payout_body(period),token,status=403)
-        for role in ('director','accountant'):
-            self.post('payroll-settlements',self.payout_body(period),self.role_token(role))
+        self.post('payroll-settlements',self.payout_body(period),self.role_token('director'))
         self.request('/api/v3/payroll-settlements',self.owner,self.payout_body(period),status=403)
         owner_entry=self.request('/api/v3/payroll-settlements',self.owner,self.payout_body(period),
             extra_headers={'X-Portal-Company':'1'})['data']
