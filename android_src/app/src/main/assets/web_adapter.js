@@ -22,7 +22,7 @@
     /^\/api\/users(?:\?.*)?$/,
     /^\/api\/materials(?:\?.*)?$/,
     /^\/api\/jobs(?:\?.*)?$/,
-    /^\/api\/v3\/(?:catalog|products|client-requisites|client-name-history|tariff-history)(?:\?.*)?$/
+    /^\/api\/v3\/(?:products|client-requisites|client-name-history|tariff-history)(?:\?.*)?$/
   ];
   const INVALIDATES_CACHE = /\/(?:clients?|users?|materials?|operations?|tariffs?|products?|invitations?|company-access)(?:\/|\?|$)/i;
   let cacheCompany = '';

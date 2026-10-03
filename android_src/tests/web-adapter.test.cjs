@@ -44,3 +44,10 @@ test('Desktop cache is company-scoped, encrypted by native bridge and never used
   assert.ok(adapter.includes("verb === 'GET' && !!token && !!cacheCompany"));
   assert.ok(adapter.includes("INVALIDATES_CACHE.test(target)"));
 });
+
+test('critical production catalog is always loaded fresh from server',()=>{
+  const cacheBlock=adapter.match(/const CACHEABLE = \[([\s\S]*?)\n  \];/);
+  assert.ok(cacheBlock,'CACHEABLE block');
+  assert.ok(!cacheBlock[1].includes('catalog'),'v3 catalog must not be served from persistent cache');
+  assert.ok(adapter.includes('products|client-requisites|client-name-history|tariff-history'));
+});
