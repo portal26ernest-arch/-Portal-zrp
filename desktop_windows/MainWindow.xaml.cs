@@ -14,8 +14,8 @@ namespace Portal.Desktop;
 
 public partial class MainWindow : Window
 {
-    private const int CurrentBuild = 52;
-    private const string CurrentVersion = "5.2.0";
+    private const int CurrentBuild = 53;
+    private const string CurrentVersion = "5.3.0";
     private const long MaxInstallerBytes = 250L * 1024 * 1024;
     private const string GithubRepository = "portal26ernest-arch/-Portal-zrp";
     private const string WebViewCompatibilityArguments = "--disable-gpu --disable-gpu-compositing";
@@ -267,6 +267,28 @@ public partial class MainWindow : Window
 })()
 """;
         await Browser.ExecuteScriptAsync(sidebarScript);
+
+        const string modalLockScript = """
+(() => {
+  const backdrop=()=>document.getElementById('sheetBackdrop');
+  const sheet=()=>document.getElementById('sheet');
+  const locked=()=>{const node=backdrop();return !!node&&!node.classList.contains('hidden');};
+  if(!window.__portalDesktopModalLock){
+    const guard=event=>{if(!locked())return;const dialog=sheet();if(dialog&&dialog.contains(event.target))return;event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();};
+    document.addEventListener('pointerdown',guard,true);
+    document.addEventListener('click',guard,true);
+    document.addEventListener('keydown',event=>{if(locked()&&event.key==='Escape'){event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();}},true);
+    window.__portalDesktopModalLock=true;
+  }
+  if(!window.__portalDesktopBackWrapped){
+    const originalBack=window.portalBack;
+    window.portalBack=()=>locked()?true:(typeof originalBack==='function'?originalBack():false);
+    window.__portalDesktopBackWrapped=true;
+  }
+  return true;
+})()
+""";
+        await Browser.ExecuteScriptAsync(modalLockScript);
     }
 
     private async Task ApplyDesktopMetadataAsync()
@@ -518,7 +540,7 @@ public partial class MainWindow : Window
     {
         using var request = new HttpRequestMessage(HttpMethod.Get,
             $"https://api.github.com/repos/{GithubRepository}/releases?per_page=50");
-        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.2.0");
+        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.3.0");
         request.Headers.Accept.ParseAdd("application/vnd.github+json");
         using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();

@@ -220,6 +220,18 @@ test('browser UI regression',async t=>{
         assert.deepEqual(errors,[]);await page.close();
       }
     });
+    await t.test('modal stays open on backdrop click, Escape and Back until explicit close',async()=>{
+      const {page,errors}=await fixture(browser,'manager',{width:1280,height:900},true,true);await login(page);
+      await page.evaluate(()=>openSheet('Проверка окна','<button id="modalInside">Внутри</button>'));
+      await page.waitForSelector('#sheetBackdrop:not(.hidden)');
+      await page.locator('#sheetBackdrop').click({position:{x:8,y:8}});
+      assert.equal(await page.locator('#sheetBackdrop').isVisible(),true);
+      await page.keyboard.press('Escape');assert.equal(await page.locator('#sheetBackdrop').isVisible(),true);
+      assert.equal(await page.evaluate(()=>window.portalBack()),true);assert.equal(await page.locator('#sheetBackdrop').isVisible(),true);
+      await page.locator('#sheet .sheet-header [data-action=closeSheet]').click();
+      await page.waitForFunction(()=>document.querySelector('#sheetBackdrop').classList.contains('hidden'));assert.equal(await page.locator('#sheetBackdrop').isVisible(),false);
+      assert.deepEqual(errors,[]);await page.close();
+    });
     await t.test('offline login displays error and preserves unauthenticated state',async()=>{
       const {page,errors}=await fixture(browser);await page.evaluate(()=>mock.offline=true);
       await page.locator('#loginUser').fill('tester');await page.locator('#loginPin').fill('1234');await page.locator('#loginSubmit').click();
