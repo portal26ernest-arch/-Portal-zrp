@@ -103,6 +103,8 @@ test('updates: unconfigured, offline, current, newer and invalid manifests',()=>
   const state=m=>core.updateState(metadata,{ok:true,configured:true,manifest:m}).state;
   assert.equal(core.updateState(metadata,{ok:true,configured:false}).state,'unconfigured');
   assert.equal(core.updateState(metadata,{ok:true,configured:false,storeManaged:true}).state,'store');
+  assert.match(core.updateState(metadata,{ok:true,configured:false,serverChecked:true}).description,/Адрес сервера PORTAL проверен/);
+  assert.match(core.updateState(metadata,{ok:true,configured:false,serverChanged:true}).description,/Адрес сервера PORTAL обновлён автоматически/);
   assert.equal(core.updateState(metadata,{ok:false}).state,'error');
   assert.equal(state(manifest),'latest');
   assert.equal(state({...manifest,versionCode:metadata.versionCode+1}),'available');

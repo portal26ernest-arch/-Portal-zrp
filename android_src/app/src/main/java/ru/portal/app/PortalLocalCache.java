@@ -176,6 +176,48 @@ final class PortalLocalCache {
         }
     }
 
+    boolean migrateOutboxOrigin(String oldOrigin, String newOrigin) {
+        try {
+            if (oldOrigin == null || newOrigin == null || oldOrigin.trim().isEmpty() || newOrigin.trim().isEmpty()
+                    || oldOrigin.equalsIgnoreCase(newOrigin)) return true;
+            File base = new File(context.getFilesDir(), "company-outbox");
+            File source = new File(base, hash(oldOrigin.toLowerCase(Locale.ROOT)));
+            if (!source.isDirectory()) return true;
+            File target = new File(base, hash(newOrigin.toLowerCase(Locale.ROOT)));
+            if (!target.isDirectory() && !target.mkdirs()) return false;
+            File[] companies = source.listFiles(File::isDirectory);
+            if (companies == null) return false;
+            for (File company : companies) {
+                if (!company.getName().matches("[1-9][0-9]{0,9}")) continue;
+                File targetCompany = new File(target, company.getName());
+                if (!targetCompany.isDirectory() && !targetCompany.mkdirs()) return false;
+                File[] rows = company.listFiles((d, name) -> name.endsWith(".bin"));
+                if (rows == null) return false;
+                for (File row : rows) {
+                    File destination = new File(targetCompany, row.getName());
+                    if (destination.exists()) {
+                        if (!row.delete()) return false;
+                        continue;
+                    }
+                    if (!row.renameTo(destination)) {
+                        byte[] bytes = readLimited(row, MAX_OUTBOX_ITEM * 2);
+                        try (FileOutputStream out = new FileOutputStream(destination)) {
+                            out.write(bytes);
+                            out.getFD().sync();
+                        }
+                        if (!row.delete()) return false;
+                    }
+                }
+                File[] remaining = company.listFiles();
+                if (remaining != null && remaining.length == 0 && !company.delete()) return false;
+            }
+            File[] remaining = source.listFiles();
+            return remaining != null && remaining.length == 0 && source.delete();
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
     private File outboxDir(String serverOrigin, String companyId) throws Exception {
         if (serverOrigin == null || serverOrigin.trim().isEmpty() || companyId == null || !companyId.matches("[1-9][0-9]{0,9}")) return null;
         return new File(new File(new File(context.getFilesDir(), "company-outbox"), hash(serverOrigin.toLowerCase(Locale.ROOT))), companyId);

@@ -6,6 +6,8 @@ const gradleProperties = fs.readFileSync(path.join(root, 'gradle.properties'), '
 const manifest = fs.readFileSync(path.join(root, 'app', 'src', 'main', 'AndroidManifest.xml'), 'utf8');
 const releaseWorkflow = fs.readFileSync(path.join(root, '..', '.github', 'workflows', 'android-release.yml'), 'utf8');
 const stagingWorkflow = fs.readFileSync(path.join(root, '..', '.github', 'workflows', 'android-build.yml'), 'utf8');
+const releaseProperties = fs.readFileSync(path.join(root, 'release.properties'), 'utf8');
+const serverDiscovery = fs.readFileSync(path.join(root, '..', 'portal-server.json'), 'utf8');
 
 function must(condition, message) {
   if (!condition) throw new Error(message);
@@ -47,6 +49,13 @@ must(releaseWorkflow.includes('contents: write'),
   'Signed release needs narrowly scoped contents write permission to publish GitHub Release assets');
 must(releaseWorkflow.includes('releases/latest/download/portal-update.json'),
   'Signed release must pin the stable public update manifest URL');
+must(releaseProperties.includes('serverDiscoveryUrl=https://raw.githubusercontent.com/portal26ernest-arch/-Portal-zrp/main/portal-server.json'),
+  'Release must pin the stable GitHub server-discovery document');
+must(gradle.includes("'SERVER_DISCOVERY_URL'"),
+  'Android build must embed the server-discovery URL');
+const discovery = JSON.parse(serverDiscovery);
+must(discovery.schemaVersion === 1 && Number.isInteger(discovery.revision) && discovery.revision > 0 && /^https:\/\//.test(discovery.apiUrl),
+  'Server-discovery document must have a versioned HTTPS endpoint');
 must(releaseWorkflow.includes('build_update_manifest.py'),
   'Signed release must generate a machine-readable update manifest');
 must(releaseWorkflow.includes('gh release create') && releaseWorkflow.includes('portal-update.json'),

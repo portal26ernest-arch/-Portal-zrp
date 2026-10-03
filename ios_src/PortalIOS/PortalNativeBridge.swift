@@ -7,6 +7,7 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
     static let replyHandlerName = "portalNativeReply"
     static let allowedExternalHosts: Set<String> = ["seller.ozon.ru", "seller.wildberries.ru"]
     static let localOutboxPaths: Set<String> = ["/api/v3/work", "/api/v3/links", "/api/v3/batches", "/api/v3/tasks", "/api/v3/shipments", "/api/v3/returns"]
+    static let serverDiscoveryURL = URL(string: "https://raw.githubusercontent.com/portal26ernest-arch/-Portal-zrp/main/portal-server.json")!
     weak var webView: WKWebView?
 
     private let defaults = UserDefaults.standard
@@ -37,6 +38,24 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
               url.user == nil, url.password == nil,
               url.port == nil || url.port == 443 else { return false }
         return true
+    }
+
+    static func normalizeOfficialServerURL(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard var components = URLComponents(string: trimmed),
+              components.scheme?.lowercased() == "https",
+              let host = components.host?.lowercased(), !host.isEmpty,
+              components.user == nil, components.password == nil,
+              components.query == nil, components.fragment == nil,
+              components.port == nil || components.port == 443,
+              components.path.isEmpty || components.path == "/",
+              host != "localhost", !host.hasSuffix(".localhost"),
+              host != "portal.invalid", !host.hasSuffix(".trycloudflare.com") else { return nil }
+        components.scheme = "https"
+        components.host = host
+        components.port = nil
+        components.path = ""
+        return components.string?.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
     }
 
     private static func jsonString(_ value: String) -> String {
@@ -89,6 +108,7 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
                 !u.username && !u.password && !u.search && !u.hash && (u.pathname === '/' || u.pathname === '');
             } catch { return false; }
           };
+          window.__portalSetServerUrlFromNative = value => { const next=String(value||'').trim().replace(/[/]+$/, ''); if(validServer(next)) server=next; };
           window.PortalNative = {
             getBuild: () => \(buildLiteral),
             getAppMetadata: () => metadata,
@@ -156,9 +176,14 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
         case "requestAsync":
             request(payload)
         case "checkUpdates":
-            deliver(id: payload["id"] as? String, object: [
-                "ok": true, "configured": false, "storeManaged": true, "platform": "ios"
-            ])
+            let id = payload["id"] as? String
+            refreshOfficialServer { [weak self] serverResult in
+                var object: [String: Any] = [
+                    "ok": true, "configured": false, "storeManaged": true, "platform": "ios"
+                ]
+                serverResult.forEach { object[$0.key] = $0.value }
+                self?.deliver(id: id, object: object)
+            }
         case "installUpdate":
             deliver(id: payload["id"] as? String, object: [
                 "ok": false, "errorCode": "app_store_managed",
@@ -226,6 +251,82 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
             webView.evaluateJavaScript(script)
         }
     }
+
+    private func refreshOfficialServer(completion: @escaping ([String: Any]) -> Void) {
+        let channel = metadata["channel"] as? String ?? "development"
+        guard channel == "release" else {
+            completion(["serverChecked": false, "serverChanged": false, "serverUrl": serverURL])
+            return
+        }
+        var request = URLRequest(url: Self.serverDiscoveryURL)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 15
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            guard let self else { return }
+            guard error == nil,
+                  let http = response as? HTTPURLResponse, http.statusCode == 200,
+                  http.url == Self.serverDiscoveryURL,
+                  let data, !data.isEmpty, data.count <= 16 * 1024,
+                  let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                  (object["schemaVersion"] as? NSNumber)?.intValue == 1,
+                  let revisionValue = object["revision"] as? NSNumber, revisionValue.intValue >= 1,
+                  let updatedAt = object["updatedAt"] as? String,
+                  ISO8601DateFormatter().date(from: updatedAt) != nil,
+                  let apiURL = object["apiUrl"] as? String,
+                  let next = Self.normalizeOfficialServerURL(apiURL) else {
+                completion(["serverChecked": false, "serverChanged": false, "serverUrl": self.serverURL])
+                return
+            }
+            let revision = revisionValue.intValue
+            let storedRevision = self.defaults.integer(forKey: "portal_server_discovery_revision")
+            guard storedRevision <= revision else {
+                completion(["serverChecked": false, "serverChanged": false, "serverUrl": self.serverURL])
+                return
+            }
+            self.probeOfficialServer(next) { ready in
+                guard ready else {
+                    completion(["serverChecked": false, "serverChanged": false, "serverUrl": self.serverURL])
+                    return
+                }
+                let previous = self.serverURL
+                let changed = previous.caseInsensitiveCompare(next) != .orderedSame
+                if changed && !self.localCache.migrateOutboxOrigin(oldOrigin: previous, newOrigin: next) {
+                    completion(["serverChecked": false, "serverChanged": false, "serverUrl": previous])
+                    return
+                }
+                self.defaults.set(next, forKey: "portal_server_url")
+                self.defaults.set(revision, forKey: "portal_server_discovery_revision")
+                if changed {
+                    let script = "window.__portalSetServerUrlFromNative && window.__portalSetServerUrlFromNative(\(Self.jsonString(next)))"
+                    DispatchQueue.main.async { self.webView?.evaluateJavaScript(script) }
+                }
+                completion(["serverChecked": true, "serverChanged": changed, "serverUrl": next])
+            }
+        }.resume()
+    }
+
+    private func probeOfficialServer(_ origin: String, completion: @escaping (Bool) -> Void) {
+        guard let pingURL = URL(string: origin + "/api/ping") else { completion(false); return }
+        var request = URLRequest(url: pingURL)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 10
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            guard error == nil,
+                  let http = response as? HTTPURLResponse, http.statusCode == 200,
+                  http.url == pingURL,
+                  let data, data.count <= 32 * 1024,
+                  let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                  object["ok"] as? Bool == true,
+                  let build = object["build"] as? String, build.hasPrefix("PORTAL Server") else {
+                completion(false)
+                return
+            }
+            completion(true)
+        }.resume()
+    }
+
     private func request(_ payload: [String: Any]) {
         guard let id = payload["id"] as? String,
               let path = payload["path"] as? String,
