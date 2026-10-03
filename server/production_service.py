@@ -101,6 +101,10 @@ class Production:
 
     def need(self,p): rights.require(self.r,self.u,p)
 
+    def need_management_role(self):
+        if not self.u.get('technical_owner') and self.u.get('role') not in {'director','admin'}:
+            raise PermissionError('Управленческие настройки доступны только директору или управляющему')
+
     def visible(self,client_id):
         # Assignment scope is independent of individually granted capabilities.
         if self.u['role']!='manager' or self.u.get('technical_owner'): return True
@@ -195,14 +199,18 @@ class Production:
 
     def create_tariff(self,b):
         op=self.operation(b['client_id'],b['operation_id'])
-        old=self.tariff(op['id'])
-        values={k:old[k] for k in ('employee_rate','client_rate')}
+        now=self.clock()
+        versions=[t for t in self.r.list('tariffs') if t['operation_id']==op['id'] and t['effective_from']<=now]
+        old=self.tariff(op['id'],now) if versions else None
+        values={k:(old[k] if old else None) for k in ('employee_rate','client_rate')}
         changed=False
         for key,permission in [('employee_rate','rates.employee'),('client_rate','rates.client')]:
             if key in b:
                 self.need(permission);values[key]=cents(b[key]);changed=True
         if not changed: raise ValueError('Укажите новую ставку или цену')
-        effective=stamp(b.get('effective_from') or self.clock())
+        if old is None and any(values[k] is None for k in ('employee_rate','client_rate')):
+            raise ValueError('Для первого тарифа укажите ставку сотруднику и цену клиенту')
+        effective=stamp(b.get('effective_from') or now)
         if effective<self.clock():
             # A small clock gap is allowed only for immediate server-generated time.
             if b.get('effective_from'): raise ValueError('Тариф нельзя вводить задним числом')
@@ -803,7 +811,8 @@ class Production:
         return self.r.insert('payments',dict(invoice_id=i['id'],client_id=i['client_id'],amount=amount,reference=text(b.get('reference'),optional=True)))
 
     def set_permissions(self,b):
-        self.need('users.manage');users={u['id']:u for u in self.r.catalog('users')};target=users.get(b.get('user_id'))
+        self.need('users.manage');self.need_management_role()
+        users={u['id']:u for u in self.r.catalog('users')};target=users.get(b.get('user_id'))
         if not target: raise ValueError('Сотрудник не найден')
         old=self.r.get('permissions',str(target['id']),False) or dict(id=str(target['id']),overrides={})
         mode=b.get('mode','custom')
@@ -1554,6 +1563,7 @@ class Production:
         if action not in methods: raise ValueError('Действие не поддерживается')
         authorization={'batches':'batches.receive','products':'clients.manage','client-requisites':'clients.manage','tasks':'tasks.manage','work':'work.write','timers':'work.write','links':'work.link','permissions':'users.manage','usage':'materials.use','expenses':'expenses.manage','invoices':'invoices.create','payments':'payments.record','settings':'company.settings','shipments':'batches.receive','returns':'batches.receive','payroll-periods':'payroll.close','chat':'chat.write','documents':'documents.manage'}
         if action in authorization:self.need(authorization[action])
+        if action=='settings':self.need_management_role()
         if action=='payroll-settlements':
             entry_type=body.get('entry_type')
             if entry_type not in ('payout','adjustment','reversal'):
@@ -1692,9 +1702,12 @@ class Production:
             self.need('documents.read');identity=params.get('id',[None])[0]
             document=self.entity('documents',identity)
             return {k:document[k] for k in ('id','filename','mime_type','size_bytes','sha256','file_b64')}
-        if action=='settings':self.need('company.settings');return self.settings()
+        if action=='settings':
+            self.need('company.settings');self.need_management_role()
+            return self.settings()
         if action=='permissions':
-            self.need('users.manage');return [dict(u,permissions=sorted(rights.effective(self.r,u))) for u in self.r.catalog('users')]
+            self.need('users.manage');self.need_management_role()
+            return [dict(u,permissions=sorted(rights.effective(self.r,u))) for u in self.r.catalog('users')]
         if action=='catalog':
             operations=[]
             for op in self.r.catalog('operations'):

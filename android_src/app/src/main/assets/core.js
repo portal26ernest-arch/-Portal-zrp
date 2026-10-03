@@ -37,7 +37,7 @@ globalThis.PortalCore = (() => {
         const needed=['imports.manage','users.manage','clients.manage','rates.employee','rates.client','company.settings','documents.manage','documents.read'];
         return ['admin','director','platform_owner'].includes(user.role)&&needed.every(p=>user.permissions.includes(p));
       }
-      const map={work:['work.write','tasks.read'],payroll:['payroll.own'],payrollPeriods:['payroll.all','payroll.close'],teamChat:['chat.read'],organizer:['organizer.read'],clients:['clients.read'],catalogue:['clients.manage'],materials:['materials.read'],invoices:['invoices.read'],users:['users.manage'],jobs:['tasks.read'],batches:['batches.receive','tasks.read','work.write'],permissions:['users.manage'],tariffs:['rates.employee','rates.client'],radar:['finance.read'],expenses:['expenses.read','expenses.manage'],analytics:['analytics.read','work.write'],documents:['documents.read','documents.manage'],reports:['finance.read','analytics.read'],control:['company.settings'],news:['chat.read','clients.read','tasks.read'],wms:['tasks.read','batches.receive','work.write'],notifications:['tasks.read','invoices.read','materials.read','payroll.own']};
+      const map={work:['work.write','tasks.read'],payroll:['payroll.own'],payrollPeriods:['payroll.all','payroll.close'],teamChat:['chat.read'],organizer:['organizer.read'],clients:['clients.read'],catalogue:['clients.manage'],materials:['materials.read'],invoices:['invoices.read'],users:['users.manage'],jobs:['tasks.read'],batches:['batches.receive'],permissions:['users.manage'],tariffs:['rates.employee','rates.client'],radar:['finance.read'],expenses:['expenses.read','expenses.manage'],analytics:['analytics.read'],documents:['documents.read','documents.manage'],reports:['finance.read','analytics.read'],control:['company.settings'],news:['chat.read','clients.read'],wms:['batches.receive'],notifications:['organizer.read','invoices.read','chat.read']};
       if(map[page])return map[page].some(p=>user.permissions.includes(p));
       if(['dashboard','sections'].includes(page))return true;
     }
@@ -47,15 +47,22 @@ globalThis.PortalCore = (() => {
       if (['companies','audit'].includes(page)) return true;
       return !!company && ['dashboard','sections','clients','materials','invoices','users','jobs','reports','news','excelImport','wms','notifications','organizer'].includes(page);
     }
-    if (['dashboard','sections','jobs','news','notifications'].includes(page)) return true;
-    if (page==='work') return !!user.employee_id && ['admin','director','manager','packer','shift'].includes(user.role);
-    if (page==='payroll') return !!user.employee_id;
-    if (page==='clients') return user.role!=='packer';
-    if (page==='materials') return ['admin','director','accountant','shift'].includes(user.role);
-    if (page==='invoices') return ['admin','director','manager','accountant'].includes(user.role);
-    if (page==='reports') return ['admin','director','manager','accountant','shift'].includes(user.role);
+    if (['dashboard','sections'].includes(page)) return true;
+    if (['shift','accountant'].includes(user.role)) return false;
+    if (user.role==='packer') {
+      if (page==='work') return !!user.employee_id;
+      if (page==='payroll') return !!user.employee_id;
+      return ['materials','jobs'].includes(page);
+    }
+    if (['jobs','news','notifications'].includes(page)) return ['admin','director','manager'].includes(user.role);
+    if (page==='work') return !!user.employee_id && ['admin','director','manager'].includes(user.role);
+    if (page==='payroll') return !!user.employee_id && ['admin','director','manager'].includes(user.role);
+    if (page==='clients') return ['admin','director','manager'].includes(user.role);
+    if (page==='materials') return ['admin','director','manager'].includes(user.role);
+    if (page==='invoices') return ['admin','director','manager'].includes(user.role);
+    if (page==='reports') return ['admin','director','manager'].includes(user.role);
     if (page==='excelImport') return false;
-    if (page==='wms') return ['admin','director','manager','packer','shift'].includes(user.role);
+    if (page==='wms') return ['admin','director','manager'].includes(user.role);
     return page==='users' && ['admin','director'].includes(user.role);
   }
   function timeGreeting(value=new Date()) {

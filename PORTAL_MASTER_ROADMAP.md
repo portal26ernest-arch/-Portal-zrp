@@ -383,3 +383,5 @@ Current roadmap counts are **93 ✅ / 15 🟡 / 6 ⏳ / 12 🔌**. Current-SHA S
 
 - Release-fix 70942b3: устранена недетерминированность generated XLSX — OpenPyXL переписывал docProps/core.xml modified текущей секундой, из-за чего повтор с тем же request_id мог ошибочно считаться другим документом. deterministic_zip теперь нормализует created/modified; защита request_id не ослаблена. Проверка: 4 последовательных генерации дали одинаковый SHA-256; targeted Document API + regression test 2/2 OK; Android build-security OK.
 - Production pre-release evidence: fresh control/tenant/storage backup создан и вынесен off-server с совпадающими SHA-256. Tenant DB уже имеет migration 14 и portal_production_immutable() уже допускает organizer_requests, поэтому повторное применение Stage 14 не требуется.
+
+- Production hotfix reconciliation перед официальным релизом: в main перенесены проверенные runtime-патчи, уже работавшие на VPS — разрешение первой версии тарифа, актуальная company role matrix и сохранение явных permission overrides; также перенесены PostgreSQL/payroll regression-контракты. iOS и экспериментальные ветки не включались.

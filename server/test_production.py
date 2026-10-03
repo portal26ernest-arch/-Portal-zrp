@@ -16,6 +16,7 @@ import test_portal_tenancy as isolation
 from production_repository import Repository, utcnow
 from production_migrations import migrate
 from production_service import Production
+import production_permissions as rights
 
 portal=legacy.portal
 
@@ -39,6 +40,24 @@ class ProductionTest(unittest.TestCase):
     def task(self,batch):return self.post('tasks',dict(batch_id=batch['id'],operation_id=1,quantity=10,assignees=[self.worker_id]))['data']
 
     def work(self,**overrides):return self.post('work',dict(client_id=1,operation_id=1,quantity=2,**overrides),self.worker)['data']
+
+    def test_current_role_matrix_defaults_are_exact_and_salary_safe(self):
+        self.assertEqual(rights.defaults('director'),rights.CODES)
+        self.assertEqual(rights.defaults('admin'),rights.CODES)
+        manager=rights.defaults('manager')
+        required={'work.write','tasks.read','tasks.manage','organizer.read','organizer.assign',
+                  'organizer.request.create','batches.receive','work.link','payroll.own',
+                  'chat.read','chat.write','chat.moderate','clients.read','rates.client',
+                  'materials.read','materials.use','invoices.read','invoices.create','invoices.export',
+                  'finance.read','expenses.read','analytics.read','documents.read'}
+        forbidden={'payroll.all','payroll.close','payroll.settlement.read','payroll.settlement.payout',
+                   'payroll.settlement.correct','users.manage','company.settings','imports.manage','rates.employee'}
+        self.assertTrue(required <= manager)
+        self.assertTrue(forbidden.isdisjoint(manager))
+        self.assertEqual(rights.defaults('packer'),
+                         {'tasks.read','work.write','payroll.own','materials.read','materials.use'})
+        self.assertEqual(rights.defaults('shift'),set())
+        self.assertEqual(rights.defaults('accountant'),set())
 
     def test_current_work_api_rejects_legacy_employee_field_without_writing(self):
         before=len(self.get('works',self.worker)['data'])
@@ -459,6 +478,21 @@ class ProductionTest(unittest.TestCase):
         self.assertEqual(len([row for row in self.get('shipments')['data'] if row.get('type')=='return']),2)
         self.post('returns',dict(batch_id=batch['id'],quantity=1),self.worker,status=403)
 
+    def test_first_tariff_can_be_created_when_operation_has_no_history(self):
+        with portal.tenants.company_scope(1),portal.db() as conn:
+            now=utcnow()
+            cursor=conn.execute("INSERT INTO portal_client_operations(client_id,name,employee_rate,client_rate,active,sort_order,created_at,updated_at) VALUES(?,?,?,?,1,0,?,?)",
+                                (1,'Операция без тарифа',0,0,now,now))
+            operation_id=cursor.lastrowid
+            conn.commit()
+        self.assertEqual(self.get('tariff-history?operation_id='+str(operation_id))['data'],[])
+        self.post('tariffs',dict(client_id=1,operation_id=operation_id,employee_rate=1),status=400)
+        created=self.post('tariffs',dict(client_id=1,operation_id=operation_id,employee_rate=1,client_rate=2))['data']
+        self.assertEqual((created['employee_rate'],created['client_rate']),(100,200))
+        history=self.get('tariff-history?operation_id='+str(operation_id))['data']
+        self.assertEqual(len(history),1)
+        self.assertEqual((history[0]['employee_rate'],history[0]['client_rate']),(100,200))
+
     def test_tariff_history_salary_revenue_and_future_dates(self):
         w=self.work();invoice=self.post('invoices',dict(work_ids=[w['id']]))['data']
         self.post('tariffs',dict(client_id=1,operation_id=1,employee_rate=3,client_rate=8))
@@ -842,6 +876,11 @@ class ProductionTest(unittest.TestCase):
                 if name.endswith('.xml') or name.endswith('.rels'):ET.fromstring(book.read(name))
 
     def test_chat_general_private_retention_pin_and_company_isolation(self):
+        # Packer has no chat access by default in the current role matrix; grant it explicitly
+        # here because this test covers chat mechanics rather than role defaults.
+        self.post('permissions',dict(user_id=self.worker_id,permissions={'chat.read':True,'chat.write':True}))
+        other_worker_id=self.request('/api/me',self.other_worker)['user']['id']
+        self.post('permissions',dict(user_id=other_worker_id,permissions={'chat.read':True,'chat.write':True}),self.other_admin)
         message=self.post('chat',dict(text='Общее сообщение'),self.worker)['data']
         self.assertEqual(self.get('chat',self.worker)['data'][0]['text'],'Общее сообщение')
         self.assertEqual(self.get('chat',self.other_worker)['data'],[])
@@ -882,6 +921,7 @@ class ProductionTest(unittest.TestCase):
         self.post('chat',dict(mode='pin',message_id=message['id'],pinned=True),self.worker,status=403)
 
     def test_large_request_body_exception_is_chat_only(self):
+        self.post('permissions',dict(user_id=self.worker_id,permissions={'chat.read':True,'chat.write':True}))
         result=self.request('/api/v3/batches',self.admin,{'request_id':'oversize','client_id':1,'product':'X','quantity':1,'comment':'x'*70000},status=400)
         self.assertIn('64',result['error'])
         payload=b'a'*70000
@@ -889,6 +929,9 @@ class ProductionTest(unittest.TestCase):
         self.assertEqual(sent['attachment']['size_bytes'],len(payload))
 
     def test_chat_attachment_security_hash_and_retention(self):
+        self.post('permissions',dict(user_id=self.worker_id,permissions={'chat.read':True,'chat.write':True}))
+        other_worker_id=self.request('/api/me',self.other_worker)['user']['id']
+        self.post('permissions',dict(user_id=other_worker_id,permissions={'chat.read':True}),self.other_admin)
         raw=b'PORTAL attachment'
         attachment=dict(name='note.txt',mime_type='text/plain',file_b64=base64.b64encode(raw).decode())
         sent=self.post('chat',dict(text='Файл',attachment=attachment),self.worker)['data']
