@@ -448,13 +448,13 @@ Current roadmap counts are **93 ✅ / 15 🟡 / 6 ⏳ / 12 🔌**. Current-SHA S
 - Focused Desktop/Web adapter suite: 6/6 passed; diff check passed.
 - Exact NEXT: publish and install Desktop 5.2, then verify login/password/submit interaction on the authorized PC.
 
-## T. Desktop 5.2 pre-DOM metadata + login responsiveness — 2026-10-03
+## T. Desktop 5.3 pre-DOM metadata + login responsiveness — 2026-10-03
 
-- Desktop stays on `5.2.0` / build `52` and preserves the already merged login-responsiveness fix.
+- Desktop advances to `5.3.0` / build `53` because the official `5.2.0` release was already published from the login-responsiveness branch; this build preserves that fix and adds the pre-DOM metadata correction.
 - Visible Desktop metadata is now prepared from native constants and the installed EXE timestamp before `/web/` navigation starts; it no longer depends on a successful bridge metadata read.
 - A document-created WebView2 bootstrap supplies native metadata to `PortalNative.getAppMetadata()` before the shared `app.js` registers/runs `DOMContentLoaded`.
 - The same bootstrap performs bounded one-shot DOM fills at DOM ready, immediately after ready, and once after 250 ms for `#buildLabel` and an already-open About screen. No `MutationObserver` is used, preserving the responsiveness fix.
-- The WPF status line now includes `5.2.0 · build 52` during connection and after successful navigation, giving a native proof independent of Web JavaScript.
+- The WPF status line now includes `5.3.0 · build 53` during connection and after successful navigation, giving a native proof independent of Web JavaScript.
 - Local focused Desktop/Web adapter tests: 6/6 passed; diff check passed.
 - No PostgreSQL, tenant data, permissions, payroll, invoices or cache scope changed.
-- Exact NEXT: run green Windows Desktop, Android UI/APK and master-control CI, publish Desktop 5.2, install on the authorized PC, then verify visible native status and login build label by screenshot before closing the issue.
+- Exact NEXT: run green Windows Desktop and master-control CI (shared Android/Web assets are unchanged from green 5.2), publish Desktop 5.3, install on the authorized PC, then verify visible native status and login build label by screenshot before closing the issue.
