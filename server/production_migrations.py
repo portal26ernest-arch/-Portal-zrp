@@ -27,6 +27,7 @@ def migrate(conn, company_id, dialect=None):
         migrate_client_aliases(r)
         migrate_employee_aliases(r)
         migrate_organizer_requests(r)
+        migrate_session_storage(r)
         return
     # Current catalog baseline, not a reconstruction or recalculation of history.
     for operation in r.catalog('operations'):
@@ -50,6 +51,13 @@ def migrate(conn, company_id, dialect=None):
     migrate_client_aliases(r)
     migrate_employee_aliases(r)
     migrate_organizer_requests(r)
+    migrate_session_storage(r)
+
+def migrate_session_storage(r):
+    from session_security import migrate_tokens
+    migrate_tokens(r.conn,r.company_id)
+    if r.sql('SELECT 1 FROM portal_production_migrations WHERE company_id=? AND version=15',(r.company_id,)).fetchone():return
+    r.sql('INSERT INTO portal_production_migrations(company_id,version,applied_at) VALUES(?,15,?)',(r.company_id,utcnow()))
 
 def migrate_organizer_requests(r):
     """Version 14 permits request-card mutation; event and attachment rows stay immutable."""

@@ -185,6 +185,90 @@ class DocumentsPostgreSQLTest(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):cls.cleanup()
+    def setUp(self):
+        limiter_patch=patch.object(self.portal,'LOGIN_LIMITER',self.portal.LoginLimiter())
+        limiter_patch.start();self.addCleanup(limiter_patch.stop)
+
+    def test_security_cli_can_upgrade_version14_session_storage(self):
+        from production_repository import Repository
+        with self.portal.tenants.company_scope(1),self.portal.db() as conn:
+            repo=Repository(conn,1)
+            repo.sql('DELETE FROM portal_production_migrations WHERE company_id=1 AND version=15')
+        try:
+            # This disposable fixture omits unrelated imported production tables.
+            # The CLI ordering is tested here while real PG session migration runs.
+            with patch('sys.argv',['portal_app_server.py','--migrate-stage3','1']), \
+                 patch.object(self.portal,'ensure_schema') as readiness:
+                self.portal.main()
+            readiness.assert_called_once_with(require_session_storage=False)
+            with self.portal.tenants.company_scope(1),self.portal.db() as conn:
+                self.assertTrue(conn.execute('SELECT 1 FROM portal_production_migrations WHERE company_id=1 AND version=15').fetchone())
+        finally:
+            from production_migrations import migrate
+            with self.portal.tenants.company_scope(1),self.portal.db() as conn:migrate(conn,1)
+
+    def test_security_concurrent_old_pin_login_cannot_survive_revocation(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Event
+        import time
+        username='concurrency-fixture-'+secrets.token_hex(4)
+        self.request('/api/users',self.admin,{'username':username,'display_name':'Synthetic concurrency worker',
+                                             'pin':self.synthetic_pin,'role':'packer'})
+        current=self.request('/api/login',body={'username':username,'pin':self.synthetic_pin})['token']
+        entered=Event();release=Event();started=Event();original=self.portal.revoke_sessions
+        def paused(*args,**kwargs):
+            if kwargs.get('reason')=='pin_changed':
+                entered.set()
+                if not release.wait(5):raise RuntimeError('synthetic concurrency timeout')
+            return original(*args,**kwargs)
+        def old_login():
+            started.set()
+            return self.request('/api/login',body={'username':username,'pin':self.synthetic_pin},status=401)
+        with patch.object(self.portal,'revoke_sessions',side_effect=paused),ThreadPoolExecutor(max_workers=2) as pool:
+            change=pool.submit(self.request,'/api/me/pin',current,
+                               {'current_pin':self.synthetic_pin,'new_pin':'synthetic-concurrency-newpin'})
+            try:
+                self.assertTrue(entered.wait(5))
+                login=pool.submit(old_login)
+                self.assertTrue(started.wait(5));time.sleep(0.15)
+                self.assertFalse(login.done())
+            finally:release.set()
+            change.result(timeout=10);login.result(timeout=10)
+        token=self.request('/api/login',body={'username':username,'pin':'synthetic-concurrency-newpin'})['token']
+        self.request('/api/me',token)
+
+    def test_security_session_storage_migration_and_revocation(self):
+        from session_security import storage_key,migrate_tokens
+        from production_repository import Repository
+        from production_activity import presence
+        username='security-fixture-'+secrets.token_hex(4)
+        created=self.request('/api/users',self.admin,{'username':username,'display_name':'Synthetic security worker',
+                                                     'pin':self.synthetic_pin,'role':'packer'})
+        user_id=created['id']
+        first=self.request('/api/login',body={'username':username,'pin':self.synthetic_pin})['token']
+        other=self.request('/api/login',body={'username':username,'pin':self.synthetic_pin})['token']
+        with self.portal.tenants.company_scope(1),self.portal.db() as conn:
+            repo=Repository(conn,1)
+            keys=[row[0] for row in repo.sql('SELECT token FROM app_sessions WHERE company_id=1 AND user_id=?',(user_id,)).fetchall()]
+            self.assertEqual(set(keys),{storage_key(first),storage_key(other)})
+            repo.sql('UPDATE app_sessions SET token=? WHERE company_id=1 AND token=?',(first,storage_key(first)))
+            migrate_tokens(conn,1);migrate_tokens(conn,1)
+        self.request('/api/me',first)
+        self.request('/api/me',storage_key(first),status=401)
+        self.request('/api/me/pin',first,{'current_pin':self.synthetic_pin,'new_pin':'synthetic-security-new-pin'})
+        self.request('/api/me',first);self.request('/api/me',other,status=401)
+        with self.portal.tenants.company_scope(1),self.portal.db() as conn:
+            repo=Repository(conn,1)
+            ended=[s for s in repo.list('access_sessions') if s['user_id']==user_id]
+            self.assertEqual(sum(s['ended_at'] is None for s in ended),1)
+            self.assertTrue(any(s['end_reason']=='pin_changed' for s in ended))
+        self.request('/api/users/'+str(user_id),self.admin,{'active':0})
+        self.request('/api/me',first,status=401)
+        with self.portal.tenants.company_scope(1),self.portal.db() as conn:
+            repo=Repository(conn,1)
+            self.assertTrue(all(s['ended_at'] for s in repo.list('access_sessions') if s['user_id']==user_id))
+        self.request('/api/me',self.tokens[2])
+
     def request(self,*args,**kwargs):return self.legacy.PortalAPITest.request(self,*args,**kwargs)
     def post(self,*args,**kwargs):return self.production.ProductionTest.post(self,*args,**kwargs)
     def get(self,*args,**kwargs):return self.production.ProductionTest.get(self,*args,**kwargs)

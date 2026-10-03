@@ -69,6 +69,8 @@ class MemorySocket:
 
 class PortalAPITest(unittest.TestCase):
     def setUp(self):
+        limiter_patch=patch.object(portal,'LOGIN_LIMITER',portal.LoginLimiter())
+        limiter_patch.start();self.addCleanup(limiter_patch.stop)
         self.tmp = tempfile.TemporaryDirectory(prefix="portal-test-")
         self.old_db = portal.DB_PATH
         portal.DB_PATH = str(Path(self.tmp.name) / "fixture.db")

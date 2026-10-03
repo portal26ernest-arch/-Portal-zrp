@@ -78,7 +78,9 @@ def _apply_row(importer,row,refs):
             if (old[0],old[1])!=(value['role'],value['active']):
                 r.sql('UPDATE app_users SET role=?,active=?,updated_at=? WHERE company_id=? AND id=?',
                       (value['role'],value['active'],now,r.company_id,value['user_id']))
-                r.sql('DELETE FROM app_sessions WHERE company_id=? AND user_id=?',(r.company_id,value['user_id']))
+                from session_security import revoke_sessions
+                revoke_sessions(r.conn,r.company_id,user_id=value['user_id'],reason='excel_access_changed',
+                                actor_id=importer.u['id'])
         elif value.get('create_access'):
             salt,pin_hash=hash_access_pin(value['initial_pin'])
             account=dict(username=value['profile_username'],display_name=value['full_name'],role=value['role'],

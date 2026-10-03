@@ -323,7 +323,7 @@ class CompanyIsolationTest(unittest.TestCase):
     def test_migration_idempotent_history_and_legacy_sessions_preserved(self):
         with portal.db() as conn:
             before=[tuple(r) for r in conn.execute("SELECT * FROM work_log ORDER BY id")]
-            conn.execute("UPDATE app_sessions SET token='legacy-token-without-prefix' WHERE token=?",(self.admin,))
+            conn.execute("UPDATE app_sessions SET token='legacy-token-without-prefix' WHERE token=?",(portal.storage_key(self.admin),))
             conn.execute("INSERT INTO payroll_transactions(telegram_id,period_start,period_end,amount) VALUES(101,'old-start','old-end',456)")
         portal.ensure_schema()
         portal.ensure_schema()
@@ -365,6 +365,8 @@ class MigrationTest(unittest.TestCase):
                 with portal.db() as conn:
                     for table,(fields,rows) in snapshots.items():
                         actual=[tuple(r) for r in conn.execute(f'SELECT {",".join(fields)} FROM "{table}"')]
+                        if table=='app_sessions':
+                            rows=[(portal.storage_key(row[0]),)+row[1:] for row in rows]
                         self.assertEqual(actual,rows,table)
                         self.assertEqual(conn.execute(f'SELECT COUNT(*) FROM "{table}" WHERE company_id IS NULL OR company_id!=1').fetchone()[0],0)
                     self.assertEqual(conn.execute("PRAGMA integrity_check").fetchone()[0],"ok")

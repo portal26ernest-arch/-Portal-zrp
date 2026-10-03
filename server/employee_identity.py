@@ -207,6 +207,9 @@ def hash_access_pin(pin, salt=None):
 
 
 def write_user_account(connection, company_id, user_id, values, salt, digest, updated_at):
+    if user_id:
+        from session_security import authentication_lock
+        authentication_lock(connection)
     employee_id=values.get('employee_id')
     legacy=legacy_employee_id(connection,company_id,employee_id)
     if employee_id is not None and legacy is None:raise ValueError('Сотрудник employee_id не найден в этой компании')
@@ -216,9 +219,8 @@ def write_user_account(connection, company_id, user_id, values, salt, digest, up
         params=(values['username'],values['display_name'],values['role'],legacy,values['active'],salt,digest,updated_at,user_id)
         if scoped:sql+=' AND company_id=?';params+=(company_id,)
         connection.execute(sql,params)
-        session_cols=_columns(connection,'app_sessions')
-        if 'company_id' in session_cols:connection.execute('DELETE FROM app_sessions WHERE user_id=? AND company_id=?',(user_id,company_id))
-        else:connection.execute('DELETE FROM app_sessions WHERE user_id=?',(user_id,))
+        from session_security import revoke_sessions
+        revoke_sessions(connection,company_id,user_id=user_id,reason='access_changed')
     else:
         record=dict(username=values['username'],display_name=values['display_name'],role=values['role'],telegram_id=legacy,
                     active=values['active'],pin_salt=salt,pin_hash=digest,created_at=updated_at,updated_at=updated_at)

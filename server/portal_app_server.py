@@ -27,6 +27,8 @@ from employee_names import persist_known_employee_aliases
 import production_activity as activity
 from portal_config import load_config
 from pathlib import Path
+from login_throttle import LoginLimiter, client_ip
+from session_security import storage_key, migrate_tokens, revoke_sessions, authentication_lock
 import documents_api
 import excel_import
 from document_domain import LocalFileStorage
@@ -38,6 +40,9 @@ tenants.configure(CONFIG)
 HOST = CONFIG.host
 PORT = CONFIG.port
 SESSION_HOURS = 24 * 30
+LOGIN_LIMITER = LoginLimiter()
+# Deployment must list only proxies that overwrite X-Real-IP, never arbitrary peers.
+TRUSTED_LOGIN_PROXIES = tuple(value.strip() for value in os.environ.get('PORTAL_TRUSTED_LOGIN_PROXIES','').split(',') if value.strip())
 GLOBAL_ROLE = "platform_owner"
 GLOBAL_ROLE_LABEL = "God"
 
@@ -103,7 +108,7 @@ def validate_postgresql_runtime_split(registry, conn):
         raise RuntimeError('Production PostgreSQL roles cross the control/tenant boundary')
 
 
-def ensure_schema():
+def ensure_schema(require_session_storage=True):
     if CONFIG.backend == 'postgresql':
         from portal_postgres import validate_runtime_role
         if CONFIG.host not in ('127.0.0.1', '::1'):
@@ -131,7 +136,8 @@ def ensure_schema():
             if (missing
                     or not conn.execute('SELECT 1 FROM portal_runtime_schema WHERE version=1').fetchone()
                     or not conn.execute('SELECT 1 FROM portal_rls_context_schema WHERE version=1').fetchone()
-                    or not conn.execute('SELECT 1 FROM portal_production_migrations WHERE version=6').fetchone()):
+                    or not conn.execute('SELECT 1 FROM portal_production_migrations WHERE version=6').fetchone()
+                    or (require_session_storage and not conn.execute('SELECT 1 FROM portal_production_migrations WHERE company_id=1 AND version=15').fetchone())):
                 raise RuntimeError('PostgreSQL runtime schema is incomplete: ' + ', '.join(missing))
             rls_required = required - {'companies','portal_runtime_schema','portal_rls_context_schema'}
             placeholders = ','.join('?' for _ in rls_required)
@@ -186,6 +192,7 @@ def ensure_schema():
             if statement.strip():
                 conn.execute(statement)
         tenants.stamp_schema(conn, 1)
+        migrate_tokens(conn,1)
     tenants.initialize_control(DB_PATH)
 
 
@@ -217,10 +224,10 @@ def create_session(conn, user_id):
     token = str(tenants.COMPANY_ID.get()) + "." + secrets.token_urlsafe(40)
     created = datetime.now()
     expires = created + timedelta(hours=SESSION_HOURS)
-    conn.execute("DELETE FROM app_sessions WHERE expires_at < ?", (now_text(),))
+    revoke_sessions(conn,tenants.COMPANY_ID.get(),before=now_text(),reason='expired')
     conn.execute(
         "INSERT INTO app_sessions(token,user_id,created_at,expires_at) VALUES(?,?,?,?)",
-        (token, user_id, created.strftime("%Y-%m-%d %H:%M:%S"), expires.strftime("%Y-%m-%d %H:%M:%S")),
+        (storage_key(token), user_id, created.strftime("%Y-%m-%d %H:%M:%S"), expires.strftime("%Y-%m-%d %H:%M:%S")),
     )
     return token
 
@@ -244,7 +251,7 @@ def user_from_token(token):
         row = conn.execute("""
             SELECT u.* FROM app_sessions s JOIN app_users u ON u.id=s.user_id
             WHERE s.token=? AND s.expires_at>=? AND u.active=1
-        """, (token, now_text())).fetchone()
+        """, (storage_key(token), now_text())).fetchone()
         return with_employee_id(row,conn,company_id) if row and row["role"] in ROLE_LABELS else None
 
 
@@ -796,17 +803,25 @@ class Handler(BaseHTTPRequestHandler):
         # BaseHTTPRequestHandler normally logs the raw URL, including its query.
         sys.stdout.write("[%s] %s %s\n" % (datetime.now().strftime("%H:%M:%S"), self.command, audit_route(urlparse(self.path).path)))
 
-    def send_json(self, data, status=200):
+    def send_json(self, data, status=200, headers=None):
         self.response_status = status
         raw=json.dumps(data,ensure_ascii=False,default=lambda value: float(value) if isinstance(value,Decimal) else str(value)).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type","application/json; charset=utf-8")
         self.send_header("Cache-Control","no-store")
         self.send_header("Content-Length",str(len(raw)))
+        for name,value in (headers or {}).items():self.send_header(name,str(value))
         self.end_headers(); self.wfile.write(raw)
 
     def error_json(self, message, status=400):
         self.send_json({"ok":False,"error":str(message)},status)
+
+    def login_budget(self,key,limit=10,window=900):
+        retry=LOGIN_LIMITER.consume(key,limit,window)
+        if retry:
+            self.send_json({'ok':False,'error':'Слишком много попыток. Повторите позже.','retry_after':retry},
+                           429,headers={'Retry-After':retry})
+        return not retry
 
     def token(self):
         auth=self.headers.get("Authorization","")
@@ -843,6 +858,9 @@ class Handler(BaseHTTPRequestHandler):
         self.tenant_request = False
         path = urlparse(self.path).path
         readonly_preview=path=='/api/v3/excel-import-preview'
+        if method=='POST' and path in ('/api/login','/api/platform/login','/api/me/pin'):
+            peer=client_ip(self.client_address[0],self.headers,TRUSTED_LOGIN_PROXIES)
+            if not self.login_budget(('ip',peer),limit=60,window=60):return
         if path == '/api/desktop-update':
             if method != 'GET':
                 return self.error_json('Метод не поддерживается', 405)
@@ -880,6 +898,8 @@ class Handler(BaseHTTPRequestHandler):
             body = parse_body(self)
             with tenants.control(DB_PATH) as conn:
                 u = conn.execute("SELECT * FROM platform_owners WHERE username=? AND active=1", (str(body.get("username", "")),)).fetchone()
+                principal=('platform',u['id']) if u else ('platform_unknown',hashlib.sha256(str(body.get('username','')).strip().lower().encode()).hexdigest())
+                if not self.login_budget(principal):return
                 valid = bool(u and verify_pin(str(body.get("pin", "")), u["pin_salt"], u["pin_hash"]))
                 if u:
                     tenants.audit(conn, u["id"], 1, "god_login", "success" if valid else "denied")
@@ -903,8 +923,10 @@ class Handler(BaseHTTPRequestHandler):
             username=str(body.get("username", "")).strip()
             pin=str(body.get("pin", ""))
             with tenants.company_scope(company_id), db() as conn:
+                authentication_lock(conn)
                 u = conn.execute("SELECT * FROM app_users WHERE lower(username)=lower(?) AND active=1", (username,)).fetchone()
                 if u:
+                    if not self.login_budget(('tenant',company_id,u['id'])):return
                     if not verify_pin(pin, u["pin_salt"], u["pin_hash"]):
                         repo=Repository(conn,company_id)
                         if repo.ready():activity.login(repo,u['username'],u['id'],False,activity.client_type(self.headers))
@@ -917,6 +939,7 @@ class Handler(BaseHTTPRequestHandler):
             with tenants.control(DB_PATH) as control:
                 god = control.execute("SELECT * FROM platform_owners WHERE lower(username)=lower(?) AND active=1", (username,)).fetchone()
                 if god:
+                    if not self.login_budget(('platform',god['id'])):return
                     valid=verify_pin(pin,god["pin_salt"],god["pin_hash"])
                     tenants.audit(control,god["id"],1,"god_login","success" if valid else "denied")
                     if not valid:
@@ -925,6 +948,8 @@ class Handler(BaseHTTPRequestHandler):
                     control.execute("INSERT INTO platform_sessions(token_hash,user_id,expires_at) VALUES(?,?,?)",
                                     (hashlib.sha256(token.encode()).hexdigest(),god["id"],(datetime.now()+timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S")))
                     return self.send_json({"ok":True,"token":token,"user":{"id":god["id"],"username":god["username"],"role":GLOBAL_ROLE,"company_id":1}})
+            principal=('tenant_unknown',company_id,hashlib.sha256(username.lower().encode()).hexdigest())
+            if not self.login_budget(principal):return
             return self.error_json("Неверный логин, PIN или компания",401)
         if path == '/api/ready':
             if method != 'GET':
@@ -999,14 +1024,17 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("Новый PIN должен содержать от 4 до 128 символов")
                 if current_pin==new_pin:
                     raise ValueError("Новый PIN должен отличаться от текущего")
+                if not self.login_budget(('tenant',company_id,identity['id'])):return
                 with tenants.company_scope(company_id), db() as conn:
+                    authentication_lock(conn)
                     account=conn.execute("SELECT id,pin_salt,pin_hash FROM app_users WHERE id=? AND active=1",(identity['id'],)).fetchone()
                     if not account or not verify_pin(current_pin,account['pin_salt'],account['pin_hash']):
                         raise ValueError("Текущий PIN указан неверно")
                     salt,digest=hash_pin(new_pin)
                     conn.execute("UPDATE app_users SET pin_salt=?,pin_hash=?,updated_at=? WHERE id=?",
                                  (salt,digest,now_text(),identity['id']))
-                    conn.execute("DELETE FROM app_sessions WHERE user_id=? AND token<>?",(identity['id'],self.token()))
+                    revoke_sessions(conn,company_id,user_id=identity['id'],keep_token=self.token(),
+                                    reason='pin_changed',actor_id=identity['id'])
                     repo=Repository(conn,company_id)
                     if repo.ready():repo.audit(identity,'user.pin.changed',identity['id'])
                     conn.commit()
@@ -1430,8 +1458,10 @@ def main():
     parser.add_argument("--create-platform-owner", metavar="USERNAME", help="Создать технический доступ локально, с интерактивным вводом пароля")
     parser.add_argument('--migrate-stage3',type=int,metavar='COMPANY_ID',help='Явно подключить производственный учёт к проверенной копии БД компании')
     args = parser.parse_args()
-    ensure_schema()
-    if args.migrate_stage3:
+    if args.migrate_stage3 is not None and args.migrate_stage3<1:
+        parser.error('COMPANY_ID must be positive')
+    ensure_schema(require_session_storage=args.migrate_stage3 is None)
+    if args.migrate_stage3 is not None:
         with tenants.company_scope(args.migrate_stage3), db() as conn:
             migrate_production(conn,args.migrate_stage3)
         print('Миграция Этапа 3 завершена')

@@ -5,6 +5,12 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.worksheet.page import PageMargins
 
+def _data_cell(sheet,row,col,value):
+    """Untrusted text must stay text; application formula cells are explicit."""
+    cell=sheet.cell(row,col,value)
+    if isinstance(value,str):cell.data_type='s'
+    return cell
+
 def _base(title):
     book=Workbook();sheet=book.active;sheet.title=title
     book.properties.creator='PORTAL';book.properties.created=datetime(2000,1,1);book.properties.modified=datetime(2000,1,1)
@@ -25,7 +31,7 @@ def _requisites(sheet,start,label,data):
     for key,name in fields:
         value=data.get(key)
         if value not in (None,''):
-            sheet.cell(row,1,name);sheet.cell(row,2,str(value));row+=1
+            sheet.cell(row,1,name);_data_cell(sheet,row,2,str(value));row+=1
     return row
 
 def _finish(book,sheet,widths):
@@ -57,11 +63,11 @@ def invoice_xlsx(company,client,invoice):
     sheet.merge_cells('A1:D1')
     sheet['A1'].font=Font(bold=True,size=18,color='24476B')
     row=_requisites(sheet,3,'Исполнитель',company);row=_requisites(sheet,row+1,'Клиент',client)
-    sheet.cell(row,1,'Дата');sheet.cell(row,2,str(invoice.get('created_at',''))[:10]);row+=1
-    if invoice.get('due_at'):sheet.cell(row,1,'Оплатить до');sheet.cell(row,2,str(invoice['due_at'])[:10]);row+=1
+    sheet.cell(row,1,'Дата');_data_cell(sheet,row,2,str(invoice.get('created_at',''))[:10]);row+=1
+    if invoice.get('due_at'):sheet.cell(row,1,'Оплатить до');_data_cell(sheet,row,2,str(invoice['due_at'])[:10]);row+=1
     row+=1;_header(sheet,row,['Операция','Количество','Цена','Сумма']);first=row+1
     for line in invoice['lines']:
-        row+=1;sheet.cell(row,1,line['operation_name']);sheet.cell(row,2,line['quantity']);sheet.cell(row,3,line['client_rate']/100);sheet.cell(row,4,line['amount']/100)
+        row+=1;_data_cell(sheet,row,1,line['operation_name']);sheet.cell(row,2,line['quantity']);sheet.cell(row,3,line['client_rate']/100);sheet.cell(row,4,line['amount']/100)
         sheet.cell(row,3).number_format=sheet.cell(row,4).number_format='#,##0.00'
     row+=1;sheet.cell(row,3,'Итого, RUB').font=Font(bold=True);sheet.cell(row,4,f'=SUM(D{first}:D{row-1})').font=Font(bold=True);sheet.cell(row,4).number_format='#,##0.00'
     sheet.print_area=f'A1:D{row}';sheet.auto_filter.ref=f'A{row-len(invoice["lines"])}:D{row-1}'
@@ -74,6 +80,7 @@ def payroll_slip_xlsx(company,period,employee,summary,issue_date):
         raise ValueError('Для расчётного листа отсутствуют обязательные данные')
     book,sheet=_base('Расчётный лист');sheet.append(['Расчётный лист']);sheet['A1'].font=Font(bold=True,size=18,color='24476B')
     rows=[('Компания',company.get('name') or company.get('legal_name')),('Период / год',f'{period["period_start"]} — {period["period_end"]} / {period["period_start"][:4]}'),('ФИО',employee.get('display_name')),('Итоговая сумма, RUB',summary['balance']/100),('Дата',issue_date),('Управляющий компанией','________________________'),('Управляющий подразделением','________________________'),('Сотрудник','________________________')]
-    for row in rows:sheet.append(list(row))
+    for row,values in enumerate(rows,2):
+        for col,value in enumerate(values,1):_data_cell(sheet,row,col,value)
     sheet['B5'].number_format='#,##0.00';sheet.print_area='A1:B9'
     return _finish(book,sheet,[38,44])
