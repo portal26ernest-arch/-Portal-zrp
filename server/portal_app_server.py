@@ -31,7 +31,7 @@ import documents_api
 import excel_import
 from document_domain import LocalFileStorage
 
-BUILD_ID = "PORTAL Server · 3.3-dev"
+BUILD_ID = "PORTAL Server · 4.5.0"
 CONFIG = load_config(os.environ)
 DB_PATH = CONFIG.sqlite_path
 tenants.configure(CONFIG)

@@ -373,3 +373,10 @@ Current roadmap counts are **93 ✅ / 15 🟡 / 6 ⏳ / 12 🔌**. Current-SHA S
 - Не закрытые внешние gate после программной проверки: собственный production domain/DNS/HTTPS, финальный authenticated device smoke и формальное объявление VPS/PostgreSQL единственным source of truth после успешного cutover.
 
 - Release CI hardening: `main` добавлен в push-триггеры `server-tests.yml` и `android-ui-tests.yml`, чтобы официальный main всегда проверял server isolation и Android UI, а не полагался только на проверки release-ветки.
+
+## N. Official release PORTAL 4.5 — 2026-10-03
+- Домен перенесён на пост-релизный этап; первый официальный релиз работает через действующий HTTPS sslip.io.
+- Публичная версия выровнена: Android 4.5 (versionCode 45), Desktop 4.5.0, Server 4.5.0.
+- Release target включает Organizer «Запросы директору» и исправление capability invariant для роли Директор.
+- До публикации тегов обязательны зелёные main CI: Server 3.11/3.13, Android UI/APK, Web, Windows Desktop и master-control.
+- После зелёного CI: production backup → Stage 14 migration → immutable server deploy → /api/ping + /api/ready → signed Android tag → Desktop 4.5.0 tag.
