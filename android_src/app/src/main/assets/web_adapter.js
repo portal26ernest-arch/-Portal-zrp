@@ -50,6 +50,33 @@
     try { return !!desktopCache()?.ClearCompany(String(company)); }
     catch { return false; }
   };
+  const cacheDelete = (company, key) => {
+    try { return !!desktopCache()?.Delete(String(company), key); }
+    catch { return false; }
+  };
+  const invalidationKeys = target => {
+    const keys = new Set();
+    const add = (...values) => values.forEach(value => keys.add(value));
+    if (/\/api\/v3\/work(?:\?|$)/.test(target)) {
+      add('/api/v3/today','/api/v3/tasks','/api/v3/timers','/api/v3/finance','/api/v3/analytics','/api/v3/invoices','/api/v3/receivables');
+    } else if (/\/(?:tariffs?|operations?|products?)(?:\/|\?|$)/i.test(target)) {
+      add('/api/v3/catalog','/api/v3/tariff-history','/api/v3/products','/api/v3/today','/api/v3/finance','/api/v3/analytics');
+    } else if (/\/(?:clients?)(?:\/|\?|$)/i.test(target)) {
+      add('/api/clients','/api/admin/clients','/api/v3/catalog','/api/v3/client-name-history','/api/v3/client-requisites','/api/v3/today','/api/v3/finance','/api/v3/analytics');
+    } else if (/\/(?:materials?)(?:\/|\?|$)/i.test(target)) {
+      add('/api/materials','/api/v3/today','/api/v3/finance','/api/v3/analytics');
+    } else if (/\/(?:users?|invitations?|company-access|permissions)(?:\/|\?|$)/i.test(target)) {
+      add('/api/users','/api/v3/permissions','/api/v3/chat-users');
+    } else if (/\/(?:invoices?|payments?)(?:\/|\?|$)/i.test(target)) {
+      add('/api/v3/invoices','/api/v3/receivables','/api/v3/finance','/api/v3/today');
+    } else if (/\/(?:settings)(?:\/|\?|$)/i.test(target)) {
+      add('/api/company','/api/v3/settings','/api/v3/today');
+    }
+    return [...keys];
+  };
+  const invalidateCache = (company, target) => {
+    for (const key of invalidationKeys(target)) cacheDelete(company, key);
+  };
   const canCache = (verb, target, token) =>
     verb === 'GET' && !!token && !!cacheCompany && CACHEABLE.some(pattern => pattern.test(target));
 
@@ -169,20 +196,24 @@
       if (company && !/^[1-9]\d{0,9}$/.test(String(company))) return fail(id, 'Недопустимый контекст компании');
       if (token && (typeof token !== 'string' || token.length > 8192 || /[\r\n]/.test(token))) return fail(id, 'Недопустимая сессия');
       if (body && (typeof body !== 'string' || body.length > 24 * 1024 * 1024 || verb !== 'POST')) return fail(id, 'Недопустимые данные запроса');
+      const cacheScope = cacheCompany;
       const cacheEligible = canCache(verb, target, token);
-      const cached = cacheEligible ? cacheRead(cacheCompany, target) : null;
+      const cached = cacheEligible ? cacheRead(cacheScope, target) : null;
       if (cached) {
         result(id, {...cached, cached:true});
         fetchJson(verb, target, body, token, company).then(fresh => {
-          if (fresh.ok) cacheWrite(cacheCompany, target, fresh);
-          else if (fresh.httpStatus === 401 || fresh.httpStatus === 403) cacheClearCompany(cacheCompany);
+          if (fresh.ok) cacheWrite(cacheScope, target, fresh);
+          else if (fresh.httpStatus === 401 || fresh.httpStatus === 403) cacheClearCompany(cacheScope);
         }).catch(() => {});
         return;
       }
       try {
         const data = await fetchJson(verb, target, body, token, company);
-        if (cacheEligible && data.ok) cacheWrite(cacheCompany, target, data);
-        if (verb === 'POST' && data.ok && cacheCompany && INVALIDATES_CACHE.test(target)) cacheClearCompany(cacheCompany);
+        if (cacheEligible && data.ok) cacheWrite(cacheScope, target, data);
+        if (verb === 'POST' && data.ok && cacheScope) {
+          if (INVALIDATES_CACHE.test(target) || target.startsWith('/api/v3/work') || /\/(?:invoices?|payments?|settings)(?:\/|\?|$)/i.test(target))
+            invalidateCache(cacheScope, target);
+        }
         result(id, data);
       } catch {
         fail(id, 'Нет соединения с сервером', true);

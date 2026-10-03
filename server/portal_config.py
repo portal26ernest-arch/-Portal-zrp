@@ -14,6 +14,7 @@ class Config:
     port: int
     public_api_url: str
     control_dsn: str = field(default='', repr=False)
+    postgres_pool_size: int = 0
 
 
 def load_config(env):
@@ -54,7 +55,14 @@ def load_config(env):
             parsed = urlsplit(value)
             if parsed.scheme not in ('postgresql', 'postgres') or not parsed.hostname or not parsed.username or not parsed.path.strip('/'):
                 raise ValueError(f'Production requires a complete {name}')
+    default_pool = '8' if backend == 'postgresql' and environment == 'production' else '0'
+    try:
+        postgres_pool_size = int(env.get('PORTAL_PG_POOL_SIZE', default_pool))
+    except ValueError as exc:
+        raise ValueError('Invalid PORTAL_PG_POOL_SIZE') from exc
+    if not 0 <= postgres_pool_size <= 64:
+        raise ValueError('Invalid PORTAL_PG_POOL_SIZE')
     return Config(environment, backend,
                   env.get('PORTAL_DB', str(Path.cwd() / 'portal.db')),
                   dsn, env.get('PORTAL_APP_HOST', '127.0.0.1' if environment == 'production' or backend == 'postgresql' else '0.0.0.0'),
-                  port, url, control_dsn)
+                  port, url, control_dsn, postgres_pool_size)

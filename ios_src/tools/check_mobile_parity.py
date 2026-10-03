@@ -8,6 +8,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 ANDROID_RELEASE = ROOT / "android_src" / "release.properties"
 IOS_PROJECT = ROOT / "ios_src" / "project.yml"
 IOS_BRIDGE = ROOT / "ios_src" / "PortalIOS" / "PortalNativeBridge.swift"
+IOS_LOCAL_CACHE = ROOT / "ios_src" / "PortalIOS" / "PortalLocalCache.swift"
 
 
 def fail(message: str) -> None:
@@ -28,6 +29,7 @@ def read_properties(path: pathlib.Path) -> dict[str, str]:
 android = read_properties(ANDROID_RELEASE)
 project = IOS_PROJECT.read_text(encoding="utf-8")
 bridge = IOS_BRIDGE.read_text(encoding="utf-8")
+local_cache = IOS_LOCAL_CACHE.read_text(encoding="utf-8") if IOS_LOCAL_CACHE.exists() else ""
 
 version_name = android.get("versionName")
 version_code = android.get("versionCode")
@@ -49,6 +51,13 @@ for header in ('"X-Portal-Client"', '"Authorization"', '"X-Portal-Company"'):
     if header not in bridge:
         fail(f"iOS bridge is missing required API header contract {header}")
 
+for marker in ('PortalLocalCache()', 'cacheCompany', 'isCacheable(path)', 'cached["cached"] = true', 'invalidateCache(serverOrigin:', 'portalNativeReply', 'queueMutation', 'pendingMutations'):
+    if marker not in bridge:
+        fail(f"iOS bridge is missing local-first cache/outbox contract {marker}")
+for marker in ('AES.GCM', 'kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly', 'company-cache', 'company-outbox', 'func delete(serverOrigin:', 'maxOutboxItems = 1000', '30 * 24 * 60 * 60'):
+    if marker not in local_cache:
+        fail(f"iOS local cache is missing protection/retention contract {marker}")
+
 duplicated_assets = ROOT / "ios_src" / "PortalIOS" / "assets"
 if duplicated_assets.exists():
     fail("do not fork/copy shared UI into ios_src/PortalIOS/assets")
@@ -56,5 +65,5 @@ if duplicated_assets.exists():
 print(
     "MOBILE PARITY OK: "
     f"Android/iOS version {version_name} ({version_code}), "
-    "shared assets are single-source, API bridge headers present"
+    "shared assets are single-source, API bridge headers and encrypted local cache present"
 )

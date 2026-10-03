@@ -188,7 +188,7 @@ class Production:
         return op
 
     def tariff(self,operation_id,at=None,tariff_rows=None):
-        source_rows=self.r.list('tariffs') if tariff_rows is None else tariff_rows
+        source_rows=self.r.list_by('tariffs',operation_id=operation_id) if tariff_rows is None else tariff_rows
         versions=[t for t in source_rows if t['operation_id']==operation_id and t['effective_from']<=(at or self.clock())]
         if not versions: raise ValueError('Для операции требуется действующий тариф')
         versions.sort(key=lambda t:(t['effective_from'],t['created_at'],t['id']))
@@ -290,8 +290,9 @@ class Production:
             result.append(dict(material_id=m['id'],quantity=str(amount),norm=str(n['qty_per_unit']),unit_cost=cents(m['unit_cost'] or 0),cost=cost))
         return result
 
-    def batch_for_work(self,w):
-        links=[l for l in self.r.list('links') if l['work_id']==w['id']]
+    def batch_for_work(self,w,link_rows=None):
+        source=self.r.list_by('links',work_id=w['id']) if link_rows is None else link_rows
+        links=[l for l in source if l['work_id']==w['id']]
         return links[-1]['batch_id'] if links else w.get('batch_id')
 
     def work(self,b):
@@ -1213,7 +1214,7 @@ class Production:
         self.need('organizer.read');identity=str(params.get('organizer_request_id',[''])[0] or '')
         request=self.r.get('organizer_requests',identity)
         if not self.organizer_request_visible(request):raise PermissionError('Запрос недоступен')
-        return [row for row in self.r.list('organizer_request_events') if row.get('organizer_request_id')==identity]
+        return self.r.list_by('organizer_request_events',organizer_request_id=identity)
 
     def organizer_request_file(self,identity):
         self.need('organizer.read');attachment=self.r.get('organizer_request_attachments',str(identity or ''))
@@ -1226,9 +1227,10 @@ class Production:
     def works(self):
         rows=self.scoped('works')
         if not ({'finance.read','work.link','analytics.read','payroll.all','invoices.create'} & self.permissions): rows=[w for w in rows if w['user_id']==self.u['id']]
+        link_rows=self.r.list('links')
         result=[]
         for w in rows:
-            w=dict(w,batch_id=self.batch_for_work(w))
+            w=dict(w,batch_id=self.batch_for_work(w,link_rows))
             if 'finance.read' not in self.permissions and 'invoices.create' not in self.permissions:
                 for k in ('client_rate','revenue'): w.pop(k,None)
             if 'payroll.all' not in self.permissions and not(w['user_id']==self.u['id'] and 'payroll.own' in self.permissions):
@@ -1236,19 +1238,29 @@ class Production:
             result.append(w)
         return result
 
-    def task_rows(self):
-        self.need('tasks.read');rows=self.scoped('tasks');works=self.r.list('works')
+    def task_rows(self,task_rows=None,work_rows=None,batch_rows=None,client_rows=None):
+        self.need('tasks.read')
+        rows=self.scoped('tasks') if task_rows is None else [dict(t) for t in task_rows if self.visible(t['client_id'])]
+        works=self.r.list('works') if work_rows is None else work_rows
+        batches={b['id']:b for b in (self.r.list('batches') if batch_rows is None else batch_rows)}
+        clients={c['id']:c for c in (self.r.catalog('clients') if client_rows is None else client_rows)}
         if 'tasks.manage' not in self.permissions: rows=[t for t in rows if self.u['id'] in t['assignees']]
         for t in rows:
             t['done']=sum(w['quantity'] for w in works if w.get('task_id')==t['id']);t['remaining']=max(0,t['quantity']-t['done'])
-            t['batch_number']=self.r.get('batches',t['batch_id'])['number'];t['client_name']=self.client(t['client_id'])['name']
+            batch=batches.get(t['batch_id']);client=clients.get(t['client_id'])
+            if not batch or not client:raise ValueError('Задание связано с недоступной партией или клиентом')
+            t['batch_number']=batch['number'];t['client_name']=client['name']
         return rows
 
-    def progress(self,batch):
-        tasks=[t for t in self.r.list('tasks') if t['batch_id']==batch['id']]
-        works=[w for w in self.r.list('works') if self.batch_for_work(w)==batch['id']]
-        shipment=next((item for item in self.r.list('shipments') if item['batch_id']==batch['id'] and item.get('type')!='return'),None)
-        returned=sum(item.get('quantity',0) for item in self.r.list('shipments') if item['batch_id']==batch['id'] and item.get('type')=='return')
+    def progress(self,batch,task_rows=None,work_rows=None,shipment_rows=None,link_rows=None):
+        task_source=self.r.list('tasks') if task_rows is None else task_rows
+        work_source=self.r.list('works') if work_rows is None else work_rows
+        shipment_source=self.r.list('shipments') if shipment_rows is None else shipment_rows
+        link_source=self.r.list('links') if link_rows is None else link_rows
+        tasks=[t for t in task_source if t['batch_id']==batch['id']]
+        works=[w for w in work_source if self.batch_for_work(w,link_source)==batch['id']]
+        shipment=next((item for item in shipment_source if item['batch_id']==batch['id'] and item.get('type')!='return'),None)
+        returned=sum(item.get('quantity',0) for item in shipment_source if item['batch_id']==batch['id'] and item.get('type')=='return')
         done_by={t['id']:sum(w['quantity'] for w in works if w.get('task_id')==t['id']) for t in tasks}
         # Different operations are NOT summed as finished physical units.
         done=min(done_by.values()) if tasks else 0
@@ -1488,7 +1500,8 @@ class Production:
         today_works=[w for w in works if local_dates[w['id']].isoformat()==day]
         month_works=[w for w in works if local_dates[w['id']].year==now.year and local_dates[w['id']].month==now.month]
         mine=[w for w in today_works if w['user_id']==self.u['id']]
-        batches=[self.progress(b) for b in self.scoped('batches')];attention=[]
+        batch_rows=self.scoped('batches');task_source=self.r.list('tasks');shipment_rows=self.r.list('shipments');link_rows=self.r.list('links')
+        batches=[self.progress(b,task_source,works,shipment_rows,link_rows) for b in batch_rows];attention=[]
         manager=bool({'tasks.manage','batches.receive','finance.read'} & self.permissions)
         if manager:
             for b in batches:
@@ -1508,7 +1521,7 @@ class Production:
             attention.extend(dict(type='reminder',label=item['title'],entity_id=item['entity_id'],notification_id=item['id']) for item in notices)
         check='monday' if now.weekday()==0 and now.strftime('%H:%M')>=settings['monday_time'] else 'wednesday' if now.weekday()==2 and now.strftime('%H:%M')>=settings['wednesday_time'] else None
         if check and invoices:attention.append(dict(type='control_'+check,label='Контроль счетов и оплат',paid=sum(i['status']=='paid' for i in invoices),partial=sum(i['status']=='partial' for i in invoices),unpaid=sum(i['status']=='unpaid' for i in invoices),not_invoiced=len(unbilled)))
-        tasks=self.task_rows() if 'tasks.read' in self.permissions else []
+        tasks=self.task_rows(task_source,works,batch_rows,self.r.catalog('clients')) if 'tasks.read' in self.permissions else []
         result=dict(date=day,mode='management' if manager else 'worker',own_quantity=sum(w['quantity'] for w in mine),attention=attention,tasks=tasks)
         if 'payroll.own' in self.permissions:result['own_salary']=sum(w['salary'] for w in mine)
         if manager:
@@ -1637,7 +1650,8 @@ class Production:
                 visible_ids={client_id}
             else:
                 visible_ids={client['id'] for client in self.r.catalog('clients') if self.visible(client['id'])}
-            return [row for row in self.r.list('client_name_history') if row['client_id'] in visible_ids]
+            rows=self.r.list_by('client_name_history',client_id=client_id) if raw_client_id not in (None,'') else self.r.list('client_name_history')
+            return [row for row in rows if row['client_id'] in visible_ids]
         if action=='client-aliases':
             self.need('clients.read')
             raw_client_id=params.get('client_id',[None])[0]
@@ -1648,7 +1662,8 @@ class Production:
                 visible_ids={client_id}
             else:
                 visible_ids={client['id'] for client in self.r.catalog('clients') if self.visible(client['id'])}
-            return [row for row in self.r.list('client_aliases') if row['client_id'] in visible_ids]
+            rows=self.r.list_by('client_aliases',client_id=client_id) if raw_client_id not in (None,'') else self.r.list('client_aliases')
+            return [row for row in rows if row['client_id'] in visible_ids]
         if action in ('employee-name-history','employee-aliases'):
             self.need('users.manage')
             employee_ids={employee['employee_id'] for employee in self.r.employee_catalog()}
@@ -1659,7 +1674,8 @@ class Production:
                 if employee_id not in employee_ids:raise ValueError('Сотрудник не найден в этой компании')
                 employee_ids={employee_id}
             kind='employee_name_history' if action=='employee-name-history' else 'employee_aliases'
-            return [row for row in self.r.list(kind) if row['employee_id'] in employee_ids]
+            rows=self.r.list_by(kind,employee_id=employee_id) if raw_employee_id not in (None,'') else self.r.list(kind)
+            return [row for row in rows if row['employee_id'] in employee_ids]
         if action=='tasks':return self.task_rows()
         if action=='timers':
             if not {'tasks.read','work.write','tasks.manage'} & self.permissions:raise PermissionError('Нет доступа к работе')
@@ -1667,7 +1683,8 @@ class Production:
             return [t for t in items if t['status'] in ('running','paused') and ('tasks.manage' in self.permissions or t['user_id']==self.u['id'])]
         if action=='batches':
             if not ({'tasks.read','batches.receive','work.write'}&self.permissions):raise PermissionError('Нет доступа к партиям')
-            return [self.progress(b) for b in self.scoped('batches')]
+            batches=self.scoped('batches');tasks=self.r.list('tasks');works=self.r.list('works');shipments=self.r.list('shipments');links=self.r.list('links')
+            return [self.progress(b,tasks,works,shipments,links) for b in batches]
         if action=='shipments':
             self.need('batches.receive');return self.scoped('shipments')
         if action=='works':
@@ -1741,7 +1758,8 @@ class Production:
                 visible_operations={operation_id}
             else:
                 visible_operations={item['id'] for item in catalog if item.get('active') and self.visible(item['client_id'])}
-            rows=sorted((dict(t) for t in self.r.list('tariffs') if t['operation_id'] in visible_operations),key=lambda t:(t['effective_from'],t['created_at'],t['id']),reverse=True)
+            tariff_rows=self.r.list_by('tariffs',operation_id=operation_id) if raw not in ('',None) else self.r.list('tariffs')
+            rows=sorted((dict(t) for t in tariff_rows if t['operation_id'] in visible_operations),key=lambda t:(t['effective_from'],t['created_at'],t['id']),reverse=True)
             for row in rows:
                 if 'rates.employee' not in self.permissions:row.pop('employee_rate',None)
                 if 'rates.client' not in self.permissions:row.pop('client_rate',None)

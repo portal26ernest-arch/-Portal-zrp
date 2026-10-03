@@ -213,6 +213,12 @@ class MigrationImportTest(unittest.TestCase):
         prod_config=load_config(production)
         self.assertEqual(prod_config.environment,'production')
         self.assertEqual(prod_config.host,'127.0.0.1')
+        self.assertEqual(prod_config.postgres_pool_size,8)
+        tuned=load_config(dict(production,PORTAL_ENABLE_POSTGRES_PRODUCTION='true',PORTAL_PG_POOL_SIZE='12'))
+        self.assertEqual(tuned.postgres_pool_size,12)
+        for bad_pool in ('-1','65','bad'):
+            with self.assertRaises(ValueError):
+                load_config(dict(production,PORTAL_ENABLE_POSTGRES_PRODUCTION='true',PORTAL_PG_POOL_SIZE=bad_pool))
         for name in ('PORTAL_DATABASE_URL', 'PORTAL_CONTROL_DATABASE_URL'):
             malformed = dict(production, **{name: 'sqlite:///portal.db'})
             with self.subTest(name=name), self.assertRaises(ValueError):

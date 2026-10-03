@@ -73,6 +73,8 @@ assert.match(main,/removeMutation/);
 assert.match(localCache,/AndroidKeyStore/);
 assert.match(localCache,/AES\/GCM\/NoPadding/);
 assert.match(localCache,/company-cache/);
+assert.match(localCache,/boolean delete\(String serverOrigin/);
+assert.match(main,/invalidateCacheForMutation/);
 assert.match(localCache,/company-outbox/);
 assert.match(localCache,/MAX_OUTBOX_ITEMS = 1000/);
 const manifest=fs.readFileSync(path.join(__dirname,'../app/src/main/AndroidManifest.xml'),'utf8');

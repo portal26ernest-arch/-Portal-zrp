@@ -1,10 +1,12 @@
 """Offline adapter tests; these do not claim a PostgreSQL integration test."""
+import json
 import sys
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import portal_postgres as pg
+from production_repository import Repository
 
 
 class FakeCursor:
@@ -128,6 +130,48 @@ class PostgreSQLAdapterTests(unittest.TestCase):
             raw.result = [tuple(index == forbidden for index in range(5))]
             with self.assertRaises(PermissionError):
                 pg.validate_runtime_role(conn)
+
+
+    def test_repository_list_by_pushes_json_filter_into_postgresql(self):
+        raw = FakeConnection()
+        raw.result = [(json.dumps({'id':'t1','company_id':1,'operation_id':7}),)]
+        repo = Repository(pg.Connection(raw, 1, 'x' * 64), 1)
+        rows = repo.list_by('tariffs', operation_id=7)
+        self.assertEqual(rows[0]['operation_id'], 7)
+        sql, params = raw.calls[-1]
+        self.assertIn("payload::jsonb ->> 'operation_id'=%s", sql)
+        self.assertEqual(params, (1, 'tariffs', '7'))
+        with self.assertRaises(ValueError):
+            repo.list_by('tariffs', **{'bad-field': 7})
+
+    def test_bounded_pool_reuses_raw_connection_and_rebinds_tenant(self):
+        created = []
+        def driver(*args, **kwargs):
+            raw = FakeConnection()
+            created.append(raw)
+            return raw
+        pg.close_pools()
+        try:
+            with patch.dict(sys.modules, {'psycopg': SimpleNamespace(connect=driver)}):
+                first = pg.connect_pooled('postgresql://secret@db/portal', 1, 'a' * 64, max_size=2)
+                first.execute('SELECT 10')
+                first.close()
+                second = pg.connect_pooled('postgresql://secret@db/portal', 2, 'b' * 64, max_size=2)
+                second.execute('SELECT 20')
+                second.close()
+            self.assertEqual(len(created), 1)
+            contexts = [params for sql, params in created[0].calls if 'portal_bind_company' in sql]
+            self.assertEqual(contexts, [(1, 'a' * 64), (2, 'b' * 64)])
+            self.assertGreaterEqual(created[0].rollbacks, 4)
+            self.assertEqual(created[0].closed, 0)
+        finally:
+            pg.close_pools()
+        self.assertEqual(created[0].closed, 1)
+
+    def test_pool_size_validation(self):
+        for invalid in (0, -1, 65, True, '8'):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                pg.connect_pooled('unused', max_size=invalid)
 
     def test_company_validation_and_connection_errors_hide_secrets(self):
         for invalid in (0, -1, True, '1', 2**63):

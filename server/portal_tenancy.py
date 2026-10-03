@@ -53,7 +53,9 @@ def platform_path(root):
 
 def control(root):
     if is_postgresql():
-        from portal_postgres import connect
+        from portal_postgres import connect, connect_pooled
+        if getattr(_CONFIG, 'postgres_pool_size', 0):
+            return connect_pooled(_CONFIG.control_dsn, max_size=_CONFIG.postgres_pool_size)
         return connect(_CONFIG.control_dsn)
     return connect_file(platform_path(root))
 
@@ -198,11 +200,13 @@ def tenant_connection(root):
     cid = COMPANY_ID.get()
     get_company(root, cid)
     if is_postgresql():
-        from portal_postgres import connect
+        from portal_postgres import connect, connect_pooled
         with control(root) as registry:
             row = registry.execute('SELECT secret FROM portal_company_keys WHERE company_id=?', (cid,)).fetchone()
         if row is None:
             raise PermissionError('Контекст компании не подготовлен')
+        if getattr(_CONFIG, 'postgres_pool_size', 0):
+            return connect_pooled(_CONFIG.postgres_dsn, cid, row[0], max_size=_CONFIG.postgres_pool_size)
         return connect(_CONFIG.postgres_dsn, cid, row[0])
     conn = connect_file(tenant_path(root, cid))
     try:

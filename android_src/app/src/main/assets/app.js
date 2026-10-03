@@ -116,7 +116,7 @@ function moduleTiles(limit){return PortalCore.modules.filter(m=>can(m.id)).slice
 screens.sections=()=>paint(heading('Ещё','Все разделы, доступные по вашим правам')+`<div class="tiles">${moduleTiles()}</div>`);
 function localSyncStatusCard(){
   if(isOwner()||typeof window.PortalNative?.pendingMutationCount!=='function')return '';
-  let pendingCount=0;try{pendingCount=Number(PortalNative.pendingMutationCount()||0);}catch{}
+  const pendingCount=Number(S.localPendingCount||0);
   const last=S.lastLocalSync?new Date(S.lastLocalSync).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}):'фоновая синхронизация включена';
   return `<div class="card"><h3>Локальная работа</h3><p class="meta">Данные компании хранятся локально и обновляются с сервера в фоне. Очередь отправки: <strong>${num(pendingCount)}</strong> · ${esc(last)}</p>${pendingCount?btn('Синхронизировать сейчас','syncLocalNow','','secondary block'):''}</div>`;
 }

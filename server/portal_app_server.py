@@ -1076,7 +1076,14 @@ class Handler(BaseHTTPRequestHandler):
         with db() as conn:
             repo=Repository(conn,tenants.COMPANY_ID.get())
             if action=='meta' and method=='GET':
-                return self.send_json(dict(ok=True,ready=bool(repo.ready()),permissions=sorted(business_rights.effective(repo,self.request_user)) if repo.ready() else [],catalog=business_rights.public_catalog(),heartbeat_seconds=activity.configuration(repo)[0] if repo.ready() else None))
+                ready=bool(repo.ready())
+                company=tenants.get_company(DB_PATH,repo.company_id)
+                company_sync={key:company[key] for key in ('id','name','status','service_status','module_toggles')}
+                return self.send_json(dict(ok=True,ready=ready,
+                    permissions=sorted(business_rights.effective(repo,self.request_user)) if ready else [],
+                    catalog=business_rights.public_catalog(),
+                    heartbeat_seconds=activity.configuration(repo)[0] if ready else None,
+                    company=company_sync,server_time=now_text()))
             if not repo.ready(): raise ValueError('Этап 3 ещё не подключён оператором к этой компании')
             if action=='company-access' and method=='GET':
                 service=Production(repo,self.request_user);service.need_management_role()

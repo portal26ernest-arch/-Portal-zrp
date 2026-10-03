@@ -83,6 +83,21 @@ public sealed class DesktopCacheBridge
         }
     }
 
+    public bool Delete(string companyId, string cacheKey)
+    {
+        try
+        {
+            var path = CachePath(companyId, cacheKey);
+            if (path is null || !File.Exists(path)) return true;
+            File.Delete(path);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public bool ClearAll()
     {
         try

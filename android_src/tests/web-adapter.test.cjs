@@ -37,7 +37,7 @@ test('Web Share cancellation is explicit and native-only controls are hidden',()
 });
 
 test('Desktop cache is company-scoped, encrypted by native bridge and never used for auth',()=>{
-  for(const value of ['portalDesktopCache','setCacheCompany','cacheCompany','CACHEABLE','cacheRead','cacheWrite','ClearCompany','30 * 24 * 60 * 60 * 1000','queueMutation','pendingMutations','removeMutation']) assert.ok(adapter.includes(value),value);
+  for(const value of ['portalDesktopCache','setCacheCompany','cacheCompany','CACHEABLE','cacheRead','cacheWrite','ClearCompany','Delete','invalidationKeys','30 * 24 * 60 * 60 * 1000','queueMutation','pendingMutations','removeMutation']) assert.ok(adapter.includes(value),value);
   assert.ok(app.includes("PortalNative.setCacheCompany(String(S.company?.id||S.me.company_id||''))"));
   assert.ok(app.includes("PortalNative.setCacheCompany(String(c.id))"));
   assert.ok(!adapter.includes("CACHEABLE = [/^\\/api\\/(?:login|me|platform)"));
@@ -53,4 +53,7 @@ test('local-first performance contract uses long cache, 10-minute sync, bulk tar
   assert.doesNotMatch(production,/c\.operations\.map\(async o=>\[o\.id,await productionGet\('tariff-history\?operation_id='/);
   assert.match(production,/const \[d,organizerRows,organizerRequestIncoming,organizerRequestMine,timers\]=await Promise\.all/);
   assert.match(production,/queueLocalWork\(payload,requestId\)/);
+  assert.match(production,/api\('GET','\/api\/v3\/meta'/);
+  assert.match(production,/applyProductionMeta\(meta\)/);
+  assert.match(production,/S\.company=\{\.\.\.S\.company,\.\.\.r\.company\}/);
 });

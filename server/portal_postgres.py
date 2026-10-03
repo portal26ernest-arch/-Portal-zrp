@@ -2,10 +2,14 @@
 
 This is not a SQL emulator. SQLite schema changes and upserts belong in explicit
 backend branches. Only bound parameters and the three existing NOCASE shapes
-are adapted here. Connections are never pooled, and tenant context is local to
-each transaction. Importing this module does not require the PostgreSQL driver.
+are adapted here. Long-running production requests may use a bounded pool;
+tenant context is rebound for every borrowed connection and remains transaction-local.
+Importing this module does not require the PostgreSQL driver.
 """
+import atexit
 import re
+from queue import Empty, Full, LifoQueue
+from threading import Lock
 
 
 IDENTITY_TABLES = frozenset({
@@ -193,7 +197,7 @@ class Cursor:
 class Connection:
     dialect = 'postgresql'
 
-    def __init__(self, raw, company_id=None, company_key=None):
+    def __init__(self, raw, company_id=None, company_key=None, release=None):
         if company_id is not None and (type(company_id) is not int or not 0 < company_id <= MAX_COMPANY_ID):
             raise PermissionError('Некорректная компания')
         if company_id is not None and (not isinstance(company_key, str) or len(company_key) < 64):
@@ -202,6 +206,8 @@ class Connection:
         self.company_id = company_id
         self._company_key = company_key
         self._context_applied = False
+        self._release = release
+        self._closed = False
 
     def _ensure_context(self):
         if not self._context_applied:
@@ -234,7 +240,13 @@ class Connection:
             self._context_applied = False
 
     def close(self):
-        self._raw.close()
+        if self._closed:
+            return
+        self._closed = True
+        if self._release is None:
+            self._raw.close()
+        else:
+            self._release(self._raw)
 
     def __enter__(self):
         return self
@@ -248,6 +260,133 @@ class Connection:
         finally:
             self.close()
         return False
+
+
+class _RawPool:
+    """Small bounded psycopg pool used only by the long-running API process."""
+
+    def __init__(self, dsn, max_size):
+        self._dsn = dsn
+        self._max_size = max_size
+        self._idle = LifoQueue(maxsize=max_size)
+        self._created = 0
+        self._lock = Lock()
+
+    def _open(self):
+        try:
+            import psycopg
+        except ImportError:
+            raise RuntimeError('Для PostgreSQL требуется драйвер psycopg 3') from None
+        try:
+            return psycopg.connect(self._dsn, connect_timeout=10, autocommit=False)
+        except Exception:
+            raise ConnectionError('Не удалось подключиться к PostgreSQL') from None
+
+    def _discard(self, raw):
+        try:
+            raw.close()
+        except Exception:
+            pass
+        with self._lock:
+            self._created = max(0, self._created - 1)
+
+    def acquire(self):
+        while True:
+            try:
+                raw = self._idle.get_nowait()
+            except Empty:
+                create = False
+                with self._lock:
+                    if self._created < self._max_size:
+                        self._created += 1
+                        create = True
+                if create:
+                    try:
+                        raw = self._open()
+                    except Exception:
+                        with self._lock:
+                            self._created = max(0, self._created - 1)
+                        raise
+                else:
+                    try:
+                        raw = self._idle.get(timeout=10)
+                    except Empty:
+                        raise ConnectionError('Пул PostgreSQL занят; повторите запрос') from None
+            try:
+                if getattr(raw, 'closed', False):
+                    self._discard(raw)
+                    continue
+                # A pooled raw connection must always start outside a transaction.
+                raw.rollback()
+                raw.execute('SELECT 1')
+                raw.rollback()
+                return raw
+            except Exception:
+                self._discard(raw)
+
+    def release(self, raw):
+        try:
+            if getattr(raw, 'closed', False):
+                self._discard(raw)
+                return
+            raw.rollback()
+        except Exception:
+            self._discard(raw)
+            return
+        try:
+            self._idle.put_nowait(raw)
+        except Full:
+            self._discard(raw)
+
+    def close(self):
+        while True:
+            try:
+                raw = self._idle.get_nowait()
+            except Empty:
+                return
+            self._discard(raw)
+
+
+_POOLS = {}
+_POOLS_LOCK = Lock()
+
+
+def _pool_for(dsn, max_size):
+    if type(max_size) is not int or not 1 <= max_size <= 64:
+        raise ValueError('Некорректный размер пула PostgreSQL')
+    key = (dsn, max_size)
+    with _POOLS_LOCK:
+        pool = _POOLS.get(key)
+        if pool is None:
+            pool = _RawPool(dsn, max_size)
+            _POOLS[key] = pool
+        return pool
+
+
+def close_pools():
+    with _POOLS_LOCK:
+        pools = list(_POOLS.values())
+        _POOLS.clear()
+    for pool in pools:
+        pool.close()
+
+
+atexit.register(close_pools)
+
+
+def connect_pooled(dsn, company_id=None, company_key=None, max_size=8):
+    """Borrow a scoped connection; rollback + tenant rebinding prevents context leaks."""
+    if company_id is not None and (type(company_id) is not int or not 0 < company_id <= MAX_COMPANY_ID):
+        raise PermissionError('Некорректная компания')
+    pool = _pool_for(dsn, max_size)
+    raw = pool.acquire()
+    connection = Connection(raw, company_id, company_key, release=pool.release)
+    try:
+        connection._ensure_context()
+        return connection
+    except Exception:
+        connection.close()
+        raise ConnectionError('Не удалось установить контекст PostgreSQL') from None
 
 
 def connect(dsn, company_id=None, company_key=None):

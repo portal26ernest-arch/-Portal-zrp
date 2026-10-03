@@ -56,6 +56,29 @@ class Repository:
         if kind not in KINDS: raise ValueError('Неизвестная сущность')
         return [json.loads(r[0]) for r in self.sql('SELECT payload FROM portal_production WHERE company_id=? AND kind=? ORDER BY created_at,id', (self.company_id,kind)).fetchall()]
 
+    def list_by(self, kind, **filters):
+        """Filter immutable JSON ledger rows in SQL on PostgreSQL, with SQLite parity."""
+        if kind not in KINDS: raise ValueError('Неизвестная сущность')
+        if not filters: return self.list(kind)
+        for field in filters:
+            if not isinstance(field,str) or not field.replace('_','').isalnum() or not field[0].isalpha():
+                raise ValueError('???????????? ???? ???????')
+        if self.dialect=='postgresql':
+            conditions=['company_id=?','kind=?'];args=[self.company_id,kind]
+            for field,value in filters.items():
+                expression=f"payload::jsonb ->> '{field}'"
+                if value is None:
+                    conditions.append(expression+' IS NULL')
+                else:
+                    conditions.append(expression+'=?')
+                    if isinstance(value,bool): value='true' if value else 'false'
+                    else: value=str(value)
+                    args.append(value)
+            rows=self.sql('SELECT payload FROM portal_production WHERE '+' AND '.join(conditions)+' ORDER BY created_at,id',tuple(args)).fetchall()
+            return [json.loads(row[0]) for row in rows]
+        result=self.list(kind)
+        return [row for row in result if all(row.get(field)==value for field,value in filters.items())]
+
     def insert(self, kind, data, identity=None):
         if kind not in KINDS: raise ValueError('Неизвестная сущность')
         value = dict(data, id=str(identity or uuid.uuid4()), company_id=self.company_id)

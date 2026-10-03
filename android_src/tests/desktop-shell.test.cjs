@@ -51,6 +51,7 @@ assert.match(cache,/DataProtectionScope\.CurrentUser/);
 assert.match(cache,/ProtectedData\.Protect/);
 assert.match(cache,/ProtectedData\.Unprotect/);
 assert.match(cache,/CompanyDirectory\(string companyId\)/);
+assert.match(cache,/Delete\(string companyId, string cacheKey\)/);
 assert.match(cache,/EnqueueMutation\(string companyId/);
 assert.match(cache,/PendingMutations\(string companyId/);
 assert.match(cache,/RemoveMutation\(string companyId/);

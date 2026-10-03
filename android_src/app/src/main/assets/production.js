@@ -2,60 +2,88 @@
 // Progressive activation: companies without the explicit migration keep Stage 2.
 const LOCAL_SYNC_INTERVAL_MS=10*60*1000;
 let localSyncBusy=false;
+function applyProductionMeta(r){
+  S.stage3=!!r.ready;
+  if(!S.stage3)return;
+  S.me.permissions=Array.isArray(r.permissions)?r.permissions:[];
+  S.permissionCatalog=Array.isArray(r.catalog)?r.catalog:[];
+  S.heartbeatSeconds=r.heartbeat_seconds||60;
+  if(r.company&&S.company&&Number(r.company.id)===Number(S.company.id)){
+    S.company={...S.company,...r.company};
+    updateHeader();
+    if(typeof buildNav==='function')buildNav();
+  }
+}
 async function configureProduction(){
   const r=await api('GET','/api/v3/meta',undefined,{global:true});
-  S.stage3=!!r.ready;
-  if(S.stage3){S.me.permissions=r.permissions;S.permissionCatalog=r.catalog;S.heartbeatSeconds=r.heartbeat_seconds||60;clearInterval(S.heartbeatTimer);S.heartbeatTimer=setInterval(()=>{if(S.token&&!document.hidden)api('POST','/api/v3/heartbeat',{}, {global:true}).catch(()=>{});},S.heartbeatSeconds*1000);startOrganizerReminderWatch();startLocalSyncWatch();}
+  applyProductionMeta(r);
+  if(S.stage3){clearInterval(S.heartbeatTimer);S.heartbeatTimer=setInterval(()=>{if(S.token&&!document.hidden)api('POST','/api/v3/heartbeat',{}, {global:true}).catch(()=>{});},S.heartbeatSeconds*1000);startOrganizerReminderWatch();startLocalSyncWatch();}
 }
 const allowed=permission=>S.me?.permissions?.includes(permission);
 const rub=cents=>money(Number(cents||0)/100);
 const utc=value=>value?new Date(value).toISOString().slice(0,-1):null;
 const productionGet=async path=>(await api('GET','/api/v3/'+path)).data;
 function canUseLocalOutbox(){return !isOwner()&&S.company&&typeof window.PortalNative?.queueMutation==='function'&&typeof window.PortalNative?.pendingMutations==='function'&&typeof window.PortalNative?.removeMutation==='function';}
-function queueLocalWork(body,requestId){
+async function nativeOutboxCall(name,...args){try{return await Promise.resolve(PortalNative[name](...args));}catch{return null;}}
+async function refreshLocalPendingCount(){
+  if(!canUseLocalOutbox()){S.localPendingCount=0;return 0;}
+  const value=Number(await nativeOutboxCall('pendingMutationCount')||0);S.localPendingCount=Number.isFinite(value)?value:0;return S.localPendingCount;
+}
+async function queueLocalWork(body,requestId){
   if(!canUseLocalOutbox())return false;
   const row={v:1,method:'POST',path:'/api/v3/work',request_id:requestId,queued_at:new Date().toISOString(),body};
-  try{return !!PortalNative.queueMutation(JSON.stringify(row));}catch{return false;}
+  const stored=!!(await nativeOutboxCall('queueMutation',JSON.stringify(row)));if(stored)await refreshLocalPendingCount();return stored;
 }
 async function syncLocalOutbox(){
-  if(localSyncBusy||!canUseLocalOutbox()||!S.token||navigator.onLine===false)return;
+  if(localSyncBusy||!S.token||isOwner()||!S.company||navigator.onLine===false)return;
   localSyncBusy=true;
   try{
-    let raw=[];try{raw=JSON.parse(PortalNative.pendingMutations()||'[]');}catch{return;}
-    if(!Array.isArray(raw)||!raw.length)return;
-    for(const value of raw){
-      let row=value;try{if(typeof row==='string')row=JSON.parse(row);}catch{continue;}
-      if(!row||row.method!=='POST'||row.path!=='/api/v3/work'||!row.body||row.body.request_id!==row.request_id)continue;
-      try{
-        await api('POST',row.path,row.body,{global:true});
-        PortalNative.removeMutation(String(row.request_id));
-        S.lastLocalSync=Date.now();
-      }catch(error){
-        if(error?.network)break;
-        S.localSyncError=error?.message||'Не удалось синхронизировать локальную запись';
-        break;
+    if(canUseLocalOutbox()){
+      let raw=[];try{raw=JSON.parse(String(await nativeOutboxCall('pendingMutations')||'[]'));}catch{raw=[];}
+      if(Array.isArray(raw)){
+        for(const value of raw){
+          let row=value;try{if(typeof row==='string')row=JSON.parse(row);}catch{continue;}
+          if(!row||row.method!=='POST'||row.path!=='/api/v3/work'||!row.body||row.body.request_id!==row.request_id)continue;
+          try{
+            await api('POST',row.path,row.body,{global:true});
+            await nativeOutboxCall('removeMutation',String(row.request_id));
+            await refreshLocalPendingCount();
+          }catch(error){
+            if(error?.network)break;
+            S.localSyncError=error?.message||'Не удалось синхронизировать локальную запись';
+            break;
+          }
+        }
       }
+    }
+    try{
+      const meta=await api('GET','/api/v3/meta',undefined,{global:true});
+      applyProductionMeta(meta);
+      S.lastLocalSync=Date.now();
+      S.localSyncError='';
+    }catch(error){
+      if(!error?.network)S.localSyncError=error?.message||'Не удалось получить обновления с сервера';
     }
   }finally{localSyncBusy=false;}
 }
 function startLocalSyncWatch(){
   clearInterval(S.localSyncTimer);
-  if(!canUseLocalOutbox())return;
+  if(isOwner()||!S.company)return;
   S.localSyncTimer=setInterval(()=>{if(!document.hidden)void syncLocalOutbox();},LOCAL_SYNC_INTERVAL_MS);
-  setTimeout(()=>void syncLocalOutbox(),1200);
+  setTimeout(()=>{void refreshLocalPendingCount();void syncLocalOutbox();},1200);
   if(!globalThis.__portalLocalSyncOnline){globalThis.__portalLocalSyncOnline=true;addEventListener('online',()=>void syncLocalOutbox());}
 }
 async function productionPost(path,body,form){
   const requestId=form?(form.dataset.requestId||(form.dataset.requestId=crypto.randomUUID())):crypto.randomUUID();
   const payload={...body,request_id:requestId};
-  const journaled=path==='work'&&queueLocalWork(payload,requestId);
+  const journaled=path==='work'&&await queueLocalWork(payload,requestId);
   try{
     const result=(await api('POST','/api/v3/'+path,payload)).data;
-    if(journaled)try{PortalNative.removeMutation(String(requestId));}catch{}
+    if(journaled){await nativeOutboxCall('removeMutation',String(requestId));await refreshLocalPendingCount();}
     return result;
   }catch(error){
     if(path==='work'&&error?.network&&journaled)return {queued:true,request_id:requestId};
-    if(journaled)try{PortalNative.removeMutation(String(requestId));}catch{}
+    if(journaled){await nativeOutboxCall('removeMutation',String(requestId));await refreshLocalPendingCount();}
     throw error;
   }
 }

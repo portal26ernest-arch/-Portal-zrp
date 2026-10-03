@@ -41,6 +41,14 @@ class ProductionTest(unittest.TestCase):
 
     def work(self,**overrides):return self.post('work',dict(client_id=1,operation_id=1,quantity=2,**overrides),self.worker)['data']
 
+    def test_repository_list_by_sqlite_parity(self):
+        with portal.tenants.company_scope(1), portal.db() as conn:
+            repo=Repository(conn,1)
+            rows=repo.list_by('tariffs',operation_id=1)
+            self.assertTrue(rows)
+            self.assertTrue(all(row['operation_id']==1 for row in rows))
+            self.assertEqual(repo.list_by('tariffs',operation_id=999999),[])
+
     def test_current_role_matrix_defaults_are_exact_and_salary_safe(self):
         self.assertEqual(rights.defaults('director'),rights.CODES)
         self.assertEqual(rights.defaults('admin'),rights.CODES)
@@ -977,6 +985,9 @@ class ProductionTest(unittest.TestCase):
         self.request('/api/v3/meta',self.owner,status=403)
         result=self.request('/api/v3/meta',self.owner,extra_headers={'X-Portal-Company':'1'})
         self.assertTrue(result['ready'])
+        self.assertEqual(result['company']['id'],1)
+        self.assertIn('module_toggles',result['company'])
+        self.assertTrue(result['server_time'])
         self.request('/api/v3/work',self.owner,dict(request_id='owner-work',client_id=1,operation_id=1,quantity=1),status=400,extra_headers={'X-Portal-Company':'1'})
 
     def test_desktop_organizer_hierarchy_recurrence_and_company_isolation(self):

@@ -217,8 +217,8 @@ public class MainActivity extends Activity {
                 }
                 String result = requestAt(base, verb, path, body, token, company);
                 if (cacheable && responseOk(result)) localCache.write(base, localCompany, path, result);
-                if ("POST".equals(verb) && responseOk(result) && !localCompany.isEmpty() && invalidatesCache(path))
-                    localCache.clearCompany(base, localCompany);
+                if ("POST".equals(verb) && responseOk(result) && !localCompany.isEmpty())
+                    invalidateCacheForMutation(base, localCompany, path);
                 deliver(id, result);
             });
         }
@@ -246,9 +246,27 @@ public class MainActivity extends Activity {
                     || path.matches("/api/v3/(?:catalog|products|client-requisites|client-name-history|tariff-history|today|tasks|timers|batches|invoices|receivables|finance|analytics|payroll-periods|documents|settings|permissions|chat-users)(?:\\?.*)?");
         }
 
-        private boolean invalidatesCache(String path) {
-            if (path == null) return false;
-            return path.matches(".*/(?:clients?|users?|materials?|operations?|tariffs?|products?|invitations?|company-access)(?:/|\\?|$).*");
+        private void invalidateCacheForMutation(String base, String company, String path) {
+            if (path == null || company == null || company.isEmpty()) return;
+            String[] keys;
+            if (path.matches("/api/v3/work(?:\\?.*)?")) {
+                keys = new String[]{"/api/v3/today","/api/v3/tasks","/api/v3/timers","/api/v3/finance","/api/v3/analytics","/api/v3/invoices","/api/v3/receivables"};
+            } else if (path.matches(".*/(?:tariffs?|operations?|products?)(?:/|\\?|$).*")) {
+                keys = new String[]{"/api/v3/catalog","/api/v3/tariff-history","/api/v3/products","/api/v3/today","/api/v3/finance","/api/v3/analytics"};
+            } else if (path.matches(".*/clients?(?:/|\\?|$).*")) {
+                keys = new String[]{"/api/clients","/api/admin/clients","/api/v3/catalog","/api/v3/client-name-history","/api/v3/client-requisites","/api/v3/today","/api/v3/finance","/api/v3/analytics"};
+            } else if (path.matches(".*/materials?(?:/|\\?|$).*")) {
+                keys = new String[]{"/api/materials","/api/v3/today","/api/v3/finance","/api/v3/analytics"};
+            } else if (path.matches(".*/(?:users?|invitations?|company-access|permissions)(?:/|\\?|$).*")) {
+                keys = new String[]{"/api/users","/api/v3/permissions","/api/v3/chat-users"};
+            } else if (path.matches(".*/(?:invoices?|payments?)(?:/|\\?|$).*")) {
+                keys = new String[]{"/api/v3/invoices","/api/v3/receivables","/api/v3/finance","/api/v3/today"};
+            } else if (path.matches(".*/settings(?:/|\\?|$).*")) {
+                keys = new String[]{"/api/company","/api/v3/settings","/api/v3/today"};
+            } else {
+                return;
+            }
+            for (String key : keys) localCache.delete(base, company, key);
         }
 
         private String cachedResponse(String envelopeJson) {

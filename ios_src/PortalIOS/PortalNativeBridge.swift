@@ -2,12 +2,15 @@ import Foundation
 import UIKit
 import WebKit
 
-final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
+final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessageHandlerWithReply, WKNavigationDelegate {
     static let handlerName = "portalNative"
+    static let replyHandlerName = "portalNativeReply"
     static let allowedExternalHosts: Set<String> = ["seller.ozon.ru", "seller.wildberries.ru"]
     weak var webView: WKWebView?
 
     private let defaults = UserDefaults.standard
+    private let localCache = PortalLocalCache()
+    private var cacheCompany = ""
     private var userContentController: WKUserContentController?
 
     private var defaultServer: String {
@@ -71,11 +74,13 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKNavigationDe
         return """
         (function(){
           const native = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.\(Self.handlerName);
+          const nativeReply = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.\(Self.replyHandlerName);
           if (!native) return;
           let server = \(serverLiteral);
           let cacheCompany = '';
           const metadata = \(metadataLiteral);
           const send = (action, payload) => native.postMessage(Object.assign({action:action}, payload || {}));
+          const ask = (action, payload) => nativeReply ? nativeReply.postMessage(Object.assign({action:action}, payload || {})) : Promise.resolve(null);
           const validServer = value => {
             try {
               const u = new URL(String(value || '').trim());
@@ -97,7 +102,11 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKNavigationDe
               cacheCompany = /^[1-9][0-9]{0,9}$/.test(next) ? next : '';
               send('setCacheCompany', {value:cacheCompany}); return !!cacheCompany;
             },
-            clearCompanyCache: () => true,
+            clearCompanyCache: () => { send('clearCompanyCache', {}); return true; },
+            queueMutation: json => ask('queueMutation', {json:String(json||'')}),
+            pendingMutations: () => ask('pendingMutations', {}).then(rows => JSON.stringify(Array.isArray(rows)?rows:[])),
+            removeMutation: requestId => ask('removeMutation', {requestId:String(requestId||'')}),
+            pendingMutationCount: () => ask('pendingMutationCount', {}),
             requestAsync: (id, method, path, body, token, company) =>
               send('requestAsync', {id:String(id), method:String(method||'GET'), path:String(path||''), body:String(body||''), token:String(token||''), company:String(company||'')}),
             request: () => JSON.stringify({ok:false,httpStatus:0,error:'Используйте requestAsync'}),
@@ -118,11 +127,13 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKNavigationDe
     func install(into controller: WKUserContentController) {
         userContentController = controller
         controller.add(self, name: Self.handlerName)
+        controller.addScriptMessageHandler(self, contentWorld: .page, name: Self.replyHandlerName)
         controller.addUserScript(WKUserScript(source: bootstrapScript(), injectionTime: .atDocumentStart, forMainFrameOnly: true))
     }
 
     func detach() {
         userContentController?.removeScriptMessageHandler(forName: Self.handlerName)
+        userContentController?.removeScriptMessageHandler(forName: Self.replyHandlerName, contentWorld: .page)
         userContentController = nil
         webView = nil
     }
@@ -136,6 +147,11 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKNavigationDe
             if let value = payload["value"] as? String, Self.isValidServerURL(value) {
                 defaults.set(value, forKey: "portal_server_url")
             }
+        case "setCacheCompany":
+            let value = payload["value"] as? String ?? ""
+            cacheCompany = value.range(of: #"^[1-9][0-9]{0,9}$"#, options: .regularExpression) != nil ? value : ""
+        case "clearCompanyCache":
+            if !cacheCompany.isEmpty { _ = localCache.clearCompany(serverOrigin: serverURL, companyID: cacheCompany) }
         case "requestAsync":
             request(payload)
         case "checkUpdates":
@@ -153,6 +169,51 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKNavigationDe
             shareFile(payload)
         default:
             break
+        }
+    }
+
+
+    func userContentController(_ userContentController: WKUserContentController,
+                               didReceive message: WKScriptMessage,
+                               replyHandler: @escaping (Any?, String?) -> Void) {
+        guard message.name == Self.replyHandlerName,
+              let payload = message.body as? [String: Any],
+              let action = payload["action"] as? String else {
+            replyHandler(nil, "invalid_request")
+            return
+        }
+        switch action {
+        case "queueMutation":
+            let raw = payload["json"] as? String ?? ""
+            guard !cacheCompany.isEmpty, raw.utf8.count <= 512 * 1024,
+                  let data = raw.data(using: .utf8),
+                  let row = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                  row["method"] as? String == "POST",
+                  row["path"] as? String == "/api/v3/work",
+                  let requestID = row["request_id"] as? String,
+                  requestID.range(of: #"^[0-9A-Fa-f-]{36}$"#, options: .regularExpression) != nil,
+                  let body = row["body"] as? [String: Any],
+                  body["request_id"] as? String == requestID else {
+                replyHandler(false, nil)
+                return
+            }
+            replyHandler(localCache.enqueueMutation(
+                serverOrigin: serverURL, companyID: cacheCompany, requestID: requestID, json: raw
+            ), nil)
+        case "pendingMutations":
+            guard !cacheCompany.isEmpty else { replyHandler([], nil); return }
+            replyHandler(localCache.pendingMutations(serverOrigin: serverURL, companyID: cacheCompany), nil)
+        case "removeMutation":
+            let requestID = payload["requestId"] as? String ?? ""
+            guard !cacheCompany.isEmpty else { replyHandler(false, nil); return }
+            replyHandler(localCache.removeMutation(
+                serverOrigin: serverURL, companyID: cacheCompany, requestID: requestID
+            ), nil)
+        case "pendingMutationCount":
+            guard !cacheCompany.isEmpty else { replyHandler(0, nil); return }
+            replyHandler(localCache.pendingMutationCount(serverOrigin: serverURL, companyID: cacheCompany), nil)
+        default:
+            replyHandler(nil, "unsupported_action")
         }
     }
 
@@ -209,10 +270,23 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKNavigationDe
             request.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
         }
 
+        let cacheOrigin = serverURL
+        let cacheScope = cacheCompany
+        let cacheEligible = method == "GET" && !token.isEmpty && !cacheScope.isEmpty && isCacheable(path)
+        var cacheDelivered = false
+        if cacheEligible, var cached = localCache.read(serverOrigin: cacheOrigin, companyID: cacheScope, cacheKey: path) {
+            cached["cached"] = true
+            deliver(id: id, object: cached)
+            cacheDelivered = true
+        }
+        let didDeliverCached = cacheDelivered
+
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             guard let self else { return }
             if error != nil {
-                self.deliver(id: id, object: ["ok": false, "httpStatus": 0, "network": true, "error": "Не удалось связаться с сервером. Проверьте подключение."])
+                if !didDeliverCached {
+                    self.deliver(id: id, object: ["ok": false, "httpStatus": 0, "network": true, "error": "Не удалось связаться с сервером. Проверьте подключение."])
+                }
                 return
             }
 
@@ -221,12 +295,60 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKNavigationDe
                 (path.hasPrefix("/api/v3/chat-file") ? 4 * 1024 * 1024 : 2 * 1024 * 1024)
             guard let data, data.count <= limit,
                   var object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
-                self.deliver(id: id, object: ["ok": false, "httpStatus": status, "error": "Сервер вернул некорректный ответ"])
+                if !didDeliverCached {
+                    self.deliver(id: id, object: ["ok": false, "httpStatus": status, "error": "Сервер вернул некорректный ответ"])
+                }
                 return
             }
             object["httpStatus"] = status
-            self.deliver(id: id, object: object)
+            if cacheEligible {
+                if (200..<300).contains(status), object["ok"] as? Bool != false {
+                    _ = self.localCache.write(serverOrigin: cacheOrigin, companyID: cacheScope, cacheKey: path, object: object)
+                } else if status == 401 || status == 403 {
+                    _ = self.localCache.clearCompany(serverOrigin: cacheOrigin, companyID: cacheScope)
+                }
+            }
+            if method == "POST", (200..<300).contains(status), object["ok"] as? Bool != false, !cacheScope.isEmpty {
+                self.invalidateCache(serverOrigin: cacheOrigin, companyID: cacheScope, mutationPath: path)
+            }
+            if !didDeliverCached { self.deliver(id: id, object: object) }
         }.resume()
+    }
+
+    private func invalidateCache(serverOrigin: String, companyID: String, mutationPath: String) {
+        let keys: [String]
+        if mutationPath.range(of: #"^/api/v3/work(?:\?.*)?$"#, options: .regularExpression) != nil {
+            keys = ["/api/v3/today","/api/v3/tasks","/api/v3/timers","/api/v3/finance","/api/v3/analytics","/api/v3/invoices","/api/v3/receivables"]
+        } else if mutationPath.range(of: #"/(?:tariffs?|operations?|products?)(?:/|\?|$)"#, options: .regularExpression) != nil {
+            keys = ["/api/v3/catalog","/api/v3/tariff-history","/api/v3/products","/api/v3/today","/api/v3/finance","/api/v3/analytics"]
+        } else if mutationPath.range(of: #"/clients?(?:/|\?|$)"#, options: .regularExpression) != nil {
+            keys = ["/api/clients","/api/admin/clients","/api/v3/catalog","/api/v3/client-name-history","/api/v3/client-requisites","/api/v3/today","/api/v3/finance","/api/v3/analytics"]
+        } else if mutationPath.range(of: #"/materials?(?:/|\?|$)"#, options: .regularExpression) != nil {
+            keys = ["/api/materials","/api/v3/today","/api/v3/finance","/api/v3/analytics"]
+        } else if mutationPath.range(of: #"/(?:users?|invitations?|company-access|permissions)(?:/|\?|$)"#, options: .regularExpression) != nil {
+            keys = ["/api/users","/api/v3/permissions","/api/v3/chat-users"]
+        } else if mutationPath.range(of: #"/(?:invoices?|payments?)(?:/|\?|$)"#, options: .regularExpression) != nil {
+            keys = ["/api/v3/invoices","/api/v3/receivables","/api/v3/finance","/api/v3/today"]
+        } else if mutationPath.range(of: #"/settings(?:/|\?|$)"#, options: .regularExpression) != nil {
+            keys = ["/api/company","/api/v3/settings","/api/v3/today"]
+        } else {
+            return
+        }
+        for key in keys {
+            _ = localCache.delete(serverOrigin: serverOrigin, companyID: companyID, cacheKey: key)
+        }
+    }
+
+    private func isCacheable(_ path: String) -> Bool {
+        let patterns = [
+            #"^/api/company$"#,
+            #"^/api/(?:admin/)?clients(?:\?.*)?$"#,
+            #"^/api/clients/[0-9]+(?:/operations)?(?:\?.*)?$"#,
+            #"^/api/admin/clients/[0-9]+/operations(?:\?.*)?$"#,
+            #"^/api/(?:users|materials|jobs)(?:\?.*)?$"#,
+            #"^/api/v3/(?:catalog|products|client-requisites|client-name-history|tariff-history|today|tasks|timers|batches|invoices|receivables|finance|analytics|payroll-periods|documents|settings|permissions|chat-users)(?:\?.*)?$"#
+        ]
+        return patterns.contains { path.range(of: $0, options: .regularExpression) != nil }
     }
     private enum FileBridgeError: Error {
         case invalid

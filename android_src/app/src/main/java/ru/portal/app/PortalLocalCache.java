@@ -102,6 +102,15 @@ final class PortalLocalCache {
         }
     }
 
+    boolean delete(String serverOrigin, String companyId, String cacheKey) {
+        try {
+            File file = cacheFile(serverOrigin, companyId, cacheKey);
+            return file == null || !file.exists() || file.delete();
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
 
     boolean enqueueMutation(String serverOrigin, String companyId, String requestId, String json) {
         try {
