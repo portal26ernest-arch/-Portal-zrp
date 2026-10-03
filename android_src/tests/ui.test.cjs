@@ -136,6 +136,11 @@ test('desktop web branding uses the PORTAL blue shell',()=>{
   assert.match(css,/\.web-client \.top\{background:var\(--portal-blue\)/);
   assert.match(css,/@media\(min-width:900px\)/);
 });
+test('worker other-work form omits batch selector and batch_id',()=>{
+  const production=fs.readFileSync(path.join(assets,'production.js'),'utf8');
+  assert.doesNotMatch(production,/freeBatch/);
+  assert.match(production,/actions\.otherWork=async\(\)=>\{[\s\S]*selectField\('freeClient'[\s\S]*selectField\('freeOperation'[\s\S]*field\('freeQuantity'/);
+});
 test('goods receipt form omits article and GTIN but keeps comment',()=>{
   const production=fs.readFileSync(path.join(assets,'production.js'),'utf8');
   assert.doesNotMatch(production,/batchArticle/);
@@ -860,7 +865,7 @@ test('browser UI regression',async t=>{
       await page.locator('#otherWorkForm [type=submit]').click();
       await page.waitForFunction(()=>mock.calls.some(c=>c.url==='/api/v3/work'&&c.body?.quantity===3));
       const free=await page.evaluate(()=>mock.calls.find(c=>c.url==='/api/v3/work'));
-      assert.equal(free.body.client_id,1);assert.equal(free.body.operation_id,1);assert.equal(free.body.batch_id,null);
+      assert.equal(free.body.client_id,1);assert.equal(free.body.operation_id,1);assert.equal(Object.hasOwn(free.body,'batch_id'),false);
       assert.equal(Object.hasOwn(free.body,'employee_rate'),false);
       await page.locator('[data-action=productionHistory]').click();
       await page.waitForFunction(()=>document.querySelector('#content').textContent.includes('Без задания'));
