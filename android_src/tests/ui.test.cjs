@@ -136,6 +136,11 @@ test('desktop web branding uses the PORTAL blue shell',()=>{
   assert.match(css,/\.web-client \.top\{background:var\(--portal-blue\)/);
   assert.match(css,/@media\(min-width:900px\)/);
 });
+test('worker other-work form omits batch selector and batch_id',()=>{
+  const production=fs.readFileSync(path.join(assets,'production.js'),'utf8');
+  assert.doesNotMatch(production,/freeBatch/);
+  assert.match(production,/actions\.otherWork=async\(\)=>\{[\s\S]*selectField\('freeClient'[\s\S]*selectField\('freeOperation'[\s\S]*field\('freeQuantity'/);
+});
 test('goods receipt form omits article and GTIN but keeps comment',()=>{
   const production=fs.readFileSync(path.join(assets,'production.js'),'utf8');
   assert.doesNotMatch(production,/batchArticle/);
