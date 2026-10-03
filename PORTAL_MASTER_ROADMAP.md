@@ -426,3 +426,5 @@ Current roadmap counts are **93 ✅ / 15 🟡 / 6 ⏳ / 12 🔌**. Current-SHA S
 - Production pre-release evidence: fresh control/tenant/storage backup создан и вынесен off-server с совпадающими SHA-256. Tenant DB уже имеет migration 14 и portal_production_immutable() уже допускает organizer_requests, поэтому повторное применение Stage 14 не требуется.
 
 - Production hotfix reconciliation перед официальным релизом: в main перенесены проверенные runtime-патчи, уже работавшие на VPS — разрешение первой версии тарифа, актуальная company role matrix и сохранение явных permission overrides; также перенесены PostgreSQL/payroll regression-контракты. iOS и экспериментальные ветки не включались.
+
+- 2026-10-04 — Server 4.7.1 Android owner-login hotfix: общий /api/login больше не завершает запрос ранним 401 при совпадении username между tenant-пользователем и Platform Owner. Правильный tenant PIN по-прежнему имеет приоритет; при tenant PIN mismatch сервер безопасно проверяет Platform Owner и возвращает прежнюю общую ошибку только если обе проверки не прошли. Добавлен регрессионный тест коллизии; Android APK 4.7 не меняется.
