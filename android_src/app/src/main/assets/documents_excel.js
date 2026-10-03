@@ -7,7 +7,7 @@
   const PDF = 'application/pdf';
   const JSON_MIME = 'application/json';
   const MAX_XLSX = 10 * 1024 * 1024;
-  const SHEETS = ['Компания', 'Сотрудники', 'Клиенты', 'Операции_Тарифы'];
+  const SHEETS = ['Компания', 'Сотрудники', 'Клиенты', 'Операции_Тарифы', 'Материалы', 'Приход_материалов', 'Нормы_материалов', 'Выработка'];
   const DOCUMENT_TYPE_LABELS = Object.freeze({
     payroll_xlsx: 'Расчёт зарплаты (Excel)',
     payroll_slip_xlsx: 'Расчётный лист (Excel)',
@@ -355,7 +355,8 @@
     paint(
       heading('Импорт Excel', 'Шаблон · проверка · подтверждение · результат') +
       `<div class="card">
-        <p class="meta">Шаблон PORTAL ${h(state.templateInfo?.template_version || 'v1.0')} · ${SHEETS.join(' · ')}</p>
+        <p class="meta">PORTAL Excel ${h(state.templateInfo?.template_version || '2.0')}. Заполняйте обычные названия и значения — служебные строки и ID скрыты.</p>
+        <p class="meta">Листы: ${SHEETS.join(' · ')}</p>
         <div class="stack">
           ${btn('Скачать пустой шаблон', 'downloadExcelTemplate', 'data-kind="blank"', 'secondary block')}
           ${window.PortalNative?.shareBase64FileAsync ? btn('Поделиться пустым шаблоном', 'shareExcelTemplate', 'data-kind="blank"', 'secondary block') : ''}
