@@ -308,6 +308,22 @@ class DocumentAPITest(unittest.TestCase):
             settlements_after=Repository(conn,1).payroll_settlements(period['id'],payroll_employee)
         self.assertEqual(settlements_after,settlements_before)
 
+class DeterministicGeneratedXlsxTest(unittest.TestCase):
+    def test_core_properties_timestamps_do_not_change_generated_xlsx_bytes(self):
+        from io import BytesIO
+        from zipfile import ZipFile
+        from financial_xlsx import payroll_slip_xlsx
+        from portal_excel_workbook import deterministic_zip
+        args=({'name':'PORTAL'},{'status':'closed','snapshot':{'employees':[]},'period_start':'2026-09-01','period_end':'2026-09-15'},
+              {'display_name':'Test Employee'},{'balance':12345},'2026-09-15')
+        first=deterministic_zip(payroll_slip_xlsx(*args))
+        second=deterministic_zip(payroll_slip_xlsx(*args))
+        self.assertEqual(first,second)
+        with ZipFile(BytesIO(first)) as book:
+            core=book.read('docProps/core.xml')
+        self.assertIn(b'2000-01-01T00:00:00Z',core)
+
+
 class BlobStorageTest(unittest.TestCase):
     def test_content_addressed_company_keys_atomic_retry_and_traversal(self):
         with tempfile.TemporaryDirectory() as root:

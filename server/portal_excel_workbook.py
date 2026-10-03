@@ -22,8 +22,13 @@ def deterministic_zip(payload):
     out=BytesIO()
     with ZipFile(BytesIO(payload)) as source, ZipFile(out,'w') as target:
         for name in source.namelist():
+            raw=source.read(name)
+            if name=='docProps/core.xml':
+                for field in (b'created',b'modified'):
+                    pattern=rb'(<dcterms:'+field+rb'[^>]*>)[^<]*(</dcterms:'+field+rb'>)'
+                    raw=re.sub(pattern,lambda m:m.group(1)+b'2000-01-01T00:00:00Z'+m.group(2),raw)
             info=ZipInfo(name,(2000,1,1,0,0,0));info.compress_type=ZIP_DEFLATED
-            target.writestr(info,source.read(name))
+            target.writestr(info,raw)
     return out.getvalue()
 
 def xml(raw):
