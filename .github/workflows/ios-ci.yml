@@ -24,12 +24,27 @@ permissions:
 
 jobs:
   ios-build-test:
-    runs-on: macos-15
-    timeout-minutes: 30
+    runs-on: macos-26
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
+      - name: Verify Xcode 26+
+        run: |
+          xcodebuild -version
+          python3 - <<'PY'
+          import re, subprocess
+          text=subprocess.check_output(['xcodebuild','-version'], text=True)
+          match=re.search(r'Xcode (\\d+)', text)
+          assert match and int(match.group(1)) >= 26, text
+          PY
+
       - name: Check Android iOS parity contract
         run: python3 ios_src/tools/check_mobile_parity.py
+
+      - name: Validate App Store release configuration
+        run: |
+          python3 ios_src/tools/validate_release_config.py
+          python3 ios_src/tools/test_validate_release_config.py
 
       - name: Install XcodeGen
         run: brew install xcodegen
@@ -58,3 +73,10 @@ jobs:
             -destination "platform=iOS Simulator,id=$DEVICE_ID" \
             CODE_SIGNING_ALLOWED=NO \
             test
+      - name: Verify privacy manifest in built app
+        working-directory: ios_src
+        run: |
+          APP="$(find "$HOME/Library/Developer/Xcode/DerivedData" -path '*/Build/Products/Debug-iphonesimulator/PortalIOS.app' -print -quit)"
+          test -n "$APP"
+          test -f "$APP/PrivacyInfo.xcprivacy"
+          /usr/libexec/PlistBuddy -c 'Print :NSPrivacyTracking' "$APP/PrivacyInfo.xcprivacy" | grep -qx false
