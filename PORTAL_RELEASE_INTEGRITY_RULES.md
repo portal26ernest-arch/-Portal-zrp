@@ -26,6 +26,11 @@
 16. Каноническая ветка сохранения исходников — `main`; VPS source mirror автоматически следует за `main` и не допускает локальных правок.
 17. Автоматическая синхронизация source mirror служит сохранности и устранению дрейфа файлов, но не заменяет release deploy. Production активируется только полным immutable payload проверенного SHA.
 18. Любой runtime, который намеренно оставлен на другом SHA для теста/rollback, обязан быть явно помечен как test/rollback и не считаться канонической копией исходников.
+19. Обязательная последовательность сохранения изменений: `fetch актуального main → отдельная branch/worktree → change → tests → roadmap → commit → push → CI → merge main → source mirror sync → staging smoke → immutable production deploy → production smoke`. Пропуск шага запрещён.
+20. Любое расхождение между локальной копией, `origin/main`, VPS source mirror и фактически запущенным runtime должно быть явно объяснено точными SHA. Необъяснимое расхождение = STOP RELEASE.
+21. Source mirror на каждом сервере обновляется автоматически только из GitHub `main`; локальные правки в mirror запрещены и должны вызывать fail-closed отказ синхронизации.
+22. Production runtime не обязан автоматически следовать за каждым commit `main`: сохранность исходников и активация runtime разделены. Runtime меняется только после зелёного CI/release gate и разворачивается целиком из одного SHA.
+23. Перед переключением ветки, агента или рабочей сессии dirty worktree обязан быть либо committed+pushed, либо сохранён отдельной safety branch/stash с понятным именем. Потеря или молчаливое перетирание dirty изменений недопустимы.
 
 ## Release completeness contract
 
