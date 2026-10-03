@@ -1,6 +1,9 @@
 name: PORTAL iOS App Store release
 
 on:
+  push:
+    tags:
+      - 'portal-ios-v*'
   workflow_dispatch:
     inputs:
       build_number:
@@ -73,6 +76,9 @@ jobs:
           fi
           [[ "$VERSION" =~ ^[0-9]+([.][0-9]+){1,2}$ ]]
           [[ "$BUILD" =~ ^[1-9][0-9]{0,17}$ ]]
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            [[ "$GITHUB_REF_NAME" == "portal-ios-v$VERSION" ]] || { echo "::error::Tag must equal portal-ios-v$VERSION"; exit 1; }
+          fi
           echo "PORTAL_IOS_VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "PORTAL_IOS_BUILD=$BUILD" >> "$GITHUB_ENV"
           echo "PORTAL_IOS_BUILD_DATE=$(date -u +%F)" >> "$GITHUB_ENV"
@@ -216,7 +222,7 @@ jobs:
           xcrun altool --validate-app             -f "$PORTAL_IOS_IPA"             -t ios             --apiKey "$PORTAL_ASC_KEY_ID"             --apiIssuer "$PORTAL_ASC_ISSUER_ID"             --output-format xml
 
       - name: Upload IPA to TestFlight
-        if: ${{ inputs.upload_to_testflight }}
+        if: ${{ github.event_name == 'push' || inputs.upload_to_testflight }}
         shell: bash
         run: |
           set -euo pipefail
