@@ -189,6 +189,24 @@ class ImportAPITest(unittest.TestCase):
                 'Клиенты':[dict(client_ref='new-client',name='Новый клиент',active=1,legal_name='Синтетический клиент',inn='0012345678')],
                 'Операции_Тарифы':[dict(client_ref='new-client',name='Новая операция',employee_rate='10.25',client_rate='20.50',active=1)]}
 
+    def test_excel_2_visible_columns_are_sufficient_for_new_staff_client_operation_and_work(self):
+        payload=self.payload({
+            'Сотрудники':[dict(full_name='Excel Видимый Сотрудник',profile_username='excel.visible',role='Упаковщик',active='Да',initial_pin='4826')],
+            'Клиенты':[dict(name='Excel Видимый Клиент',active='Да')],
+            'Операции_Тарифы':[dict(client_name='Excel Видимый Клиент',name='Excel Упаковка',employee_rate='5.00',client_rate='8.00',active='Да')],
+            'Выработка':[dict(employee_name='Excel Видимый Сотрудник',client_name='Excel Видимый Клиент',operation_name='Excel Упаковка',quantity='3',product='Без технических ID')],
+        })
+        preview=self.preview(payload);self.assertTrue(preview['can_apply'],preview)
+        self.assertFalse(any(row['errors'] for row in preview['rows']))
+        result=self.apply(payload,preview);self.assertEqual(result['status'],'applied')
+        with portal.db() as conn:
+            user=conn.execute("SELECT id,role,active FROM app_users WHERE lower(username)=lower('excel.visible')").fetchone()
+            client=conn.execute("SELECT id FROM portal_clients WHERE company_id=1 AND name='Excel Видимый Клиент'").fetchone()
+            operation=conn.execute("SELECT id FROM portal_client_operations WHERE company_id=1 AND client_id=? AND name='Excel Упаковка'",(client[0],)).fetchone()
+            self.assertIsNotNone(user);self.assertIsNotNone(client);self.assertIsNotNone(operation)
+            work=next(item for item in reversed(Repository(conn,1).list('works')) if item.get('product')=='Без технических ID')
+            self.assertEqual(int(work['quantity']),3);self.assertGreater(int(work['salary']),0);self.assertGreater(int(work['revenue']),0)
+
     def test_excel_2_material_receipt_norm_and_work_use_server_rates(self):
         with portal.db() as conn:
             conn.executescript('''

@@ -31,11 +31,18 @@ class TemplateTest(unittest.TestCase):
 
     def test_standard_reader_opens_and_resaves_template(self):
         import openpyxl
-        payload=workbook({'Клиенты':[dict(client_ref='new',name='Тест',active=1)]})
+        payload=workbook({'Клиенты':[dict(client_ref='new',name='Тест',active=1)],'Сотрудники':[dict(full_name='Тестовый упаковщик',role='packer',active=1)]})
         book=openpyxl.load_workbook(io.BytesIO(payload))
         self.assertEqual(book.sheetnames,list(SHEETS))
         keys=[cell.value for cell in book['Клиенты'][2]]
         self.assertEqual(book['Клиенты'].cell(row=4,column=keys.index('name')+1).value,'Тест')
+        employee_keys=[cell.value for cell in book['Сотрудники'][2]]
+        self.assertEqual(book['Сотрудники'].cell(row=4,column=employee_keys.index('role')+1).value,'Упаковщик')
+        self.assertEqual(book['Сотрудники'].cell(row=4,column=employee_keys.index('active')+1).value,'Да')
+        employee_validations=list(book['Сотрудники'].data_validations.dataValidation)
+        self.assertEqual(len(employee_validations),2)
+        self.assertTrue(any('Упаковщик' in (item.formula1 or '') for item in employee_validations))
+        self.assertTrue(any('Да,Нет' in (item.formula1 or '') for item in employee_validations))
         self.assertEqual(book['Клиенты'].freeze_panes,'A4')
         self.assertTrue(book['Клиенты'].row_dimensions[1].hidden)
         self.assertTrue(book['Клиенты'].row_dimensions[2].hidden)
