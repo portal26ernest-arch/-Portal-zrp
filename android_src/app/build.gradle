@@ -62,6 +62,7 @@ android {
         buildConfigField 'String', 'BUILD_DATE', quoted(releaseInfo.getProperty('buildDate'))
         buildConfigField 'String', 'RELEASE_CHANNEL', quoted(releaseInfo.getProperty('channel'))
         buildConfigField 'String', 'UPDATE_MANIFEST_URL', quoted(releaseInfo.getProperty('updateManifestUrl', ''))
+        buildConfigField 'String', 'SERVER_DISCOVERY_URL', quoted(releaseInfo.getProperty('serverDiscoveryUrl', ''))
         buildConfigField 'String', 'DEFAULT_API_URL', quoted(portalApiUrl)
     }
 

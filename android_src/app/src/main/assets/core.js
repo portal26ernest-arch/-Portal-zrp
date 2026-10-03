@@ -74,9 +74,10 @@ globalThis.PortalCore = (() => {
     return 'Доброй ночи';
   }
   function updateState(current,result) {
-    if (!result || !result.ok) return {state:'error',title:'Не удалось проверить обновления',description:'Сервис обновлений недоступен. Попробуйте позже.'};
-    if (result.storeManaged) return {state:'store',title:'Обновления через App Store',description:'Новые версии PORTAL для iPhone устанавливаются через App Store по той же прямой ссылке PORTAL.'};
-    if (!result.configured) return {state:'unconfigured',title:'Проверка пока недоступна',description:'Официальный источник обновлений ещё не подключён.'};
+    const serverNote=result?.serverChanged?' Адрес сервера PORTAL обновлён автоматически.':result?.serverChecked?' Адрес сервера PORTAL проверен.':'';
+    if (!result || !result.ok) return {state:'error',title:'Не удалось проверить обновления',description:'Сервис обновлений недоступен. Попробуйте позже.'+serverNote};
+    if (result.storeManaged) return {state:'store',title:'Обновления через App Store',description:'Новые версии PORTAL для iPhone устанавливаются через App Store по той же прямой ссылке PORTAL.'+serverNote};
+    if (!result.configured) return {state:'unconfigured',title:'Проверка пока недоступна',description:'Официальный источник обновлений ещё не подключён.'+serverNote};
     const m=result.manifest;
     const versionOk=m && typeof m.versionName==='string' && /^[A-Za-z0-9._-]{1,80}$/.test(m.versionName);
     const expectedApkUrl=versionOk?'https://github.com/portal26ernest-arch/-Portal-zrp/releases/download/portal-android-v'+m.versionName+'/PORTAL_Android_'+m.versionName+'_release.apk':'';
@@ -87,9 +88,9 @@ globalThis.PortalCore = (() => {
       && typeof m.changelog==='string' && m.changelog.length<=4000
       && typeof m.apkUrl==='string' && m.apkUrl===expectedApkUrl
       && typeof m.sha256==='string' && /^[0-9a-f]{64}$/i.test(m.sha256);
-    if (!valid || !Number.isSafeInteger(current.versionCode)) return {state:'error',title:'Не удалось проверить обновления',description:'Источник вернул неподходящие данные.'};
-    if (m.versionCode<=current.versionCode) return {state:'latest',title:'Установлена последняя версия',description:'Для вашего канала обновлений новых сборок нет.'};
-    return {state:'available',title:'Доступна новая версия',description:'Установка будет доступна через официальный канал распространения.',release:m};
+    if (!valid || !Number.isSafeInteger(current.versionCode)) return {state:'error',title:'Не удалось проверить обновления',description:'Источник вернул неподходящие данные.'+serverNote};
+    if (m.versionCode<=current.versionCode) return {state:'latest',title:'Установлена последняя версия',description:'Для вашего канала обновлений новых сборок нет.'+serverNote};
+    return {state:'available',title:'Доступна новая версия',description:'Установка будет доступна через официальный канал распространения.'+serverNote,release:m};
   }
   return Object.freeze({roles,modules,can,timeGreeting,updateState});
 })();

@@ -145,6 +145,41 @@ final class PortalLocalCache {
         return urls.filter { $0.pathExtension == "bin" }.count
     }
 
+    @discardableResult
+    func migrateOutboxOrigin(oldOrigin: String, newOrigin: String) -> Bool {
+        guard oldOrigin.caseInsensitiveCompare(newOrigin) != .orderedSame,
+              let outboxRoot else { return true }
+        let source = outboxRoot.appendingPathComponent(hash(oldOrigin.lowercased()), isDirectory: true)
+        guard fileManager.fileExists(atPath: source.path) else { return true }
+        let target = outboxRoot.appendingPathComponent(hash(newOrigin.lowercased()), isDirectory: true)
+        do {
+            try fileManager.createDirectory(at: target, withIntermediateDirectories: true)
+            for company in try fileManager.contentsOfDirectory(at: source, includingPropertiesForKeys: [.isDirectoryKey]) {
+                let name = company.lastPathComponent
+                guard name.range(of: #"^[1-9][0-9]{0,9}$"#, options: .regularExpression) != nil else { return false }
+                let targetCompany = target.appendingPathComponent(name, isDirectory: true)
+                try fileManager.createDirectory(at: targetCompany, withIntermediateDirectories: true)
+                for row in try fileManager.contentsOfDirectory(at: company, includingPropertiesForKeys: nil) {
+                    guard row.pathExtension == "bin" else { return false }
+                    let destination = targetCompany.appendingPathComponent(row.lastPathComponent)
+                    if fileManager.fileExists(atPath: destination.path) {
+                        try fileManager.removeItem(at: row)
+                    } else {
+                        try fileManager.moveItem(at: row, to: destination)
+                    }
+                }
+                if (try fileManager.contentsOfDirectory(atPath: company.path)).isEmpty {
+                    try fileManager.removeItem(at: company)
+                }
+            }
+            guard (try fileManager.contentsOfDirectory(atPath: source.path)).isEmpty else { return false }
+            try fileManager.removeItem(at: source)
+            return true
+        } catch {
+            return false
+        }
+    }
+
     private func outboxDirectory(serverOrigin: String, companyID: String) -> URL? {
         guard !serverOrigin.isEmpty,
               companyID.range(of: #"^[1-9][0-9]{0,9}$"#, options: .regularExpression) != nil,

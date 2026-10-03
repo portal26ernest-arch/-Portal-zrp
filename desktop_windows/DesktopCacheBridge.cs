@@ -191,6 +191,45 @@ public sealed class DesktopCacheBridge
         }
     }
 
+    public static bool MigrateOutboxOrigin(string settingsDir, string oldOrigin, string newOrigin)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(oldOrigin) || string.IsNullOrWhiteSpace(newOrigin) ||
+                oldOrigin.Equals(newOrigin, StringComparison.OrdinalIgnoreCase)) return true;
+            var baseDir = Path.Combine(settingsDir, "company-outbox");
+            var source = Path.Combine(baseDir, Hash(oldOrigin.ToLowerInvariant()));
+            if (!Directory.Exists(source)) return true;
+            var target = Path.Combine(baseDir, Hash(newOrigin.ToLowerInvariant()));
+            Directory.CreateDirectory(target);
+            foreach (var company in Directory.GetDirectories(source))
+            {
+                var name = Path.GetFileName(company);
+                if (!long.TryParse(name, out var companyId) || companyId < 1) return false;
+                var targetCompany = Path.Combine(target, name);
+                Directory.CreateDirectory(targetCompany);
+                foreach (var row in Directory.GetFiles(company, "*.bin"))
+                {
+                    var destination = Path.Combine(targetCompany, Path.GetFileName(row));
+                    if (File.Exists(destination))
+                    {
+                        File.Delete(row);
+                        continue;
+                    }
+                    File.Move(row, destination);
+                }
+                if (Directory.GetFileSystemEntries(company).Length == 0) Directory.Delete(company);
+            }
+            if (Directory.GetFileSystemEntries(source).Length != 0) return false;
+            Directory.Delete(source);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private string? OutboxDirectory(string companyId)
     {
         if (!long.TryParse(companyId, out var id) || id < 1) return null;

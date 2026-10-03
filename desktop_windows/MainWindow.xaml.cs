@@ -17,6 +17,7 @@ public partial class MainWindow : Window
     private const int CurrentBuild = 56;
     private const long MaxInstallerBytes = 250L * 1024 * 1024;
     private const string GithubRepository = "portal26ernest-arch/-Portal-zrp";
+    private const string ServerDiscoveryUrl = "https://raw.githubusercontent.com/portal26ernest-arch/-Portal-zrp/main/portal-server.json";
     private const string WebViewSoftwareRenderingArguments = "--disable-gpu --disable-gpu-compositing";
     private static readonly HttpClient Http = new(new HttpClientHandler { AllowAutoRedirect = false })
     {
@@ -382,11 +383,17 @@ public partial class MainWindow : Window
     {
         try
         {
-            StatusText.Text = "Проверка версии…";
+            StatusText.Text = "Проверка сервера и версии…";
+            var serverRefresh = await RefreshOfficialServerAsync();
             var manifest = await LoadUpdateManifestAsync();
             if (manifest is null || manifest.Build <= CurrentBuild)
             {
-                MessageBox.Show("Установлена актуальная версия PORTAL Desktop.", "PORTAL Desktop");
+                var message = serverRefresh.Changed
+                    ? "Адрес сервера PORTAL обновлён автоматически. Установлена актуальная версия PORTAL Desktop."
+                    : serverRefresh.Checked
+                        ? "Адрес сервера PORTAL проверен. Установлена актуальная версия PORTAL Desktop."
+                        : "Установлена актуальная версия PORTAL Desktop. Адрес сервера проверить не удалось; сохранён текущий адрес.";
+                MessageBox.Show(message, "PORTAL Desktop");
                 return;
             }
             if (!ValidUpdateManifest(manifest, out var downloadUri))
@@ -405,6 +412,100 @@ public partial class MainWindow : Window
             StatusText.Text = Browser.Visibility == Visibility.Visible ? "Подключено" : "Требуется подключение";
         }
     }
+    private async Task<ServerRefreshResult> RefreshOfficialServerAsync()
+    {
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("PORTAL_SERVER_URL")))
+                return new ServerRefreshResult(false, false, _serverOrigin);
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, ServerDiscoveryUrl);
+            request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.6.0");
+            request.Headers.Accept.ParseAdd("application/json");
+            using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+            response.EnsureSuccessStatusCode();
+            if (response.Content.Headers.ContentLength is > 16384)
+                throw new InvalidDataException("Server discovery document is too large.");
+            var bytes = await response.Content.ReadAsByteArrayAsync();
+            if (bytes.Length == 0 || bytes.Length > 16384)
+                throw new InvalidDataException("Server discovery document is invalid.");
+            var document = JsonSerializer.Deserialize<ServerDiscoveryDocument>(bytes,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (document is null || document.SchemaVersion != 1 || document.Revision < 1 ||
+                !DateTimeOffset.TryParse(document.UpdatedAt, out _) ||
+                !TryNormalizeOfficialOrigin(document.ApiUrl, out var next))
+                throw new InvalidDataException("Server discovery document is invalid.");
+
+            var revisionPath = Path.Combine(_settingsDir, "server-discovery-revision.txt");
+            var storedRevision = 0;
+            if (File.Exists(revisionPath)) int.TryParse(File.ReadAllText(revisionPath).Trim(), out storedRevision);
+            if (storedRevision > document.Revision)
+                throw new InvalidDataException("Server discovery rollback rejected.");
+            if (!await ProbeOfficialServerAsync(next))
+                throw new InvalidDataException("Discovered PORTAL server is not ready.");
+
+            var previous = _serverOrigin ?? LoadStoredOrigin();
+            var changed = !string.Equals(previous, next, StringComparison.OrdinalIgnoreCase);
+            if (changed && !string.IsNullOrWhiteSpace(previous) &&
+                !DesktopCacheBridge.MigrateOutboxOrigin(_settingsDir, previous, next))
+                throw new IOException("Unable to migrate pending PORTAL work.");
+
+            Directory.CreateDirectory(_settingsDir);
+            File.WriteAllText(revisionPath, document.Revision.ToString());
+            if (changed)
+            {
+                ServerUrlBox.Text = next;
+                await ConnectAsync(next, persist: true);
+            }
+            else if (string.IsNullOrWhiteSpace(LoadStoredOrigin()))
+            {
+                SaveOrigin(next);
+            }
+            return new ServerRefreshResult(true, changed, next);
+        }
+        catch
+        {
+            return new ServerRefreshResult(false, false, _serverOrigin ?? LoadStoredOrigin());
+        }
+    }
+
+    private static bool TryNormalizeOfficialOrigin(string? raw, out string origin)
+    {
+        origin = string.Empty;
+        if (string.IsNullOrWhiteSpace(raw) || !Uri.TryCreate(raw.Trim(), UriKind.Absolute, out var uri) ||
+            !uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+            string.IsNullOrWhiteSpace(uri.Host) || !string.IsNullOrEmpty(uri.UserInfo) ||
+            !string.IsNullOrEmpty(uri.Query) || !string.IsNullOrEmpty(uri.Fragment) ||
+            (uri.Port != 443 && !uri.IsDefaultPort) || uri.AbsolutePath != "/" ||
+            uri.IsLoopback || uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase) ||
+            uri.Host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase) ||
+            uri.Host.Equals("portal.invalid", StringComparison.OrdinalIgnoreCase) ||
+            uri.Host.EndsWith(".trycloudflare.com", StringComparison.OrdinalIgnoreCase))
+            return false;
+        origin = uri.GetLeftPart(UriPartial.Authority).TrimEnd('/');
+        return true;
+    }
+
+    private static async Task<bool> ProbeOfficialServerAsync(string origin)
+    {
+        try
+        {
+            using var ping = await Http.GetAsync(origin + "/api/ping");
+            if (ping.StatusCode != HttpStatusCode.OK) return false;
+            using var document = await JsonDocument.ParseAsync(await ping.Content.ReadAsStreamAsync());
+            if (!document.RootElement.TryGetProperty("ok", out var ok) || ok.ValueKind != JsonValueKind.True) return false;
+            if (!document.RootElement.TryGetProperty("build", out var build) ||
+                !(build.GetString() ?? string.Empty).StartsWith("PORTAL Server", StringComparison.Ordinal)) return false;
+
+            using var web = await Http.GetAsync(origin + "/web/");
+            return web.StatusCode == HttpStatusCode.OK;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private async Task<DesktopUpdateManifest?> LoadUpdateManifestAsync()
     {
         DesktopUpdateManifest? serverManifest = null;
@@ -677,5 +778,7 @@ public partial class MainWindow : Window
     }
 
     private sealed record DesktopSettings(string ServerOrigin);
+    private sealed record ServerDiscoveryDocument(int SchemaVersion, int Revision, string ApiUrl, string UpdatedAt);
+    private sealed record ServerRefreshResult(bool Checked, bool Changed, string? ServerUrl);
     private sealed record DesktopUpdateManifest(int Build, string Version, string DownloadUrl, string Sha256);
 }

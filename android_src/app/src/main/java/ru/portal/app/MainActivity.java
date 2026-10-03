@@ -166,6 +166,7 @@ public class MainActivity extends Activity {
         private volatile String cacheCompany = "";
         private static final long CACHE_MAX_AGE_MS = 30L * 24 * 60 * 60 * 1000;
         private static final String DEFAULT_URL = BuildConfig.DEFAULT_API_URL;
+        private static final String SERVER_DISCOVERY_URL = BuildConfig.SERVER_DISCOVERY_URL;
 
         PortalBridge(Context context, WebView webView) {
             this.context = context;
@@ -338,7 +339,7 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void checkUpdates(String id) {
-            executor.execute(() -> deliver(id, fetchUpdateManifest()));
+            executor.execute(() -> deliver(id, checkUpdatesAndServer()));
         }
 
         @JavascriptInterface
@@ -448,6 +449,120 @@ public class MainActivity extends Activity {
             } catch (Exception ignored) {
                 if (pending != null) try { context.getContentResolver().delete(pending, null, null); } catch (Exception ignoredDelete) { }
                 return "{\"ok\":false,\"error\":\"Не удалось сохранить документ.\"}";
+            }
+        }
+
+        private String checkUpdatesAndServer() {
+            JSONObject server = refreshOfficialServer();
+            String updateRaw = fetchUpdateManifest();
+            try {
+                JSONObject update = new JSONObject(updateRaw);
+                update.put("serverChecked", server.optBoolean("checked", false));
+                update.put("serverChanged", server.optBoolean("changed", false));
+                update.put("serverUrl", server.optString("serverUrl", getServerUrl()));
+                if (server.has("error")) update.put("serverCheckError", server.optString("error", ""));
+                return update.toString();
+            } catch (Exception ignored) {
+                return updateRaw;
+            }
+        }
+
+        private JSONObject refreshOfficialServer() {
+            JSONObject result = new JSONObject();
+            try {
+                result.put("checked", false).put("changed", false).put("serverUrl", getServerUrl());
+                if (!"release".equals(BuildConfig.RELEASE_CHANNEL) || SERVER_DISCOVERY_URL == null || SERVER_DISCOVERY_URL.isEmpty()) return result;
+                if (!validDiscoveryUrl(SERVER_DISCOVERY_URL)) throw new Exception("invalid_discovery_url");
+
+                URL source = new URL(SERVER_DISCOVERY_URL);
+                HttpURLConnection conn = (HttpURLConnection) source.openConnection();
+                conn.setInstanceFollowRedirects(false);
+                conn.setConnectTimeout(10000);
+                conn.setReadTimeout(15000);
+                conn.setRequestMethod("GET");
+                conn.setRequestProperty("Accept", "application/json");
+                int code = conn.getResponseCode();
+                if (code != 200) { conn.disconnect(); throw new Exception("discovery_http_" + code); }
+                long declared = conn.getContentLengthLong();
+                if (declared > 16384) { conn.disconnect(); throw new Exception("discovery_too_large"); }
+                byte[] payload;
+                try (InputStream in = conn.getInputStream(); java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream()) {
+                    byte[] buf = new byte[4096]; int n;
+                    while ((n = in.read(buf)) != -1) {
+                        if (out.size() + n > 16384) throw new Exception("discovery_too_large");
+                        out.write(buf, 0, n);
+                    }
+                    payload = out.toByteArray();
+                } finally { conn.disconnect(); }
+
+                JSONObject document = new JSONObject(new String(payload, StandardCharsets.UTF_8));
+                if (document.optInt("schemaVersion", 0) != 1) throw new Exception("discovery_schema");
+                long revision = document.optLong("revision", 0);
+                if (revision < 1) throw new Exception("discovery_revision");
+                long storedRevision = prefs.getLong("server_discovery_revision", 0);
+                if (storedRevision > revision) throw new Exception("discovery_rollback");
+                String updatedAt = document.optString("updatedAt", "");
+                try { java.time.Instant.parse(updatedAt); } catch (Exception badDate) { throw new Exception("discovery_date"); }
+                String next = normalizeOfficialApiUrl(document.optString("apiUrl", ""));
+                if (next == null) throw new Exception("discovery_api_url");
+                if (!probeOfficialServer(next)) throw new Exception("discovery_server_unreachable");
+
+                String previous = getServerUrl();
+                boolean changed = !next.equalsIgnoreCase(previous);
+                if (changed && !localCache.migrateOutboxOrigin(previous, next)) throw new Exception("outbox_migration_failed");
+                prefs.edit().putString("server_url", next).putLong("server_discovery_revision", revision).apply();
+                result.put("checked", true).put("changed", changed).put("serverUrl", next).remove("error");
+                return result;
+            } catch (Exception e) {
+                try { result.put("error", e.getMessage() == null ? "server_discovery_failed" : e.getMessage()); } catch (Exception ignored) { }
+                return result;
+            }
+        }
+
+        private boolean validDiscoveryUrl(String value) {
+            try {
+                URL u = new URL(value);
+                return "https".equalsIgnoreCase(u.getProtocol()) && u.getUserInfo() == null
+                    && "raw.githubusercontent.com".equalsIgnoreCase(u.getHost()) && (u.getPort() == -1 || u.getPort() == 443)
+                    && "/portal26ernest-arch/-Portal-zrp/main/portal-server.json".equals(u.getPath())
+                    && u.getQuery() == null && u.getRef() == null;
+            } catch (Exception e) { return false; }
+        }
+
+        private String normalizeOfficialApiUrl(String value) {
+            try {
+                String trimmed = value == null ? "" : value.trim();
+                while (trimmed.endsWith("/")) trimmed = trimmed.substring(0, trimmed.length() - 1);
+                URL u = new URL(trimmed);
+                String host = u.getHost() == null ? "" : u.getHost().toLowerCase(Locale.ROOT);
+                if (!"https".equalsIgnoreCase(u.getProtocol()) || host.isEmpty() || u.getUserInfo() != null
+                        || u.getQuery() != null || u.getRef() != null || (u.getPort() != -1 && u.getPort() != 443)
+                        || !(u.getPath().isEmpty() || "/".equals(u.getPath()))
+                        || "localhost".equals(host) || host.endsWith(".localhost") || "portal.invalid".equals(host)
+                        || host.endsWith(".trycloudflare.com")) return null;
+                return "https://" + host;
+            } catch (Exception e) { return null; }
+        }
+
+        private boolean probeOfficialServer(String base) {
+            HttpURLConnection conn = null;
+            try {
+                URL url = new URL(base + "/api/ping");
+                conn = (HttpURLConnection) url.openConnection();
+                conn.setInstanceFollowRedirects(false);
+                conn.setConnectTimeout(8000);
+                conn.setReadTimeout(10000);
+                conn.setRequestMethod("GET");
+                conn.setRequestProperty("Accept", "application/json");
+                if (conn.getResponseCode() != 200) return false;
+                String raw = readLimited(conn.getInputStream(), 32768);
+                JSONObject ping = new JSONObject(raw);
+                String build = ping.optString("build", "");
+                return ping.optBoolean("ok", false) && build.startsWith("PORTAL Server");
+            } catch (Exception ignored) {
+                return false;
+            } finally {
+                if (conn != null) conn.disconnect();
             }
         }
 
