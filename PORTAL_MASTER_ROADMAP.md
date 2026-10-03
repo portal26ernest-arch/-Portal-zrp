@@ -369,3 +369,5 @@ Current roadmap counts are **93 ✅ / 15 🟡 / 6 ⏳ / 12 🔌**. Current-SHA S
 - Перед изменениями создан fresh pre-cutover backup control DB, tenant DB и central storage; копия вынесена с VPS и SHA-256 совпали.
 - Release CI выявил две UI-регрессии в новом модуле счетов: legacy fallback без v3 и доступ к дебиторке для read-only permission. Обе исправлены; повторный Android UI/master-control gate обязателен перед merge.
 - Не закрытые внешние gate после программной проверки: собственный production domain/DNS/HTTPS, финальный authenticated device smoke и формальное объявление VPS/PostgreSQL единственным source of truth после успешного cutover.
+
+- Release CI hardening: `main` добавлен в push-триггеры `server-tests.yml` и `android-ui-tests.yml`, чтобы официальный main всегда проверял server isolation и Android UI, а не полагался только на проверки release-ветки.
