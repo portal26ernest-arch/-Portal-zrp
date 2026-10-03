@@ -14,7 +14,8 @@ namespace Portal.Desktop;
 
 public partial class MainWindow : Window
 {
-    private const int CurrentBuild = 50;
+    private const int CurrentBuild = 51;
+    private const string CurrentVersion = "5.1.0";
     private const long MaxInstallerBytes = 250L * 1024 * 1024;
     private const string GithubRepository = "portal26ernest-arch/-Portal-zrp";
     private const string WebViewCompatibilityArguments = "--disable-gpu --disable-gpu-compositing";
@@ -270,29 +271,31 @@ public partial class MainWindow : Window
 
     private async Task ApplyDesktopMetadataAsync()
     {
-        if (Browser.CoreWebView2 is null || _cacheBridge is null) return;
-        var metadata = _cacheBridge.GetAppMetadata();
-        if (string.IsNullOrWhiteSpace(metadata) || metadata == "{}") return;
-        var rawJson = JsonSerializer.Serialize(metadata);
+        if (Browser.CoreWebView2 is null) return;
+
+        var executable = Environment.ProcessPath;
+        var buildDate = executable is not null && File.Exists(executable)
+            ? File.GetLastWriteTime(executable).ToString("dd.MM.yyyy")
+            : DateTime.Now.ToString("dd.MM.yyyy");
+        var version = CurrentVersion;
+        var build = CurrentBuild.ToString();
+
+        var versionJs = JsonSerializer.Serialize(version);
+        var buildJs = JsonSerializer.Serialize(build);
+        var dateJs = JsonSerializer.Serialize(buildDate);
+        var visibleLabelJs = JsonSerializer.Serialize($"{version} · build {build} · {buildDate}");
+
         var script = """
 (() => {
   try {
-    const raw = __PORTAL_METADATA__;
-    const parsed = JSON.parse(raw);
-    window.__PORTAL_DESKTOP_METADATA__ = parsed;
-    if (window.PortalNative) window.PortalNative.getAppMetadata = () => raw;
-    if (typeof S !== 'undefined') S.metadata = parsed;
+    const version = __PORTAL_VERSION__;
+    const build = __PORTAL_BUILD__;
+    const built = __PORTAL_DATE__;
+    const visibleLabel = __PORTAL_LABEL__;
 
-    const formatDate = value => {
-      const d = new Date(value);
-      return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('ru-RU');
-    };
     const apply = () => {
-      const version = String(parsed.versionName || 'Недоступна');
-      const build = String(parsed.buildNumber || parsed.versionCode || '—');
-      const built = formatDate(parsed.buildDate);
       const label = document.getElementById('buildLabel');
-      if (label) label.textContent = version + ' · build ' + build + ' · ' + built;
+      if (label) label.textContent = visibleLabel;
 
       const grid = document.querySelector('.about .info-grid');
       if (grid) {
@@ -303,8 +306,9 @@ public partial class MainWindow : Window
           values[2].textContent = built;
         }
       }
+
       const badge = document.querySelector('.about .badge');
-      if (badge) badge.textContent = parsed.channel === 'release' ? 'Стабильная версия' : String(parsed.channel || 'PORTAL Desktop');
+      if (badge) badge.textContent = 'Стабильная версия';
     };
 
     if (!window.__portalDesktopMetadataObserver) {
@@ -313,11 +317,31 @@ public partial class MainWindow : Window
       window.__portalDesktopMetadataObserver = observer;
     }
     apply();
+
+    let style = document.getElementById('portal-desktop-metadata-style');
+    if (!style) {
+      style = document.createElement('style');
+      style.id = 'portal-desktop-metadata-style';
+      document.head.appendChild(style);
+    }
+    style.textContent =
+      '#buildLabel:empty::after{content:' + JSON.stringify(visibleLabel) + ';}' +
+      '.about .badge{font-size:0!important}.about .badge::after{content:"Стабильная версия";font-size:12px!important}' +
+      '.about .info-grid strong:nth-of-type(1){font-size:0!important}.about .info-grid strong:nth-of-type(1)::after{content:' + JSON.stringify(version) + ';font-size:13px!important}' +
+      '.about .info-grid strong:nth-of-type(2){font-size:0!important}.about .info-grid strong:nth-of-type(2)::after{content:' + JSON.stringify(build) + ';font-size:13px!important}' +
+      '.about .info-grid strong:nth-of-type(3){font-size:0!important}.about .info-grid strong:nth-of-type(3)::after{content:' + JSON.stringify(built) + ';font-size:13px!important}';
+
     return true;
   } catch { return false; }
 })()
-""".Replace("__PORTAL_METADATA__", rawJson);
+"""
+            .Replace("__PORTAL_VERSION__", versionJs)
+            .Replace("__PORTAL_BUILD__", buildJs)
+            .Replace("__PORTAL_DATE__", dateJs)
+            .Replace("__PORTAL_LABEL__", visibleLabelJs);
+
         await Browser.ExecuteScriptAsync(script);
+        StatusText.Text = $"Подключено · {version} · build {build}";
     }
 
     private async Task ConfigureDesktopCacheAsync(string origin)
@@ -524,7 +548,7 @@ public partial class MainWindow : Window
     {
         using var request = new HttpRequestMessage(HttpMethod.Get,
             $"https://api.github.com/repos/{GithubRepository}/releases?per_page=50");
-        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.0.0");
+        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.1.0");
         request.Headers.Accept.ParseAdd("application/vnd.github+json");
         using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();

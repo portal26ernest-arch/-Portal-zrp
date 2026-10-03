@@ -421,3 +421,14 @@ Current roadmap counts are **93 ✅ / 15 🟡 / 6 ⏳ / 12 🔌**. Current-SHA S
 - Local focused Desktop/Web adapter tests: 6/6 passed; diff check passed.
 - No PostgreSQL, tenant data, permissions, payroll, invoices or cache scope changed.
 - Exact NEXT: require green Windows Desktop, Android UI/APK and master-control CI; publish Desktop 5.0, install on the authorized PC and verify the visible login build label by screenshot before closing the issue.
+
+## S. Desktop 5.1 native metadata source — 2026-10-03
+
+- Desktop version advanced to `5.1.0` / build `51` after real-PC verification showed that the bridge-backed source could still leave the visible metadata empty.
+- Visible metadata no longer depends on `DesktopCacheBridge.GetAppMetadata()`: Desktop uses native constants for version/build and the installed EXE modification date for the displayed build date.
+- After successful navigation Desktop writes the values directly into `#buildLabel` and the About `.info-grid`, installs a MutationObserver for re-renders, and adds a CSS fallback for the same visible fields.
+- Native top status now also includes `version · build`, providing an independent runtime proof that the metadata path executed.
+- Existing bridge/preload logic remains only as compatibility fallback and is no longer required for visible metadata correctness.
+- Local focused Desktop/Web adapter tests: 6/6 passed; diff check passed.
+- No PostgreSQL, tenant data, permissions, payroll, invoices or cache scope changed.
+- Exact NEXT: require green Windows Desktop, Android UI/APK and master-control CI; publish Desktop 5.1, install on the authorized PC and verify both native top status and visible login metadata by screenshot.
