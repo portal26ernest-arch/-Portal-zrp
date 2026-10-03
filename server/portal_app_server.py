@@ -930,12 +930,12 @@ class Handler(BaseHTTPRequestHandler):
                     if not verify_pin(pin, u["pin_salt"], u["pin_hash"]):
                         repo=Repository(conn,company_id)
                         if repo.ready():activity.login(repo,u['username'],u['id'],False,activity.client_type(self.headers))
-                        return self.error_json("Неверный логин, PIN или компания", 401)
-                    token = create_session(conn, u["id"])
-                    repo=Repository(conn,company_id)
-                    if repo.ready():activity.login(repo,u['username'],u['id'],True,activity.client_type(self.headers),token)
-                    data = public_user_record({k:v for k,v in with_employee_id(u,conn,company_id).items() if k not in {"pin_hash","pin_salt"}})
-                    return self.send_json({"ok":True,"token":token,"user":data})
+                    else:
+                        token = create_session(conn, u["id"])
+                        repo=Repository(conn,company_id)
+                        if repo.ready():activity.login(repo,u['username'],u['id'],True,activity.client_type(self.headers),token)
+                        data = public_user_record({k:v for k,v in with_employee_id(u,conn,company_id).items() if k not in {"pin_hash","pin_salt"}})
+                        return self.send_json({"ok":True,"token":token,"user":data})
             with tenants.control(DB_PATH) as control:
                 god = control.execute("SELECT * FROM platform_owners WHERE lower(username)=lower(?) AND active=1", (username,)).fetchone()
                 if god:

@@ -426,3 +426,5 @@ Current roadmap counts are **93 ✅ / 15 🟡 / 6 ⏳ / 12 🔌**. Current-SHA S
 - Production pre-release evidence: fresh control/tenant/storage backup создан и вынесен off-server с совпадающими SHA-256. Tenant DB уже имеет migration 14 и portal_production_immutable() уже допускает organizer_requests, поэтому повторное применение Stage 14 не требуется.
 
 - Production hotfix reconciliation перед официальным релизом: в main перенесены проверенные runtime-патчи, уже работавшие на VPS — разрешение первой версии тарифа, актуальная company role matrix и сохранение явных permission overrides; также перенесены PostgreSQL/payroll regression-контракты. iOS и экспериментальные ветки не включались.
+
+- 2026-10-04 — PORTAL 4.7 auth hotfix: исправлена коллизия одинакового username между tenant-пользователем и Platform Owner. Если tenant PIN не совпал, `/api/login` теперь безопасно продолжает проверку глобального владельца; при несовпадении обоих PIN наружу остаётся единая ошибка. Добавлен регрессионный тест `test_god_login_falls_back_when_tenant_username_collides`; точечный тест и полный `test_portal_tenancy` (19/19) проходят локально. APK менять не требуется — hotfix серверный.

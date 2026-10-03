@@ -172,6 +172,16 @@ class CompanyIsolationTest(unittest.TestCase):
         with portal.db() as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM app_users WHERE username='owner'").fetchone()[0],0)
 
+    def test_god_login_falls_back_when_tenant_username_collides(self):
+        with tenants.company_scope(1):
+            portal.save_user({"username":"owner","pin":"tenant-only-4321","role":"packer","telegram_id":101})
+        tenant=self.request("/api/login",body={"username":"owner","pin":"tenant-only-4321","company_id":1})
+        self.assertFalse(tenant['token'].startswith('p.'))
+        self.assertEqual(tenant['user']['role'],'packer')
+        god=self.request("/api/login",body={"username":"owner","pin":"Owner-secret-canary-123","company_id":1})
+        self.assertTrue(god['token'].startswith('p.'))
+        self.assertEqual(god['user']['role'],'platform_owner')
+        self.request("/api/login",body={"username":"owner","pin":"wrong-for-both","company_id":1},status=401)
     def test_company_audit_hides_god_actor(self):
         from production_repository import Repository
         from production_migrations import migrate
