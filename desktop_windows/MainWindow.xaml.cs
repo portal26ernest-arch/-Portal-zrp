@@ -322,12 +322,38 @@ public partial class MainWindow : Window
         Browser.CoreWebView2.AddHostObjectToScript("portalDesktopCache", _cacheBridge);
         if (_metadataBootstrapRegistered) return;
 
-        var metadata = _cacheBridge.GetAppMetadata();
+        var executable = Environment.ProcessPath;
+        var buildDate = executable is not null && File.Exists(executable)
+            ? File.GetLastWriteTime(executable)
+            : DateTime.Now;
+        var buildDateIso = buildDate.ToUniversalTime().ToString("O");
+        var visibleDate = buildDate.ToString("dd.MM.yyyy");
+        var metadata = JsonSerializer.Serialize(new
+        {
+            applicationId = "ru.portal.desktop",
+            versionName = CurrentVersion,
+            versionCode = CurrentBuild,
+            buildNumber = CurrentBuild.ToString(),
+            buildDate = buildDateIso,
+            channel = "release",
+            updatesConfigured = true,
+            client = "desktop"
+        });
         var metadataLiteral = JsonSerializer.Serialize(metadata);
+        var versionLiteral = JsonSerializer.Serialize(CurrentVersion);
+        var buildLiteral = JsonSerializer.Serialize(CurrentBuild.ToString());
+        var dateLiteral = JsonSerializer.Serialize(visibleDate);
+        var labelLiteral = JsonSerializer.Serialize($"{CurrentVersion} · build {CurrentBuild} · {visibleDate}");
+
         var bootstrapScript = """
 (() => {
   try {
     const metadata = __PORTAL_METADATA__;
+    const version = __PORTAL_VERSION__;
+    const build = __PORTAL_BUILD__;
+    const built = __PORTAL_DATE__;
+    const labelText = __PORTAL_LABEL__;
+
     let nativeValue;
     Object.defineProperty(window, 'PortalNative', {
       configurable: true,
@@ -340,9 +366,47 @@ public partial class MainWindow : Window
         nativeValue = value;
       }
     });
+
+    const setText = (node, text) => {
+      if (node && node.textContent !== text) node.textContent = text;
+    };
+
+    const apply = () => {
+      setText(document.getElementById('buildLabel'), labelText);
+
+      const grid = document.querySelector('.about .info-grid');
+      if (grid) {
+        const values = grid.querySelectorAll('strong');
+        if (values.length >= 3) {
+          setText(values[0], version);
+          setText(values[1], build);
+          setText(values[2], built);
+        }
+      }
+
+      const badge = document.querySelector('.about .badge');
+      if (badge) setText(badge, 'Стабильная версия');
+    };
+
+    const start = () => {
+      apply();
+      setTimeout(apply, 0);
+      setTimeout(apply, 250);
+    };
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', start, {once:true});
+    } else {
+      start();
+    }
   } catch {}
 })();
-""".Replace("__PORTAL_METADATA__", metadataLiteral);
+"""
+            .Replace("__PORTAL_METADATA__", metadataLiteral)
+            .Replace("__PORTAL_VERSION__", versionLiteral)
+            .Replace("__PORTAL_BUILD__", buildLiteral)
+            .Replace("__PORTAL_DATE__", dateLiteral)
+            .Replace("__PORTAL_LABEL__", labelLiteral);
         await Browser.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(bootstrapScript);
         _metadataBootstrapRegistered = true;
     }
