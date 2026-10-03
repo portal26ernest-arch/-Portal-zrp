@@ -63,7 +63,7 @@ test('time-based greeting uses local hour boundaries',()=>{
   assert.throws(()=>core.timeGreeting(24),/hour must be 0\.\.23/);
 });
 test('role capabilities and employee linkage',()=>{
-  const expected={admin:['work','payroll','clients','materials','invoices','users','jobs','reports','news','wms','notifications'],director:['work','payroll','clients','materials','invoices','users','jobs','reports','news','wms','notifications'],manager:['work','payroll','clients','invoices','jobs','reports','news','wms','notifications'],packer:['work','payroll','jobs','news','wms','notifications'],shift:['work','payroll','clients','materials','jobs','reports','news','wms','notifications'],accountant:['payroll','clients','materials','invoices','jobs','reports','news','notifications']};
+  const expected={admin:['work','payroll','clients','materials','invoices','users','jobs','reports','news','wms','notifications'],director:['work','payroll','clients','materials','invoices','users','jobs','reports','news','wms','notifications'],manager:['work','payroll','clients','materials','invoices','jobs','reports','news','wms','notifications'],packer:['work','payroll','materials','jobs'],shift:[],accountant:[]};
   for(const [role,pages] of Object.entries(expected)){
     for(const m of core.modules)assert.equal(core.can(m.id,{role,employee_id:101},{id:1}),pages.includes(m.id),role+':'+m.id);
     assert.equal(core.can('work',{role}, {id:1}),false);
@@ -79,6 +79,25 @@ test('role capabilities and employee linkage',()=>{
   assert.equal(core.can('work',{role:'manager',employee_id:101},{id:1,module_toggles:{work:false}}),false);
   assert.equal(core.can('work',{role:'manager',employee_id:101},{id:1,module_toggles:{work:true}}),true);
 });
+test('effective permissions enforce the current company role matrix',()=>{
+  const company={id:1};
+  const manager=['work.write','tasks.read','tasks.manage','organizer.read','organizer.assign','organizer.request.create','batches.receive','work.link','payroll.own','chat.read','chat.write','chat.moderate','clients.read','rates.client','materials.read','materials.use','invoices.read','invoices.create','invoices.export','finance.read','expenses.read','analytics.read','documents.read'];
+  const packer=['tasks.read','work.write','payroll.own','materials.read','materials.use'];
+  context.__PORTAL_DESKTOP__=true;
+  for(const page of ['work','payroll','clients','materials','invoices','jobs','reports','news','wms','notifications','radar','expenses','analytics','documents','organizer'])
+    assert.equal(core.can(page,{role:'manager',employee_id:101,permissions:manager},company),true,'manager:'+page);
+  for(const page of ['payrollPeriods','users','permissions','excelImport','control'])
+    assert.equal(core.can(page,{role:'manager',employee_id:101,permissions:manager},company),false,'manager forbidden:'+page);
+  for(const page of ['work','payroll','materials','jobs'])
+    assert.equal(core.can(page,{role:'packer',employee_id:101,permissions:packer},company),true,'packer:'+page);
+  for(const page of ['teamChat','clients','invoices','reports','news','wms','notifications','organizer','radar','expenses','analytics','documents','users','permissions'])
+    assert.equal(core.can(page,{role:'packer',employee_id:101,permissions:packer},company),false,'packer forbidden:'+page);
+  for(const role of ['shift','accountant']){
+    for(const m of core.modules)assert.equal(core.can(m.id,{role,employee_id:101,permissions:[]},company),false,role+':'+m.id);
+  }
+  delete context.__PORTAL_DESKTOP__;
+});
+
 test('updates: unconfigured, offline, current, newer and invalid manifests',()=>{
   const manifest={schemaVersion:1,...metadata,publishedAt:metadata.buildDate+'T12:00:00Z',changelog:'Исправления',apkUrl:`https://github.com/portal26ernest-arch/-Portal-zrp/releases/download/portal-android-v${metadata.versionName}/PORTAL_Android_${metadata.versionName}_release.apk`,sha256:'a'.repeat(64)};
   const state=m=>core.updateState(metadata,{ok:true,configured:true,manifest:m}).state;

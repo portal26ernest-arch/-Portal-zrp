@@ -33,6 +33,14 @@ globalThis.PortalCore = (() => {
     if (company?.module_toggles?.[page] === false) return false;
     if (!user || !roles[user.role]) return false;
     if (Array.isArray(user.permissions) && (user.role!=='platform_owner'||company)) {
+      if(user.role==='packer'){
+        if(['dashboard','sections'].includes(page))return true;
+        if(page==='work')return !!user.employee_id && ['work.write','tasks.read'].every(p=>user.permissions.includes(p));
+        if(page==='payroll')return !!user.employee_id && user.permissions.includes('payroll.own');
+        if(page==='materials')return user.permissions.includes('materials.read');
+        if(page==='jobs')return user.permissions.includes('tasks.read');
+        return false;
+      }
       if(page==='excelImport'){
         const needed=['imports.manage','users.manage','clients.manage','rates.employee','rates.client','company.settings','documents.manage','documents.read'];
         return ['admin','director','platform_owner'].includes(user.role)&&needed.every(p=>user.permissions.includes(p));
@@ -47,15 +55,22 @@ globalThis.PortalCore = (() => {
       if (['companies','audit'].includes(page)) return true;
       return !!company && ['dashboard','sections','clients','materials','invoices','users','jobs','reports','news','excelImport','wms','notifications','organizer'].includes(page);
     }
-    if (['dashboard','sections','jobs','news','notifications'].includes(page)) return true;
-    if (page==='work') return !!user.employee_id && ['admin','director','manager','packer','shift'].includes(user.role);
-    if (page==='payroll') return !!user.employee_id;
-    if (page==='clients') return user.role!=='packer';
-    if (page==='materials') return ['admin','director','accountant','shift'].includes(user.role);
-    if (page==='invoices') return ['admin','director','manager','accountant'].includes(user.role);
-    if (page==='reports') return ['admin','director','manager','accountant','shift'].includes(user.role);
+    if (['dashboard','sections'].includes(page)) return true;
+    if (['shift','accountant'].includes(user.role)) return false;
+    if (user.role==='packer') {
+      if (page==='work') return !!user.employee_id;
+      if (page==='payroll') return !!user.employee_id;
+      return ['materials','jobs'].includes(page);
+    }
+    if (['jobs','news','notifications'].includes(page)) return ['admin','director','manager'].includes(user.role);
+    if (page==='work') return !!user.employee_id && ['admin','director','manager'].includes(user.role);
+    if (page==='payroll') return !!user.employee_id && ['admin','director','manager'].includes(user.role);
+    if (page==='clients') return ['admin','director','manager'].includes(user.role);
+    if (page==='materials') return ['admin','director','manager'].includes(user.role);
+    if (page==='invoices') return ['admin','director','manager'].includes(user.role);
+    if (page==='reports') return ['admin','director','manager'].includes(user.role);
     if (page==='excelImport') return false;
-    if (page==='wms') return ['admin','director','manager','packer','shift'].includes(user.role);
+    if (page==='wms') return ['admin','director','manager'].includes(user.role);
     return page==='users' && ['admin','director'].includes(user.role);
   }
   function timeGreeting(value=new Date()) {
