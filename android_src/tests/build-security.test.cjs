@@ -89,11 +89,14 @@ must(stagingWorkflow.includes('staging_api_url') && stagingWorkflow.includes('va
   'Staging workflow must accept a runtime/Actions-variable HTTPS endpoint');
 must(stagingWorkflow.includes("'https://portal.invalid'"),
   'Staging workflow must fail disconnected instead of silently using a stale endpoint');
-must(gradle.includes("graph.allTasks.any") && gradle.includes("releaseTemporarySslipHost") &&
-     gradle.includes("temporarySslipAllowed") && gradle.includes("(host.endsWith('.sslip.io') && !temporarySslipAllowed)") &&
-     gradle.includes("host.endsWith('.trycloudflare.com')"),
-  'Release task must reject missing/local/temporary endpoints unless the exact temporary sslip host is explicitly pinned');
-must(releaseWorkflow.includes('PORTAL_RELEASE_TEMPORARY_SSLIP_HOST: 2a03-6f00-a--1-f426.sslip.io') &&
-     releaseWorkflow.includes('test "$API_HOST" = "$PORTAL_RELEASE_TEMPORARY_SSLIP_HOST"'),
-  'Temporary production sslip exception must be pinned to the exact current PORTAL hostname');
+must(gradle.includes("graph.allTasks.any") &&
+     gradle.includes("host.endsWith('.sslip.io')") &&
+     gradle.includes("host.endsWith('.trycloudflare.com')") &&
+     !gradle.includes("releaseTemporarySslipHost") &&
+     !gradle.includes("temporarySslipAllowed"),
+  'Release task must reject all temporary sslip/trycloudflare endpoints without an exception');
+must(releaseWorkflow.includes("https://api.vart-portal.ru") &&
+     releaseWorkflow.includes('test "$API_HOST" = "api.vart-portal.ru"') &&
+     !releaseWorkflow.includes('PORTAL_RELEASE_TEMPORARY_SSLIP_HOST'),
+  'Production Android release must be pinned to the permanent api.vart-portal.ru host');
 console.log('Android build security checks: OK');

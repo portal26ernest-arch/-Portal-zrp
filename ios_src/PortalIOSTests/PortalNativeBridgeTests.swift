@@ -20,8 +20,8 @@ final class PortalNativeBridgeTests: XCTestCase {
 
     func testOfficialServerDiscoveryURLValidation() {
         XCTAssertEqual(
-            PortalNativeBridge.normalizeOfficialServerURL("https://2a03-6f00-a--1-f426.sslip.io/"),
-            "https://2a03-6f00-a--1-f426.sslip.io"
+            PortalNativeBridge.normalizeOfficialServerURL("https://api.vart-portal.ru/"),
+            "https://api.vart-portal.ru"
         )
         XCTAssertEqual(
             PortalNativeBridge.normalizeOfficialServerURL("https://api.portal.example"),
