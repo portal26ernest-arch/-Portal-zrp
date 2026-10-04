@@ -18,7 +18,7 @@ jobs:
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-      PORTAL_PUBLIC_API_URL: ${{ secrets.PORTAL_PUBLIC_API_URL || 'https://2a03-6f00-a--1-f426.sslip.io' }}
+      PORTAL_PUBLIC_API_URL: https://api.vart-portal.ru
       PORTAL_RELEASE_TEMPORARY_SSLIP_HOST: 2a03-6f00-a--1-f426.sslip.io
       PORTAL_ANDROID_KEYSTORE_TYPE: PKCS12
       PORTAL_RELEASE_NOTES: ${{ inputs.release_notes }}
