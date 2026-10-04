@@ -752,6 +752,24 @@ def create_platform_owner(username, pin, display_name=None):
     return owner_id
 
 
+def reset_platform_owner_password(username, pin):
+    """Local recovery only: rotate one Platform Owner password and revoke all owner sessions."""
+    username = clean_name(username, "Логин")
+    if not isinstance(pin, str) or not 12 <= len(pin) <= 128:
+        raise ValueError("Пароль Platform Owner: от 12 до 128 символов")
+    salt, digest = hash_pin(pin)
+    with tenants.control(DB_PATH) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        owner = conn.execute("SELECT id FROM platform_owners WHERE lower(username)=lower(?)", (username,)).fetchone()
+        if not owner:
+            raise ValueError("Platform Owner не найден")
+        owner_id = owner["id"]
+        conn.execute("UPDATE platform_owners SET pin_salt=?,pin_hash=? WHERE id=?", (salt, digest, owner_id))
+        conn.execute("DELETE FROM platform_sessions WHERE user_id=?", (owner_id,))
+        tenants.audit(conn, owner_id, 1, "owner_password_reset_locally", "success", entity_id=owner_id)
+    return owner_id
+
+
 def audit_route(path):
     """A fixed route label, not a raw URL that could carry secrets."""
     parts = path.strip("/").split("/")
@@ -1492,6 +1510,7 @@ def main():
     import getpass
     parser = argparse.ArgumentParser(description="PORTAL company API server")
     parser.add_argument("--create-platform-owner", metavar="USERNAME", help="Создать технический доступ локально, с интерактивным вводом пароля")
+    parser.add_argument("--reset-platform-owner-password", metavar="USERNAME", help="Сбросить пароль Platform Owner локально, отозвав все его активные сессии")
     parser.add_argument('--migrate-stage3',type=int,metavar='COMPANY_ID',help='Явно подключить производственный учёт к проверенной копии БД компании')
     args = parser.parse_args()
     if args.migrate_stage3 is not None and args.migrate_stage3<1:
@@ -1501,6 +1520,15 @@ def main():
         with tenants.company_scope(args.migrate_stage3), db() as conn:
             migrate_production(conn,args.migrate_stage3)
         print('Миграция Этапа 3 завершена')
+        return
+    if args.create_platform_owner and args.reset_platform_owner_password:
+        parser.error("Выберите только одно действие с Platform Owner")
+    if args.reset_platform_owner_password:
+        pin = getpass.getpass("Новый пароль Platform Owner (минимум 12 символов): ")
+        if pin != getpass.getpass("Повторите новый пароль: "):
+            raise ValueError("Пароли не совпадают")
+        reset_platform_owner_password(args.reset_platform_owner_password, pin)
+        print("Пароль Platform Owner обновлён. Старые глобальные сессии отозваны.")
         return
     if args.create_platform_owner:
         pin = getpass.getpass("Пароль Platform Owner (минимум 12 символов): ")
