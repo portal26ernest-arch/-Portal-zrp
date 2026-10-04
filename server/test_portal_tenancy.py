@@ -159,6 +159,26 @@ class CompanyIsolationTest(unittest.TestCase):
         self.request("/api/invoices",director)
         self.request("/api/materials",director)
 
+    def test_owner_can_change_own_pin_and_other_owner_sessions_are_revoked(self):
+        old_pin = "Owner-secret-canary-123"
+        second = self.request("/api/platform/login", body={"username":"owner","pin":old_pin})["token"]
+        new_pin = "Owner-new-secret-canary-456"
+        self.request("/api/platform/me/pin", self.owner, {"new_pin":new_pin})
+        self.request("/api/platform/login", body={"username":"owner","pin":old_pin}, status=401)
+        fresh = self.request("/api/platform/login", body={"username":"owner","pin":new_pin})["token"]
+        self.assertTrue(fresh.startswith("p."))
+        self.request("/api/me", second, status=401)
+        self.request("/api/me", self.owner)
+        with tenants.control(portal.DB_PATH) as conn:
+            rows=conn.execute("SELECT event,outcome FROM platform_audit WHERE actor_id=? ORDER BY id DESC",(self.owner_id,)).fetchall()
+            self.assertTrue(any(r["event"]=="owner_pin_changed" and r["outcome"]=="success" for r in rows))
+
+    def test_tenant_cannot_change_platform_owner_pin(self):
+        self.request("/api/platform/me/pin", self.admin, {"new_pin":"Tenant-cannot-change-123"}, status=403)
+
+    def test_owner_pin_change_validates_length(self):
+        self.request("/api/platform/me/pin", self.owner, {"new_pin":"short"}, status=400)
+
     def test_god_uses_normal_login_and_never_appears_in_company_users(self):
         result=self.request("/api/login",body={"username":"owner","pin":"Owner-secret-canary-123","company_id":1})
         self.assertTrue(result['token'].startswith('p.'))

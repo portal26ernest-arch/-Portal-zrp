@@ -978,6 +978,26 @@ class Handler(BaseHTTPRequestHandler):
                 with tenants.company_scope(company_id),db() as conn:
                     activity.logout(Repository(conn,company_id),self.token(),identity)
             return self.send_json({'ok':True})
+        if path == '/api/platform/me/pin' and method == 'POST':
+            if not is_owner:
+                raise PermissionError("Раздел недоступен")
+            body = parse_body(self)
+            if set(body) != {'new_pin'}:
+                raise ValueError("Ожидается только новый пароль")
+            new_pin = body.get('new_pin')
+            if not isinstance(new_pin, str) or not 12 <= len(new_pin) <= 128:
+                raise ValueError("Пароль Platform Owner: от 12 до 128 символов")
+            salt, digest = hash_pin(new_pin)
+            current_hash = hashlib.sha256(self.token().encode()).hexdigest()
+            with tenants.control(DB_PATH) as conn:
+                conn.execute('BEGIN IMMEDIATE')
+                conn.execute('UPDATE platform_owners SET pin_salt=?,pin_hash=? WHERE id=?',
+                             (salt,digest,identity['id']))
+                conn.execute('DELETE FROM platform_sessions WHERE user_id=? AND token_hash<>?',
+                             (identity['id'],current_hash))
+                tenants.audit(conn,identity['id'],1,'owner_pin_changed','success')
+                conn.commit()
+            return self.send_json({'ok':True})
         if is_owner and not readonly_preview:
             with tenants.control(DB_PATH) as conn:
                 tenants.audit(conn, identity["id"], company_id, "god_access", "started", method=method, route=audit_route(path))
