@@ -925,7 +925,7 @@ test('new employee creation is independent from existing employees',()=>{
   assert.match(source,/Новый сотрудник получит собственную карточку и уникальный ID/);
 });
 
-test('self-service PIN change settings flow is masked, validates mismatch and hides for God',async t=>{
+test('self-service access change stays masked and exposes owner recovery',async t=>{
   if(!chromium){t.skip('Playwright is not installed in this environment');return;}
   const browser=await chromium.launch({headless:true,...(process.env.PORTAL_BROWSER_PATH?{executablePath:process.env.PORTAL_BROWSER_PATH}:{})});
   try{
@@ -940,6 +940,10 @@ test('self-service PIN change settings flow is masked, validates mismatch and hi
     await page.waitForFunction(()=>mock.calls.some(c=>c.url==='/api/me/pin'));
     assert.deepEqual(await page.evaluate(()=>mock.calls.find(c=>c.url==='/api/me/pin').body),{current_pin:'fixture-current',new_pin:'fixture-new'});
     await page.evaluate(()=>{S.me.role='platform_owner';screens.settings();});
-    assert.equal(await page.locator('[data-action=changePin]').count(),0);assert.deepEqual(errors,[]);await page.close();
+    assert.equal(await page.locator('[data-action=changePin]').count(),1);
+    await page.locator('[data-action=changePin]').click();await page.waitForSelector('#changePinForm');
+    assert.equal(await page.locator('#currentPin').count(),0);
+    for(const id of ['newPin','confirmPin'])assert.equal(await page.locator('#'+id).getAttribute('type'),'password');
+    assert.deepEqual(errors,[]);await page.close();
   }finally{await browser.close();}
 });
