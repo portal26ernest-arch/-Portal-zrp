@@ -191,6 +191,18 @@ class CompanyIsolationTest(unittest.TestCase):
         self.assertEqual(owner['user']['role'],'platform_owner')
         self.request("/api/login",body={"username":"collision-owner","pin":"0000","company_id":1},status=401)
 
+    def test_local_owner_credential_rotation_revokes_sessions_and_audits(self):
+        replacement="Synthetic-owner-rotation-2468"
+        owner_id=portal.reset_platform_owner_password("owner",replacement)
+        self.assertEqual(owner_id,self.owner_id)
+        self.request("/api/me",self.owner,status=401)
+        with tenants.control(portal.DB_PATH) as conn:
+            account=conn.execute("SELECT pin_salt,pin_hash FROM platform_owners WHERE id=?",(self.owner_id,)).fetchone()
+            self.assertTrue(portal.verify_pin(replacement,account["pin_salt"],account["pin_hash"]))
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM platform_sessions WHERE user_id=?",(self.owner_id,)).fetchone()[0],0)
+            row=conn.execute("SELECT event,outcome FROM platform_audit WHERE actor_id=? ORDER BY id DESC LIMIT 1",(self.owner_id,)).fetchone()
+            self.assertEqual(tuple(row),("owner_password_reset_locally","success"))
+
     def test_god_uses_normal_login_and_never_appears_in_company_users(self):
         result=self.request("/api/login",body={"username":"owner","pin":"Owner-secret-canary-123","company_id":1})
         self.assertTrue(result['token'].startswith('p.'))

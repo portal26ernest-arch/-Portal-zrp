@@ -447,3 +447,5 @@ Current roadmap counts are **93 ✅ / 15 🟡 / 6 ⏳ / 12 🔌**. Current-SHA S
 - Permanent rule: a Git SHA alone is not proof of a complete deploy. Required chain is Git SHA → complete release payload → active runtime identity → external user-endpoint smoke.
 - Added mandatory `PORTAL_RELEASE_INTEGRITY_RULES.md`, strengthened `AGENTS.md`, added fail-closed `ops/verify_release_payload.py` and release-gate evidence `release_payload_complete/api_smoke/web_smoke/runtime_release_verified`.
 - Any future production incident must produce a regression guard before it is considered closed.
+
+- 2026-10-05 — Production recovery reconciliation: в актуальную линию PORTAL 4.8 возвращена только локальная аварийная команда --reset-platform-owner-password USERNAME для Platform Owner. Команда доступна только оператору на сервере, вводит новый код через getpass, отзывает глобальные сессии и фиксирует событие owner_password_reset_locally. Более старый self-service путь /api/platform/me/password не возвращался: актуальный main сохраняет новую схему /api/platform/me/pin.
