@@ -44,14 +44,14 @@
                     <StackPanel>
                         <TextBlock Text="Подключение PORTAL Desktop" FontSize="24" FontWeight="Bold"/>
                         <TextBlock Margin="0,10,0,20" TextWrapping="Wrap" Foreground="#6B7280"
-                                   Text="Укажите адрес сервера PORTAL. Разрешён HTTPS; HTTP допускается только для localhost/127.0.0.1 в тестовой среде."/>
+                                   Text="Серверы PORTAL уже настроены. Приложение автоматически выбирает доступный HTTPS-сервер; ручной адрес нужен только для диагностики."/>
                         <TextBlock Text="Адрес сервера" FontWeight="SemiBold"/>
                         <TextBox x:Name="ServerUrlBox" Margin="0,8,0,12" Height="38" Padding="10,7"
                                  ToolTip="Например: https://portal.example.ru"/>
                         <TextBlock x:Name="SetupError" Foreground="#B91C1C" TextWrapping="Wrap" Margin="0,0,0,12"/>
                         <Button x:Name="ConnectButton" Content="Подключиться" Height="40" Click="Connect_Click" Background="#0B5ED7" Foreground="White" BorderBrush="#0B5ED7"/>
                         <TextBlock Margin="0,18,0,0" Foreground="#9CA3AF" TextWrapping="Wrap"
-                                   Text="PORTAL Desktop может запомнить логин и пароль через встроенный менеджер паролей WebView2. После входа подтвердите «Сохранить пароль». Пароль не записывается в desktop.json или в код PORTAL."/>
+                                   Text="Режим совместимости использует чистый временный профиль WebView2 при каждом запуске. Логин и пароль не записываются в программу."/>
                     </StackPanel>
                 </Border>
             </Border>

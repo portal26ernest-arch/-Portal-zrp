@@ -14,10 +14,15 @@ namespace Portal.Desktop;
 
 public partial class MainWindow : Window
 {
-    private const int CurrentBuild = 55;
+    private const int CurrentBuild = 56;
     private const long MaxInstallerBytes = 250L * 1024 * 1024;
     private const string GithubRepository = "portal26ernest-arch/-Portal-zrp";
     private const string WebViewSoftwareRenderingArguments = "--disable-gpu --disable-gpu-compositing";
+    private static readonly string[] BuiltInServerOrigins =
+    {
+        "https://thru-runner-versus-gsm.trycloudflare.com",
+        "https://2a03-6f00-a--1-f426.sslip.io"
+    };
     private static readonly HttpClient Http = new(new HttpClientHandler { AllowAutoRedirect = false })
     {
         Timeout = TimeSpan.FromMinutes(5)
@@ -29,35 +34,62 @@ public partial class MainWindow : Window
     private bool _webRecoveryPending;
     private string? _pendingPersistOrigin;
     private DesktopCacheBridge? _cacheBridge;
+    private readonly string _webViewDataDir = Path.Combine(
+        Path.GetTempPath(), "PORTAL-WebView2", $"{Environment.ProcessId}-{Guid.NewGuid():N}");
 
     public MainWindow()
     {
         InitializeComponent();
         Loaded += MainWindow_Loaded;
+        Closed += MainWindow_Closed;
     }
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
+        StatusText.Text = "Выбираем сервер…";
+        var candidates = new List<string>();
         var configured = Environment.GetEnvironmentVariable("PORTAL_SERVER_URL");
-        var candidate = string.IsNullOrWhiteSpace(configured) ? LoadStoredOrigin() : configured;
-        if (TryNormalizeOrigin(candidate, out var origin, out var error))
+        if (TryNormalizeOrigin(configured, out var configuredOrigin, out _))
+            candidates.Add(configuredOrigin);
+
+        foreach (var origin in BuiltInServerOrigins)
+            if (!candidates.Contains(origin, StringComparer.OrdinalIgnoreCase))
+                candidates.Add(origin);
+
+        var stored = LoadStoredOrigin();
+        if (TryNormalizeOrigin(stored, out var storedOrigin, out _) &&
+            !candidates.Contains(storedOrigin, StringComparer.OrdinalIgnoreCase))
+            candidates.Add(storedOrigin);
+
+        foreach (var origin in candidates)
         {
             ServerUrlBox.Text = origin;
-            await ConnectAsync(origin, persist: false);
+            StatusText.Text = "Проверяем сервер…";
+            if (!await ServerAvailableAsync(origin)) continue;
+            await ConnectAsync(origin, persist: true);
             return;
         }
 
-        ShowSetup(candidate is null ? null : error);
+        ServerUrlBox.Text = BuiltInServerOrigins[0];
+        ShowSetup("Не удалось подключиться к основному или резервному серверу PORTAL. Проверьте интернет и повторите.");
     }
 
-    private string WebViewArguments()
+    private static async Task<bool> ServerAvailableAsync(string origin)
     {
-        var forced = Environment.GetEnvironmentVariable("PORTAL_WEBVIEW_SOFTWARE_RENDERING");
-        var marker = Path.Combine(_settingsDir, "software-rendering.flag");
-        return string.Equals(forced, "1", StringComparison.Ordinal) || File.Exists(marker)
-            ? WebViewSoftwareRenderingArguments
-            : string.Empty;
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+            using var response = await Http.GetAsync(
+                origin + "/api/ready", HttpCompletionOption.ResponseHeadersRead, timeout.Token);
+            return response.StatusCode == HttpStatusCode.OK;
+        }
+        catch
+        {
+            return false;
+        }
     }
+
+    private static string WebViewArguments() => WebViewSoftwareRenderingArguments;
 
     private string? LoadStoredOrigin()
     {
@@ -115,22 +147,18 @@ public partial class MainWindow : Window
             if (Browser.CoreWebView2 is null)
             {
                 Directory.CreateDirectory(_settingsDir);
+                Directory.CreateDirectory(_webViewDataDir);
                 var environmentOptions = new CoreWebView2EnvironmentOptions
                 {
-                    // GPU rendering is the fast default. On Windows/GPU driver combinations
-                    // that show a blank WebView2 surface, software rendering remains an explicit
-                    // compatibility fallback via environment flag or local marker.
+                    // Compatibility mode: old/limited Windows GPUs are more reliable with
+                    // software compositing. The WebView profile is intentionally ephemeral.
                     AdditionalBrowserArguments = WebViewArguments()
                 };
                 var env = await CoreWebView2Environment.CreateAsync(
                     browserExecutableFolder: null,
-                    userDataFolder: Path.Combine(_settingsDir, "WebView2"),
+                    userDataFolder: _webViewDataDir,
                     options: environmentOptions);
-                var options = env.CreateCoreWebView2ControllerOptions();
-                // Keep a normal per-user WebView profile so cookies/session state and any
-                // cacheable web assets survive restarts. "Сменить сервер" still clears it explicitly.
-                options.IsInPrivateModeEnabled = false;
-                await Browser.EnsureCoreWebView2Async(env, options);
+                await Browser.EnsureCoreWebView2Async(env);
                 ConfigureBrowser();
             }
 
@@ -163,7 +191,7 @@ public partial class MainWindow : Window
         // Use WebView2's built-in password manager. The credential is kept in the
         // per-user WebView2 profile, never serialized into PORTAL desktop.json.
         // WebView2 asks the user before saving/updating and can autofill it later.
-        Browser.CoreWebView2.Settings.IsPasswordAutosaveEnabled = true;
+        Browser.CoreWebView2.Settings.IsPasswordAutosaveEnabled = false;
         Browser.CoreWebView2.Settings.AreHostObjectsAllowed = true;
         if (_browserEventsAttached) return;
         Browser.CoreWebView2.NavigationStarting += (_, e) =>
@@ -209,16 +237,12 @@ public partial class MainWindow : Window
             }
             await ApplyDesktopExperienceAsync();
         };
-        Browser.CoreWebView2.ProcessFailed += (_, _) =>
+        Browser.CoreWebView2.ProcessFailed += (_, e) =>
         {
             if (_webRecoveryPending || Browser.Visibility != Visibility.Visible) return;
             _webRecoveryPending = true;
-            StatusText.Text = "Восстанавливаем интерфейс…";
-            _ = Dispatcher.InvokeAsync(async () =>
-            {
-                await Task.Delay(350);
-                if (Browser.Visibility == Visibility.Visible) Browser.Reload();
-            });
+            _pendingPersistOrigin = null;
+            ShowSetup($"WebView2 остановился ({e.ProcessFailedKind}). Перезапустите PORTAL Desktop.");
         };
         _browserEventsAttached = true;
     }
@@ -281,6 +305,17 @@ public partial class MainWindow : Window
         try { Browser.CoreWebView2.RemoveHostObjectFromScript("portalDesktopCache"); } catch { }
         _cacheBridge = new DesktopCacheBridge(_settingsDir, origin);
         Browser.CoreWebView2.AddHostObjectToScript("portalDesktopCache", _cacheBridge);
+    }
+
+    private void MainWindow_Closed(object? sender, EventArgs e)
+    {
+        try { Browser.Dispose(); } catch { }
+        try
+        {
+            if (Directory.Exists(_webViewDataDir))
+                Directory.Delete(_webViewDataDir, recursive: true);
+        }
+        catch { }
     }
 
     private static bool SameOrigin(Uri target, string origin) =>
@@ -443,7 +478,7 @@ public partial class MainWindow : Window
     {
         using var request = new HttpRequestMessage(HttpMethod.Get,
             $"https://api.github.com/repos/{GithubRepository}/releases?per_page=50");
-        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.5.0");
+        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.6.0");
         request.Headers.Accept.ParseAdd("application/vnd.github+json");
         using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();
