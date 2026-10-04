@@ -774,7 +774,7 @@ def audit_route(path):
     parts = path.strip("/").split("/")
     known = {"api", "platform", "companies", "audit", "me", "company", "dashboard", "clients", "admin",
              "operations", "work", "mine", "payroll", "materials", "jobs", "invoices", "users", "login",
-             "v3", "invitations"}
+             "v3", "invitations", "password"}
     if any(p not in known and not p.isdecimal() for p in parts):
         return "unknown"
     return "/" + "/".join("{id}" if p.isdecimal() else p for p in parts)
@@ -1259,6 +1259,25 @@ class Handler(BaseHTTPRequestHandler):
     def platform_route(self, method, path, identity):
         if identity["role"] != GLOBAL_ROLE:
             raise PermissionError("Раздел недоступен")
+        if path == "/api/platform/me/password":
+            if method != "POST":
+                return self.error_json("Метод не поддерживается", 405)
+            body=parse_body(self)
+            if set(body)!={"new_password"}:
+                raise ValueError("Передайте новый пароль")
+            new_password=body.get("new_password")
+            if not isinstance(new_password,str) or not 12<=len(new_password)<=128:
+                raise ValueError("Пароль Platform Owner: от 12 до 128 символов")
+            salt,digest=hash_pin(new_password)
+            with tenants.control(DB_PATH) as conn:
+                conn.execute("BEGIN IMMEDIATE")
+                owner=conn.execute("SELECT id FROM platform_owners WHERE id=? AND active=1",(identity["id"],)).fetchone()
+                if not owner:
+                    raise PermissionError("Доступ недоступен")
+                conn.execute("UPDATE platform_owners SET pin_salt=?,pin_hash=? WHERE id=?",(salt,digest,identity["id"]))
+                conn.execute("DELETE FROM platform_sessions WHERE user_id=?",(identity["id"],))
+                tenants.audit(conn,identity["id"],1,"owner_password_changed","success",entity_id=identity["id"])
+            return self.send_json({"ok":True})
         if path == "/api/platform/companies":
             if method == "GET":
                 with tenants.control(DB_PATH) as conn:
