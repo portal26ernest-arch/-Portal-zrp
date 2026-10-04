@@ -39,15 +39,23 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Require release tag at current reviewed main commit
+      - name: Require signed release tag at current reviewed main commit
         if: startsWith(github.ref, 'refs/tags/portal-desktop-v')
         shell: pwsh
         run: |
+          git config gpg.format ssh
+          git config gpg.ssh.allowedSignersFile ops/release-tag-allowed-signers
           git fetch --no-tags origin main
           if ($LASTEXITCODE -ne 0) { throw "Could not fetch main for release validation" }
-          $tagCommit = (git rev-parse $env:GITHUB_SHA).Trim()
+          $tagRef = "refs/tags/$($env:GITHUB_REF_NAME)"
+          git fetch --no-tags origin "${tagRef}:${tagRef}"
+          if ($LASTEXITCODE -ne 0) { throw "Could not fetch release tag" }
+          git verify-tag $env:GITHUB_REF_NAME
+          if ($LASTEXITCODE -ne 0) { throw "Desktop release tag signature is not trusted" }
+          $tagCommit = (git rev-parse "$env:GITHUB_REF_NAME^{commit}").Trim()
+          $eventCommit = $env:GITHUB_SHA
           $mainCommit = (git rev-parse refs/remotes/origin/main).Trim()
-          if ($tagCommit -ne $mainCommit) { throw "Desktop release tag must target the current main commit" }
+          if ($tagCommit -ne $eventCommit -or $eventCommit -ne $mainCommit) { throw "Desktop release tag must target the current reviewed main commit" }
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "8.0.x"
@@ -108,8 +116,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          git config gpg.format ssh
+          git config gpg.ssh.allowedSignersFile ops/release-tag-allowed-signers
           git fetch --no-tags origin main
           git fetch origin "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
+          git verify-tag "$GITHUB_REF_NAME"
           test "$(git rev-parse "${GITHUB_REF_NAME}^{commit}")" = "$GITHUB_SHA"
           test "$GITHUB_SHA" = "$(git rev-parse refs/remotes/origin/main)"
       - name: Validate release tag version before signing
@@ -134,7 +145,9 @@ jobs:
           key="$RUNNER_TEMP/portal-desktop-update-signing.pem"
           payload="$RUNNER_TEMP/portal-desktop-update.payload"
           signature="$RUNNER_TEMP/portal-desktop-update.signature"
-          trap 'rm -f "$key" "$payload" "$signature"' EXIT
+          derived_public="$RUNNER_TEMP/portal-desktop-update-derived-public.pem"
+          pinned_public="$RUNNER_TEMP/portal-desktop-update-pinned-public.pem"
+          trap 'rm -f "$key" "$payload" "$signature" "$derived_public" "$pinned_public"' EXIT
           printf '%s' "$PORTAL_DESKTOP_UPDATE_SIGNING_PRIVATE_KEY" > "$key"
           chmod 600 "$key"
           package="PORTAL-Desktop-win-x64-${VERSION}.zip"
@@ -145,6 +158,10 @@ jobs:
           download_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/${package}"
           printf 'PORTAL-DESKTOP-UPDATE-V1\n%s\n%s\n%s\n%s\n' "$build" "$VERSION" "$download_url" "$sha256" > "$payload"
           openssl dgst -sha256 -sign "$key" -out "$signature" "$payload"
+          openssl pkey -in "$key" -pubout -out "$derived_public"
+          openssl pkey -pubin -in desktop_windows/desktop-update-signing-public.pem -pubout -out "$pinned_public"
+          cmp "$derived_public" "$pinned_public"
+          openssl dgst -sha256 -verify "$pinned_public" -signature "$signature" "$payload"
           signature_b64=$(base64 -w0 "$signature")
           python - "$build" "$VERSION" "$download_url" "$sha256" "$signature_b64" > release/portal-desktop-update.json <<'PY'
           import json, sys

@@ -50,13 +50,22 @@ must(releaseWorkflow.includes('releases/latest/download/portal-update.json'),
   'Signed release must pin the stable public update manifest URL');
 must(releaseWorkflow.includes('build_update_manifest.py'),
   'Signed release must generate a machine-readable update manifest');
-must(releaseWorkflow.includes('Require release tag at current reviewed main commit') &&
+must(releaseWorkflow.includes('Require signed release tag at current reviewed main commit') &&
+     releaseWorkflow.includes('gpg.ssh.allowedSignersFile=ops/release-tag-allowed-signers') &&
+     releaseWorkflow.includes('verify-tag "$RELEASE_TAG"') &&
      releaseWorkflow.includes('git rev-parse refs/remotes/origin/main') &&
      releaseWorkflow.includes('fetch-depth: 0'),
-  'Android tag releases must be pinned to the current reviewed main commit');
-must(releaseWorkflow.indexOf('Require release tag at current reviewed main commit') <
+  'Android releases must verify a trusted SSH-signed tag at the current reviewed main commit');
+must(releaseWorkflow.includes('release_tag:') && releaseWorkflow.includes('required: true') &&
+     releaseWorkflow.includes('test "$tag_commit" = "$main_commit"') &&
+     releaseWorkflow.includes('test "$tag_commit" = "$GITHUB_SHA"'),
+  'Android manual release must name an existing signed tag at the current main commit');
+must(releaseWorkflow.indexOf('Require signed release tag at current reviewed main commit') <
      releaseWorkflow.indexOf('Validate release inputs'),
   'Android release provenance must be checked before signing secrets are exposed');
+must(releaseWorkflow.indexOf('secrets.PORTAL_PUBLIC_API_URL') >
+     releaseWorkflow.indexOf('Require signed release tag at current reviewed main commit'),
+  'Android API URL secret must not be exposed before signed-tag verification');
 must(releaseWorkflow.includes('gh release create') && releaseWorkflow.includes('portal-update.json'),
   'Signed release must publish APK, checksum and manifest through GitHub Releases');
 must(!stagingWorkflow.includes('trycloudflare.com'),
@@ -68,8 +77,10 @@ must(stagingWorkflow.includes("'https://portal.invalid'"),
 must(gradle.includes("graph.allTasks.any") && gradle.includes("Release requires a stable owned HTTPS PORTAL API URL") &&
      gradle.includes("host.endsWith('.sslip.io')") && gradle.includes("host.endsWith('.trycloudflare.com')"),
   'Release task must reject missing, local, and temporary API endpoints');
-must(desktopReleaseWorkflow.includes('Require release tag at current reviewed main commit') &&
+must(desktopReleaseWorkflow.includes('Require signed release tag at current reviewed main commit') &&
+     desktopReleaseWorkflow.includes('git verify-tag $env:GITHUB_REF_NAME') &&
+     desktopReleaseWorkflow.includes('gpg.ssh.allowedSignersFile ops/release-tag-allowed-signers') &&
      desktopReleaseWorkflow.includes('git rev-parse refs/remotes/origin/main') &&
      desktopReleaseWorkflow.includes('fetch-depth: 0'),
-  'Windows Desktop tag releases must be pinned to the current reviewed main commit');
+  'Windows Desktop releases must verify a trusted SSH-signed tag at the current reviewed main commit');
 console.log('Android build security checks: OK');
