@@ -7,9 +7,6 @@ on:
         description: "Что изменилось в этой версии"
         required: false
         type: string
-  push:
-    tags:
-      - "portal-android-v*"
 
 permissions:
   contents: write
@@ -29,22 +26,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Require release tag at current reviewed main commit
+      - name: Require manual release from current reviewed main
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "$GITHUB_REF" == refs/tags/portal-android-v* ]]; then
-            git fetch --no-tags origin main
-            test "$(git rev-parse "$GITHUB_SHA")" = "$(git rev-parse refs/remotes/origin/main)"
-          else
-            test "$GITHUB_REF" = "refs/heads/main"
-            git fetch --no-tags origin main
-            test "$(git rev-parse "$GITHUB_SHA")" = "$(git rev-parse refs/remotes/origin/main)"
-          fi
-      - name: Restrict manual releases to main
-        if: github.event_name == 'workflow_dispatch'
-        shell: bash
-        run: test "$GITHUB_REF" = "refs/heads/main"
+          test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
+          test "$GITHUB_REF" = "refs/heads/main"
+          git fetch --no-tags origin main
+          test "$GITHUB_SHA" = "$(git rev-parse refs/remotes/origin/main)"
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
@@ -74,9 +63,6 @@ jobs:
           test -n "$PORTAL_ANDROID_CERT_SHA256"
           VERSION=$(sed -n 's/^versionName=//p' android_src/release.properties | tr -d '\r')
           VERSION_CODE=$(sed -n 's/^versionCode=//p' android_src/release.properties | tr -d '\r')
-          if [[ "$GITHUB_REF" == refs/tags/portal-android-v* ]]; then
-            test "$GITHUB_REF_NAME" = "portal-android-v$VERSION"
-          fi
           CHANNEL=$(sed -n 's/^channel=//p' android_src/release.properties | tr -d '\r')
           UPDATE_MANIFEST_URL=$(sed -n 's/^updateManifestUrl=//p' android_src/release.properties | tr -d '\r')
           [[ "$VERSION" != *-dev* ]]
@@ -162,12 +148,17 @@ jobs:
           TAG="${{ steps.artifact.outputs.tag }}"
           VERSION=$(sed -n 's/^versionName=//p' android_src/release.properties | tr -d '\r')
           NOTES="${PORTAL_RELEASE_NOTES:-Обновление PORTAL.}"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$NAME.apk" "$NAME.apk.sha256" portal-update.json --clobber
-            gh release edit "$TAG" --title "PORTAL Android $VERSION" --notes "$NOTES" --latest
-          else
-            gh release create "$TAG" "$NAME.apk" "$NAME.apk.sha256" portal-update.json               --target "$GITHUB_SHA"               --title "PORTAL Android $VERSION"               --notes "$NOTES"               --latest
+          git fetch --no-tags origin main
+          test "$GITHUB_SHA" = "$(git rev-parse refs/remotes/origin/main)"
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "Release tag already exists: $TAG"
+            exit 1
           fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release already exists: $TAG"
+            exit 1
+          fi
+          gh release create "$TAG" "$NAME.apk" "$NAME.apk.sha256" portal-update.json             --target "$GITHUB_SHA"             --title "PORTAL Android $VERSION"             --notes "$NOTES"             --latest
 
       - name: Remove signing material from runner
         if: always()

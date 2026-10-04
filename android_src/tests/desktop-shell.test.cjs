@@ -78,18 +78,17 @@ assert.match(cache,/long\.TryParse\(companyId/);
 assert.match(code,/\['Работа',[\s\S]+\['Управление',[\s\S]+\['Учёт и финансы',[\s\S]+\['Аналитика',[\s\S]+\['Система'/);
 assert.match(code,/UpdateDesktopShortcuts\(executable, target, version\)/);
 assert.match(code,/Process\.Start\(new ProcessStartInfo\(executable\)/);
-assert.match(windowsWorkflow,/Require release tag at current reviewed main commit[\s\S]+git fetch --no-tags origin main[\s\S]+tagCommit -ne \$mainCommit/);
-assert.ok(windowsWorkflow.indexOf('Require release tag at current reviewed main commit') <
+assert.match(windowsWorkflow,/Require manual release from current reviewed main[\s\S]+GITHUB_REF -ne "refs\/heads\/main"[\s\S]+GITHUB_SHA -ne \$mainCommit/);
+assert.ok(windowsWorkflow.indexOf('Require manual release from current reviewed main') <
   windowsWorkflow.indexOf('Publish self-contained Windows client'),
-  'Desktop release provenance must be checked before building a tag-triggered artifact');
+  'Desktop release provenance must be checked before a manually dispatched release build');
 assert.ok(windowsWorkflow.indexOf('Create signed Desktop update manifest') <
   windowsWorkflow.indexOf('gh release create'),
   'Desktop release must sign update metadata before publishing it');
-assert.match(windowsWorkflow,/Recheck release tag before signing and publishing[\s\S]+refs\/tags\/\$\{GITHUB_REF_NAME\}:refs\/tags\/\$\{GITHUB_REF_NAME\}[\s\S]+GITHUB_SHA/);
-assert.ok(windowsWorkflow.indexOf('Recheck release tag before signing and publishing') <
+assert.match(windowsWorkflow,/Recheck reviewed main before signing and publishing[\s\S]+GITHUB_EVENT_NAME[\s\S]+refs\/heads\/main[\s\S]+GITHUB_SHA/);
+assert.ok(windowsWorkflow.indexOf('Recheck reviewed main before signing and publishing') <
   windowsWorkflow.indexOf('Create signed Desktop update manifest'),
-  'Desktop release must revalidate tag provenance before the private key is exposed');
-assert.ok(windowsWorkflow.indexOf('Validate release tag version before signing') <
-  windowsWorkflow.indexOf('Create signed Desktop update manifest'),
-  'Desktop release must validate the tag version before exposing the private key');
+  'Desktop release must revalidate main provenance before the private key is exposed');
+assert.match(windowsWorkflow,/Publish immutable Desktop release[\s\S]+Release tag already exists: \$TAG[\s\S]+gh release create/);
+assert.doesNotMatch(windowsWorkflow,/tags: \["portal-desktop-v\*"\]/);
 console.log('Desktop shell navigation, branding and self-update checks: OK');

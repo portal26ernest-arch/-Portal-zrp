@@ -32,6 +32,7 @@
 22. Production runtime не обязан автоматически следовать за каждым commit `main`: сохранность исходников и активация runtime разделены. Runtime меняется только после зелёного CI/release gate и разворачивается целиком из одного SHA.
 23. Перед переключением ветки, агента или рабочей сессии dirty worktree обязан быть либо committed+pushed, либо сохранён отдельной safety branch/stash с понятным именем. Потеря или молчаливое перетирание dirty изменений недопустимы.
 24. Официальный адрес PORTAL публикуется через `portal-server.json` в GitHub `main`. Это control-plane конфигурация, а не runtime-файл VPS: изменение адреса допускается только через обычный branch/test/CI/merge процесс с обязательным увеличением `revision`. Клиенты могут переключиться на новый адрес только после валидации документа и успешного unauthenticated smoke нового endpoint; локальные pending outbox записи не должны теряться при смене origin.
+25. Release-теги Android/Desktop являются результатом release workflow, а не входом для запуска публикации. Публикация разрешена только через ручной `workflow_dispatch` из точного текущего `main`; перед доступом к signing secrets и повторно перед публикацией SHA обязан совпадать с `origin/main`. Уже существующий release tag или GitHub Release = fail-closed STOP; замена опубликованных assets через `--clobber` запрещена.
 
 ## Release completeness contract
 

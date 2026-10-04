@@ -59,17 +59,25 @@ must(discovery.schemaVersion === 1 && Number.isInteger(discovery.revision) && di
   'Server-discovery document must have a versioned HTTPS endpoint');
 must(releaseWorkflow.includes('build_update_manifest.py'),
   'Signed release must generate a machine-readable update manifest');
-must(releaseWorkflow.includes('Require release tag at current reviewed main commit') &&
+must(releaseWorkflow.includes('Require manual release from current reviewed main') &&
+     releaseWorkflow.includes('test "$GITHUB_EVENT_NAME" = "workflow_dispatch"') &&
      releaseWorkflow.includes('git rev-parse refs/remotes/origin/main') &&
-     releaseWorkflow.includes('fetch-depth: 0'),
-  'Android releases must be pinned to the current reviewed main commit before signing');
-must(releaseWorkflow.indexOf('Require release tag at current reviewed main commit') <
+     releaseWorkflow.includes('fetch-depth: 0') &&
+     !releaseWorkflow.includes('portal-android-v*"'),
+  'Android release publishing must be manual-only from the current reviewed main commit');
+must(releaseWorkflow.indexOf('Require manual release from current reviewed main') <
      releaseWorkflow.indexOf('Validate release inputs'),
   'Android release provenance must be checked before signing secrets are exposed');
-must(desktopReleaseWorkflow.includes('Require release tag at current reviewed main commit') &&
+must(desktopReleaseWorkflow.includes('Require manual release from current reviewed main') &&
+     desktopReleaseWorkflow.includes("if: github.event_name == 'workflow_dispatch'") &&
      desktopReleaseWorkflow.includes('git rev-parse refs/remotes/origin/main') &&
-     desktopReleaseWorkflow.includes('fetch-depth: 0'),
-  'Desktop tag releases must be pinned to the current reviewed main commit');
+     desktopReleaseWorkflow.includes('fetch-depth: 0') &&
+     !desktopReleaseWorkflow.includes('tags: ["portal-desktop-v*"]'),
+  'Desktop release publishing must be manual-only from the current reviewed main commit');
+must(releaseWorkflow.includes('Release tag already exists: $TAG') &&
+     desktopReleaseWorkflow.includes('Release tag already exists: $TAG') &&
+     !releaseWorkflow.includes('--clobber'),
+  'Release workflows must fail closed instead of replacing existing release tags or assets');
 must(desktopReleaseWorkflow.includes('PORTAL_DESKTOP_UPDATE_SIGNING_PRIVATE_KEY') &&
      desktopReleaseWorkflow.includes('portal-desktop-update.json'),
   'Desktop release must create and publish a signed update manifest');

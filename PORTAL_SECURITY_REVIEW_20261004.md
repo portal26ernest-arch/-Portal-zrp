@@ -32,6 +32,15 @@ No production service, VPS mirror, database, secrets, or release settings were c
 
 **Risk:** a principal able to create/move a matching tag may feed unreviewed code into release publishing if external GitHub controls do not prevent it. GitHub rulesets, repository write access and environment approvals were not inspected. Verify signed annotated tags against a pinned key, restrict tag changes, bind builds to reviewed SHAs, and protect signing/publishing secrets behind required environments.
 
+## Remediation status — 2026-10-04
+
+- Tenant login: закрыт application-level `LoginLimiter` с отдельными budget по source IP и account/principal; forwarded identity принимается только от явно доверенных proxy.
+- Desktop updater: manifest подписывается RSA-3072 release key, public key закреплён в Desktop-клиенте; ZIP принимается только после проверки подписи manifest + SHA-256 + ограничений origin/redirect.
+- Bootstrap: публичный Nginx блокирует `/api/setup`, backend дополнительно требует фактическую loopback identity и отклоняет удалённый `X-Real-IP` через локальный reverse proxy.
+- Release tag injection: вместо доверия к подписи входящего тега release workflows переводятся на более узкую модель — release нельзя запустить push-тегом вообще. Android/Desktop публикация запускается только вручную из текущего `main`, SHA перепроверяется перед signing/publish, а существующий tag/release приводит к fail-closed отказу без замены assets. Поэтому создание/перемещение matching tag больше не является входом в release pipeline. GitHub repository rulesets/environment approvals остаются полезной внешней defense-in-depth настройкой и отдельно не подтверждены доступными инструментами.
+
+Кандидат hardening: `assistant/release-control-hardening-20261004`. До статуса «интегрировано» обязательны push, полный GitHub CI и fast-forward/merge в `main`.
+
 ## Reviewed areas without confirmed findings
 
 - Selected tenant routing, company authorization, PostgreSQL RLS context and session lifecycle.
