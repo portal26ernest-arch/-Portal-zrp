@@ -93,7 +93,9 @@ must(gradle.includes("graph.allTasks.any") && gradle.includes("releaseTemporaryS
      gradle.includes("temporarySslipAllowed") && gradle.includes("(host.endsWith('.sslip.io') && !temporarySslipAllowed)") &&
      gradle.includes("host.endsWith('.trycloudflare.com')"),
   'Release task must reject missing/local/temporary endpoints unless the exact temporary sslip host is explicitly pinned');
-must(releaseWorkflow.includes('PORTAL_RELEASE_TEMPORARY_SSLIP_HOST: 2a03-6f00-a--1-f426.sslip.io') &&
-     releaseWorkflow.includes('test "$API_HOST" = "$PORTAL_RELEASE_TEMPORARY_SSLIP_HOST"'),
-  'Temporary production sslip exception must be pinned to the exact current PORTAL hostname');
+must(releaseWorkflow.includes('PORTAL_PUBLIC_API_URL: https://api.vart-portal.ru') &&
+     !releaseWorkflow.includes('secrets.PORTAL_PUBLIC_API_URL') &&
+     !releaseWorkflow.includes('PORTAL_RELEASE_TEMPORARY_SSLIP_HOST') &&
+     releaseWorkflow.includes('test "$PORTAL_PUBLIC_API_URL" = "https://api.vart-portal.ru"'),
+  'Official Android release must be pinned to the stable vart-portal production API endpoint');
 console.log('Android build security checks: OK');

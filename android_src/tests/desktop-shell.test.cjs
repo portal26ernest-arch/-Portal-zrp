@@ -31,6 +31,7 @@ assert.match(code,/PORTAL-Desktop\/5\.6\.0/);
 assert.match(code,/DownloadAndInstallUpdate\(manifest, downloadUri\)/);
 assert.match(code,/ServerDiscoveryUrl = "https:\/\/raw\.githubusercontent\.com\/portal26ernest-arch\/-Portal-zrp\/main\/portal-server\.json"/);
 assert.match(code,/RefreshOfficialServerAsync\(\)/);
+assert.match(code,/MainWindow_Loaded[\s\S]+ConnectAsync\(origin, persist: false\)[\s\S]+RefreshOfficialServerAsync\(\)[\s\S]+candidate is null[\s\S]+RefreshOfficialServerAsync\(\)/);
 assert.match(code,/ProbeOfficialServerAsync\(next\)/);
 assert.match(code,/server-discovery-revision\.txt/);
 assert.match(cache,/MigrateOutboxOrigin\(string settingsDir, string oldOrigin, string newOrigin\)/);

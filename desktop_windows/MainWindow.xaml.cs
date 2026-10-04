@@ -45,7 +45,14 @@ public partial class MainWindow : Window
         {
             ServerUrlBox.Text = origin;
             await ConnectAsync(origin, persist: false);
+            if (string.IsNullOrWhiteSpace(configured)) _ = RefreshOfficialServerAsync();
             return;
+        }
+
+        if (candidate is null && string.IsNullOrWhiteSpace(configured))
+        {
+            var discovered = await RefreshOfficialServerAsync();
+            if (discovered.Checked && !string.IsNullOrWhiteSpace(discovered.ServerUrl)) return;
         }
 
         ShowSetup(candidate is null ? null : error);

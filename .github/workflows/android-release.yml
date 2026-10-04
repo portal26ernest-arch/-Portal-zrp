@@ -18,8 +18,7 @@ jobs:
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-      PORTAL_PUBLIC_API_URL: ${{ secrets.PORTAL_PUBLIC_API_URL || 'https://2a03-6f00-a--1-f426.sslip.io' }}
-      PORTAL_RELEASE_TEMPORARY_SSLIP_HOST: 2a03-6f00-a--1-f426.sslip.io
+      PORTAL_PUBLIC_API_URL: https://api.vart-portal.ru
       PORTAL_ANDROID_KEYSTORE_TYPE: PKCS12
       PORTAL_RELEASE_NOTES: ${{ inputs.release_notes }}
     steps:
@@ -49,13 +48,7 @@ jobs:
           PORTAL_ANDROID_CERT_SHA256: ${{ secrets.PORTAL_ANDROID_CERT_SHA256 }}
         run: |
           set -euo pipefail
-          [[ "$PORTAL_PUBLIC_API_URL" == https://* ]]
-          API_HOST="${PORTAL_PUBLIC_API_URL#https://}"
-          API_HOST="${API_HOST%%/*}"
-          API_HOST="${API_HOST%%:*}"
-          if [[ "$API_HOST" == *.sslip.io ]]; then
-            test "$API_HOST" = "$PORTAL_RELEASE_TEMPORARY_SSLIP_HOST"
-          fi
+          test "$PORTAL_PUBLIC_API_URL" = "https://api.vart-portal.ru"
           test -n "$KEYSTORE_B64"
           test -n "$PORTAL_ANDROID_STORE_PASSWORD"
           test -n "$PORTAL_ANDROID_KEY_ALIAS"
