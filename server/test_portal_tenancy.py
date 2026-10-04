@@ -179,6 +179,18 @@ class CompanyIsolationTest(unittest.TestCase):
     def test_owner_pin_change_validates_length(self):
         self.request("/api/platform/me/pin", self.owner, {"new_pin":"short"}, status=400)
 
+    def test_owner_login_survives_same_username_tenant_collision(self):
+        portal.create_platform_owner("collision-owner", "owner-pin-8642")
+        with tenants.company_scope(1):
+            portal.save_user({"username":"collision-owner","pin":"1357","role":"packer","telegram_id":101})
+        tenant=self.request("/api/login",body={"username":"collision-owner","pin":"1357","company_id":1})
+        self.assertFalse(tenant['token'].startswith('p.'))
+        self.assertEqual(tenant['user']['role'],'packer')
+        owner=self.request("/api/login",body={"username":"collision-owner","pin":"owner-pin-8642","company_id":1})
+        self.assertTrue(owner['token'].startswith('p.'))
+        self.assertEqual(owner['user']['role'],'platform_owner')
+        self.request("/api/login",body={"username":"collision-owner","pin":"0000","company_id":1},status=401)
+
     def test_god_uses_normal_login_and_never_appears_in_company_users(self):
         result=self.request("/api/login",body={"username":"owner","pin":"Owner-secret-canary-123","company_id":1})
         self.assertTrue(result['token'].startswith('p.'))

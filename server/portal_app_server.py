@@ -928,15 +928,16 @@ class Handler(BaseHTTPRequestHandler):
                 u = conn.execute("SELECT * FROM app_users WHERE lower(username)=lower(?) AND active=1", (username,)).fetchone()
                 if u:
                     if not self.login_budget(('tenant',company_id,u['id'])):return
-                    if not verify_pin(pin, u["pin_salt"], u["pin_hash"]):
+                    if verify_pin(pin, u["pin_salt"], u["pin_hash"]):
+                        token = create_session(conn, u["id"])
                         repo=Repository(conn,company_id)
-                        if repo.ready():activity.login(repo,u['username'],u['id'],False,activity.client_type(self.headers))
-                        return self.error_json("Неверный логин, PIN или компания", 401)
-                    token = create_session(conn, u["id"])
+                        if repo.ready():activity.login(repo,u['username'],u['id'],True,activity.client_type(self.headers),token)
+                        data = public_user_record({k:v for k,v in with_employee_id(u,conn,company_id).items() if k not in {"pin_hash","pin_salt"}})
+                        return self.send_json({"ok":True,"token":token,"user":data})
                     repo=Repository(conn,company_id)
-                    if repo.ready():activity.login(repo,u['username'],u['id'],True,activity.client_type(self.headers),token)
-                    data = public_user_record({k:v for k,v in with_employee_id(u,conn,company_id).items() if k not in {"pin_hash","pin_salt"}})
-                    return self.send_json({"ok":True,"token":token,"user":data})
+                    if repo.ready():activity.login(repo,u['username'],u['id'],False,activity.client_type(self.headers))
+                    # A tenant account may legitimately share a username with the
+                    # platform owner. A tenant PIN mismatch must not shadow owner login.
             with tenants.control(DB_PATH) as control:
                 god = control.execute("SELECT * FROM platform_owners WHERE lower(username)=lower(?) AND active=1", (username,)).fetchone()
                 if god:
@@ -949,8 +950,9 @@ class Handler(BaseHTTPRequestHandler):
                     control.execute("INSERT INTO platform_sessions(token_hash,user_id,expires_at) VALUES(?,?,?)",
                                     (hashlib.sha256(token.encode()).hexdigest(),god["id"],(datetime.now()+timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S")))
                     return self.send_json({"ok":True,"token":token,"user":{"id":god["id"],"username":god["username"],"role":GLOBAL_ROLE,"company_id":1}})
-            principal=('tenant_unknown',company_id,hashlib.sha256(username.lower().encode()).hexdigest())
-            if not self.login_budget(principal):return
+            if not u:
+                principal=('tenant_unknown',company_id,hashlib.sha256(username.lower().encode()).hexdigest())
+                if not self.login_budget(principal):return
             return self.error_json("Неверный логин, PIN или компания",401)
         if path == '/api/ready':
             if method != 'GET':
