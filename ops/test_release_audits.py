@@ -24,6 +24,18 @@ class ReleaseAuditToolsTest(unittest.TestCase):
             "runtime_bridge",
         )
         self.assertEqual(
+            legacy.classify("server/employee_identity.py","SELECT * FROM work_log WHERE telegram_id=?"),
+            "runtime_bridge",
+        )
+        self.assertEqual(
+            legacy.classify("server/migration_import.py","SELECT telegram_id FROM employees"),
+            "runtime_bridge",
+        )
+        self.assertEqual(
+            legacy.classify("server/portal_app_server.py","if 'telegram_id' in body:"),
+            "runtime_bridge",
+        )
+        self.assertEqual(
             legacy.classify("android_src/tests/legacy-boundary.test.cjs","const x='BOT_TOKEN';"),
             "schema_test_or_legacy",
         )
@@ -35,7 +47,8 @@ class ReleaseAuditToolsTest(unittest.TestCase):
     def test_runtime_scan_has_no_external_telegram_termux(self):
         data=legacy.scan(ROOT)
         self.assertEqual(data["counts"].get("forbidden_external_runtime",0),0)
-        self.assertGreater(data["counts"].get("runtime_direct_telegram_id",0),0)
+        self.assertEqual(data["counts"].get("runtime_direct_telegram_id",0),0)
+        self.assertGreater(data["counts"].get("runtime_bridge",0),0)
 
     def test_money_inventory_finds_legacy_and_minor_units(self):
         data=money.scan(ROOT)

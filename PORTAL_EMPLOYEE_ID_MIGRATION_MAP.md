@@ -7,7 +7,7 @@ Read-only evidence. Canonical runtime identity target: employee_id.
 - P0 forbidden external runtime: 0
 - P0 active runtime identity dependencies: 0
 - P1 compatibility/import/schema boundaries: 50
-- P2 history/test/fixture references: 140
+- P2 history/test/fixture references: 161
 
 P0 runtime identity dependencies are the actionable blockers for roadmap item 102. P1 bridges may remain temporarily when explicit, tested and isolated.
 
@@ -16,9 +16,9 @@ P0 runtime identity dependencies are the actionable blockers for roadmap item 10
 | File | P0 | P1 | P2 | Recommended action |
 |---|---:|---:|---:|---|
 | server/employee_identity.py | 0 | 40 | 0 | Allowed temporarily: bridge is explicit and must remain covered by compatibility tests. |
-| server/migration_import.py | 0 | 5 | 0 | Keep as temporary migration bridge; exported/API identity should be employee_id and legacy mapping must be explicit. |
-| server/portal_app_server.py | 0 | 3 | 0 | Only the retained legacy column declaration and canonical API-boundary note; request/response identity uses employee_id. |
-| server/production_migrations.py | 0 | 2 | 0 | Retain historical schema/FK until additive migration and rollback rehearsal prove removal safe. |
+| server/migration_import.py | 0 | 5 | 0 | Allowed temporarily: bridge is explicit and must remain covered by compatibility tests. |
+| server/portal_app_server.py | 0 | 3 | 0 | Allowed temporarily: bridge is explicit and must remain covered by compatibility tests. |
+| server/production_migrations.py | 0 | 2 | 0 | Allowed temporarily: bridge is explicit and must remain covered by compatibility tests. |
 
 ## P0 line evidence
 
@@ -32,55 +32,55 @@ P1 is limited to the single `server/employee_identity.py` compatibility adapter,
 | File | Line | Explicit bridge evidence |
 |---|---:|---|
 | server/employee_identity.py | 4 | telegram_id, so the only code allowed to read/translate those values lives here. |
-| server/employee_identity.py | 38 | AND e.telegram_id=i.legacy_employee_id |
-| server/employee_identity.py | 58 | AND e.telegram_id=i.legacy_employee_id |
-| server/employee_identity.py | 75 | linked=value('telegram_id') |
-| server/employee_identity.py | 79 | # telegram_id access is intentionally confined to this compatibility adapter. |
-| server/employee_identity.py | 80 | return canonical_employee_id(connection, company_id, value('telegram_id')) # employee_id compatibility boundary |
-| server/employee_identity.py | 86 | if 'telegram_id' in result: # employee_id compatibility boundary |
-| server/employee_identity.py | 88 | legacy=result.pop('telegram_id');mapped=canonical_employee_id(connection,company_id,legacy) |
-| server/employee_identity.py | 96 | result=dict(user);result.pop('telegram_id',None);return result |
-| server/employee_identity.py | 116 | # The legacy telegram_id column is kept here as an explicit employee_id migration bridge. |
-| server/employee_identity.py | 118 | SELECT e.company_id,e.telegram_id FROM employees e WHERE e.company_id=? AND NOT EXISTS |
-| server/employee_identity.py | 119 | (SELECT 1 FROM payroll_employee_identities i WHERE i.company_id=e.company_id AND i.legacy_employee_id=e.telegram_id) -- employee_id adapter |
-| server/employee_identity.py | 120 | ORDER BY e.telegram_id''',(company_id,)) |
-| server/employee_identity.py | 127 | # P1 schema bridge: only this mapper projects a retained telegram_id column to employee_id. |
-| server/employee_identity.py | 129 | JOIN employees e ON e.company_id=i.company_id AND e.telegram_id=i.legacy_employee_id -- employee_id adapter |
-| server/employee_identity.py | 140 | ON i.company_id=u.company_id AND i.legacy_employee_id=u.telegram_id -- employee_id adapter |
-| server/employee_identity.py | 141 | LEFT JOIN employees e ON e.company_id=i.company_id AND e.telegram_id=i.legacy_employee_id |
-| server/employee_identity.py | 142 | WHERE u.company_id=? AND (i.employee_id IS NULL OR e.telegram_id IS NOT NULL)''',(company_id,)).fetchall() |
-| server/employee_identity.py | 153 | item=dict(zip(names,row));legacy=item.pop('telegram_id',None) |
-| server/employee_identity.py | 164 | rows=connection.execute('SELECT client_id FROM manager_client_assignments WHERE '+scope+'telegram_id=? AND active=1',params).fetchall() # employee_id adapter |
-| server/employee_identity.py | 173 | return bool(connection.execute('SELECT 1 FROM employees WHERE '+scope+'telegram_id=?',params).fetchone()) # employee_id adapter |
-| server/employee_identity.py | 178 | row=connection.execute('SELECT MIN(telegram_id) FROM employees'+scope+(' AND' if scope else ' WHERE')+' telegram_id<0',params).fetchone() # employee_id adapter |
-| server/employee_identity.py | 179 | legacy=min((row[0] or 0)-1,-1);values={'telegram_id':legacy,'full_name':display_name,'username':username,'company_id':company_id} |
-| server/employee_identity.py | 192 | cursor=connection.execute('UPDATE employees SET full_name=?,username=? WHERE telegram_id=?'+scope,params) |
-| server/employee_identity.py | 202 | connection.execute('UPDATE app_users SET username=?,display_name=?,role=?,telegram_id=?,active=?,pin_salt=?,pin_hash=?,updated_at=? WHERE id=?', # employee_id adapter |
-| server/employee_identity.py | 206 | user_id=connection.execute('INSERT INTO app_users(username,display_name,role,telegram_id,active,pin_salt,pin_hash,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)', # employee_id adapter |
-| server/employee_identity.py | 212 | cursor=connection.execute('INSERT INTO app_users(username,display_name,pin_salt,pin_hash,role,telegram_id,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)', # employee_id adapter |
-| server/employee_identity.py | 220 | return bool(connection.execute('SELECT 1 FROM payroll_payments WHERE telegram_id=? AND period_start=? AND period_end=? AND status=\'paid\'', # employee_id adapter |
-| server/employee_identity.py | 233 | sql='INSERT INTO production_job_progress(job_id,work_id,telegram_id,quantity,created_at) VALUES(?,?,?,?,?)' # employee_id adapter |
-| server/employee_identity.py | 235 | else:sql='INSERT OR IGNORE INTO production_job_progress(job_id,work_id,telegram_id,quantity,created_at) VALUES(?,?,?,?,?)' # employee_id adapter |
-| server/employee_identity.py | 245 | rows=connection.execute('SELECT id,client,operation,quantity,rate,salary,created_at FROM work_log WHERE telegram_id=? ORDER BY id DESC LIMIT ?',(legacy,limit)).fetchall() # employee_id-scoped legacy ledger read |
-| server/employee_identity.py | 253 | work=connection.execute('SELECT COALESCE(SUM(quantity),0),COALESCE(SUM(salary),0) FROM work_log WHERE telegram_id=? AND created_at BETWEEN ? AND ?',(legacy,start,end)).fetchone() # employee_id-scoped legacy ledger read |
-| server/employee_identity.py | 254 | paid=connection.execute('SELECT COALESCE(SUM(amount),0) FROM payroll_transactions WHERE telegram_id=? AND period_start=? AND period_end=?',(legacy,start,end)).fetchone()[0] if _has_table(connection,'payroll_transactions') else 0 # employee_id-scoped legacy led |
-| server/employee_identity.py | 261 | row=connection.execute('SELECT COALESCE(SUM(quantity),0),COALESCE(SUM(salary),0),COALESCE(SUM(revenue),0),COALESCE(SUM(direct_cost),0) FROM work_log WHERE telegram_id=? AND created_at BETWEEN ? AND ?',(legacy,start,end)).fetchone() # employee_id-scoped legacy  |
-| server/employee_identity.py | 269 | rows=connection.execute('SELECT id,username,display_name,role,telegram_id AS employee_id,active,created_at FROM app_users WHERE company_id=? ORDER BY display_name',(company_id,)).fetchall() |
-| server/employee_identity.py | 277 | if _has_table(connection,table) and connection.execute('SELECT 1 FROM '+table+' WHERE company_id=? AND telegram_id=? AND substr(period_start,1,10)<=? AND substr(period_end,1,10)>=? LIMIT 1',(company_id,legacy,period['period_end'],period['period_start'])).fetch |
-| server/employee_identity.py | 284 | values=dict(company_id=company_id,telegram_id=legacy,username=user.get('username',''),first_name=user.get('display_name',''),client=client['name'],operation=operation['name'],quantity=quantity,rate=legacy_major_currency(employee_rate,dialect),salary=legacy_maj |
-| server/employee_identity.py | 296 | cursor=connection.execute('SELECT i.employee_id,i.legacy_employee_id FROM payroll_employee_identities i JOIN employees e ON e.company_id=i.company_id AND e.telegram_id=i.legacy_employee_id WHERE i.company_id=? AND i.'+column+'=?',(company_id,identity)) |
-| server/employee_identity.py | 306 | sql='INSERT INTO app_users(username,display_name,role,telegram_id,active,pin_salt,pin_hash,created_at,updated_at) VALUES(?,?,?,?,0,?,?,?,?)' # employee_id adapter |
-| server/employee_identity.py | 315 | stored=dict(values);stored.pop('employee_id',None);stored['telegram_id']=legacy # employee_id retained-ledger projection |
+| server/employee_identity.py | 42 | AND e.telegram_id=i.legacy_employee_id |
+| server/employee_identity.py | 62 | AND e.telegram_id=i.legacy_employee_id |
+| server/employee_identity.py | 79 | linked=value('telegram_id') |
+| server/employee_identity.py | 83 | # telegram_id access is intentionally confined to this compatibility adapter. |
+| server/employee_identity.py | 84 | return canonical_employee_id(connection, company_id, value('telegram_id')) # employee_id compatibility boundary |
+| server/employee_identity.py | 90 | if 'telegram_id' in result: # employee_id compatibility boundary |
+| server/employee_identity.py | 92 | legacy=result.pop('telegram_id');mapped=canonical_employee_id(connection,company_id,legacy) |
+| server/employee_identity.py | 100 | result=dict(user);result.pop('telegram_id',None);return result |
+| server/employee_identity.py | 120 | # The legacy telegram_id column is kept here as an explicit employee_id migration bridge. |
+| server/employee_identity.py | 122 | SELECT e.company_id,e.telegram_id FROM employees e WHERE e.company_id=? AND NOT EXISTS |
+| server/employee_identity.py | 123 | (SELECT 1 FROM payroll_employee_identities i WHERE i.company_id=e.company_id AND i.legacy_employee_id=e.telegram_id) -- employee_id adapter |
+| server/employee_identity.py | 124 | ORDER BY e.telegram_id''',(company_id,)) |
+| server/employee_identity.py | 131 | # P1 schema bridge: only this mapper projects a retained telegram_id column to employee_id. |
+| server/employee_identity.py | 133 | JOIN employees e ON e.company_id=i.company_id AND e.telegram_id=i.legacy_employee_id -- employee_id adapter |
+| server/employee_identity.py | 144 | ON i.company_id=u.company_id AND i.legacy_employee_id=u.telegram_id -- employee_id adapter |
+| server/employee_identity.py | 145 | LEFT JOIN employees e ON e.company_id=i.company_id AND e.telegram_id=i.legacy_employee_id |
+| server/employee_identity.py | 146 | WHERE u.company_id=? AND (i.employee_id IS NULL OR e.telegram_id IS NOT NULL)''',(company_id,)).fetchall() |
+| server/employee_identity.py | 157 | item=dict(zip(names,row));legacy=item.pop('telegram_id',None) |
+| server/employee_identity.py | 168 | rows=connection.execute('SELECT client_id FROM manager_client_assignments WHERE '+scope+'telegram_id=? AND active=1',params).fetchall() # employee_id adapter |
+| server/employee_identity.py | 177 | return bool(connection.execute('SELECT 1 FROM employees WHERE '+scope+'telegram_id=?',params).fetchone()) # employee_id adapter |
+| server/employee_identity.py | 182 | row=connection.execute('SELECT MIN(telegram_id) FROM employees'+scope+(' AND' if scope else ' WHERE')+' telegram_id<0',params).fetchone() # employee_id adapter |
+| server/employee_identity.py | 183 | legacy=min((row[0] or 0)-1,-1);values={'telegram_id':legacy,'full_name':display_name,'username':username,'company_id':company_id} |
+| server/employee_identity.py | 196 | cursor=connection.execute('UPDATE employees SET full_name=?,username=? WHERE telegram_id=?'+scope,params) |
+| server/employee_identity.py | 215 | sql='UPDATE app_users SET username=?,display_name=?,role=?,telegram_id=?,active=?,pin_salt=?,pin_hash=?,updated_at=? WHERE id=?' |
+| server/employee_identity.py | 223 | record=dict(username=values['username'],display_name=values['display_name'],role=values['role'],telegram_id=legacy, |
+| server/employee_identity.py | 235 | cursor=connection.execute('INSERT INTO app_users(username,display_name,pin_salt,pin_hash,role,telegram_id,active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)', # employee_id adapter |
+| server/employee_identity.py | 243 | return bool(connection.execute('SELECT 1 FROM payroll_payments WHERE telegram_id=? AND period_start=? AND period_end=? AND status=\'paid\'', # employee_id adapter |
+| server/employee_identity.py | 256 | sql='INSERT INTO production_job_progress(job_id,work_id,telegram_id,quantity,created_at) VALUES(?,?,?,?,?)' # employee_id adapter |
+| server/employee_identity.py | 258 | else:sql='INSERT OR IGNORE INTO production_job_progress(job_id,work_id,telegram_id,quantity,created_at) VALUES(?,?,?,?,?)' # employee_id adapter |
+| server/employee_identity.py | 268 | rows=connection.execute('SELECT id,client,operation,quantity,rate,salary,created_at FROM work_log WHERE telegram_id=? ORDER BY id DESC LIMIT ?',(legacy,limit)).fetchall() # employee_id-scoped legacy ledger read |
+| server/employee_identity.py | 276 | work=connection.execute('SELECT COALESCE(SUM(quantity),0),COALESCE(SUM(salary),0) FROM work_log WHERE telegram_id=? AND created_at BETWEEN ? AND ?',(legacy,start,end)).fetchone() # employee_id-scoped legacy ledger read |
+| server/employee_identity.py | 277 | paid=connection.execute('SELECT COALESCE(SUM(amount),0) FROM payroll_transactions WHERE telegram_id=? AND period_start=? AND period_end=?',(legacy,start,end)).fetchone()[0] if _has_table(connection,'payroll_transactions') else 0 # employee_id-scoped legacy led |
+| server/employee_identity.py | 284 | row=connection.execute('SELECT COALESCE(SUM(quantity),0),COALESCE(SUM(salary),0),COALESCE(SUM(revenue),0),COALESCE(SUM(direct_cost),0) FROM work_log WHERE telegram_id=? AND created_at BETWEEN ? AND ?',(legacy,start,end)).fetchone() # employee_id-scoped legacy  |
+| server/employee_identity.py | 292 | rows=connection.execute('SELECT id,username,display_name,role,telegram_id AS employee_id,active,created_at FROM app_users WHERE company_id=? ORDER BY display_name',(company_id,)).fetchall() |
+| server/employee_identity.py | 300 | if _has_table(connection,table) and connection.execute('SELECT 1 FROM '+table+' WHERE company_id=? AND telegram_id=? AND substr(period_start,1,10)<=? AND substr(period_end,1,10)>=? LIMIT 1',(company_id,legacy,period['period_end'],period['period_start'])).fetch |
+| server/employee_identity.py | 307 | values=dict(company_id=company_id,telegram_id=legacy,username=user.get('username',''),first_name=user.get('display_name',''),client=client['name'],operation=operation['name'],quantity=quantity,rate=legacy_major_currency(employee_rate,dialect),salary=legacy_maj |
+| server/employee_identity.py | 319 | cursor=connection.execute('SELECT i.employee_id,i.legacy_employee_id FROM payroll_employee_identities i JOIN employees e ON e.company_id=i.company_id AND e.telegram_id=i.legacy_employee_id WHERE i.company_id=? AND i.'+column+'=?',(company_id,identity)) |
+| server/employee_identity.py | 329 | sql='INSERT INTO app_users(username,display_name,role,telegram_id,active,pin_salt,pin_hash,created_at,updated_at) VALUES(?,?,?,?,0,?,?,?,?)' # employee_id adapter |
+| server/employee_identity.py | 338 | stored=dict(values);stored.pop('employee_id',None);stored['telegram_id']=legacy # employee_id retained-ledger projection |
 | server/migration_import.py | 21 | 'employees': {'telegram_id'}, |
 | server/migration_import.py | 148 | employee_rows=[row[0] for row in conn.execute('SELECT telegram_id FROM employees')] |
 | server/migration_import.py | 156 | if table not in columns or 'telegram_id' not in columns[table]:continue |
 | server/migration_import.py | 157 | values=[row[0] for row in conn.execute('SELECT telegram_id FROM '+ident(table))] |
 | server/migration_import.py | 171 | ON i.company_id=e.company_id AND i.legacy_employee_id=e.telegram_id |
-| server/portal_app_server.py | 137 | telegram_id INTEGER, |
-| server/portal_app_server.py | 669 | if 'telegram_id' in body: |
-| server/portal_app_server.py | 1078 | if 'telegram_id' in query:raise ValueError('Используйте employee_id') |
-| server/production_migrations.py | 125 | r.sql('CREATE UNIQUE INDEX IF NOT EXISTS payroll_employee_legacy_scope ON employees(company_id,telegram_id)') |
-| server/production_migrations.py | 132 | FOREIGN KEY(company_id,legacy_employee_id) REFERENCES employees(company_id,telegram_id) |
+| server/portal_app_server.py | 227 | telegram_id INTEGER, |
+| server/portal_app_server.py | 781 | if 'telegram_id' in body: |
+| server/portal_app_server.py | 1285 | if 'telegram_id' in query:raise ValueError('Используйте employee_id') |
+| server/production_migrations.py | 173 | r.sql('CREATE UNIQUE INDEX IF NOT EXISTS payroll_employee_legacy_scope ON employees(company_id,telegram_id)') |
+| server/production_migrations.py | 180 | FOREIGN KEY(company_id,legacy_employee_id) REFERENCES employees(company_id,telegram_id) |
 
 ### Test coverage for retained bridges
 

@@ -5,10 +5,12 @@ on:
     branches:
       - main
       - 'assistant/**'
+      - 'codex/**'
     paths:
       - 'ios_src/**'
       - 'android_src/app/src/main/assets/**'
       - 'android_src/release.properties'
+      - 'ops/**'
       - '.github/workflows/ios-ci.yml'
       - 'PORTAL_MASTER_ROADMAP.md'
   pull_request:
@@ -16,6 +18,7 @@ on:
       - 'ios_src/**'
       - 'android_src/app/src/main/assets/**'
       - 'android_src/release.properties'
+      - 'ops/**'
       - '.github/workflows/ios-ci.yml'
       - 'PORTAL_MASTER_ROADMAP.md'
 

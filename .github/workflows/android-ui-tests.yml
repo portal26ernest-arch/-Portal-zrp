@@ -2,10 +2,10 @@ name: PORTAL Android UI tests
 on:
   workflow_dispatch:
   push:
-    branches: ["main", "portal-next-b003", "assistant/**", "codex-finalization-megapack-part12"]
-    paths: ["android_src/**", ".github/workflows/android-ui-tests.yml"]
+    branches: ["main", "portal-next-b003", "assistant/**", "codex/**"]
+    paths: ["android_src/**", "ops/**", ".github/workflows/android-ui-tests.yml"]
   pull_request:
-    paths: ["android_src/**", ".github/workflows/android-ui-tests.yml"]
+    paths: ["android_src/**", "ops/**", ".github/workflows/android-ui-tests.yml"]
 permissions:
   contents: read
 jobs:

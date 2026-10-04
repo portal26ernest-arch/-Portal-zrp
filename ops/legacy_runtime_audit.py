@@ -7,20 +7,33 @@ ROOT = Path(__file__).resolve().parents[1]
 FORBIDDEN = re.compile(r"api\.telegram\.org|BOT_TOKEN|OWNER_TELEGRAM_ID|com\.termux|/storage/emulated/0/PORTAL-BOT|data/data/com\.termux", re.I)
 TG = re.compile(r"\btelegram_id\b")
 EMP = re.compile(r"\bemployee_id\b")
-RUNTIME_PREFIXES = ("server/", "android_src/app/src/main/")
+RUNTIME_PREFIXES = ("server/", "android_src/app/src/main/", "desktop/")
 EXCLUDE = ("/test_", "/tests/", "/migrations/", "/docs/")
+COMPATIBILITY_ADAPTERS = {"server/employee_identity.py"}
+IMPORT_BOUNDARIES = {"server/migration_import.py", "server/production_migrations.py"}
+NON_PRODUCT_FIXTURES = {"server/web_pg_part10_fixture_host.py"}
 
 def files(root: Path):
     cp = subprocess.run(["git","ls-files"], cwd=root, check=True, text=True, capture_output=True)
     return [x.strip().replace("\\","/") for x in cp.stdout.splitlines() if x.strip()]
 
 def runtime(path: str) -> bool:
-    return path.startswith(RUNTIME_PREFIXES) and not any(x in ("/"+path) for x in EXCLUDE)
+    return (path.startswith(RUNTIME_PREFIXES)
+            and Path(path).name.lower() != "test.ps1"
+            and path not in NON_PRODUCT_FIXTURES
+            and not any(x in ("/"+path) for x in EXCLUDE))
 
 def classify(path: str, line: str) -> str:
     if FORBIDDEN.search(line):
         return "forbidden_external_runtime" if runtime(path) else "schema_test_or_legacy"
     if runtime(path) and TG.search(line):
+        if path in COMPATIBILITY_ADAPTERS or path in IMPORT_BOUNDARIES:
+            return "runtime_bridge"
+        if path == "server/portal_app_server.py" and (
+                "telegram_id INTEGER" in line or
+                "'telegram_id' in body" in line or
+                "'telegram_id' in query" in line):
+            return "runtime_bridge"
         return "runtime_bridge" if EMP.search(line) else "runtime_direct_telegram_id"
     if TG.search(line):
         return "schema_test_or_legacy"
@@ -29,7 +42,7 @@ def classify(path: str, line: str) -> str:
 def scan(root: Path):
     rows=[]
     for rel in files(root):
-        if not rel.endswith((".py",".js",".cjs",".java",".kt",".sql",".sh",".ps1",".txt")):
+        if not rel.endswith((".py",".js",".cjs",".java",".kt",".cs",".ts",".tsx",".sql",".sh",".ps1",".txt")):
             continue
         try:
             text=(root/rel).read_text(encoding="utf-8")

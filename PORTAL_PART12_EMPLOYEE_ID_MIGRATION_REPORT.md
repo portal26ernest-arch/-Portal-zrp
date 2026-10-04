@@ -1,5 +1,18 @@
 # PORTAL Part 12 / Roadmap 102 — employee_id migration report
 
+## Повторная независимая проверка — 2026-10-04
+
+Эта проверка выполнена по прямому поручению владельца после исходного `PASS` от 2026-09-30 и относится к текущей ветке `codex/part12-employee-id-rerun-20261004`, исходный HEAD `8246b13ce0154e82067dc2d65829da699910dfd8`. Она заменяет только статус и evidence от 2026-09-30 для текущей линии; исторический список изменений ниже относится к первичной миграции.
+
+- Полный повторный `ops/employee_identity_migration_audit.py --fail-on-p0`: **P0=0, P1=50** (41 explicit adapter, 5 import/export, 2 retained schema, 2 API compatibility guards). P2: 161 fixture/history/test/scanner references. Android/iOS/Web/Desktop runtime search не обнаружил Telegram login/SDK/account dependency; legacy fields остаются только в серверном adapter/import/schema/history boundary.
+- Второй, более старый `ops/legacy_runtime_audit.py` первоначально ошибочно показал 28 прямых runtime строк, потому что не allowlist-ил централизованный identity adapter и migration boundary. Исправлены категории adapter/import/schema, тестовая инфраструктура перестала считаться product runtime, добавлены проверки Desktop C#/.NET paths. Повторный gate: `runtime_direct_telegram_id=0`, `runtime_bridge=50`, `forbidden_external_runtime=0`.
+- Схема/продуктовый runtime в этом re-verification не менялись: подтверждены прежние `employee_id` identity map, company-scoped FK/RLS и additive legacy storage. Новых P0 runtime defects не найдено. Перегенерирована карта `PORTAL_EMPLOYEE_ID_MIGRATION_MAP.md`.
+- Server SQLite/application discovery на текущем HEAD: **335 tests OK, 50 skipped**. Skip breakdown: 37 `requires disposable local PostgreSQL fixture`; 7 `requires dedicated synthetic full-CLI VPS databases`; 3 `requires dedicated empty synthetic PostgreSQL database`; 1 `requires isolated PostgreSQL test VPS`; 1 `requires isolated PostgreSQL and browser runtime`; 1 `ReportLab runtime dependency is not installed`. Shared Android/Web browser suite: **48/48 OK**. Совместные release/identity audit suites: **12/12 OK**. YAML parse четырёх затронутых workflow и `git diff --check`: OK.
+- Локальная PostgreSQL/Docker среда отсутствует. Current-commit PostgreSQL/RLS, Android CI и iOS parity/build gates ожидают push этой ветки и должны быть записаны после GitHub Actions. Ранее successful disposable PostgreSQL/RLS CI от 2026-09-30 приведён ниже и не подменяет current-commit evidence.
+- Новые/повторно изменённые файлы в этой проверке: `.github/workflows/android-ui-tests.yml`, `.github/workflows/ios-ci.yml`, `.github/workflows/server-tests.yml`, `.github/workflows/web-tests.yml`, `ops/legacy_runtime_audit.py`, `ops/test_release_audits.py`, `PORTAL_EMPLOYEE_ID_MIGRATION_MAP.md`, `PORTAL_MASTER_ROADMAP.md`, этот отчёт. Push/CI/SHA — заполнить по факту завершения ветки.
+
+**Промежуточный итог:** source/runtime identity audit — PASS; финальный Roadmap 102 остаётся незакрытым до disposable PostgreSQL/RLS, Android и iOS текущей ветки CI, push и clean tracked working tree.
+
 Дата: 2026-09-30. Ветка: `codex/part12-employee-id`.
 
 ## Git и границы работ
