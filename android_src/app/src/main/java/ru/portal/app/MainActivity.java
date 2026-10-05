@@ -164,9 +164,15 @@ public class MainActivity extends Activity {
         private final ExecutorService executor = Executors.newFixedThreadPool(3);
         private volatile boolean closed;
         private volatile String cacheCompany = "";
+        private volatile String healthyServerBase = "";
+        private volatile long healthyServerUntilMs;
         private static final long CACHE_MAX_AGE_MS = 30L * 24 * 60 * 60 * 1000;
+        private static final long SERVER_HEALTH_TTL_MS = 2L * 60 * 1000;
         private static final String DEFAULT_URL = BuildConfig.DEFAULT_API_URL;
         private static final String SERVER_DISCOVERY_URL = BuildConfig.SERVER_DISCOVERY_URL;
+        private static final String PRIMARY_API_URL = "https://api.vart-portal.ru";
+        private static final String TRUSTED_FALLBACK_API_URL = "https://thru-runner-versus-gsm.trycloudflare.com";
+        private static final String LEGACY_API_URL = "https://2a03-6f00-a--1-f426.sslip.io";
 
         PortalBridge(Context context, WebView webView) {
             this.context = context;
@@ -199,12 +205,11 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void requestAsync(String id, String method, String path, String body, String token, String company) {
-            // Capture the server now, before queuing, so changing settings never
-            // sends an old credential to the newly selected server.
-            String base = getServerUrl();
             String verb = method == null ? "GET" : method.toUpperCase(Locale.ROOT);
             String localCompany = cacheCompany;
             executor.execute(() -> {
+                // Resolve a healthy PORTAL endpoint before any authenticated request is sent.
+                String base = resolveServerForRequest(getServerUrl());
                 boolean cacheable = cacheableGet(verb, path, token, localCompany);
                 if (cacheable) {
                     String cached = localCache.read(base, localCompany, path);
@@ -222,6 +227,40 @@ public class MainActivity extends Activity {
                     invalidateCacheForMutation(base, localCompany, path);
                 deliver(id, result);
             });
+        }
+
+        private boolean isAutomaticPortalServer(String value) {
+            if (value == null) return false;
+            String base = value.trim();
+            while (base.endsWith("/")) base = base.substring(0, base.length() - 1);
+            return PRIMARY_API_URL.equalsIgnoreCase(base) || TRUSTED_FALLBACK_API_URL.equalsIgnoreCase(base)
+                    || LEGACY_API_URL.equalsIgnoreCase(base);
+        }
+
+        private void markHealthyServer(String base) {
+            healthyServerBase = base;
+            healthyServerUntilMs = System.currentTimeMillis() + SERVER_HEALTH_TTL_MS;
+        }
+
+        private synchronized String activateTrustedFallback(String previous) {
+            if (!isAutomaticPortalServer(previous) || TRUSTED_FALLBACK_API_URL.equalsIgnoreCase(previous)) return previous;
+            if (!probeOfficialServer(TRUSTED_FALLBACK_API_URL)) return previous;
+            if (!localCache.migrateOutboxOrigin(previous, TRUSTED_FALLBACK_API_URL)) return previous;
+            prefs.edit().putString("server_url", TRUSTED_FALLBACK_API_URL).apply();
+            markHealthyServer(TRUSTED_FALLBACK_API_URL);
+            return TRUSTED_FALLBACK_API_URL;
+        }
+
+        private synchronized String resolveServerForRequest(String requestedBase) {
+            String base = requestedBase == null ? "" : requestedBase.trim();
+            if (!isAutomaticPortalServer(base)) return base;
+            long now = System.currentTimeMillis();
+            if (base.equalsIgnoreCase(healthyServerBase) && now < healthyServerUntilMs) return base;
+            if (probeOfficialServer(base)) {
+                markHealthyServer(base);
+                return base;
+            }
+            return activateTrustedFallback(base);
         }
 
         @JavascriptInterface
@@ -505,12 +544,28 @@ public class MainActivity extends Activity {
                 try { java.time.Instant.parse(updatedAt); } catch (Exception badDate) { throw new Exception("discovery_date"); }
                 String next = normalizeOfficialApiUrl(document.optString("apiUrl", ""));
                 if (next == null) throw new Exception("discovery_api_url");
-                if (!probeOfficialServer(next)) throw new Exception("discovery_server_unreachable");
+                if (!probeOfficialServer(next)) {
+                    String previous = getServerUrl();
+                    if (TRUSTED_FALLBACK_API_URL.equalsIgnoreCase(previous)) {
+                        if (!probeOfficialServer(previous)) throw new Exception("discovery_server_unreachable");
+                        markHealthyServer(previous);
+                        result.put("checked", false).put("changed", false).put("serverUrl", previous).remove("error");
+                        return result;
+                    }
+                    String fallback = activateTrustedFallback(previous);
+                    if (TRUSTED_FALLBACK_API_URL.equalsIgnoreCase(fallback)) {
+                        boolean changed = !fallback.equalsIgnoreCase(previous);
+                        result.put("checked", false).put("changed", changed).put("serverUrl", fallback).remove("error");
+                        return result;
+                    }
+                    throw new Exception("discovery_server_unreachable");
+                }
 
                 String previous = getServerUrl();
                 boolean changed = !next.equalsIgnoreCase(previous);
                 if (changed && !localCache.migrateOutboxOrigin(previous, next)) throw new Exception("outbox_migration_failed");
                 prefs.edit().putString("server_url", next).putLong("server_discovery_revision", revision).apply();
+                markHealthyServer(next);
                 result.put("checked", true).put("changed", changed).put("serverUrl", next).remove("error");
                 return result;
             } catch (Exception e) {
@@ -550,8 +605,8 @@ public class MainActivity extends Activity {
                 URL url = new URL(base + "/api/ping");
                 conn = (HttpURLConnection) url.openConnection();
                 conn.setInstanceFollowRedirects(false);
-                conn.setConnectTimeout(8000);
-                conn.setReadTimeout(10000);
+                conn.setConnectTimeout(4500);
+                conn.setReadTimeout(5000);
                 conn.setRequestMethod("GET");
                 conn.setRequestProperty("Accept", "application/json");
                 if (conn.getResponseCode() != 200) return false;
@@ -815,12 +870,12 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public String request(String method, String path, String body, String token) {
-            return requestAt(getServerUrl(), method, path, body, token, "");
+            return requestAt(resolveServerForRequest(getServerUrl()), method, path, body, token, "");
         }
 
         @JavascriptInterface
         public String requestForCompany(String method, String path, String body, String token, String company) {
-            return requestAt(getServerUrl(), method, path, body, token, company);
+            return requestAt(resolveServerForRequest(getServerUrl()), method, path, body, token, company);
         }
 
         private String requestAt(String base, String method, String path, String body, String token, String company) {
