@@ -11,6 +11,8 @@
     <FileVersion>5.8.0.58</FileVersion>
     <AssemblyVersion>5.8.0.0</AssemblyVersion>
     <InformationalVersion>5.8-owned-reserve</InformationalVersion>
+    <PortalBuildNumber Condition="'$(PortalBuildNumber)' == ''">58</PortalBuildNumber>
+    <PortalBuildDate Condition="'$(PortalBuildDate)' == ''">$([System.DateTime]::UtcNow.ToString('yyyy-MM-dd'))</PortalBuildDate>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <PublishSingleFile>false</PublishSingleFile>
@@ -18,6 +20,8 @@
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
   <ItemGroup>
+    <AssemblyMetadata Include="PortalBuildNumber" Value="$(PortalBuildNumber)" />
+    <AssemblyMetadata Include="PortalBuildDate" Value="$(PortalBuildDate)" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
     <EmbeddedResource Include="desktop-update-signing-public.pem" LogicalName="Portal.Desktop.desktop-update-signing-public.pem" />

@@ -3,7 +3,7 @@ const metric=(label,value)=>`<div class="metric"><div class="l">${label}</div><d
 const permission=page=>{if(!can(page))throw new Error('Действие недоступно для вашей роли');};
 const activeOptions=active=>`<option value="1" ${active?'selected':''}>Активен</option><option value="0" ${!active?'selected':''}>Отключён / архив</option>`;
 screens.dashboard=async()=>{
-  const r=await api('GET','/api/dashboard?period=current'),d=r.data,personal=S.me.role==='packer';
+  const r=await api('GET','/api/dashboard?period=current'),d=r.data,personal=['packer','loader','driver'].includes(S.me.role);
   const label=S.me.role==='manager'?'По назначенным клиентам':personal?'Ваш текущий период':'Текущий расчётный период';
   const subtitle=isOwner()?`Поддержка · ${S.company.name}`:new Date().toLocaleDateString('ru-RU',{day:'numeric',month:'long',weekday:'long'});
   paint(`<div class="greeting"><span class="eyebrow">${esc(subtitle)}</span><h1>${esc(PortalCore.timeGreeting())}</h1><p class="muted">${esc(isOwner()?S.company.name:S.me.display_name||S.me.username)}</p></div>

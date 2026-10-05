@@ -32,6 +32,12 @@ must(gradle.includes("PORTAL_ANDROID_KEYSTORE") && gradle.includes("portalReleas
   'Release signing must be sourced from environment secrets');
 must(gradle.includes("PORTAL_ANDROID_KEYSTORE_TYPE") && gradle.includes("storeType releaseKeystoreType"),
   'Release signing must use an explicit keystore type');
+must(releaseWorkflow.includes('PORTAL_BUILD_NUMBER=') && releaseWorkflow.includes('PORTAL_BUILD_DATE=') &&
+     stagingWorkflow.includes('PORTAL_BUILD_NUMBER=') && stagingWorkflow.includes('PORTAL_BUILD_DATE=') &&
+     gradle.includes("environmentVariable('PORTAL_BUILD_NUMBER')") && gradle.includes("environmentVariable('PORTAL_BUILD_DATE')"),
+  'Android CI builds must generate build number/date automatically');
+must(desktopReleaseWorkflow.includes('PortalBuildNumber=$env:GITHUB_RUN_NUMBER') && desktopReleaseWorkflow.includes('PortalBuildDate=$buildDate'),
+  'Desktop CI builds must generate build number/date automatically');
 must(releaseWorkflow.includes('PORTAL_ANDROID_KEYSTORE_TYPE: PKCS12'),
   'Signed release must use PKCS12 keystore format');
 must(releaseWorkflow.includes('portal-release.p12'),

@@ -1,7 +1,7 @@
 'use strict';
 // Presentation capabilities; the server remains the security authority.
 globalThis.PortalCore = (() => {
-  const roles = {admin:'Управляющий',director:'Директор',manager:'Менеджер',packer:'Сотрудник',shift:'Старший смены',accountant:'Бухгалтер',platform_owner:'God'};
+  const roles = {admin:'Управляющий',director:'Директор',manager:'Менеджер',packer:'Упаковщик',loader:'Грузчик',driver:'Водитель',shift:'Старший смены',accountant:'Бухгалтер',platform_owner:'God'};
   const modules = [
     {id:'work',title:'Выработка',icon:'plus',description:'Записать работу'},
     {id:'payroll',title:'Зарплата',icon:'wallet',description:'Начисления и выплаты'},
@@ -49,7 +49,7 @@ globalThis.PortalCore = (() => {
     }
     if (['dashboard','sections'].includes(page)) return true;
     if (['shift','accountant'].includes(user.role)) return false;
-    if (user.role==='packer') {
+    if (['packer','loader','driver'].includes(user.role)) {
       if (page==='work') return !!user.employee_id;
       if (page==='payroll') return !!user.employee_id;
       return ['materials','jobs'].includes(page);

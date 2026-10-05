@@ -298,7 +298,7 @@ test('browser UI regression',async t=>{
       assert.equal(await page.locator('#loginSubmit').isEnabled(),true);assert.deepEqual(errors,[]);await page.close();
     });
     await t.test('each role renders all its allowed screens and hides forbidden tiles',async()=>{
-      for(const role of ['admin','director','manager','packer','shift','accountant']){
+      for(const role of ['admin','director','manager','packer','loader','driver','shift','accountant']){
         const {page,errors}=await fixture(browser,role);await login(page);await page.evaluate(()=>go('sections'));
         const visible=await page.locator('#content [data-page]').evaluateAll(nodes=>nodes.map(n=>n.dataset.page));
         const expected=Array.from(core.modules).filter(m=>!m.future&&core.can(m.id,{role,employee_id:101},{id:1})).map(m=>m.id);

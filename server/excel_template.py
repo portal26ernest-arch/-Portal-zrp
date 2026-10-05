@@ -9,7 +9,7 @@ from document_domain import XLSX_MIME
 
 TEMPLATE_VERSION='2.0'
 REQUISITES=('legal_name','inn','kpp','ogrn','legal_address','settlement_account','bank_name','bik','correspondent_account','phone','email','tax_info')
-ROLE_LABELS={'admin':'Управляющий','director':'Директор','manager':'Менеджер','accountant':'Бухгалтер','shift':'Старший смены','packer':'Упаковщик'}
+ROLE_LABELS={'admin':'Управляющий','director':'Директор','manager':'Менеджер','accountant':'Бухгалтер','shift':'Старший смены','packer':'Упаковщик','loader':'Грузчик','driver':'Водитель'}
 LABELS={'legal_name':'Юридическое наименование','inn':'ИНН','kpp':'КПП','ogrn':'ОГРН','legal_address':'Юридический адрес',
         'settlement_account':'Расчётный счёт','bank_name':'Банк','bik':'БИК','correspondent_account':'Корреспондентский счёт',
         'phone':'Телефон','email':'Email','tax_info':'Налогообложение','director':'Руководитель','contact_person':'Контактное лицо'}

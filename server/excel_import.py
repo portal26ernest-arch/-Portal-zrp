@@ -26,7 +26,7 @@ LOG.setLevel(logging.INFO)
 LOG.propagate=False
 _SIGNING_KEY=secrets.token_bytes(32)
 IMPORT_ACTIONS={'excel-import-preview','excel-import-apply','excel-import-result'}
-ROLES={'admin','director','manager','accountant','shift','packer'}
+ROLES={'admin','director','manager','accountant','shift','packer','loader','driver'}
 ROLE_ALIASES={
     'admin':'admin','управляющий':'admin','администратор':'admin',
     'director':'director','директор':'director',
@@ -34,6 +34,8 @@ ROLE_ALIASES={
     'accountant':'accountant','бухгалтер':'accountant',
     'shift':'shift','старший смены':'shift',
     'packer':'packer','упаковщик':'packer','сборщик':'packer','сотрудник':'packer',
+    'loader':'loader','грузчик':'loader',
+    'driver':'driver','водитель':'driver',
 }
 
 def canonical(value):return json.dumps(value,ensure_ascii=False,sort_keys=True,separators=(',',':'))

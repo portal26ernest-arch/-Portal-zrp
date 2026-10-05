@@ -62,8 +62,10 @@ class ProductionTest(unittest.TestCase):
                    'payroll.settlement.correct','users.manage','company.settings','imports.manage','rates.employee'}
         self.assertTrue(required <= manager)
         self.assertTrue(forbidden.isdisjoint(manager))
-        self.assertEqual(rights.defaults('packer'),
-                         {'tasks.read','work.write','payroll.own','materials.read','materials.use'})
+        worker_defaults={'tasks.read','work.write','payroll.own','materials.read','materials.use'}
+        self.assertEqual(rights.defaults('packer'),worker_defaults)
+        self.assertEqual(rights.defaults('loader'),worker_defaults)
+        self.assertEqual(rights.defaults('driver'),worker_defaults)
         self.assertEqual(rights.defaults('shift'),set())
         self.assertEqual(rights.defaults('accountant'),set())
 

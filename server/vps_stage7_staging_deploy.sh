@@ -137,7 +137,8 @@ for migration in \
   postgresql_stage11_company_modules.sql \
   postgresql_stage12_product_catalog.sql \
   postgresql_stage13_organizer.sql \
-  postgresql_stage14_organizer_requests.sql
+  postgresql_stage14_organizer_requests.sql \
+  postgresql_stage16_employee_roles.sql
 do
   migration_file="$REPO/server/migrations/$migration"
   checksum="$(sha256sum "$migration_file" | awk '{print $1}')"

@@ -9,13 +9,13 @@ test.after(async()=>{server?.close();});
 test('same shared Web UI supports role menus, owner company selection, and Documents/Excel screens',async()=>{
  const browser=await chromium.launch({headless:true});
  try{
-  for(const role of ['director','packer','platform_owner']){
+  for(const role of ['director','packer','loader','driver','platform_owner']){
    const context=await browser.newContext(),page=await context.newPage(),errors=[];page.setDefaultTimeout(5000);page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
    await page.route('**/api/**',async route=>{const url=new URL(route.request().url()),body=route.request().postDataJSON?.()||{};let data={ok:true};
     if(url.pathname==='/api/ping')data={ok:true,setup_required:false};
-    else if(url.pathname==='/api/login'||url.pathname==='/api/platform/login')data={ok:true,token:'test-token',user:{id:1,username:'tester',display_name:'Tester',role,company_id:1,employee_id:role==='packer'?1:undefined}};
+    else if(url.pathname==='/api/login'||url.pathname==='/api/platform/login')data={ok:true,token:'test-token',user:{id:1,username:'tester',display_name:'Tester',role,company_id:1,employee_id:['packer','loader','driver'].includes(role)?1:undefined}};
     else if(url.pathname==='/api/company')data={ok:true,company:{id:1,name:'Test company'}};
-    else if(url.pathname==='/api/v3/meta')data={ok:true,ready:true,permissions:role==='packer'?['work.write','tasks.read']:['documents.read','documents.manage','users.manage','clients.manage','rates.employee','rates.client','company.settings','imports.manage','work.write','tasks.read'],catalog:[],heartbeat_seconds:600};
+    else if(url.pathname==='/api/v3/meta')data={ok:true,ready:true,permissions:['packer','loader','driver'].includes(role)?['work.write','tasks.read']:['documents.read','documents.manage','users.manage','clients.manage','rates.employee','rates.client','company.settings','imports.manage','work.write','tasks.read'],catalog:[],heartbeat_seconds:600};
     else if(url.pathname==='/api/platform/companies')data={ok:true,companies:[{id:1,name:'Test company',status:'active'}]};
     else if(url.pathname.endsWith('/document-template-info'))data={ok:true,data:{template_version:'v1.0',sheets:[]}};
     else if(url.pathname.includes('/documents'))data={ok:true,data:{items:[],page:1,limit:50,total:0}};

@@ -154,7 +154,10 @@
     return {...data, ok:response.ok && data.ok !== false, httpStatus:response.status};
   };
 
+  const appMetadata = () => JSON.stringify(window.__PORTAL_BUILD_METADATA__ || {platform:'Web'});
+
   window.PortalNative = {
+    getAppMetadata: appMetadata,
     getServerUrl: () => location.origin,
     setServerUrl: () => false,
     setCacheCompany: value => {

@@ -81,7 +81,7 @@ def migrate_access_invites(r):
             created_at TEXT NOT NULL,
             expires_at TEXT NOT NULL,
             status TEXT NOT NULL CHECK(status IN ('pending','accepted','approved','revoked','expired','rejected')),
-            role TEXT NOT NULL CHECK(role IN ('admin','director','manager','packer','shift','accountant')),
+            role TEXT NOT NULL CHECK(role IN ('admin','director','manager','packer','loader','driver','shift','accountant')),
             username TEXT NOT NULL,
             display_name TEXT NOT NULL,
             employee_id INTEGER,

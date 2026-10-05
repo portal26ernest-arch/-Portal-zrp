@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
@@ -20,6 +21,10 @@ def load_properties(path: Path) -> dict[str, str]:
         if not sep:
             raise ValueError(f"Некорректная строка release.properties: {raw}")
         out[key.strip()] = value.strip()
+    if os.environ.get("PORTAL_BUILD_NUMBER"):
+        out["buildNumber"] = os.environ["PORTAL_BUILD_NUMBER"]
+    if os.environ.get("PORTAL_BUILD_DATE"):
+        out["buildDate"] = os.environ["PORTAL_BUILD_DATE"]
     return out
 
 
