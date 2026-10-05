@@ -13,6 +13,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from production_repository import utcnow
 from report_xlsx import payroll_xlsx
 import production_permissions as rights
+from sticker_catalog import allowed_sticker_keys, catalog_entries
 
 ORGANIZER_ROLE_LABELS={'director':'Директор','admin':'Управляющий','manager':'Менеджер'}
 ORGANIZER_ASSIGNABLE={'director':{'admin','manager'},'admin':{'manager'},'manager':{'manager'}}
@@ -593,7 +594,7 @@ class Production:
         if previous:return previous
         if subtype=='sticker':
             key=b.get('sticker_key')
-            if key not in {'accepted','in_progress','done','help','important','thanks'}:raise ValueError('Неизвестный системный стикер')
+            if not isinstance(key,str) or key not in allowed_sticker_keys():raise ValueError('Неизвестный системный стикер')
             if b.get('recipient_user_id') not in (None,''):raise ValueError('Стикеры доступны только в общем чате')
             return self.r.insert('chat_messages',dict(room='general',sender_user_id=self.u['id'],sender_name=self.u.get('display_name') or self.u.get('username','Сотрудник'),message_type='sticker',sticker_key=key,text='',request_id=request_id))
         if subtype=='absence_notice':
@@ -1702,6 +1703,8 @@ class Production:
             return self.payroll_snapshot(start,end) if start or end else [self.public_payroll_period(row) for row in self.r.list('payroll_periods')]
         if action=='payroll-settlements':return self.payroll_settlement_rows(params)
         if action=='chat':return self.chat_rows(params.get('recipient_user_id',[None])[0])
+        if action=='chat-sticker-catalog':
+            self.need('chat.read');return catalog_entries(enabled_only=True)
         if action=='chat-users':
             self.need('chat.read')
             return [dict(id=u['id'],display_name=u['display_name']) for u in self.r.catalog('users') if u['active'] and u['id']!=self.u['id']]

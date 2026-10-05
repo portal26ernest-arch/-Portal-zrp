@@ -69,7 +69,8 @@ def serve(handler):
         name = decoded[5:]
     else:
         return handler.send_error(404)
-    allowed = name in FIXED or (name.startswith("stickers/") and name.endswith(".svg") and name.count("/") == 1)
+    sticker_asset = name.startswith("stickers/") and name.count("/") == 1 and Path(name).suffix.lower() in {".svg", ".png", ".webp", ".gif"}
+    allowed = name in FIXED or sticker_asset
     target = (ASSETS / name).resolve()
     if not allowed or name.startswith(".") or ASSETS not in target.parents or not target.is_file():
         return handler.send_error(404)

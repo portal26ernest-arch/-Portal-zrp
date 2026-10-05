@@ -268,10 +268,15 @@ class ProductionTest(unittest.TestCase):
         else:self.assertEqual((data['closed_month_payroll']['accrued'],data['closed_month_payroll']['paid'],data['closed_month_payroll']['balance']),closed_payroll)
 
     def test_chat_stickers_absence_validation_idempotency_and_tenant_scope(self):
+        self.assertEqual([item['key'] for item in self.get('chat-sticker-catalog')['data']],
+                         ['accepted','in_progress','done','help','important','thanks'])
         for key in ('accepted','in_progress','done','help','important','thanks'):
             item=self.post('chat',dict(subtype='sticker',sticker_key=key))['data']
             self.assertEqual((item['message_type'],item['sticker_key']),('sticker',key))
         self.post('chat',dict(subtype='sticker',sticker_key='../x'),status=400)
+        self.post('chat',dict(subtype='sticker',sticker_key='hello'),status=400)
+        self.post('chat',dict(subtype='sticker',sticker_key='not-in-catalog'),status=400)
+        self.post('chat',dict(subtype='sticker',sticker_key='accepted',recipient_user_id=self.worker_id),status=400)
         self.post('chat',dict(subtype='absence_notice',absence_date='2026-02-30',comment=''),status=400)
         self.post('chat',dict(subtype='absence_notice',absence_date='2026-09-29',comment='x'*301),status=400)
         notice=self.post('chat',dict(subtype='absence_notice',absence_date='2026-09-29',comment='Причина',request_id='absence-once'))['data']
