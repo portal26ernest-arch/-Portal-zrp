@@ -469,3 +469,13 @@ Current roadmap counts are **93 ✅ / 15 🟡 / 6 ⏳ / 12 🔌**. Current-SHA S
 - [x] Локальная регрессия: node android_src/tests/native-shell.test.cjs — OK; git diff --check — OK.
 - [ ] Прямой IPv4-маршрут к VPS 178.209.127.247 остаётся внешней сетевой проблемой: production API/Nginx/сертификат исправны, временные MSS/высокий-порт гипотезы не подтвердились и полностью откатаны. До постоянного edge/LB используется защищённый резерв.
 - Следующий шаг: дождаться зелёных GitHub Actions, слить PR и выпустить signed Android 5.0 через ручной release workflow.
+
+
+### Собственный резервный edge — 05.10.2026
+- [x] Создан Cloudflare Named Tunnel `portal-production-reserve` на VPS, направленный на `http://127.0.0.1:8790`.
+- [x] Туннель закреплён за `reserve-api.vart-portal.ru` и запущен отдельным systemd-сервисом `portal-production-reserve-tunnel.service` с автозапуском.
+- [x] Старый Quick Tunnel оставлен временно только как страховка до завершения DNS-делегации; после публичной проверки собственного резервного hostname его можно отключить.
+- [x] Android 5.1: доверенный fallback заменён с временного `trycloudflare.com` на `https://reserve-api.vart-portal.ru`.
+- [x] Windows Desktop 5.8 / build 58: доверенный fallback заменён на `https://reserve-api.vart-portal.ru`.
+- [x] Основной production origin остаётся `https://api.vart-portal.ru`; резерв используется только при провале health-check основного.
+- [x] Делегация `vart-portal.ru` в Timeweb переведена на Cloudflare NS `coco.ns.cloudflare.com` и `grant.ns.cloudflare.com`; ожидается распространение в реестре .RU.
