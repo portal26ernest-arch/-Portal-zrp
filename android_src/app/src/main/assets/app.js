@@ -42,7 +42,7 @@ function nativePromise(start){return new Promise((resolve,reject)=>{const id=Str
 async function api(method,path,body,options={}){
   const epoch=S.epoch,view=S.view,company=isOwner()&&!options.sessionControl&&!path.startsWith('/api/platform/')&&path!=='/api/me'?String(S.company?.id||''):'';
   if(isOwner()&&!options.sessionControl&&!path.startsWith('/api/platform/')&&path!=='/api/me'&&path!=='/api/ping'&&!company)throw new Error('Сначала выберите компанию');
-  if(method==='POST'&&isOwner()&&!options.sessionControl&&!path.startsWith('/api/platform/')){
+  if(method==='POST'&&isOwner()&&!options.sessionControl&&!path.startsWith('/api/platform/')&&path!=='/api/v3/heartbeat'){
     const yes=await confirmSheet('Изменение данных',`Компания: ${S.company.name} · #${S.company.id}. Изменение будет записано в системный аудит.`, 'Подтвердить изменение');
     if(!yes)throw {cancelled:true};
     if(epoch!==S.epoch)throw {stale:true};

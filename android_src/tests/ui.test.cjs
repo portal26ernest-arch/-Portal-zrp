@@ -76,6 +76,12 @@ test('update install action is available only for verified available state and r
   assert.match(app,/state:'ready',title:'Готово к установке'/);
   assert.match(app,/S\.update\?\.state!=='available'\|\|!S\.update\.release/);
 });
+test('platform owner confirmation excludes only the background heartbeat endpoint',()=>{
+  const app=fs.readFileSync(path.join(assets,'app.js'),'utf8');
+  const production=fs.readFileSync(path.join(assets,'production.js'),'utf8');
+  assert.ok(app.includes("if(method==='POST'&&isOwner()&&!options.sessionControl&&!path.startsWith('/api/platform/')&&path!=='/api/v3/heartbeat'){"));
+  assert.match(production,/api\('POST','\/api\/v3\/heartbeat',\{\}, \{global:true\}\)/);
+});
 
 // Emulate only the Java bridge transport; run the actual shipped UI and events.
 async function fixture(browser,role='manager',viewport={width:390,height:844},stage3=false){
@@ -253,6 +259,19 @@ test('browser UI regression',async t=>{
       await page.evaluate(()=>{mock.hold=false;mock.held.splice(0).forEach(f=>f());});
       await page.waitForFunction(()=>pending.size===0);assert.equal(await page.locator('[data-action=selectCompany]').count(),2);
       assert.equal(await page.locator('#supportStrip').isVisible(),false);assert.deepEqual(errors,[]);await page.close();
+    });
+    await t.test('owner heartbeat bypasses mutation confirmation while real writes still require it',async()=>{
+      const {page,errors}=await fixture(browser,'platform_owner',{width:390,height:844},true);
+      await page.locator('#loginCompany').click();await page.locator('#sheetContent [data-action=technicalLogin]').click();await login(page);
+      await page.locator('[data-action=selectCompany][data-id="2"]').click();await page.locator('[data-action=confirmSheet]').click();await page.waitForSelector('#supportStrip:not(.hidden)');
+      const before=await page.evaluate(()=>mock.calls.filter(c=>c.url==='/api/v3/heartbeat').length);
+      await page.evaluate(()=>api('POST','/api/v3/heartbeat',{}, {global:true}));
+      assert.equal(await page.evaluate(()=>mock.calls.filter(c=>c.url==='/api/v3/heartbeat').length),before+1);
+      assert.equal(await page.locator('#sheetBackdrop').evaluate(el=>el.classList.contains('hidden')),true);
+      await page.evaluate(()=>{void api('POST','/api/admin/test',{}).catch(()=>{});});await page.waitForSelector('#sheetBackdrop:not(.hidden)');
+      assert.match(await page.locator('#sheetTitle').innerText(),/Изменение данных/);assert.equal((await page.evaluate(()=>mock.calls)).some(c=>c.url==='/api/admin/test'),false);
+      await page.locator('[data-action=confirmSheet]').click();await page.waitForFunction(()=>mock.calls.some(c=>c.url==='/api/admin/test'));
+      assert.deepEqual(errors,[]);await page.close();
     });
     await t.test('Stage 3 timer, presence, activity and system information',async()=>{
       const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);
