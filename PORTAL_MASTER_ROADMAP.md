@@ -449,3 +449,11 @@ Current roadmap counts are **93 ✅ / 15 🟡 / 6 ⏳ / 12 🔌**. Current-SHA S
 - Any future production incident must produce a regression guard before it is considered closed.
 
 - 2026-10-05 — Production recovery reconciliation: в актуальную линию PORTAL 4.8 возвращена только локальная аварийная команда --reset-platform-owner-password USERNAME для Platform Owner. Команда доступна только оператору на сервере, вводит новый код через getpass, отзывает глобальные сессии и фиксирует событие owner_password_reset_locally. Более старый self-service путь /api/platform/me/password не возвращался: актуальный main сохраняет новую схему /api/platform/me/pin.
+
+
+### Сетевое восстановление Desktop/Android — 05.10.2026
+- [x] Диагностика: production API и PostgreSQL исправны; `api.vart-portal.ru` отвечает на VPS, но на проверяемой пользовательской сети TCP устанавливается без передачи HTTP/TLS payload.
+- [x] Desktop 5.7: перед авторизацией проверяет известный PORTAL endpoint и автоматически использует строго закреплённый резервный HTTPS-канал при недоступности основного домена.
+- [x] Android 4.9: выполняет unauthenticated `/api/ping` до отправки токена, переносит локальный outbox при автоматическом переключении и использует тот же строго закреплённый резерв.
+- [x] Произвольные `trycloudflare.com` не разрешены как official discovery URL; fallback ограничен конкретным PORTAL hostname в коде.
+- [ ] После восстановления прямой сетевой доступности или настройки постоянного CDN/named tunnel убрать временный Quick Tunnel fallback из следующих релизов.

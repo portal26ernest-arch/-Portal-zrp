@@ -14,10 +14,14 @@ namespace Portal.Desktop;
 
 public partial class MainWindow : Window
 {
-    private const int CurrentBuild = 56;
+    private const int CurrentBuild = 57;
     private const long MaxInstallerBytes = 250L * 1024 * 1024;
     private const string GithubRepository = "portal26ernest-arch/-Portal-zrp";
     private const string ServerDiscoveryUrl = "https://raw.githubusercontent.com/portal26ernest-arch/-Portal-zrp/main/portal-server.json";
+    private const string PrimaryServerOrigin = "https://api.vart-portal.ru";
+    private const string TrustedFallbackServerOrigin = "https://thru-runner-versus-gsm.trycloudflare.com";
+    private const string LegacyServerOrigin = "https://2a03-6f00-a--1-f426.sslip.io";
+    private static readonly TimeSpan ServerProbeTimeout = TimeSpan.FromSeconds(5);
     private const string WebViewSoftwareRenderingArguments = "--disable-gpu --disable-gpu-compositing";
     private static readonly HttpClient Http = new(new HttpClientHandler { AllowAutoRedirect = false })
     {
@@ -40,15 +44,101 @@ public partial class MainWindow : Window
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
         var configured = Environment.GetEnvironmentVariable("PORTAL_SERVER_URL");
-        var candidate = string.IsNullOrWhiteSpace(configured) ? LoadStoredOrigin() : configured;
-        if (TryNormalizeOrigin(candidate, out var origin, out var error))
+        if (!string.IsNullOrWhiteSpace(configured))
         {
-            ServerUrlBox.Text = origin;
-            await ConnectAsync(origin, persist: false);
+            if (TryNormalizeOrigin(configured, out var configuredOrigin, out var configuredError))
+            {
+                ServerUrlBox.Text = configuredOrigin;
+                await ConnectAsync(configuredOrigin, persist: false);
+            }
+            else
+            {
+                ShowSetup(configuredError);
+            }
             return;
         }
 
-        ShowSetup(candidate is null ? null : error);
+        var preferred = LoadStoredOrigin();
+        if (await ConnectFirstAvailablePortalServerAsync(preferred)) return;
+
+        if (TryNormalizeOrigin(preferred, out var savedOrigin, out var savedError) && !IsAutomaticPortalOrigin(savedOrigin))
+        {
+            ServerUrlBox.Text = savedOrigin;
+            await ConnectAsync(savedOrigin, persist: false);
+            return;
+        }
+
+        ShowSetup("Не удалось найти доступный сервер PORTAL. Проверьте подключение к интернету.");
+    }
+
+    private static bool IsAutomaticPortalOrigin(string? raw)
+    {
+        if (!TryNormalizeOrigin(raw, out var origin, out _)) return false;
+        return origin.Equals(PrimaryServerOrigin, StringComparison.OrdinalIgnoreCase) ||
+               origin.Equals(TrustedFallbackServerOrigin, StringComparison.OrdinalIgnoreCase) ||
+               origin.Equals(LegacyServerOrigin, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task<bool> ConnectFirstAvailablePortalServerAsync(string? preferred)
+    {
+        var candidates = new List<string>();
+        void Add(string? raw)
+        {
+            if (!TryNormalizeOrigin(raw, out var normalized, out _)) return;
+            if (!candidates.Contains(normalized, StringComparer.OrdinalIgnoreCase)) candidates.Add(normalized);
+        }
+
+        Add(preferred);
+        var mayUsePortalFallback = string.IsNullOrWhiteSpace(preferred) || IsAutomaticPortalOrigin(preferred);
+        if (mayUsePortalFallback)
+        {
+            Add(PrimaryServerOrigin);
+            Add(TrustedFallbackServerOrigin);
+            Add(LegacyServerOrigin);
+        }
+
+        foreach (var candidate in candidates)
+        {
+            StatusText.Text = candidate.Equals(TrustedFallbackServerOrigin, StringComparison.OrdinalIgnoreCase)
+                ? "Подключаем резервный канал…"
+                : "Проверяем сервер…";
+            if (!await ProbePortalServerAsync(candidate)) continue;
+
+            var previous = LoadStoredOrigin();
+            var changed = !string.Equals(previous, candidate, StringComparison.OrdinalIgnoreCase);
+            if (changed && !string.IsNullOrWhiteSpace(previous) && IsAutomaticPortalOrigin(previous) &&
+                !DesktopCacheBridge.MigrateOutboxOrigin(_settingsDir, previous, candidate))
+                continue;
+
+            ServerUrlBox.Text = candidate;
+            await ConnectAsync(candidate, persist: changed || string.IsNullOrWhiteSpace(previous));
+            return true;
+        }
+        return false;
+    }
+
+    private static async Task<bool> ProbePortalServerAsync(string origin)
+    {
+        try
+        {
+            using var timeout = new CancellationTokenSource(ServerProbeTimeout);
+            using var pingRequest = new HttpRequestMessage(HttpMethod.Get, origin + "/api/ping");
+            pingRequest.Headers.Accept.ParseAdd("application/json");
+            using var ping = await Http.SendAsync(pingRequest, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
+            if (ping.StatusCode != HttpStatusCode.OK) return false;
+            using var document = await JsonDocument.ParseAsync(await ping.Content.ReadAsStreamAsync(timeout.Token), cancellationToken: timeout.Token);
+            if (!document.RootElement.TryGetProperty("ok", out var ok) || ok.ValueKind != JsonValueKind.True) return false;
+            if (!document.RootElement.TryGetProperty("build", out var build) ||
+                !(build.GetString() ?? string.Empty).StartsWith("PORTAL Server", StringComparison.Ordinal)) return false;
+
+            using var webRequest = new HttpRequestMessage(HttpMethod.Get, origin + "/web/");
+            using var web = await Http.SendAsync(webRequest, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
+            return web.StatusCode == HttpStatusCode.OK;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private string WebViewArguments()
@@ -197,6 +287,20 @@ public partial class MainWindow : Window
             if (!e.IsSuccess)
             {
                 _pendingPersistOrigin = null;
+                var failedOrigin = _serverOrigin;
+                if (failedOrigin is not null &&
+                    !failedOrigin.Equals(TrustedFallbackServerOrigin, StringComparison.OrdinalIgnoreCase) &&
+                    IsAutomaticPortalOrigin(failedOrigin) &&
+                    await ProbePortalServerAsync(TrustedFallbackServerOrigin))
+                {
+                    if (DesktopCacheBridge.MigrateOutboxOrigin(_settingsDir, failedOrigin, TrustedFallbackServerOrigin))
+                    {
+                        ServerUrlBox.Text = TrustedFallbackServerOrigin;
+                        StatusText.Text = "Переключаемся на резервный канал…";
+                        await ConnectAsync(TrustedFallbackServerOrigin, persist: true);
+                        return;
+                    }
+                }
                 ShowSetup($"Не удалось загрузить PORTAL ({e.WebErrorStatus}). Проверьте сеть и сервер.");
                 return;
             }
@@ -420,7 +524,7 @@ public partial class MainWindow : Window
                 return new ServerRefreshResult(false, false, _serverOrigin);
 
             using var request = new HttpRequestMessage(HttpMethod.Get, ServerDiscoveryUrl);
-            request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.6.0");
+            request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.7.0");
             request.Headers.Accept.ParseAdd("application/json");
             using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
             response.EnsureSuccessStatusCode();
@@ -442,7 +546,25 @@ public partial class MainWindow : Window
             if (storedRevision > document.Revision)
                 throw new InvalidDataException("Server discovery rollback rejected.");
             if (!await ProbeOfficialServerAsync(next))
+            {
+                var current = _serverOrigin ?? LoadStoredOrigin();
+                if (IsAutomaticPortalOrigin(current) &&
+                    await ProbePortalServerAsync(TrustedFallbackServerOrigin))
+                {
+                    var changedToFallback = !string.Equals(current, TrustedFallbackServerOrigin, StringComparison.OrdinalIgnoreCase);
+                    if (changedToFallback && !string.IsNullOrWhiteSpace(current) &&
+                        !DesktopCacheBridge.MigrateOutboxOrigin(_settingsDir, current, TrustedFallbackServerOrigin))
+                        throw new IOException("Unable to migrate pending PORTAL work.");
+
+                    if (changedToFallback)
+                    {
+                        ServerUrlBox.Text = TrustedFallbackServerOrigin;
+                        await ConnectAsync(TrustedFallbackServerOrigin, persist: true);
+                    }
+                    return new ServerRefreshResult(false, changedToFallback, TrustedFallbackServerOrigin);
+                }
                 throw new InvalidDataException("Discovered PORTAL server is not ready.");
+            }
 
             var previous = _serverOrigin ?? LoadStoredOrigin();
             var changed = !string.Equals(previous, next, StringComparison.OrdinalIgnoreCase);
@@ -486,25 +608,7 @@ public partial class MainWindow : Window
         return true;
     }
 
-    private static async Task<bool> ProbeOfficialServerAsync(string origin)
-    {
-        try
-        {
-            using var ping = await Http.GetAsync(origin + "/api/ping");
-            if (ping.StatusCode != HttpStatusCode.OK) return false;
-            using var document = await JsonDocument.ParseAsync(await ping.Content.ReadAsStreamAsync());
-            if (!document.RootElement.TryGetProperty("ok", out var ok) || ok.ValueKind != JsonValueKind.True) return false;
-            if (!document.RootElement.TryGetProperty("build", out var build) ||
-                !(build.GetString() ?? string.Empty).StartsWith("PORTAL Server", StringComparison.Ordinal)) return false;
-
-            using var web = await Http.GetAsync(origin + "/web/");
-            return web.StatusCode == HttpStatusCode.OK;
-        }
-        catch
-        {
-            return false;
-        }
-    }
+    private static Task<bool> ProbeOfficialServerAsync(string origin) => ProbePortalServerAsync(origin);
 
     private async Task<DesktopUpdateManifest?> LoadUpdateManifestAsync()
     {
@@ -544,7 +648,7 @@ public partial class MainWindow : Window
     {
         using var request = new HttpRequestMessage(HttpMethod.Get,
             $"https://api.github.com/repos/{GithubRepository}/releases?per_page=50");
-        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.6.0");
+        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.7.0");
         request.Headers.Accept.ParseAdd("application/vnd.github+json");
         using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();
