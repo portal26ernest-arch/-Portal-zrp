@@ -179,6 +179,33 @@ public class MainActivity extends Activity {
             this.webView = webView;
             this.localCache = new PortalLocalCache(context);
             prefs = context.getSharedPreferences("portal_settings", Context.MODE_PRIVATE);
+            migrateAutomaticServerAfterUpgrade();
+        }
+
+        private void migrateAutomaticServerAfterUpgrade() {
+            if (!"release".equals(BuildConfig.RELEASE_CHANNEL)) return;
+            int currentVersion = BuildConfig.VERSION_CODE;
+            if (prefs.getInt("server_config_version_code", 0) == currentVersion) return;
+
+            String saved = prefs.getString("server_url", "");
+            String previous = saved == null ? "" : saved.trim();
+            String target = DEFAULT_URL == null ? "" : DEFAULT_URL.trim();
+            while (target.endsWith("/")) target = target.substring(0, target.length() - 1);
+
+            boolean managed = previous.isEmpty() || isAutomaticPortalServer(previous) || isLegacyLocalServer(previous);
+            if (managed && target.startsWith("https://")) {
+                if (isAutomaticPortalServer(previous) && !previous.equalsIgnoreCase(target)
+                        && !localCache.migrateOutboxOrigin(previous, target)) {
+                    return;
+                }
+                prefs.edit().putString("server_url", target)
+                        .putInt("server_config_version_code", currentVersion).apply();
+                healthyServerBase = "";
+                healthyServerUntilMs = 0;
+                return;
+            }
+
+            prefs.edit().putInt("server_config_version_code", currentVersion).apply();
         }
 
         @JavascriptInterface
