@@ -68,6 +68,9 @@ assert.match(main,/TRUSTED_FALLBACK_API_URL = "https:\/\/thru-runner-versus-gsm\
 assert.match(main,/resolveServerForRequest\(getServerUrl\(\)\)/);
 assert.match(main,/probeOfficialServer\(TRUSTED_FALLBACK_API_URL\)/);
 assert.match(main,/SERVER_HEALTH_TTL_MS/);
+assert.match(main,/migrateAutomaticServerAfterUpgrade/);
+assert.match(main,/server_config_version_code/);
+assert.match(main,/BuildConfig\.VERSION_CODE/);
 assert.match(localCache,/migrateOutboxOrigin\(String oldOrigin, String newOrigin\)/);
 assert.match(main,/127\.0\.0\.1/);
 assert.match(main,/portal\.invalid/);
