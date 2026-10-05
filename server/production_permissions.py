@@ -1,4 +1,4 @@
-ROLE_NAMES = {'packer':'Сборщик','manager':'Менеджер','director':'Директор',
+ROLE_NAMES = {'packer':'Упаковщик','loader':'Грузчик','driver':'Водитель','manager':'Менеджер','director':'Директор',
               'admin':'Управляющий','shift':'Старший смены','accountant':'Бухгалтер'}
 # code, group, label, legacy recommended roles metadata.
 # The authoritative defaults are ROLE_DEFAULTS below.
@@ -44,7 +44,7 @@ CATALOG = [
  ('company.settings','Настройки компании','Изменять правила контроля компании','director admin'),
 ]
 CODES = {p[0] for p in CATALOG}
-ROLE_ORDER=('packer','manager','director','admin','shift','accountant')
+ROLE_ORDER=('packer','loader','driver','manager','director','admin','shift','accountant')
 MANAGER_DEFAULTS = {
     'work.write','tasks.read','tasks.manage',
     'organizer.read','organizer.assign','organizer.request.create',
@@ -61,6 +61,8 @@ ROLE_DEFAULTS = {
     'admin': CODES.copy(),
     'manager': MANAGER_DEFAULTS,
     'packer': PACKER_DEFAULTS,
+    'loader': PACKER_DEFAULTS,
+    'driver': PACKER_DEFAULTS,
     'shift': set(),
     'accountant': set(),
 }

@@ -479,3 +479,16 @@ Current roadmap counts are **93 ✅ / 15 🟡 / 6 ⏳ / 12 🔌**. Current-SHA S
 - [x] Windows Desktop 5.8 / build 58: доверенный fallback заменён на `https://reserve-api.vart-portal.ru`.
 - [x] Основной production origin остаётся `https://api.vart-portal.ru`; резерв используется только при провале health-check основного.
 - [x] Делегация `vart-portal.ru` в Timeweb переведена на Cloudflare NS `coco.ns.cloudflare.com` и `grant.ns.cloudflare.com`; ожидается распространение в реестре .RU.
+
+
+### Build metadata + employee roles — 05.10.2026
+- [x] Общий экран «О программе» на Android/Web/Windows/iOS получает platform/version/build number/build code/build date из build/runtime metadata; Android и Windows GitHub Actions формируют номер/дату сборки автоматически, Web публикует динамический `/web/build_meta.js`, iOS сохраняет существующий native metadata contract.
+- [x] Постоянный regression guard расширен: Android build-security, Web adapter/static tests и Windows workflow assertions проверяют наличие автоматического build number/build date, чтобы номер и дата сборки снова не исчезли из интерфейса.
+- [x] В company employee roles добавлены `Грузчик` (`loader`) и `Водитель` (`driver`) во всех текущих Android/Web/server invite/import/permission/work flows. Platform Owner остаётся отдельной глобальной ролью и не добавляется в обычный список сотрудников компании.
+- [x] Для production PostgreSQL добавлена новая stage16 migration role CHECK; историческая stage10 migration не переписывалась. Fresh SQLite schema также принимает loader/driver.
+- [x] Локальные проверки до push: Android build-security OK; Web adapter 5/5; server targeted role/static suite 5/5; Excel template/import 28/28; Android/iOS mobile parity 5.1/51; `git diff --check` OK. Windows compiler локально отсутствует, поэтому Windows build проверяется GitHub Actions.
+- [x] Ветка `assistant/about-build-metadata-20261005` опубликована; исходный implementation commit `90cb869` основан на актуальном `origin/main` после reconciliation с Desktop 5.8/build 58.
+- [ ] GitHub Actions текущей ветки: дождаться зелёных Server isolation / Android APK / Android UI / Windows Desktop / Web / iOS / master-control. Первый master-control run корректно остановил ветку из-за отсутствия записи в этом roadmap; этот пункт добавлен как исправление процесса.
+- Следующий шаг: push roadmap checkpoint → получить зелёный полный CI → merge в `main` только после успешных обязательных checks → проверить main CI и release metadata перед следующим release/deploy.
+- [x] CI follow-up: первый полный PR Server CI выявил календарно-зависимый regression test — тест ставил работу на фиксированное `2026-10-05T12:00`, а тестовый тариф уже создавался позже в тот же день. Тест переведён на динамический будущий период относительно даты запуска; продуктовая логика тарифа не ослаблялась. Targeted regression + role authorization checks: 3/3 OK.
+- [ ] Повторный полный GitHub Actions после calendar-test fix должен быть зелёным перед merge.

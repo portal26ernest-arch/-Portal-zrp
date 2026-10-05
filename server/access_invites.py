@@ -12,7 +12,7 @@ from employee_names import persist_known_employee_aliases
 
 TABLE = 'portal_access_invites'
 SYSTEM_ACTOR_ID = 9223372036854775807
-ROLES = {'admin', 'director', 'manager', 'packer', 'shift', 'accountant'}
+ROLES = {'admin', 'director', 'manager', 'packer', 'loader', 'driver', 'shift', 'accountant'}
 PUBLIC = ('id', 'company_id', 'created_by', 'created_at', 'expires_at', 'status',
           'role', 'username', 'display_name', 'employee_id', 'user_id', 'accepted_at',
           'decided_at', 'decided_by')

@@ -76,7 +76,10 @@ jobs:
           ) | Out-Null
           if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Error $_ }; exit 1 }
       - name: Publish self-contained Windows client
-        run: dotnet publish desktop_windows/Portal.Desktop.csproj --configuration Release --runtime win-x64 --self-contained true -p:Version=${{ steps.meta.outputs.version }} -p:InformationalVersion=${{ steps.meta.outputs.version }}-ci -o artifacts/desktop
+        shell: pwsh
+        run: |
+          $buildDate = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd')
+          dotnet publish desktop_windows/Portal.Desktop.csproj --configuration Release --runtime win-x64 --self-contained true -p:Version=${{ steps.meta.outputs.version }} -p:InformationalVersion=${{ steps.meta.outputs.version }}-ci -p:PortalBuildNumber=$env:GITHUB_RUN_NUMBER -p:PortalBuildDate=$buildDate -o artifacts/desktop
       - name: Package and checksum CI artifact
         shell: pwsh
         run: |

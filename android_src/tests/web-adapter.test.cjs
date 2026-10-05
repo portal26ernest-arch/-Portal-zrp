@@ -7,7 +7,10 @@ const app=fs.readFileSync(path.join(root,'app.js'),'utf8');
 const css=fs.readFileSync(path.join(root,'ui.css'),'utf8');
 
 test('browser uses shared shell, same-origin API and session scoped token storage',()=>{
+  assert.ok(html.includes('build_meta.js'));
   assert.ok(html.includes('web_adapter.js'));
+  assert.ok(adapter.includes('getAppMetadata: appMetadata'));
+  assert.ok(adapter.includes('__PORTAL_BUILD_METADATA__'));
   assert.ok(html.includes("connect-src 'self'"));
   assert.ok(adapter.includes('new URL(value, location.origin)'));
   assert.ok(adapter.includes('url.origin !== location.origin'));

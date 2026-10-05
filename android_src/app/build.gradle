@@ -5,6 +5,8 @@ plugins {
 def releaseInfo = new Properties()
 rootProject.file('release.properties').withInputStream { releaseInfo.load(it) }
 def quoted = { String value -> '"' + value.replace('\\', '\\\\').replace('"', '\\"') + '"' }
+def buildNumber = providers.environmentVariable('PORTAL_BUILD_NUMBER').orElse(releaseInfo.getProperty('buildNumber')).get()
+def buildDate = providers.environmentVariable('PORTAL_BUILD_DATE').orElse(releaseInfo.getProperty('buildDate')).get()
 def portalApiUrl = providers.gradleProperty('portalApiUrl').orElse(providers.environmentVariable('PORTAL_API_URL')).orElse('http://127.0.0.1:8765').get()
 
 gradle.taskGraph.whenReady { graph ->
@@ -56,8 +58,8 @@ android {
         targetSdk 35
         versionCode releaseInfo.getProperty('versionCode').toInteger()
         versionName releaseInfo.getProperty('versionName')
-        buildConfigField 'String', 'BUILD_NUMBER', quoted(releaseInfo.getProperty('buildNumber'))
-        buildConfigField 'String', 'BUILD_DATE', quoted(releaseInfo.getProperty('buildDate'))
+        buildConfigField 'String', 'BUILD_NUMBER', quoted(buildNumber)
+        buildConfigField 'String', 'BUILD_DATE', quoted(buildDate)
         buildConfigField 'String', 'RELEASE_CHANNEL', quoted(releaseInfo.getProperty('channel'))
         buildConfigField 'String', 'UPDATE_MANIFEST_URL', quoted(releaseInfo.getProperty('updateManifestUrl', ''))
         buildConfigField 'String', 'SERVER_DISCOVERY_URL', quoted(releaseInfo.getProperty('serverDiscoveryUrl', ''))

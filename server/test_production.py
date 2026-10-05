@@ -62,8 +62,10 @@ class ProductionTest(unittest.TestCase):
                    'payroll.settlement.correct','users.manage','company.settings','imports.manage','rates.employee'}
         self.assertTrue(required <= manager)
         self.assertTrue(forbidden.isdisjoint(manager))
-        self.assertEqual(rights.defaults('packer'),
-                         {'tasks.read','work.write','payroll.own','materials.read','materials.use'})
+        worker_defaults={'tasks.read','work.write','payroll.own','materials.read','materials.use'}
+        self.assertEqual(rights.defaults('packer'),worker_defaults)
+        self.assertEqual(rights.defaults('loader'),worker_defaults)
+        self.assertEqual(rights.defaults('driver'),worker_defaults)
         self.assertEqual(rights.defaults('shift'),set())
         self.assertEqual(rights.defaults('accountant'),set())
 
@@ -802,16 +804,26 @@ class ProductionTest(unittest.TestCase):
         self.assertEqual(sum(group['quantity'] for group in self_only['groups']),5)
 
     def test_analytics_period_comparison_uses_company_dates_and_valid_timing_only(self):
+        previous_work_date=datetime.now().date()+timedelta(days=30)
+        current_start=previous_work_date+timedelta(days=5)
+        current_end=current_start+timedelta(days=6)
+        current_work_date=current_start+timedelta(days=2)
+        previous_start=current_start-timedelta(days=7)
+        previous_end=current_start-timedelta(days=1)
         with portal.tenants.company_scope(1),portal.db() as conn:
             repo=Repository(conn,1);worker=next(user for user in repo.catalog('users') if user['id']==self.worker_id)
-            Production(repo,worker,lambda:'2026-10-05T12:00:00.000000').work(
+            previous_clock=previous_work_date.isoformat()+'T12:00:00.000000'
+            current_clock=current_work_date.isoformat()+'T12:00:00.000000'
+            current_started=current_work_date.isoformat()+'T11:00:00.000000'
+            Production(repo,worker,lambda:previous_clock).work(
                 dict(client_id=1,operation_id=1,quantity=1))
-            Production(repo,worker,lambda:'2026-10-12T12:00:00.000000').work(
-                dict(client_id=1,operation_id=1,quantity=2,started_at='2026-10-12T11:00:00.000000'))
+            Production(repo,worker,lambda:current_clock).work(
+                dict(client_id=1,operation_id=1,quantity=2,started_at=current_started))
             conn.commit()
-        data=self.get('analytics?from=2026-10-10&to=2026-10-16',self.worker)['data']
+        data=self.get(f'analytics?from={current_start.isoformat()}&to={current_end.isoformat()}',self.worker)['data']
         comparison=data['comparison']
-        self.assertEqual((comparison['previous_start'],comparison['previous_end']),('2026-10-03','2026-10-09'))
+        self.assertEqual((comparison['previous_start'],comparison['previous_end']),
+                         (previous_start.isoformat(),previous_end.isoformat()))
         self.assertEqual((comparison['current']['units'],comparison['previous']['units'],comparison['units_delta']),(2,1,1))
         self.assertEqual(comparison['current']['units_per_hour'],2)
         self.assertIsNone(comparison['previous']['units_per_hour'])

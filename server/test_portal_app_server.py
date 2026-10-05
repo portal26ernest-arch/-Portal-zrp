@@ -239,7 +239,7 @@ class PortalAPITest(unittest.TestCase):
         self.assertNotIn("internal_cost",self.request("/api/jobs",self.worker)["jobs"][0])
 
     def test_other_roles_cannot_administer(self):
-        for role in ("manager","accountant","shift"):
+        for role in ("manager","accountant","shift","loader","driver"):
             uid=portal.save_user({"username":role,"pin":"1234","role":role})
             with portal.db() as conn:
                 token=portal.create_session(conn,uid)

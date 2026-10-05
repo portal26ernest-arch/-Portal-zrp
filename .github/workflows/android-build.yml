@@ -31,6 +31,13 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+      - name: Resolve automatic build metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION_CODE=$(sed -n 's/^versionCode=//p' android_src/release.properties | tr -d '\r')
+          echo "PORTAL_BUILD_NUMBER=${VERSION_CODE}.${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+          echo "PORTAL_BUILD_DATE=$(date -u +%F)" >> "$GITHUB_ENV"
       - name: Set up Node 24
         uses: actions/setup-node@v4
         with:
@@ -95,7 +102,8 @@ jobs:
           printf '%s  %s\n' "$APK_SHA256" "$NAME.apk" > "$NAME.apk.sha256"
           echo "artifact_name=${NAME}_${APK_SHA256}" >> "$GITHUB_OUTPUT"
           VERSION_CODE=$(sed -n 's/^versionCode=//p' android_src/release.properties | tr -d '\r')
-          BUILD_NUMBER=$(sed -n 's/^buildNumber=//p' android_src/release.properties | tr -d '\r')
+          BUILD_NUMBER="$PORTAL_BUILD_NUMBER"
+          BUILD_DATE="$PORTAL_BUILD_DATE"
           STAGING_VERSION="${VERSION}-staging"
           {
             echo "## PORTAL staging APK"
@@ -103,7 +111,7 @@ jobs:
             echo "- Artifact: $NAME"
             echo "- APK SHA-256: $APK_SHA256"
           } >> "$GITHUB_STEP_SUMMARY"
-          sed "s/^versionName=.*/versionName=${STAGING_VERSION}/" android_src/release.properties > "$NAME.version.properties"
+          sed -e "s/^versionName=.*/versionName=${STAGING_VERSION}/" -e "s/^buildNumber=.*/buildNumber=${BUILD_NUMBER}/" -e "s/^buildDate=.*/buildDate=${BUILD_DATE}/" android_src/release.properties > "$NAME.version.properties"
           cp PORTAL_PART12_CHANGELOG.md "$NAME.changelog.md"
           cat > "$NAME.test-report.txt" <<REPORT
           PORTAL ${STAGING_VERSION} artifact validation

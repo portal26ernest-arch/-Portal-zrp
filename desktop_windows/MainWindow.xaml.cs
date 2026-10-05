@@ -222,7 +222,7 @@ public partial class MainWindow : Window
                 // cacheable web assets survive restarts. "Сменить сервер" still clears it explicitly.
                 options.IsInPrivateModeEnabled = false;
                 await Browser.EnsureCoreWebView2Async(env, options);
-                ConfigureBrowser();
+                await ConfigureBrowserAsync();
             }
 
             _serverOrigin = origin;
@@ -245,7 +245,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ConfigureBrowser()
+    private async Task ConfigureBrowserAsync()
     {
         if (Browser.CoreWebView2 is null) return;
         Browser.CoreWebView2.Settings.AreDevToolsEnabled = false;
@@ -256,6 +256,32 @@ public partial class MainWindow : Window
         // WebView2 asks the user before saving/updating and can autofill it later.
         Browser.CoreWebView2.Settings.IsPasswordAutosaveEnabled = true;
         Browser.CoreWebView2.Settings.AreHostObjectsAllowed = true;
+        var assemblyVersion = typeof(MainWindow).Assembly.GetName().Version;
+        var versionName = assemblyVersion is null
+            ? "0.0.0"
+            : $"{assemblyVersion.Major}.{assemblyVersion.Minor}.{Math.Max(0, assemblyVersion.Build)}";
+        var buildNumber = CurrentBuild.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var buildDate = string.Empty;
+        foreach (var attribute in typeof(MainWindow).Assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyMetadataAttribute), false))
+        {
+            if (attribute is not System.Reflection.AssemblyMetadataAttribute metadata) continue;
+            if (metadata.Key == "PortalBuildNumber") buildNumber = metadata.Value ?? buildNumber;
+            if (metadata.Key == "PortalBuildDate") buildDate = metadata.Value ?? string.Empty;
+        }
+        var buildMetadata = JsonSerializer.Serialize(new
+        {
+            applicationId = "ru.portal.desktop.windows",
+            versionName,
+            versionCode = CurrentBuild,
+            buildNumber,
+            buildDate,
+            channel = "release",
+            updatesConfigured = true,
+            platform = "Windows Desktop"
+        });
+        var metadataLiteral = JsonSerializer.Serialize(buildMetadata);
+        await Browser.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(
+            "window.__PORTAL_BUILD_METADATA__=JSON.parse(" + metadataLiteral + ");window.__PORTAL_DESKTOP__=true;");
         if (_browserEventsAttached) return;
         Browser.CoreWebView2.NavigationStarting += (_, e) =>
         {

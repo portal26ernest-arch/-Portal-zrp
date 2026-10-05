@@ -82,7 +82,7 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
             "buildDate": info["PORTALBuildDate"] as? String ?? "",
             "channel": info["PORTALReleaseChannel"] as? String ?? "development",
             "updatesConfigured": true,
-            "platform": "ios"
+            "platform": "iOS"
         ]
     }
     private func bootstrapScript() -> String {

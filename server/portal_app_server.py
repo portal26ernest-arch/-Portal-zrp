@@ -54,7 +54,10 @@ ROLE_LABELS = {
     "accountant": "Бухгалтер",
     "shift": "Старший смены",
     "packer": "Упаковщик",
+    "loader": "Грузчик",
+    "driver": "Водитель",
 }
+BASIC_EMPLOYEE_ROLES = {"packer", "loader", "driver"}
 
 
 def now_text():
@@ -412,7 +415,7 @@ def sync_production(conn, work_id, employee_id, client_name, operation_name, pro
 
 
 def save_work(user, client_id, operation_id, quantity):
-    if user["role"] not in {"admin","director","manager","shift","packer"}:
+    if user["role"] not in {"admin","director","manager","shift"} | BASIC_EMPLOYEE_ROLES:
         raise PermissionError("Эта роль не может вносить выработку")
     worker_employee_id = user.get("employee_id")
     if worker_employee_id is None:
@@ -473,7 +476,7 @@ def dashboard(user, period="current"):
     with db() as conn:
         params=[start,end]
         worker_filter=""
-        if user["role"]=="packer":
+        if user["role"] in BASIC_EMPLOYEE_ROLES:
             w=employee_work_summary(conn,tenants.COMPANY_ID.get(),user.get('employee_id'),start,end)
         elif user["role"] == "manager":
             allowed=manager_allowed_client_ids(conn,user) or set()
@@ -482,7 +485,7 @@ def dashboard(user, period="current"):
                 params.extend(sorted(allowed))
             else:
                 worker_filter=' AND 1=0'
-        if user['role']!='packer':
+        if user['role'] not in BASIC_EMPLOYEE_ROLES:
             row=conn.execute(f"""
                 SELECT COALESCE(SUM(quantity),0) qty,COALESCE(SUM(salary),0) salary,
                        COALESCE(SUM(revenue),0) revenue,COALESCE(SUM(direct_cost),0) direct_cost
@@ -500,7 +503,7 @@ def dashboard(user, period="current"):
                 invoiced+=float(r["amount_due"] or 0)
                 p=conn.execute("SELECT COALESCE(SUM(amount),0) FROM client_payments WHERE invoice_id=?",(r["id"],)).fetchone()[0]
                 paid+=float(p or 0); debt+=max(float(r["amount_due"] or 0)-float(p or 0),0)
-        if user["role"] == "packer":
+        if user["role"] in BASIC_EMPLOYEE_ROLES:
             return {"period":period,"quantity":float(w["qty"] or 0),"salary":float(w["salary"] or 0)}
         profit=float(w["revenue"] or 0)-float(w["salary"] or 0)-float(w["direct_cost"] or 0)
         return {"period":period,"quantity":float(w["qty"] or 0),"salary":float(w["salary"] or 0),"revenue":float(w["revenue"] or 0),"direct_cost":float(w["direct_cost"] or 0),"profit":profit,"invoiced":invoiced,"paid":paid,"debt":debt}
@@ -594,8 +597,8 @@ def save_user(body, user_id=None):
             if not create_employee:
                 raise ValueError("Для доступа существующего сотрудника выберите его карточку")
             employee = create_internal_employee(conn, display, username)
-        if role == "packer" and employee is None:
-            raise ValueError("Упаковщик должен иметь собственную карточку сотрудника")
+        if role in BASIC_EMPLOYEE_ROLES and employee is None:
+            raise ValueError("Сотрудник должен иметь собственную карточку сотрудника")
         values.update(username=username,display_name=display,role=role,active=active,employee_id=employee)
         user_id=write_user_account(conn,tenants.COMPANY_ID.get(),user_id,values,salt,digest,now_text())
         repo=Repository(conn,tenants.COMPANY_ID.get())
@@ -1423,14 +1426,14 @@ class Handler(BaseHTTPRequestHandler):
                 c=allowed_client(conn,user,client_id)
                 if not c or not c["active"]: raise PermissionError("Клиент недоступен")
                 rows=[dict(r) for r in conn.execute("SELECT id,name,employee_rate,client_rate FROM portal_client_operations WHERE client_id=? AND active=1 ORDER BY sort_order,name",(client_id,)).fetchall()]
-                if user["role"] == "packer":
+                if user["role"] in BASIC_EMPLOYEE_ROLES:
                     rows = [{k:v for k,v in r.items() if k != "client_rate"} for r in rows]
                 if production_ready:
                     if not {'work.write','clients.read','tasks.read'} & permissions:raise PermissionError('Нет доступа к операциям')
                     rows=[{k:v for k,v in r.items() if (k!='employee_rate' or 'payroll.own' in permissions or 'rates.employee' in permissions) and (k!='client_rate' or 'finance.read' in permissions or 'rates.client' in permissions)} for r in rows]
             return self.send_json({"ok":True,"client":dict(c),"operations":rows})
         if path.startswith("/api/clients/") and path.count("/")==3:
-            if not business_can(user,'finance.read',set(ROLE_LABELS)-{'packer'}): raise PermissionError("Нет доступа к финансовой карточке клиента")
+            if not business_can(user,'finance.read',set(ROLE_LABELS)-BASIC_EMPLOYEE_ROLES): raise PermissionError("Нет доступа к финансовой карточке клиента")
             client_id=int(path.split("/")[3])
             with db() as conn:
                 c=allowed_client(conn,user,client_id)
@@ -1469,7 +1472,7 @@ class Handler(BaseHTTPRequestHandler):
                 """).fetchall()] if table_exists(conn,"production_jobs") else []
                 if user["role"]=="manager":
                     allowed=manager_allowed_client_ids(conn,user) or set(); names={r["name"] for r in conn.execute("SELECT id,name FROM portal_clients WHERE id IN (%s)"%(','.join('?'*len(allowed))),tuple(allowed)).fetchall()} if allowed else set(); rows=[r for r in rows if r["client"] in names]
-                if user["role"] == "packer":
+                if user["role"] in BASIC_EMPLOYEE_ROLES:
                     fields = {"id","client","operation","product_name","due_at","priority","target_quantity","done","status"}
                     rows = [{k:v for k,v in r.items() if k in fields} for r in rows]
             return self.send_json({"ok":True,"jobs":rows})

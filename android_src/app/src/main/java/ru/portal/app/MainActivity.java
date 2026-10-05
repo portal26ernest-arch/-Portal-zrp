@@ -220,7 +220,8 @@ public class MainActivity extends Activity {
                     .put("versionName", BuildConfig.VERSION_NAME).put("versionCode", BuildConfig.VERSION_CODE)
                     .put("buildNumber", BuildConfig.BUILD_NUMBER).put("buildDate", BuildConfig.BUILD_DATE)
                     .put("channel", BuildConfig.RELEASE_CHANNEL)
-                    .put("updatesConfigured", !BuildConfig.UPDATE_MANIFEST_URL.isEmpty()).toString();
+                    .put("updatesConfigured", !BuildConfig.UPDATE_MANIFEST_URL.isEmpty())
+                    .put("platform", "Android").toString();
             } catch (Exception ignored) { return "{}"; }
         }
 
