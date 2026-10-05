@@ -419,9 +419,8 @@ function chatAttachmentHtml(m){
   const save=window.PortalNative?.saveBase64FileAsync?btn('Сохранить файл','saveChatAttachment','data-id="'+esc(a.id)+'"','text'):'';
   return '<div class="notice"><b>'+esc(a.original_name)+'</b><span class="meta"> · '+num(a.size_bytes/1024)+' КБ</span>'+save+'</div>';
 }
-const portalStickers=[['accepted','Принято','accepted.svg'],['in_progress','В работе','in_progress.svg'],['done','Готово','done.svg'],['help','Нужна помощь','help.svg'],['important','Важно','important.svg'],['thanks','Спасибо','thanks.svg']];
 function chatSystemHtml(m){
-  if(m.message_type==='sticker'){const s=portalStickers.find(x=>x[0]===m.sticker_key);return s?`<div class="chat-sticker"><img width="54" height="54" src="stickers/${s[2]}" alt="${esc(s[1])}"><b>${esc(s[1])}</b></div>`:'<p class="meta">Системный стикер недоступен</p>';}
+  if(m.message_type==='sticker'){const s=(S.chatStickerCatalog||[]).find(x=>x.key===m.sticker_key);return s?`<div class="chat-sticker"><img width="54" height="54" src="stickers/${esc(s.asset)}" alt="${esc(s.label)}"><b>${esc(s.label)}</b></div>`:'<p class="meta">Системный стикер недоступен</p>';}
   if(m.message_type==='absence_notice')return `<div class="notice"><b>Сообщил(а) о невыходе · ${esc(m.sender_name)}</b><p>Дата невыхода: <strong>${esc(m.absence_date)}</strong></p>${m.comment?`<p>${esc(m.comment)}</p>`:''}</div>`;
   return m.text?'<p>'+esc(m.text)+'</p>':'';
 }
@@ -431,13 +430,13 @@ async function refreshTeamChat(){
   $('chatList').innerHTML=rows.map(m=>`<article class="item"><div class="row between"><b>${esc(m.sender_name)}</b>${m.pinned?'<span class="badge green">Закреплено</span>':''}</div>${chatSystemHtml(m)}${chatAttachmentHtml(m)}<p class="meta">${esc(portalDate(m.created_at).toLocaleString('ru-RU'))}</p>${allowed('chat.moderate')?btn(m.pinned?'Открепить':'Закрепить','pinChat',`data-id="${esc(m.id)}" data-pinned="${m.pinned?'1':'0'}"`,'text'):''}</article>`).join('')||'<p class="empty">Сообщений пока нет</p>';
 }
 screens.teamChat=async()=>{
-  S.chatUsers=await productionGet('chat-users');S.chatRecipient='';
+  S.chatUsers=await productionGet('chat-users');S.chatStickerCatalog=await productionGet('chat-sticker-catalog');S.chatRecipient='';
   const roomOptions='<option value="">Общий чат</option>'+S.chatUsers.map(u=>`<option value="${u.id}">Лично · ${esc(u.display_name)}</option>`).join('');
   paint(heading('Команда','Внутреннее общение внутри PORTAL')+selectField('chatRecipient','Комната',roomOptions)+'<div id="chatList" class="list"></div>'+
     (allowed('chat.write')?`<form id="chatForm" class="card">${field('chatText','Сообщение','','text','maxlength="4000" autocomplete="off"')}<label class="field"><span>Вложение — необязательно, до 2 МБ</span><input id="chatFile" type="file" accept="image/jpeg,image/png,image/webp,application/pdf,text/plain"></label><button class="btn secondary block" type="button" data-action="chooseChatSticker">Стикеры PORTAL</button><button class="btn secondary block" type="button" data-action="newAbsenceNotice">Сообщить о невыходе</button><button class="btn block" type="submit">Отправить</button><p class="meta">В каждой комнате хранятся последние 1000 обычных сообщений. Закреплённые сообщения не входят в лимит и сохраняются до открепления.</p></form>`:''));
   $('chatRecipient').addEventListener('change',async()=>{S.chatRecipient=$('chatRecipient').value;await refreshTeamChat();});await refreshTeamChat();
 };
-actions.chooseChatSticker=()=>{if(S.chatRecipient)throw new Error('Стикеры доступны в общем чате');openSheet('Стикеры PORTAL',`<div class="mini-actions">${portalStickers.map(([key,label,file])=>`<button class="item" type="button" data-action="sendChatSticker" data-key="${key}"><img width="48" height="48" src="stickers/${file}" alt=""><b>${esc(label)}</b></button>`).join('')}</div>`);};
+actions.chooseChatSticker=()=>{if(S.chatRecipient)throw new Error('Стикеры доступны в общем чате');openSheet('Стикеры PORTAL',`<div class="mini-actions">${(S.chatStickerCatalog||[]).map(s=>`<button class="item" type="button" data-action="sendChatSticker" data-key="${esc(s.key)}"><img width="48" height="48" src="stickers/${esc(s.asset)}" alt=""><b>${esc(s.label)}</b></button>`).join('')}</div>`);};
 actions.sendChatSticker=async button=>{await productionPost('chat',{subtype:'sticker',sticker_key:button.dataset.key},null);closeSheet();await refreshTeamChat();};
 actions.newAbsenceNotice=()=>{if(S.chatRecipient)throw new Error('Сообщить о невыходе можно только в общем чате');openSheet('Сообщить о невыходе',`<form id="absenceForm">${field('absenceDate','Дата смены / дня',new Date().toISOString().slice(0,10),'date','required')}${field('absenceComment','Комментарий или причина — необязательно','','text','maxlength="300"')}<button class="btn block" type="submit">Отправить сообщение</button></form>`);};
 forms.absenceForm=async form=>{await productionPost('chat',{subtype:'absence_notice',absence_date:$('absenceDate').value,comment:$('absenceComment').value},form);closeSheet();await refreshTeamChat();};
