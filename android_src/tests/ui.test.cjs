@@ -21,13 +21,21 @@ test('all shipped JavaScript parses',()=>{
 });
 test('system sticker catalog, rendering and absence notice use structured safe fields',()=>{
   const catalog=JSON.parse(fs.readFileSync(path.join(assets,'stickers/catalog.json'),'utf8'));
-  assert.deepEqual(catalog.stickers.map(x=>x.key),['accepted','in_progress','done','help','important','thanks']);
-  for(const item of catalog.stickers){assert.match(item.asset,/^[a-z_]+\.svg$/);assert.ok(fs.existsSync(path.join(assets,'stickers',item.asset)));}
+  assert.deepEqual(catalog.stickers.filter(x=>x.enabled).map(x=>x.key),['accepted','in_progress','done','help','important','thanks']);
+  assert.deepEqual(catalog.stickers.slice(6).map(x=>x.key),['hello','happy','wow','cheer','sad','sleep','shrug','ok']);
+  for(const item of catalog.stickers){assert.match(item.asset,/^[a-z_]+\.(svg|png|webp|gif)$/);if(item.enabled)assert.ok(fs.existsSync(path.join(assets,'stickers',item.asset)));}
+  for(const item of catalog.stickers.slice(6))assert.equal(fs.existsSync(path.join(assets,'stickers',item.asset)),false);
   const production=fs.readFileSync(path.join(assets,'production.js'),'utf8');
   assert.match(production,/subtype:'sticker',sticker_key:button\.dataset\.key/);
   assert.match(production,/subtype:'absence_notice',absence_date:/);
   assert.match(production,/esc\(m\.absence_date\)/);
-  assert.match(production,/portalStickers\.find\(x=>x\[0\]===m\.sticker_key\)/);
+  assert.match(production,/S\.chatStickerCatalog\|\|\[\]/);
+  const body=production.match(/function chatSystemHtml\(m\)\{[\s\S]*?\n\}/)?.[0];
+  assert.ok(body,'shared chat sticker renderer exists');
+  const renderContext=vm.createContext({S:{chatStickerCatalog:catalog.stickers.filter(x=>x.enabled)},esc:value=>String(value).replace(/[&<>"']/g,'_')});
+  vm.runInContext(body+';globalThis.renderChatSystem=chatSystemHtml;',renderContext);
+  assert.match(renderContext.renderChatSystem({message_type:'sticker',sticker_key:'accepted'}),/stickers\/accepted\.svg/);
+  assert.match(renderContext.renderChatSystem({message_type:'sticker',sticker_key:'../evil'}),/недоступен/i);
 });
 test('desktop Organizer exposes director requests in Russian and stays desktop-only',()=>{
   const production=fs.readFileSync(path.join(assets,'production.js'),'utf8');

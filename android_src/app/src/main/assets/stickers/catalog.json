@@ -1,1 +1,19 @@
-{"version":1,"stickers":[{"key":"accepted","label":"Принято","asset":"accepted.svg","color":"#2563EB","symbol":"✓"},{"key":"in_progress","label":"В работе","asset":"in_progress.svg","color":"#7C3AED","symbol":"↻"},{"key":"done","label":"Готово","asset":"done.svg","color":"#15803D","symbol":"✓"},{"key":"help","label":"Нужна помощь","asset":"help.svg","color":"#D97706","symbol":"?"},{"key":"important","label":"Важно","asset":"important.svg","color":"#DC2626","symbol":"!"},{"key":"thanks","label":"Спасибо","asset":"thanks.svg","color":"#DB2777","symbol":"♥"}]}
+{
+  "version": 1,
+  "stickers": [
+    {"key":"accepted","label":"Принято","asset":"accepted.svg","enabled":true},
+    {"key":"in_progress","label":"В работе","asset":"in_progress.svg","enabled":true},
+    {"key":"done","label":"Готово","asset":"done.svg","enabled":true},
+    {"key":"help","label":"Нужна помощь","asset":"help.svg","enabled":true},
+    {"key":"important","label":"Важно","asset":"important.svg","enabled":true},
+    {"key":"thanks","label":"Спасибо","asset":"thanks.svg","enabled":true},
+    {"key":"hello","label":"Привет","asset":"hello.png","enabled":false},
+    {"key":"happy","label":"Радость","asset":"happy.png","enabled":false},
+    {"key":"wow","label":"Ого","asset":"wow.png","enabled":false},
+    {"key":"cheer","label":"Ура","asset":"cheer.png","enabled":false},
+    {"key":"sad","label":"Грусть","asset":"sad.png","enabled":false},
+    {"key":"sleep","label":"Сплю","asset":"sleep.png","enabled":false},
+    {"key":"shrug","label":"Не знаю","asset":"shrug.png","enabled":false},
+    {"key":"ok","label":"Всё хорошо","asset":"ok.png","enabled":false}
+  ]
+}
