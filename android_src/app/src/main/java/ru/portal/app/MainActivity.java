@@ -171,7 +171,7 @@ public class MainActivity extends Activity {
         private static final String DEFAULT_URL = BuildConfig.DEFAULT_API_URL;
         private static final String SERVER_DISCOVERY_URL = BuildConfig.SERVER_DISCOVERY_URL;
         private static final String PRIMARY_API_URL = "https://api.vart-portal.ru";
-        private static final String TRUSTED_FALLBACK_API_URL = "https://thru-runner-versus-gsm.trycloudflare.com";
+        private static final String TRUSTED_FALLBACK_API_URL = "https://reserve-api.vart-portal.ru";
         private static final String LEGACY_API_URL = "https://2a03-6f00-a--1-f426.sslip.io";
 
         PortalBridge(Context context, WebView webView) {

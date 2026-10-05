@@ -7,10 +7,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>PORTAL.Desktop</AssemblyName>
     <RootNamespace>Portal.Desktop</RootNamespace>
-    <Version>5.7.0</Version>
-    <FileVersion>5.7.0.57</FileVersion>
-    <AssemblyVersion>5.7.0.0</AssemblyVersion>
-    <InformationalVersion>5.7-network-fallback</InformationalVersion>
+    <Version>5.8.0</Version>
+    <FileVersion>5.8.0.58</FileVersion>
+    <AssemblyVersion>5.8.0.0</AssemblyVersion>
+    <InformationalVersion>5.8-owned-reserve</InformationalVersion>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <PublishSingleFile>false</PublishSingleFile>

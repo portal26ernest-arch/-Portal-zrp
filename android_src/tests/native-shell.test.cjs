@@ -64,7 +64,7 @@ assert.match(main,/checkUpdatesAndServer/);
 assert.match(main,/probeOfficialServer/);
 assert.match(main,/server_discovery_revision/);
 assert.match(main,/migrateOutboxOrigin/);
-assert.match(main,/TRUSTED_FALLBACK_API_URL = "https:\/\/thru-runner-versus-gsm\.trycloudflare\.com"/);
+assert.match(main,/TRUSTED_FALLBACK_API_URL = "https:\/\/reserve-api\.vart-portal\.ru"/);
 assert.match(main,/resolveServerForRequest\(getServerUrl\(\)\)/);
 assert.match(main,/probeOfficialServer\(TRUSTED_FALLBACK_API_URL\)/);
 assert.match(main,/SERVER_HEALTH_TTL_MS/);
