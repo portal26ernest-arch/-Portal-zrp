@@ -10,7 +10,7 @@ import os
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "android_src" / "app" / "src" / "main" / "assets"
 RELEASE_PROPERTIES = ROOT / "android_src" / "release.properties"
-FIXED = {"index.html", "privacy.html", "support.html", "ui.css", "core.js", "app.js", "screens.js", "production.js", "preview.js", "invoices.js", "documents_excel.js", "build_meta.js", "web_adapter.js", "brand-mark.svg", "stickers/catalog.json"}
+FIXED = {"index.html", "privacy.html", "support.html", "ui.css", "core.js", "app.js", "screens.js", "production.js", "preview.js", "invoices.js", "documents_excel.js", "build_meta.js", "web_adapter.js", "desktop_mascots.js", "brand-mark.svg", "stickers/catalog.json"}
 COMPRESSIBLE = frozenset({".html", ".js", ".css", ".svg", ".json"})
 
 
