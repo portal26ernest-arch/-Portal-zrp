@@ -12,7 +12,7 @@ import test_documents_api as fixtures
 class TemplateTest(unittest.TestCase):
     def test_exact_sheets_headers_marker_machine_mapping_and_determinism(self):
         payload=workbook();parsed=parse_template(payload)
-        self.assertEqual(parsed['sheets'],['Компания','Сотрудники','Клиенты','Операции_Тарифы'])
+        self.assertEqual(parsed['sheets'],list(SHEETS))
         self.assertEqual(parsed['template_version'],TEMPLATE_VERSION)
         self.assertEqual(payload,workbook())
         self.assertEqual(parsed['rows'],{name:[] for name in SHEETS})
@@ -31,11 +31,29 @@ class TemplateTest(unittest.TestCase):
 
     def test_standard_reader_opens_and_resaves_template(self):
         import openpyxl
-        payload=workbook({'Клиенты':[dict(client_ref='new',name='Тест',active=1)]})
+        payload=workbook({'Клиенты':[dict(client_ref='new',name='Тест',active=1)],'Сотрудники':[dict(full_name='Тестовый упаковщик',role='packer',active=1)]})
         book=openpyxl.load_workbook(io.BytesIO(payload))
         self.assertEqual(book.sheetnames,list(SHEETS))
-        self.assertEqual(book['Клиенты']['C4'].value,'Тест')
+        keys=[cell.value for cell in book['Клиенты'][2]]
+        self.assertEqual(book['Клиенты'].cell(row=4,column=keys.index('name')+1).value,'Тест')
+        employee_keys=[cell.value for cell in book['Сотрудники'][2]]
+        self.assertEqual(book['Сотрудники'].cell(row=4,column=employee_keys.index('role')+1).value,'Упаковщик')
+        self.assertEqual(book['Сотрудники'].cell(row=4,column=employee_keys.index('active')+1).value,'Да')
+        employee_validations=list(book['Сотрудники'].data_validations.dataValidation)
+        self.assertEqual(len(employee_validations),2)
+        self.assertTrue(any('Упаковщик' in (item.formula1 or '') for item in employee_validations))
+        self.assertTrue(any('Да,Нет' in (item.formula1 or '') for item in employee_validations))
         self.assertEqual(book['Клиенты'].freeze_panes,'A4')
+        self.assertTrue(book['Клиенты'].row_dimensions[1].hidden)
+        self.assertTrue(book['Клиенты'].row_dimensions[2].hidden)
+        from openpyxl.utils import get_column_letter
+        for sheet_name in SHEETS:
+            sheet=book[sheet_name];keys=[cell.value for cell in sheet[2]]
+            for index,key in enumerate(keys,1):
+                if key in {'company_id','employee_ref','employee_id','user_id','client_ref','client_id','operation_id','material_ref','material_id','norm_id','effective_to'}:
+                    self.assertTrue(sheet.column_dimensions[get_column_letter(index)].hidden,(sheet_name,key))
+        visible_headers=[cell.value for cell in book['Выработка'][3] if not book['Выработка'].column_dimensions[get_column_letter(cell.column)].hidden]
+        self.assertEqual(visible_headers,['Сотрудник','Клиент','Операция','Количество','Товар / комментарий'])
         out=io.BytesIO();book.save(out)
         self.assertEqual(parse_template(out.getvalue())['rows']['Клиенты'][0]['name'],'Тест')
 
@@ -47,6 +65,10 @@ class TemplateTest(unittest.TestCase):
             'Сотрудники':{'employee_ref':'employee:new','full_name':'Новый сотрудник','profile_username':'new.user','role':'packer','active':'1'},
             'Клиенты':{'client_ref':'client:new','name':'Новый клиент','active':'1','inn':'0012345678'},
             'Операции_Тарифы':{'client_ref':'client:new','name':'Упаковка','employee_rate':'5.00','client_rate':'8.00','active':'1','effective_from':'2027-01-01T00:00:00Z'},
+            'Материалы':{'name':'Коробка','unit':'шт','unit_cost':'2.50','min_stock':'10','active':'1'},
+            'Приход_материалов':{'material_name':'Коробка','quantity':'100','unit_cost':'2.50','note':'Стартовый приход'},
+            'Нормы_материалов':{'client_name':'Новый клиент','operation_name':'Упаковка','material_name':'Коробка','qty_per_unit':'0.5','active':'1'},
+            'Выработка':{'employee_name':'Новый сотрудник','client_name':'Новый клиент','operation_name':'Упаковка','quantity':'2','product':'Тест'},
         }
         for sheet_name,values in samples.items():
             sheet=book[sheet_name]
@@ -60,6 +82,10 @@ class TemplateTest(unittest.TestCase):
         self.assertEqual(parsed['Клиенты'][0]['inn'],'0012345678')
         self.assertEqual(parsed['Операции_Тарифы'][0]['employee_rate'],'5.00')
         self.assertEqual(parsed['Операции_Тарифы'][0]['client_rate'],'8.00')
+        self.assertEqual(parsed['Материалы'][0]['name'],'Коробка')
+        self.assertEqual(parsed['Приход_материалов'][0]['quantity'],'100')
+        self.assertEqual(parsed['Нормы_материалов'][0]['qty_per_unit'],'0.5')
+        self.assertEqual(parsed['Выработка'][0]['quantity'],'2')
 
 class TemplateAPITest(unittest.TestCase):
     request=fixtures.DocumentAPITest.request

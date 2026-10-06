@@ -136,6 +136,13 @@ test('desktop web branding uses the PORTAL blue shell',()=>{
   assert.match(css,/\.web-client \.top\{background:var\(--portal-blue\)/);
   assert.match(css,/@media\(min-width:900px\)/);
 });
+test('goods receipt form omits article and GTIN but keeps comment',()=>{
+  const production=fs.readFileSync(path.join(assets,'production.js'),'utf8');
+  assert.doesNotMatch(production,/batchArticle/);
+  assert.doesNotMatch(production,/batchGtin/);
+  assert.doesNotMatch(production,/Штрихкод \/ GTIN/);
+  assert.match(production,/field\('batchComment','Комментарий'\)/);
+});
 test('modal sheets do not dismiss on backdrop, Escape or Back',()=>{
   const index=fs.readFileSync(path.join(assets,'index.html'),'utf8');
   const app=fs.readFileSync(path.join(assets,'app.js'),'utf8');
@@ -170,9 +177,9 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
       else if(stage3&&url.startsWith('/api/v3/document-history?'))data.data=[{id:'doc-older',title:'Старая версия',created_at:'2026-09-28T00:00:00Z',status:'archived',revision:1},{id:'doc-ready',title:'Готовый документ',created_at:'2026-09-29T00:00:00Z',status:'ready',revision:2}];
       else if(stage3&&url.startsWith('/api/v3/document-file?id=')){const result=url.includes('result-');data.data=result?{filename:'PORTAL_import_result.json',mime_type:'application/json',file_b64:'e30='}:{filename:'PORTAL_report.xlsx',mime_type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',file_b64:'UEs='};}
       else if(stage3&&url==='/api/v3/document-archive'&&method==='POST')data.data={id:'doc-ready',status:'archived'};
-      else if(stage3&&url==='/api/v3/document-template-info')data.data={template_version:'1.1',sheets:['Компания','Сотрудники','Клиенты','Операции_Тарифы']};
-      else if(stage3&&(url==='/api/v3/document-template-blank'||url==='/api/v3/document-template'))data.data={filename:'PORTAL_template_v1.1.xlsx',mime_type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',file_b64:'UEs='};
-      else if(stage3&&url==='/api/v3/excel-import-preview'&&method==='POST'){const conflict=mock.previewMode==='conflict';data.data={import_id:'import-1',preview_token:'token-1',template_version:'1.1',can_apply:!conflict,summary:{new:conflict?0:1,update:0,unchanged:0,conflict:conflict?1:0,invalid:0},rows:[{sheet:'Клиенты',row:4,classification:conflict?'conflict':'new',errors:conflict?[{code:'duplicate_client'}]:[],changes:conflict?{}:{name:{before:null,after:'Новый клиент'}}}]};}
+      else if(stage3&&url==='/api/v3/document-template-info')data.data={template_version:'2.0',sheets:['Компания','Сотрудники','Клиенты','Операции_Тарифы','Материалы','Приход_материалов','Нормы_материалов','Выработка']};
+      else if(stage3&&(url==='/api/v3/document-template-blank'||url==='/api/v3/document-template'))data.data={filename:'PORTAL_template_v2.0.xlsx',mime_type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',file_b64:'UEs='};
+      else if(stage3&&url==='/api/v3/excel-import-preview'&&method==='POST'){const conflict=mock.previewMode==='conflict';data.data={import_id:'import-1',preview_token:'token-1',template_version:'2.0',can_apply:!conflict,summary:{new:conflict?0:1,update:0,unchanged:0,conflict:conflict?1:0,invalid:0},rows:[{sheet:'Клиенты',row:4,classification:conflict?'conflict':'new',errors:conflict?[{code:'duplicate_client'}]:[],changes:conflict?{}:{name:{before:null,after:'Новый клиент'}}}]};}
       else if(stage3&&url==='/api/v3/excel-import-apply'&&method==='POST'){if(mock.applyMode==='failed')return respond(id,{ok:false,httpStatus:409,error:'Импорт отменён полностью',data:{status:'failed',result_document_id:'result-failed',error_report:[{code:'apply_failed'}]}});if(mock.applyMode==='stale')return respond(id,{ok:false,httpStatus:400,error:'Справочники изменились; повторите preview'});data.data={status:'applied',result_counts:{new:1,updated:0,unchanged:0},result_document_id:'result-ok'};}
       else if(stage3&&url.startsWith('/api/v3/excel-import-result?id=')){if(mock.applyMode==='failed')data.data={status:'failed',result_document_id:'result-failed',error_report:[{code:'apply_failed'}]};else if(mock.applyMode==='ok')data.data={status:'applied',result_document_id:'result-ok',result_counts:{new:1,updated:0,unchanged:0}};else return respond(id,{ok:false,httpStatus:404,error:'Импорт не найден'});}
       else if(stage3&&url==='/api/v3/today'){const task={id:'task-1',batch_id:'batch-1',client_name:'Клиент',product:'Коробка',batch_number:'PRT-2026-000001',operation_name:'Упаковка',quantity:10,done:2,remaining:8,status:'in_progress',assignees:[1]};data.data=mock.stage3Today||{date:'2026-09-25',mode:role==='admin'?'management':'worker',own_quantity:4,own_salary:500,attention:[],tasks:[task],...(role==='admin'?{today_quantity:17,month_quantity:27,active_jobs:1,in_progress:1,ready:1,active_batches:2,finance:{salary:1200,revenue:2500,profit:900},today_finance:{revenue:1000,salary:400},month_finance:{revenue:5000,salary:2000},today_productivity:{units:17,timed_units:10,units_per_hour:5},closed_month_payroll:null,expected_profit:null,debt:400,open_invoice_count:2,overdue_invoice_count:1,overdue_debt:400,client_profitability_alerts:1}:{})};}
@@ -358,8 +365,8 @@ test('browser UI regression',async t=>{
       await denied.page.close();
 
       const file={name:'PORTAL_test.xlsx',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',buffer:Buffer.from('PK-test')};
-      await page.evaluate(()=>go('excelImport'));await page.waitForFunction(()=>document.querySelector('#content').innerText.includes('Шаблон PORTAL 1.1'));
-      await page.locator('[data-action=downloadExcelTemplate][data-kind=blank]').click();await page.waitForFunction(()=>mock.saved?.filename==='PORTAL_template_v1.1.xlsx');
+      await page.evaluate(()=>go('excelImport'));await page.waitForFunction(()=>document.querySelector('#content').innerText.includes('PORTAL Excel 2.0'));
+      await page.locator('[data-action=downloadExcelTemplate][data-kind=blank]').click();await page.waitForFunction(()=>mock.saved?.filename==='PORTAL_template_v2.0.xlsx');
       await page.locator('#excelFile').setInputFiles(file);await page.locator('[data-action=previewExcelImport]').click();
       await page.waitForFunction(()=>document.querySelector('#content').innerText.includes('Проверка завершена'));
       assert.equal(await page.locator('[data-action=applyExcelImport]').innerText(),'Применить изменения');
@@ -446,6 +453,21 @@ test('browser UI regression',async t=>{
       await manager.page.evaluate(()=>go('settings'));
       assert.equal(await manager.page.locator('[data-page="control"]').count(),0);
       assert.deepEqual(manager.errors,[]);await manager.page.close();
+    });
+    await t.test('admin and director can create employee directly with login and password',async()=>{
+      const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);
+      await page.evaluate(()=>mock.stage3Permissions=['users.manage']);await login(page);
+      await page.evaluate(()=>go('users'));await page.locator('.page-heading [data-action=editUser]').click();
+      await page.locator('#uLogin').fill('worker-direct');await page.locator('#uName').fill('Новый сотрудник');await page.locator('#uPin').fill('Pass-1234');
+      await page.locator('#userForm [type=submit]').click();await page.waitForSelector('#employeeCredentials');
+      const credentials=await page.locator('#employeeCredentials').inputValue();assert.match(credentials,/worker-direct/);assert.match(credentials,/Pass-1234/);
+      const calls=await page.evaluate(()=>mock.calls),created=calls.find(c=>c.method==='POST'&&c.url==='/api/users');
+      assert.equal(created.body.username,'worker-direct');assert.equal(created.body.pin,'Pass-1234');assert.equal(created.body.create_employee,true);
+      assert.equal(calls.some(c=>c.method==='POST'&&c.url==='/api/v3/invitations'),false);
+      assert.deepEqual(errors,[]);await page.close();
+      const director=await fixture(browser,'director',{width:390,height:844},true);await director.page.evaluate(()=>mock.stage3Permissions=['users.manage']);await login(director.page);
+      await director.page.evaluate(()=>go('users'));assert.equal(await director.page.locator('.page-heading [data-action=editUser]').count(),1);
+      assert.deepEqual(director.errors,[]);await director.page.close();
     });
     await t.test('admin invite flow displays one-time token only after create; manager cannot open users',async()=>{
       const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);
@@ -829,13 +851,14 @@ test('browser UI regression',async t=>{
       await page.waitForTimeout(300);
       assert.equal(await page.evaluate(()=>S.page),'work',await page.locator('#toast').innerText()+' / '+await page.locator('#content').innerText());
       await page.locator('[data-action=otherWork]').click();
+      assert.equal(await page.locator('#freeBatch').count(),0);
       await page.locator('#freeClient').selectOption('1');
       await page.locator('#freeOperation').selectOption('1');
       await page.locator('#freeQuantity').fill('3');
       await page.locator('#otherWorkForm [type=submit]').click();
       await page.waitForFunction(()=>mock.calls.some(c=>c.url==='/api/v3/work'&&c.body?.quantity===3));
       const free=await page.evaluate(()=>mock.calls.find(c=>c.url==='/api/v3/work'));
-      assert.equal(free.body.client_id,1);assert.equal(free.body.operation_id,1);assert.equal(free.body.batch_id,null);
+      assert.equal(free.body.client_id,1);assert.equal(free.body.operation_id,1);assert.equal(Object.hasOwn(free.body,'batch_id'),false);
       assert.equal(Object.hasOwn(free.body,'employee_rate'),false);
       await page.locator('[data-action=productionHistory]').click();
       await page.waitForFunction(()=>document.querySelector('#content').textContent.includes('Без задания'));

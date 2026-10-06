@@ -59,6 +59,18 @@ class ProductionTest(unittest.TestCase):
         self.assertEqual(rights.defaults('shift'),set())
         self.assertEqual(rights.defaults('accountant'),set())
 
+    def test_direct_employee_account_creation_for_admin_and_director(self):
+        director=self.role_token('director')
+        manager=self.role_token('manager')
+        director_created=self.request('/api/users',director,dict(username='direct-worker',display_name='Direct Worker',role='packer',pin='Pass-1234',create_employee=True,active=1))
+        admin_created=self.request('/api/users',self.admin,dict(username='admin-worker',display_name='Admin Worker',role='packer',pin='Pass-5678',create_employee=True,active=1))
+        self.assertTrue(director_created['id']);self.assertTrue(admin_created['id'])
+        directory=self.request('/api/users',director)
+        direct=next(row for row in directory['users'] if row['username']=='direct-worker')
+        admin=next(row for row in directory['users'] if row['username']=='admin-worker')
+        self.assertIsNotNone(direct['employee_id']);self.assertIsNotNone(admin['employee_id'])
+        self.request('/api/users',manager,dict(username='forbidden-direct',display_name='Forbidden',role='packer',pin='1234',create_employee=True,active=1),status=403)
+
     def test_current_work_api_rejects_legacy_employee_field_without_writing(self):
         before=len(self.get('works',self.worker)['data'])
         self.post('work',dict(client_id=1,operation_id=1,quantity=2,telegram_id=101),self.worker,status=400)

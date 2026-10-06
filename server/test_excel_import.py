@@ -189,6 +189,54 @@ class ImportAPITest(unittest.TestCase):
                 'Клиенты':[dict(client_ref='new-client',name='Новый клиент',active=1,legal_name='Синтетический клиент',inn='0012345678')],
                 'Операции_Тарифы':[dict(client_ref='new-client',name='Новая операция',employee_rate='10.25',client_rate='20.50',active=1)]}
 
+    def test_excel_2_visible_columns_are_sufficient_for_new_staff_client_operation_and_work(self):
+        payload=self.payload({
+            'Сотрудники':[dict(full_name='Excel Видимый Сотрудник',profile_username='excel.visible',role='Упаковщик',active='Да',initial_pin='4826')],
+            'Клиенты':[dict(name='Excel Видимый Клиент',active='Да')],
+            'Операции_Тарифы':[dict(client_name='Excel Видимый Клиент',name='Excel Упаковка',employee_rate='5.00',client_rate='8.00',active='Да')],
+            'Выработка':[dict(employee_name='Excel Видимый Сотрудник',client_name='Excel Видимый Клиент',operation_name='Excel Упаковка',quantity='3',product='Без технических ID')],
+        })
+        preview=self.preview(payload);self.assertTrue(preview['can_apply'],preview)
+        self.assertFalse(any(row['errors'] for row in preview['rows']))
+        result=self.apply(payload,preview);self.assertEqual(result['status'],'applied')
+        with portal.db() as conn:
+            user=conn.execute("SELECT id,role,active FROM app_users WHERE lower(username)=lower('excel.visible')").fetchone()
+            client=conn.execute("SELECT id FROM portal_clients WHERE company_id=1 AND name='Excel Видимый Клиент'").fetchone()
+            operation=conn.execute("SELECT id FROM portal_client_operations WHERE company_id=1 AND client_id=? AND name='Excel Упаковка'",(client[0],)).fetchone()
+            self.assertIsNotNone(user);self.assertIsNotNone(client);self.assertIsNotNone(operation)
+            work=next(item for item in reversed(Repository(conn,1).list('works')) if item.get('product')=='Без технических ID')
+            self.assertEqual(int(work['quantity']),3);self.assertGreater(int(work['salary']),0);self.assertGreater(int(work['revenue']),0)
+
+    def test_excel_2_material_receipt_norm_and_work_use_server_rates(self):
+        with portal.db() as conn:
+            conn.executescript('''
+            DROP TABLE IF EXISTS material_movements;
+            DROP TABLE IF EXISTS operation_material_norms;
+            DROP TABLE IF EXISTS materials;
+            CREATE TABLE materials(id INTEGER PRIMARY KEY AUTOINCREMENT,company_id INTEGER NOT NULL,name TEXT NOT NULL,unit TEXT,unit_cost REAL,stock_qty REAL,min_stock REAL,active INTEGER,updated_at TEXT);
+            CREATE TABLE operation_material_norms(id INTEGER PRIMARY KEY AUTOINCREMENT,company_id INTEGER NOT NULL,operation_id INTEGER NOT NULL,material_id INTEGER NOT NULL,qty_per_unit REAL,active INTEGER);
+            CREATE TABLE material_movements(id INTEGER PRIMARY KEY AUTOINCREMENT,company_id INTEGER NOT NULL,material_id INTEGER NOT NULL,qty_change REAL,unit_cost REAL,movement_type TEXT,reference_type TEXT,reference_id TEXT,note TEXT,created_at TEXT,created_by INTEGER);
+            ''')
+            r=Repository(conn,1);worker=next(u for u in r.catalog('users') if u.get('role')=='packer' and u.get('active') and u.get('employee_id'))
+            employee=next(e for e in r.employee_catalog() if e['employee_id']==worker['employee_id'])
+            client=r.catalog('clients')[0];operation=next(o for o in r.catalog('operations') if o['client_id']==client['id'])
+            employee_name=employee['full_name'];client_name=client['name'];operation_name=operation['name']
+        payload=self.payload({
+            'Материалы':[dict(name='Коробка Excel',unit='шт',unit_cost='2.50',min_stock='10',active=1)],
+            'Приход_материалов':[dict(material_name='Коробка Excel',quantity='100',unit_cost='2.50',note='Стартовый приход')],
+            'Нормы_материалов':[dict(client_name=client_name,operation_name=operation_name,material_name='Коробка Excel',qty_per_unit='0.5',active=1)],
+            'Выработка':[dict(employee_name=employee_name,client_name=client_name,operation_name=operation_name,quantity='2',product='Excel 2.0')],
+        })
+        preview=self.preview(payload);self.assertTrue(preview['can_apply'],preview)
+        result=self.apply(payload,preview);self.assertEqual(result['status'],'applied')
+        with portal.db() as conn:
+            r=Repository(conn,1);material=conn.execute("SELECT id,stock_qty,unit_cost FROM materials WHERE company_id=1 AND name='Коробка Excel'").fetchone()
+            self.assertIsNotNone(material);self.assertAlmostEqual(float(material[1]),99.0);self.assertAlmostEqual(float(material[2]),2.5)
+            movements=conn.execute('SELECT qty_change,movement_type FROM material_movements WHERE company_id=1 AND material_id=? ORDER BY id',(material[0],)).fetchall()
+            self.assertEqual([round(float(row[0]),2) for row in movements],[100.0,-1.0])
+            work=next(item for item in reversed(r.list('works')) if item.get('product')=='Excel 2.0')
+            self.assertEqual(str(work['quantity']),'2');self.assertGreater(work['salary'],0);self.assertGreater(work['revenue'],0)
+
     def test_existing_user_role_disable_revokes_sessions_and_keeps_profile_identity(self):
         target=self.role_token('shift')
         with portal.db() as conn:
