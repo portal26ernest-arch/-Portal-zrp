@@ -1,4 +1,4 @@
-"""Transactional catalog adapter. No work/payroll/invoice fact updates."""
+"""Transactional Excel 2.0 adapter for catalogs, materials, norms and work facts."""
 import uuid
 from decimal import Decimal
 from document_domain import Documents,decode_file,validate_upload,XLSX_MIME
@@ -7,6 +7,7 @@ from excel_template import REQUISITES,TEMPLATE_VERSION
 from excel_import import canonical,digest,LOG
 from portal_excel_workbook import parse_template
 from production_repository import utcnow
+from production_service import Production
 from employee_identity import create_employee_card,hash_access_pin,update_employee_card,write_user_account
 from employee_names import persist_employee_rename,persist_known_employee_aliases
 
@@ -49,6 +50,9 @@ def _apply_row(importer,row,refs):
     r=importer.r;value=row['normalized'];sheet=row['sheet'];now=utcnow()
     if row['classification']=='unchanged':
         if sheet=='Клиенты':refs[value['client_ref']]=value['client_id']
+        elif sheet=='Сотрудники':refs[value['employee_ref']]=value['employee_id']
+        elif sheet=='Операции_Тарифы':refs['operation:'+value['operation_key']]=value['operation_id']
+        elif sheet=='Материалы':refs[value['material_ref']]=value['material_id']
         return None
     if sheet=='Компания':
         _requisites(importer,'portal_company_requisites','id',1,value,'director');return 1
@@ -84,24 +88,81 @@ def _apply_row(importer,row,refs):
             account=dict(username=value['profile_username'],display_name=value['full_name'],role=value['role'],
                          active=value['active'],employee_id=identity)
             write_user_account(r.conn,r.company_id,None,account,salt,pin_hash,now)
+        refs[value['employee_ref']]=identity
         return identity
-    cid=refs.get(value['client_ref'],value['client_id'])
-    if type(cid) is not int:raise ValueError('Client mapping missing')
-    identity=value['operation_id']
-    if identity is None:
-        # Catalog baseline applies only to this new operation, not existing rates.
-        rate=format(Decimal(value['employee_rate'])/100,'.2f')
-        price=None if value['client_rate'] is None else format(Decimal(value['client_rate'])/100,'.2f')
-        identity=r.sql('''INSERT INTO portal_client_operations(company_id,client_id,name,active,employee_rate,client_rate,sort_order,created_at,updated_at)
-             VALUES(?,?,?,?,?,?,0,?,?) RETURNING id''',(r.company_id,cid,value['name'],value['active'],rate,price,now,now)).fetchone()[0]
-    else:
-        # Existing physical catalog rates and every historical snapshot stay intact.
-        r.sql('UPDATE portal_client_operations SET name=?,active=?,updated_at=? WHERE company_id=? AND id=? AND client_id=?',
-              (value['name'],value['active'],now,r.company_id,identity,cid))
-    if value['append_tariff']:
-        r.insert('tariffs',dict(operation_id=identity,client_id=cid,effective_from=value['effective_from'] or now,
-                              employee_rate=value['employee_rate'],client_rate=value['client_rate'],changed_fields=['employee_rate','client_rate']))
-    return identity
+    if sheet=='Операции_Тарифы':
+        cid=refs.get(value['client_ref'],value['client_id'])
+        if type(cid) is not int:raise ValueError('Client mapping missing')
+        identity=value['operation_id']
+        if identity is None:
+            rate=format(Decimal(value['employee_rate'])/100,'.2f')
+            price=None if value['client_rate'] is None else format(Decimal(value['client_rate'])/100,'.2f')
+            identity=r.sql('''INSERT INTO portal_client_operations(company_id,client_id,name,active,employee_rate,client_rate,sort_order,created_at,updated_at)
+                 VALUES(?,?,?,?,?,?,0,?,?) RETURNING id''',(r.company_id,cid,value['name'],value['active'],rate,price,now,now)).fetchone()[0]
+        else:
+            r.sql('UPDATE portal_client_operations SET name=?,active=?,updated_at=? WHERE company_id=? AND id=? AND client_id=?',
+                  (value['name'],value['active'],now,r.company_id,identity,cid))
+        if value['append_tariff']:
+            r.insert('tariffs',dict(operation_id=identity,client_id=cid,effective_from=value['effective_from'] or now,
+                                  employee_rate=value['employee_rate'],client_rate=value['client_rate'],changed_fields=['employee_rate','client_rate']))
+        refs['operation:'+value['operation_key']]=identity
+        return identity
+    if sheet=='Материалы':
+        identity=value['material_id'];supported=set(r.columns('materials'))
+        record=dict(name=value['name'],unit=value['unit'],unit_cost=format(Decimal(value['unit_cost'])/100,'.2f'),
+                    min_stock=value['min_stock'],active=value['active'],updated_at=now)
+        record={k:v for k,v in record.items() if k in supported}
+        if identity is None:
+            record.update(company_id=r.company_id)
+            if 'stock_qty' in supported:record['stock_qty']=0
+            identity=r.sql('INSERT INTO materials('+','.join(record)+') VALUES('+','.join('?' for _ in record)+') RETURNING id',tuple(record.values())).fetchone()[0]
+        else:
+            r.sql('UPDATE materials SET '+','.join(k+'=?' for k in record)+' WHERE company_id=? AND id=?',tuple(record.values())+(r.company_id,identity))
+        refs[value['material_ref']]=identity
+        return identity
+    if sheet=='Приход_материалов':
+        mid=refs.get(value['material_ref'],value['material_id'])
+        if type(mid) is not int:raise ValueError('Material mapping missing')
+        quantity=Decimal(value['quantity']);unit_cost=value['unit_cost']
+        if unit_cost is not None:
+            major=format(Decimal(unit_cost)/100,'.2f')
+            r.sql('UPDATE materials SET stock_qty=COALESCE(stock_qty,0)+?,unit_cost=? WHERE company_id=? AND id=?',(str(quantity),major,r.company_id,mid))
+        else:
+            r.sql('UPDATE materials SET stock_qty=COALESCE(stock_qty,0)+? WHERE company_id=? AND id=?',(str(quantity),r.company_id,mid))
+            current=r.sql('SELECT unit_cost FROM materials WHERE company_id=? AND id=?',(r.company_id,mid)).fetchone()
+            major=current[0] if current else None
+        if not r.has_table('material_movements'):return mid
+        supported=set(r.columns('material_movements'))
+        movement=dict(company_id=r.company_id,material_id=mid,qty_change=str(quantity),unit_cost=major,movement_type='incoming',
+                      reference_type='excel_import',reference_id='excel:'+str(row['row']),note=value['note'],created_at=now,created_by=importer.u['id'])
+        movement={k:v for k,v in movement.items() if k in supported}
+        return r.sql('INSERT INTO material_movements('+','.join(movement)+') VALUES('+','.join('?' for _ in movement)+') RETURNING id',tuple(movement.values())).fetchone()[0]
+    if sheet=='Нормы_материалов':
+        oid=value['operation_id'] or refs.get('operation:'+value['operation_key'])
+        mid=value['material_id'] or refs.get(value['material_ref'])
+        if type(oid) is not int or type(mid) is not int:raise ValueError('Norm mapping missing')
+        identity=value['norm_id'];supported=set(r.columns('operation_material_norms'))
+        record=dict(company_id=r.company_id,operation_id=oid,material_id=mid,qty_per_unit=value['qty_per_unit'],active=value['active'])
+        record={k:v for k,v in record.items() if k in supported}
+        if identity is None:
+            identity=r.sql('INSERT INTO operation_material_norms('+','.join(record)+') VALUES('+','.join('?' for _ in record)+') RETURNING id',tuple(record.values())).fetchone()[0]
+        else:
+            update={k:v for k,v in record.items() if k not in ('company_id','operation_id','material_id')}
+            r.sql('UPDATE operation_material_norms SET '+','.join(k+'=?' for k in update)+' WHERE company_id=? AND id=? AND operation_id=? AND material_id=?',
+                  tuple(update.values())+(r.company_id,identity,oid,mid))
+        return identity
+    if sheet=='Выработка':
+        eid=value['employee_id'] or refs.get(value.get('employee_ref'))
+        cid=value['client_id'] or refs.get(value['client_ref'])
+        oid=value['operation_id'] or refs.get('operation:'+value['operation_key'])
+        if type(eid) is not int or type(cid) is not int or type(oid) is not int:raise ValueError('Work mapping missing')
+        target_id=value.get('target_user_id')
+        candidates=[u for u in r.catalog('users') if u.get('employee_id')==eid and u.get('active') and (target_id is None or u['id']==target_id)]
+        if len(candidates)!=1:raise ValueError('Employee access missing for work')
+        work=Production(r,candidates[0]).work(dict(client_id=cid,operation_id=oid,quantity=value['quantity'],product=value['product']))
+        r.audit(importer.u,'excel_work_imported',work['id'],actor_kind=importer.actor_kind())
+        return work['id']
+    raise ValueError('Unsupported Excel sheet')
 
 def _save_outcome(importer,claims,plan,status,counts,errors,old=None):
     r=importer.r;identity=claims['import_id'];now=utcnow()

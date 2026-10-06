@@ -881,6 +881,29 @@ class ProductionTest(unittest.TestCase):
             with self.assertRaises(ValueError):r.delete('works',message['id'])
         self.post('chat',dict(mode='pin',message_id=message['id'],pinned=True),self.worker,status=403)
 
+    def test_chat_unread_mark_read_and_private_receipt(self):
+        dm=self.post('chat',dict(text='Непрочитанное личное',recipient_user_id=self.admin_id),self.worker)['data']
+        unread=self.get('chat-unread',self.admin)['data']
+        self.assertEqual(unread['total'],1)
+        self.assertEqual(next(row['count'] for row in unread['private'] if row['user_id']==self.worker_id),1)
+        before=self.get(f'chat?recipient_user_id={self.worker_id}',self.admin)['data']
+        self.assertFalse(next(row for row in before if row['id']==dm['id'])['read_by_recipient'])
+        self.post('chat',dict(mode='read',recipient_user_id=self.worker_id),self.admin)
+        self.assertEqual(self.get('chat-unread',self.admin)['data']['total'],0)
+        sender_view=self.get(f'chat?recipient_user_id={self.admin_id}',self.worker)['data']
+        self.assertTrue(next(row for row in sender_view if row['id']==dm['id'])['read_by_recipient'])
+        self.post('chat',dict(text='Ещё одно',recipient_user_id=self.admin_id),self.worker)
+        self.assertEqual(self.get('chat-unread',self.admin)['data']['total'],1)
+        self.post('chat',dict(mode='read',recipient_user_id=self.worker_id),self.admin)
+        with portal.db() as conn:
+            states=[row for row in Repository(conn,1).list('chat_reads') if row['user_id']==self.admin_id and row['room']==dm['room']]
+            self.assertEqual(len(states),1)
+        self.post('chat',dict(text='Общее непрочитанное'),self.worker)
+        unread=self.get('chat-unread',self.admin)['data'];self.assertEqual(unread['general'],1)
+        self.post('chat',dict(mode='read'),self.admin)
+        self.assertEqual(self.get('chat-unread',self.admin)['data']['general'],0)
+        self.assertEqual(self.get('chat-unread',self.other_worker)['data']['total'],0)
+
     def test_large_request_body_exception_is_chat_only(self):
         result=self.request('/api/v3/batches',self.admin,{'request_id':'oversize','client_id':1,'product':'X','quantity':1,'comment':'x'*70000},status=400)
         self.assertIn('64',result['error'])

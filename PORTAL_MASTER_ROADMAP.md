@@ -10,9 +10,9 @@
 
 ## 0. Оперативное управление проектом
 
-**Текущая цель релиза:** PORTAL 4.3 — восстановить и свести в одну каноническую линию Android, Desktop/Web и Server после расхождения веток.
+**Текущая цель релиза:** финальный release candidate PORTAL — одна каноническая линия Android, Desktop/Web и Server с закрытыми Organizer/Chat/Excel 2.0/Invoice-функциями; после code/CI gate остаются только production/device release gates.
 
-**Текущая рабочая ветка:** `assistant/portal-4.3-consolidation-20261002`.
+**Текущая рабочая ветка:** `assistant/portal-final-20261003` (после проверки должна fast-forward обновить `assistant/portal-release-20261003`).
 
 **Канонический процесс каждой задачи:**
 1. Прочитать этот файл и проверить текущий статус/зависимости.
@@ -27,10 +27,10 @@
 - [x] Завершить консолидацию кода PORTAL 4.3: Android 4.2 + большая finalization-линия + Excel v1.1 + God/Platform Owner + split PostgreSQL + последние Desktop fixes сведены в одну каноническую ветку; release/version bump выполняется только после оставшихся физических/production gates.
 - [x] Свести визуальный контракт: синий PORTAL; Desktop/Web — боковая навигация; Android — мобильная навигация без потери модулей. Android UI CI 40/40 и Desktop Windows build подтверждают текущий контракт.
 - [ ] Проверить встроенные обновления Android и Desktop поверх уже установленной версии.
-- [ ] После консолидации сделать полный release-gate и только затем публиковать Android 4.3 / Desktop 4.3.
+- [ ] После полного CI/device gate публиковать единый release candidate Android 4.5 / Desktop 4.5; version metadata подготовлены, stable tag/release до физической проверки не создавать.
 
 ### В работе
-- [ ] 2026-10-02 — закрыть production security blocker: заменить Stage 7 PostgreSQL runtime roles на отдельные production-only control/tenant роли без раскрытия секретов; перед изменением сохранить rollback/env backup, после — `/api/ready`, `/api/ping`, restart и privilege-boundary smoke. Production код/данные не мигрировать в этой задаче.
+- [x] 2026-10-03 — production security blocker закрыт: Stage 7 login-роли заменены отдельными `portal_prod_*_runtime`, старые Stage-7 роли отключены для LOGIN после backup, `/api/ping`, `/api/ready` и privilege-boundary smoke. Подтверждение сохранено в разделе M и production evidence.
 - [x] 2026-10-02 — финальная reconciliation всех assistant/Codex веток завершена: актуальные изменения перенесены, исторические/устаревшие линии закрыты ancestry-merge `ours` только после проверки patch-equivalence или ручного переноса уникального изменения. `git branch --no-merged HEAD` больше не показывает assistant/Codex веток; каноническая линия одна — `assistant/portal-4.3-consolidation-20261002`.
 - [x] 2026-10-02 — code/CI gate после reconciliation подтверждён. Локально Android/JS 32 PASS, 0 FAIL, 2 Playwright-only skipped; ops/infra 58/58 OK. Windows full backend discover дал каскадные HTTP fixture `ConnectionResetError [WinError 10054]`, но тот же канонический tree в GitHub Linux CI прошёл полностью: server Python 3.11 — 324/324 OK; Python 3.13 — 324/324 OK; PostgreSQL documents — 37/37 OK; Web — Python 21/21 + Node 9/9; Android UI — 40/40; Android staging build — SUCCESS; Windows Desktop build — SUCCESS. Локальный Windows reset классифицирован как platform/test-harness issue, не как подтверждённая code regression; release всё ещё закрыт физическими update/cutover gates.
   - [x] `codex-finalization-megapack-part12`: перенесено hardening legacy SQLite → PostgreSQL validation, включая защищённый company context, legacy unscoped primary-company snapshot и migration-history versions. Конфликт с более новым employee-identity backfill объединён без потери обеих защит. `test_migration_import + test_migration_validation`: 22/22 OK.
@@ -136,7 +136,7 @@
 54. ✅ Blob и document metadata разделены, company-scoped storage и FORCE RLS подтверждены; PDF-specific PostgreSQL E2E с реальным renderer прошёл в одноразовой test DB с cleanup.
 55. ✅ Filters/paging Documents API и общий Web list/search UI: client/employee filters capability-gated, company-scoped на сервере и проверены Playwright/PostgreSQL, включая cross-company denial и paging/search scope.
 56. ✅ Общий Web-экран Documents и серверные права/archive/download/history покрыты backend, shared browser regression и disposable PostgreSQL; deployment/cutover отслеживается отдельными release-пунктами.
-57. ✅ Стандартный Excel-шаблон PORTAL v1.0: четыре русских листа, blank/prefill API для директора и выбранной компании God; openpyxl round trip и изоляция проверены.
+57. ✅ Excel 2.0: единый 8-листовый шаблон «Компания / Сотрудники / Клиенты / Операции_Тарифы / Материалы / Приход_материалов / Нормы_материалов / Выработка». Пользователь вводит бизнес-факты, технические ID/связи формирует PORTAL; выработка применяется через обычный серверный `Production.work`, поэтому тариф, зарплата, выручка и списание материалов считаются сервером. Blank/prefill, openpyxl round-trip, старые security/import tests и новый material→receipt→norm→work E2E проверены.
 58. ✅ Web blank/prefilled Excel template download подтверждён реальным Chromium → HTTP API → disposable PostgreSQL E2E: реальные browser downloads, XLSX signature, MIME/filename, SHA-256 совпадение с server payload, разные blank/prefill contents и cross-company HTTP 403.
 59. 🟡 Android bridge сохраняет поддерживаемые файлы в Downloads через system picker/MediaStore; source/UI tests есть, Java compile и проверка на устройстве открыты.
 60. 🟡 Web Share API с безопасным download fallback реализован; фактическое поведение Share в целевых браузерах ещё нужно проверить.
@@ -156,8 +156,9 @@
 71. ✅ Личные/приватные комнаты сотрудников реализованы с проверкой участников.
 72. ✅ В общем командном чате доступно структурированное сообщение «невыход» с датой и необязательным комментарием; оно не влияет на payroll, attendance или work_log.
 73. ✅ Фото и файловые вложения чата: JPG/PNG/WebP/PDF/TXT до 2 МБ, проверка доступа к личной комнате, скачивание и сохранение на Android.
-74. ✅ Физическое автоудаление обычных сообщений и их пользовательских вложений старше 14 дней реализовано.
-75. ✅ Закреплённые сообщения сохраняются независимо от возраста; после открепления снова подпадают под retention.
+74. ✅ В каждой комнате хранится не более 1000 обычных сообщений: при появлении 1001-го удаляется самое старое обычное сообщение вместе с пользовательским вложением; закреплённые сообщения не входят в лимит.
+75. ✅ Закреплённые сообщения сохраняются независимо от ротации; после открепления снова подпадают под лимит 1000 обычных сообщений.
+75a. ✅ Chat read-state хранится server-side по user/room: общий и личные unread counters, личный статус «Отправлено/Прочитано», read-count для общей комнаты. Shared UI обновляет открытую комнату каждые 5 секунд и непрочитанные каждые 10 секунд; это live polling без отдельного WebSocket-сервера. Read-state вынесен в Stage 14 PostgreSQL migration и не засоряет business request/audit ledger.
 76. ✅ Системный каталог «Стикеры PORTAL» хранит отдельные локальные SVG assets; сообщения ссылаются только на ключ.
 77. 🟡 Раздел новостей Ozon переведён на company-scoped read API и пустое/LIVE состояние; автоматическое получение публикаций ещё не подключено.
 78. 🟡 Раздел новостей Wildberries переведён на company-scoped read API и пустое/LIVE состояние; автоматическое получение публикаций ещё не подключено.
@@ -364,8 +365,8 @@ Current roadmap counts are **93 ✅ / 15 🟡 / 6 ⏳ / 12 🔌**. Current-SHA S
 
 ## M. Production release candidate — 2026-10-03
 - TalAnt/WMS/ТСД исключены из блокеров первого официального релиза и остаются отдельным будущим этапом.
-- Создана чистая релизная линия `assistant/portal-release-20261003` на базе консолидированного Desktop 4.5; незавершённый Excel 2.0 сохранён отдельно и в релиз не включён.
+- Создана чистая релизная линия `assistant/portal-release-20261003`; финальная worktree `assistant/portal-final-20261003` добавляет завершённые Excel 2.0, годовщину PORTAL 21 сентября, chat unread/read-status/live polling и Stage 14 chat-read migration.
 - Production PostgreSQL переведён со Stage-7 login-ролей на отдельные `portal_prod_*_runtime`; старые Stage-7 роли отключены для LOGIN после успешного `/api/ping` и `/api/ready` smoke.
 - Перед изменениями создан fresh pre-cutover backup control DB, tenant DB и central storage; копия вынесена с VPS и SHA-256 совпали.
-- Release CI выявил две UI-регрессии в новом модуле счетов: legacy fallback без v3 и доступ к дебиторке для read-only permission. Обе исправлены; повторный Android UI/master-control gate обязателен перед merge.
+- Финальный локальный software gate: Chromium/Playwright 40/40 PASS, 0 FAIL, 0 skipped; infra/release 58/58 PASS; full backend discover 329 tests OK, 0 failures (50 environment-dependent skips); Excel template 6/6, legacy Excel import 20/20 и новый Excel 2.0 E2E PASS; invoice regression 9/9 PASS; Organizer/Chat/read-status/migration targeted tests PASS; build-security/Desktop/native source gates 3/3 PASS. Android metadata выровнены на 4.5/code 45/build 4.5, Desktop — 4.5.0/FileVersion 4.5.0.45. Локальный .NET SDK отсутствует, поэтому WPF compile подтверждается GitHub Windows CI после push.
 - Не закрытые внешние gate после программной проверки: собственный production domain/DNS/HTTPS, финальный authenticated device smoke и формальное объявление VPS/PostgreSQL единственным source of truth после успешного cutover.

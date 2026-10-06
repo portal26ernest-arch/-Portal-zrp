@@ -8,7 +8,7 @@ from migration_validation import (ValidationError, compare, compare_migration_hi
                                   reconcile_linked_work_money, snapshot,
                                   validate_postgresql_schema)
 from production_repository import Repository
-from production_migrations import migrate_retention
+from production_migrations import migrate_chat_reads, migrate_retention
 
 
 def fixture():
@@ -361,6 +361,22 @@ class RetentionMigrationTest(unittest.TestCase):
         )
         migrate_retention(current)
         self.assertTrue(current.inserted)
+
+    def test_postgresql_chat_read_marker_requires_verified_schema(self):
+        old=self.Repo("organizer_tasks RAISE EXCEPTION 'production history is immutable'")
+        with self.assertRaisesRegex(RuntimeError,'chat read-state migration'):
+            migrate_chat_reads(old)
+        self.assertFalse(old.inserted)
+
+        current=self.Repo(
+            "organizer_tasks 'chat_reads' RAISE EXCEPTION 'production history is immutable'"
+        )
+        migrate_chat_reads(current)
+        self.assertTrue(current.inserted)
+        stage14=(Path(__file__).parent/'migrations'/'postgresql_stage14_chat_reads.sql').read_text(encoding='utf-8')
+        self.assertIn("'chat_reads'",stage14)
+        self.assertIn('SELECT id,14,CURRENT_TIMESTAMP::text FROM companies',stage14)
+        self.assertNotRegex(stage14,r'(?i)\b(?:DROP TABLE|TRUNCATE|ALTER POLICY|CREATE POLICY)\b')
 
 
 if __name__ == '__main__':

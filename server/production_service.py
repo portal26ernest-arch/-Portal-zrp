@@ -556,8 +556,40 @@ class Production:
         parts=str(room).split(':')
         return len(parts)==3 and parts[0]=='dm' and str(self.u['id']) in parts[1:]
 
+    def chat_read_states(self):
+        latest={}
+        for row in self.r.list('chat_reads'):
+            key=(row.get('user_id'),row.get('room'))
+            if key not in latest or row.get('last_read_at','')>=latest[key].get('last_read_at',''):latest[key]=row
+        return latest
+
+    def chat_mark_read(self,recipient=None):
+        self.need('chat.read');room=self.chat_room(recipient)
+        messages=[m for m in self.r.list('chat_messages') if m.get('room')==room]
+        if not messages:return dict(room=room,last_message_id=None,last_read_at=None)
+        messages.sort(key=lambda m:(m.get('created_at',''),str(m.get('id',''))));last=messages[-1]
+        identity=f"{self.u['id']}:{room}";current=self.r.get('chat_reads',identity,False)
+        value=dict(id=identity,user_id=self.u['id'],room=room,last_message_id=last['id'],
+                   last_read_at=last.get('created_at') or self.clock(),created_at=(current or {}).get('created_at') or self.clock())
+        return self.r.update('chat_reads',value) if current else self.r.insert('chat_reads',value,identity)
+
+    def chat_unread(self):
+        self.need('chat.read');states=self.chat_read_states();messages=self.r.list('chat_messages')
+        users=[u for u in self.r.catalog('users') if u['active'] and u['id']!=self.u['id']]
+        def unread(room):
+            state=states.get((self.u['id'],room));cutoff=(state or {}).get('last_read_at','')
+            return sum(1 for m in messages if m.get('room')==room and m.get('sender_user_id')!=self.u['id'] and m.get('created_at','')>cutoff)
+        general=unread('general');private=[]
+        for user in users:
+            a,b=sorted((self.u['id'],user['id']));room=f'dm:{a}:{b}';count=unread(room)
+            private.append(dict(user_id=user['id'],count=count))
+        return dict(total=general+sum(x['count'] for x in private),general=general,private=private)
+
     def chat_command(self,b):
         mode=b.get('mode','message')
+        if mode=='read':
+            if set(b)-{'mode','recipient_user_id','request_id','company_id'}:raise ValueError('Неизвестные параметры отметки прочтения')
+            return self.chat_mark_read(b.get('recipient_user_id'))
         if mode=='pin':
             self.need('chat.moderate');message=self.entity('chat_messages',text(b.get('message_id'),'Сообщение'))
             if not self.chat_room_allowed(message['room']):raise PermissionError('Личная переписка доступна только её участникам')
@@ -634,10 +666,19 @@ class Production:
         for item in self.r.list('chat_attachments'):
             if item['room']==room:
                 attachments[item['message_id']]={k:item[k] for k in ('id','original_name','mime_type','size_bytes','sha256')}
+        states=self.chat_read_states();room_readers=[state for (user_id,state_room),state in states.items() if state_room==room]
+        dm_recipient=None
+        if room.startswith('dm:'):
+            parts=room.split(':');dm_recipient=next((int(part) for part in parts[1:] if int(part)!=self.u['id']),None)
         result=[]
         for message in self.r.list('chat_messages'):
             if message['room']!=room:continue
-            result.append(dict(message,pinned=bool(latest.get(message['id'],{}).get('pinned')),attachment=attachments.get(message['id'])))
+            created=message.get('created_at','')
+            read_count=sum(1 for state in room_readers if state.get('user_id')!=message.get('sender_user_id') and state.get('last_read_at','')>=created)
+            recipient_state=states.get((dm_recipient,room)) if dm_recipient is not None else None
+            result.append(dict(message,pinned=bool(latest.get(message['id'],{}).get('pinned')),attachment=attachments.get(message['id']),
+                               read_by_count=read_count,
+                               read_by_recipient=bool(message.get('sender_user_id')==self.u['id'] and recipient_state and recipient_state.get('last_read_at','')>=created)))
         return result
 
     def chat_file(self,identity):
@@ -1347,7 +1388,7 @@ class Production:
         if 'company_id' in body and (type(body['company_id']) is not int or body['company_id']!=self.r.company_id):raise PermissionError('Компания определяется сессией')
         methods={'batches':self.batch,'products':self.product,'client-requisites':self.save_client_requisites,'tasks':self.task,'work':self.work,'timers':self.timer,'links':self.link,'tariffs':self.create_tariff,'permissions':self.set_permissions,'usage':self.usage,'expenses':self.expense,'invoices':self.invoice,'payments':self.payment,'settings':self.settings,'shipments':self.ship,'returns':self.return_batch,'payroll-periods':self.payroll_period,'payroll-settlements':self.payroll_settlement,'chat':self.chat_command,'documents':self.document,'organizer':self.organizer}
         if action not in methods: raise ValueError('Действие не поддерживается')
-        authorization={'batches':'batches.receive','products':'clients.manage','client-requisites':'clients.manage','tasks':'tasks.manage','work':'work.write','timers':'work.write','links':'work.link','permissions':'users.manage','usage':'materials.use','expenses':'expenses.manage','invoices':'invoices.create','payments':'payments.record','settings':'company.settings','shipments':'batches.receive','returns':'batches.receive','payroll-periods':'payroll.close','chat':'chat.write','documents':'documents.manage'}
+        authorization={'batches':'batches.receive','products':'clients.manage','client-requisites':'clients.manage','tasks':'tasks.manage','work':'work.write','timers':'work.write','links':'work.link','permissions':'users.manage','usage':'materials.use','expenses':'expenses.manage','invoices':'invoices.create','payments':'payments.record','settings':'company.settings','shipments':'batches.receive','returns':'batches.receive','payroll-periods':'payroll.close','documents':'documents.manage'}
         if action in authorization:self.need(authorization[action])
         if action=='payroll-settlements':
             entry_type=body.get('entry_type')
@@ -1364,6 +1405,7 @@ class Production:
         if action=='tariffs':
             for field,key in [('employee_rate','rates.employee'),('client_rate','rates.client')]:
                 if field in body:self.need(key)
+        if action=='chat' and body.get('mode')=='read':return self.chat_command(body)
         key=request_identity(body.get('request_id'))
         fingerprint=hashlib.sha256(json.dumps(dict(action=action,body=body,user=self.u['id']),sort_keys=True).encode()).hexdigest()
         old=self.r.get('requests',key,False)
@@ -1465,6 +1507,7 @@ class Production:
             return self.payroll_snapshot(start,end) if start or end else [self.public_payroll_period(row) for row in self.r.list('payroll_periods')]
         if action=='payroll-settlements':return self.payroll_settlement_rows(params)
         if action=='chat':return self.chat_rows(params.get('recipient_user_id',[None])[0])
+        if action=='chat-unread':return self.chat_unread()
         if action=='chat-users':
             self.need('chat.read')
             return [dict(id=u['id'],display_name=u['display_name']) for u in self.r.catalog('users') if u['active'] and u['id']!=self.u['id']]

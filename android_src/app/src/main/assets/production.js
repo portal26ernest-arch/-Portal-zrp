@@ -3,15 +3,16 @@
 async function configureProduction(){
   const r=await api('GET','/api/v3/meta',undefined,{global:true});
   S.stage3=!!r.ready;
-  if(S.stage3){S.me.permissions=r.permissions;S.permissionCatalog=r.catalog;S.heartbeatSeconds=r.heartbeat_seconds||60;clearInterval(S.heartbeatTimer);S.heartbeatTimer=setInterval(()=>{if(S.token&&!document.hidden)api('POST','/api/v3/heartbeat',{}, {global:true}).catch(()=>{});},S.heartbeatSeconds*1000);startOrganizerReminderWatch();}
+  if(S.stage3){S.me.permissions=r.permissions;S.permissionCatalog=r.catalog;S.heartbeatSeconds=r.heartbeat_seconds||60;clearInterval(S.heartbeatTimer);S.heartbeatTimer=setInterval(()=>{if(S.token&&!document.hidden)api('POST','/api/v3/heartbeat',{}, {global:true}).catch(()=>{});},S.heartbeatSeconds*1000);startOrganizerReminderWatch();startChatUnreadWatch();}
 }
 const allowed=permission=>S.me?.permissions?.includes(permission);
 const rub=cents=>money(Number(cents||0)/100);
 const utc=value=>value?new Date(value).toISOString().slice(0,-1):null;
 const productionGet=async path=>(await api('GET','/api/v3/'+path)).data;
-async function productionPost(path,body,form){
+async function productionPost(path,body,form,options={}){
+  if(path==='chat'&&body?.mode==='read')options={...options,passive:true};
   const requestId=form?(form.dataset.requestId||(form.dataset.requestId=crypto.randomUUID())):crypto.randomUUID();
-  return (await api('POST','/api/v3/'+path,{...body,request_id:requestId})).data;
+  return (await api('POST','/api/v3/'+path,{...body,request_id:requestId},options)).data;
 }
 const options=(items,label='name')=>items.map(i=>`<option value="${esc(i.id)}">${esc(i[label])}</option>`).join('');
 async function productionCatalog(){return S.productionCatalog=await productionGet('catalog');}
@@ -41,7 +42,7 @@ screens.dashboard=async()=>{
   const taskMetrics=allowed('tasks.read')?metric('Задания в работе',num(inWorkTasks.size)):'';
   const attention=d.attention||[];
   const workerActions=allowed('work.write')?`${btn(icon('plus')+' Начать работу','go','data-page="work"','block')}${btn('Другая работа','otherWork','','secondary block')}`:'';
-  paint(heading(management?'PORTAL Сегодня':'Мой рабочий день',date(d.date),btn('Меню','go','data-page="sections"','secondary'))+
+  paint(portalAnniversaryBanner()+heading(management?'PORTAL Сегодня':'Мой рабочий день',date(d.date),btn('Меню','go','data-page="sections"','secondary'))+
     (management?`<div class="metrics">${d.today_quantity!==undefined?metric('Работа сегодня',num(d.today_quantity)+' шт.'):''}${d.month_quantity!==undefined?metric('Работа за месяц',num(d.month_quantity)+' шт.'):''}${taskMetrics}${d.ready!==undefined?metric('Готовые партии',num(d.ready)):''}${d.active_batches!==undefined?metric('Активные партии',num(d.active_batches)):''}${d.active_jobs!==undefined?metric('Открытые задания',num(d.active_jobs)):''}${d.today_productivity?metric('Скорость команды',d.today_productivity.units_per_hour==null?'Нет данных времени':num(d.today_productivity.units_per_hour)+' шт./ч'):''}</div>${d.today_finance?`<div class="metrics">${metric('Выручка сегодня',rub(d.today_finance.revenue))}${metric('Начислено сегодня',rub(d.today_finance.salary))}</div><div class="metrics">${metric('Выручка за месяц',rub(d.month_finance.revenue))}${metric('Начислено за месяц',rub(d.month_finance.salary))}${d.expected_profit!==undefined?metric('Плановая прибыль',d.expected_profit==null?'Недоступна':rub(d.expected_profit)):''}</div>`:''}${(allowed('payroll.settlement.read')||allowed('payroll.all'))&&d.closed_month_payroll!==undefined?metric('Закрытый ФОТ',d.closed_month_payroll==null?'Нет закрытого периода':`Начислено ${rub(d.closed_month_payroll.accrued)} · Выплачено ${rub(d.closed_month_payroll.paid)} · Остаток ${rub(d.closed_month_payroll.balance)}`):''}${d.debt!==undefined?metric('Дебиторская задолженность',rub(d.debt)):''}${d.open_invoice_count!==undefined?metric('Открытые счета',num(d.open_invoice_count)):''}${d.overdue_invoice_count?metric('Просроченные счета',num(d.overdue_invoice_count)+' · '+rub(d.overdue_debt)):''}${d.client_profitability_alerts?metric('Клиенты с отрицательной прибылью',num(d.client_profitability_alerts)):''}`:
       `<div class="hero"><span>Моя выработка сегодня</span><div class="hero-value">${num(d.own_quantity)} шт.</div>${d.own_salary!==undefined?`<strong>Заработано ${rub(d.own_salary)}</strong>`:''}</div>${workerActions}`)+
     (attention.length?`<section class="attention-section"><h2>Требует внимания</h2><div class="list attention">${attention.map(a=>`<div class="notice warning"><b>${esc(a.label)}</b>${a.number?`<p class="batch-number">${esc(a.number)}</p>`:''}${a.name?`<p>${esc(a.name)} · ${num(a.quantity)}</p>`:''}${a.amount!==undefined?`<p>${rub(a.amount)}</p>`:''}${a.type==='not_invoiced'&&allowed('invoices.create')?btn('Подготовить счёт','go','data-page="invoices"','secondary'):''}</div>`).join('')}</div></section>`:'')+
@@ -336,22 +337,57 @@ function chatAttachmentHtml(m){
   return '<div class="notice"><b>'+esc(a.original_name)+'</b><span class="meta"> · '+num(a.size_bytes/1024)+' КБ</span>'+save+'</div>';
 }
 const portalStickers=[['accepted','Принято','accepted.svg'],['in_progress','В работе','in_progress.svg'],['done','Готово','done.svg'],['help','Нужна помощь','help.svg'],['important','Важно','important.svg'],['thanks','Спасибо','thanks.svg']];
+function privateUnread(userId){return Number(S.chatUnread?.private?.find(row=>Number(row.user_id)===Number(userId))?.count||0);}
+function chatRoomOptions(){
+  const general=Number(S.chatUnread?.general||0);
+  return '<option value="">Общий чат'+(general?' · '+general+' непрочит.':'')+'</option>'+
+    (S.chatUsers||[]).map(u=>{const count=privateUnread(u.id);return `<option value="${u.id}">Лично · ${esc(u.display_name)}${count?' · '+count+' непрочит.':''}</option>`;}).join('');
+}
+function updateChatRoomOptions(){
+  const select=$('chatRecipient');if(!select)return;const value=S.chatRecipient||'';select.innerHTML=chatRoomOptions();select.value=value;
+}
+async function loadChatUnread(notify=false){
+  if(!allowed('chat.read'))return null;
+  try{
+    const previous=Number(S.chatUnread?.total||0),next=await productionGet('chat-unread');S.chatUnread=next;updateChatRoomOptions();
+    if(notify&&Number(next.total||0)>previous&&S.page!=='teamChat')toast('Новое сообщение в чате PORTAL');
+    return next;
+  }catch{return null;}
+}
+function startChatUnreadWatch(){
+  clearInterval(S.chatUnreadTimer);S.chatUnreadTimer=null;if(!allowed('chat.read'))return;
+  loadChatUnread(false);S.chatUnreadTimer=setInterval(()=>{if(S.token&&!document.hidden)loadChatUnread(true);},10000);
+}
 function chatSystemHtml(m){
   if(m.message_type==='sticker'){const s=portalStickers.find(x=>x[0]===m.sticker_key);return s?`<div class="chat-sticker"><img width="54" height="54" src="file:///android_asset/stickers/${s[2]}" alt="${esc(s[1])}"><b>${esc(s[1])}</b></div>`:'<p class="meta">Системный стикер недоступен</p>';}
   if(m.message_type==='absence_notice')return `<div class="notice"><b>Сообщил(а) о невыходе · ${esc(m.sender_name)}</b><p>Дата невыхода: <strong>${esc(m.absence_date)}</strong></p>${m.comment?`<p>${esc(m.comment)}</p>`:''}</div>`;
   return m.text?'<p>'+esc(m.text)+'</p>':'';
 }
+function chatReceipt(m){
+  if(m.sender_user_id!==S.me.id)return '';
+  if(String(m.room||'').startsWith('dm:'))return m.read_by_recipient?' · Прочитано':' · Отправлено';
+  return m.read_by_count?' · Прочитали: '+num(m.read_by_count):'';
+}
 async function refreshTeamChat(){
-  const recipient=S.chatRecipient||'',rows=await productionGet('chat'+(recipient?'?recipient_user_id='+encodeURIComponent(recipient):''));S.chatRows=rows;
-  if(!$('chatList'))return;
-  $('chatList').innerHTML=rows.map(m=>`<article class="item"><div class="row between"><b>${esc(m.sender_name)}</b>${m.pinned?'<span class="badge green">Закреплено</span>':''}</div>${chatSystemHtml(m)}${chatAttachmentHtml(m)}<p class="meta">${esc(portalDate(m.created_at).toLocaleString('ru-RU'))}</p>${allowed('chat.moderate')?btn(m.pinned?'Открепить':'Закрепить','pinChat',`data-id="${esc(m.id)}" data-pinned="${m.pinned?'1':'0'}"`,'text'):''}</article>`).join('')||'<p class="empty">Сообщений пока нет</p>';
+  if(S.chatRefreshing)return;S.chatRefreshing=true;
+  try{
+    const recipient=S.chatRecipient||'',rows=await productionGet('chat'+(recipient?'?recipient_user_id='+encodeURIComponent(recipient):''));S.chatRows=rows;
+    if(!$('chatList')||S.page!=='teamChat')return;
+    $('chatList').innerHTML=rows.map(m=>`<article class="item"><div class="row between"><b>${esc(m.sender_name)}</b>${m.pinned?'<span class="badge green">Закреплено</span>':''}</div>${chatSystemHtml(m)}${chatAttachmentHtml(m)}<p class="meta">${esc(portalDate(m.created_at).toLocaleString('ru-RU'))}${esc(chatReceipt(m))}</p>${allowed('chat.moderate')?btn(m.pinned?'Открепить':'Закрепить','pinChat',`data-id="${esc(m.id)}" data-pinned="${m.pinned?'1':'0'}"`,'text'):''}</article>`).join('')||'<p class="empty">Сообщений пока нет</p>';
+    const last=rows.at(-1),marker=(recipient||'general')+':'+(last?.id||'empty');
+    if(last&&S.chatReadMarker!==marker){
+      await productionPost('chat',{mode:'read',recipient_user_id:recipient?Number(recipient):null},null);
+      S.chatReadMarker=marker;await loadChatUnread(false);
+    }
+  }finally{S.chatRefreshing=false;}
 }
 screens.teamChat=async()=>{
-  S.chatUsers=await productionGet('chat-users');S.chatRecipient='';
-  const roomOptions='<option value="">Общий чат</option>'+S.chatUsers.map(u=>`<option value="${u.id}">Лично · ${esc(u.display_name)}</option>`).join('');
-  paint(heading('Команда','Внутреннее общение внутри PORTAL')+selectField('chatRecipient','Комната',roomOptions)+'<div id="chatList" class="list"></div>'+
+  clearInterval(S.chatPollTimer);S.chatPollTimer=null;
+  [S.chatUsers,S.chatUnread]=await Promise.all([productionGet('chat-users'),productionGet('chat-unread')]);S.chatRecipient='';
+  paint(heading('Команда','Внутреннее общение внутри PORTAL · обновляется автоматически')+selectField('chatRecipient','Комната',chatRoomOptions())+'<div id="chatList" class="list"></div>'+
     (allowed('chat.write')?`<form id="chatForm" class="card">${field('chatText','Сообщение','','text','maxlength="4000" autocomplete="off"')}<label class="field"><span>Вложение — необязательно, до 2 МБ</span><input id="chatFile" type="file" accept="image/jpeg,image/png,image/webp,application/pdf,text/plain"></label><button class="btn secondary block" type="button" data-action="chooseChatSticker">Стикеры PORTAL</button><button class="btn secondary block" type="button" data-action="newAbsenceNotice">Сообщить о невыходе</button><button class="btn block" type="submit">Отправить</button><p class="meta">В каждой комнате хранятся последние 1000 обычных сообщений. Закреплённые сообщения не входят в лимит и сохраняются до открепления.</p></form>`:''));
   $('chatRecipient').addEventListener('change',async()=>{S.chatRecipient=$('chatRecipient').value;await refreshTeamChat();});await refreshTeamChat();
+  S.chatPollTimer=setInterval(()=>{if(S.page==='teamChat'&&!document.hidden)refreshTeamChat().catch(()=>{});},5000);
 };
 actions.chooseChatSticker=()=>{if(S.chatRecipient)throw new Error('Стикеры доступны в общем чате');openSheet('Стикеры PORTAL',`<div class="mini-actions">${portalStickers.map(([key,label,file])=>`<button class="item" type="button" data-action="sendChatSticker" data-key="${key}"><img width="48" height="48" src="file:///android_asset/stickers/${file}" alt=""><b>${esc(label)}</b></button>`).join('')}</div>`);};
 actions.sendChatSticker=async button=>{await productionPost('chat',{subtype:'sticker',sticker_key:button.dataset.key},null);closeSheet();await refreshTeamChat();};

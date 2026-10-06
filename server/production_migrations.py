@@ -26,6 +26,7 @@ def migrate(conn, company_id, dialect=None):
         migrate_products(r)
         migrate_client_aliases(r)
         migrate_employee_aliases(r)
+        migrate_chat_reads(r)
         return
     # Current catalog baseline, not a reconstruction or recalculation of history.
     for operation in r.catalog('operations'):
@@ -48,6 +49,7 @@ def migrate(conn, company_id, dialect=None):
     migrate_access_invites(r)
     migrate_client_aliases(r)
     migrate_employee_aliases(r)
+    migrate_chat_reads(r)
 
 def migrate_access_invites(r):
     """Version 10 adds the hashed-token invitation table; login secrets are never stored here."""
@@ -127,6 +129,19 @@ def migrate_employee_aliases(r):
     for employee in r.employee_catalog():
         persist_known_employee_aliases(r,employee['employee_id'],employee['full_name'])
     r.sql('INSERT INTO portal_production_migrations(company_id,version,applied_at) VALUES(?,13,?)',(r.company_id,utcnow()))
+
+
+def migrate_chat_reads(r):
+    """Version 14 permits only per-user chat read-state updates."""
+    if r.sql('SELECT 1 FROM portal_production_migrations WHERE company_id=? AND version=14',(r.company_id,)).fetchone(): return
+    if r.dialect=='sqlite':
+        r.sql('DROP TRIGGER IF EXISTS production_no_update')
+        r.sql("CREATE TRIGGER production_no_update BEFORE UPDATE ON portal_production WHEN OLD.kind NOT IN ('batches','tasks','permissions','settings','access_sessions','work_timers','products','organizer_tasks','chat_reads') BEGIN SELECT RAISE(ABORT,'production history is immutable'); END")
+    else:
+        row=r.sql("SELECT pg_get_functiondef('portal_production_immutable()'::regprocedure)").fetchone()
+        if not row or "'chat_reads'" not in row[0]:
+            raise RuntimeError('Apply PostgreSQL chat read-state migration with the migration operator first')
+    r.sql('INSERT INTO portal_production_migrations(company_id,version,applied_at) VALUES(?,14,?)',(r.company_id,utcnow()))
 
 
 def migrate_activity(r):

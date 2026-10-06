@@ -46,6 +46,13 @@ def money(value,optional=False):
     except InvalidOperation:raise ValueError('invalid_money') from None
     if not number.is_finite() or not 0<=number<=100_000_000_000:raise ValueError('invalid_money')
     return int(number)
+def decimal_number(value,optional=False,positive=False):
+    if optional and value in (None,''):return None
+    if not isinstance(value,str) or len(value)>32 or not re.fullmatch(r'[0-9]+(?:\.[0-9]{1,6})?',value):raise ValueError('invalid_number')
+    try:number=Decimal(value)
+    except InvalidOperation:raise ValueError('invalid_number') from None
+    if not number.is_finite() or number<0 or number>1_000_000_000 or (positive and number<=0):raise ValueError('invalid_number')
+    return format(number,'f')
 def timestamp(value):
     if value in (None,''):return None
     try:
@@ -90,14 +97,99 @@ class ExcelImport:
         employees={e['employee_id']:e for e in state['Сотрудники']}
         users={u['id']:u for u in state['_users']}
         operations={o['operation_id']:o for o in state['Операции_Тарифы']}
-        refs={};output=[];seen={name:set() for name in parsed['sheets']};seen_names={'Клиенты':set(),'Сотрудники':set()}
-        employee_ids_seen=set();client_ids_seen=set();user_ids_seen=set();new_access_usernames=set()
-        normalized_clients={};now=self.s.clock()
+        materials={m['material_id']:m for m in state.get('Материалы',[])}
+        norms={n['norm_id']:n for n in state.get('Нормы_материалов',[])}
+        refs={};output=[];seen={name:set() for name in parsed['sheets']};seen_names={'Клиенты':set(),'Сотрудники':set(),'Материалы':set()}
+        employee_ids_seen=set();client_ids_seen=set();user_ids_seen=set();material_ids_seen=set();norm_ids_seen=set();new_access_usernames=set()
+        normalized_clients={};normalized_employees={};normalized_operations={};normalized_materials={};now=self.s.clock()
+
+        existing_client_names={}
+        for item in clients.values():existing_client_names.setdefault(item['name'].casefold(),[]).append(item)
+        existing_employee_names={}
+        for item in state['_employees']:existing_employee_names.setdefault(employee_name_key(item['full_name']),[]).append(item)
+        existing_operation_names={}
+        for item in operations.values():existing_operation_names.setdefault((item['client_id'],item['name'].casefold()),[]).append(item)
+        existing_material_names={}
+        for item in materials.values():existing_material_names.setdefault(item['name'].casefold(),[]).append(item)
 
         def issue(row,code,classification='invalid'):
             row['errors'].append(code)
             if row['classification']!='invalid' or classification=='invalid':row['classification']=classification
         def same(before,value,keys):return all((before.get(k) if before.get(k) is not None else '')==(value.get(k) if value.get(k) is not None else '') for k in keys)
+        def resolve_client(value):
+            cid=identifier(value.get('client_id',''),True)
+            ref=clean_text(value.get('client_ref',''),128,True)
+            name=clean_text(value.get('client_name',''),200,True)
+            if cid is not None:
+                item=clients.get(cid)
+                if not item:raise ValueError('foreign_or_missing_client')
+                if name and item['name'].casefold()!=name.casefold():raise ValueError('client_reference_conflict')
+                return cid,ref or 'client:'+str(cid),item['name']
+            if ref:
+                target=refs.get(ref)
+                if isinstance(target,int):
+                    item=clients.get(target)
+                    if not item:raise ValueError('foreign_or_missing_client')
+                    return target,ref,item['name']
+                staged=normalized_clients.get(ref)
+                if staged:return None,ref,staged['name']
+            if name:
+                matches=existing_client_names.get(name.casefold(),[])
+                staged=[(key,item) for key,item in normalized_clients.items() if item['name'].casefold()==name.casefold()]
+                if len(matches)+len(staged)!=1:raise ValueError('ambiguous_or_missing_client_reference')
+                if matches:return matches[0]['client_id'],'client:'+str(matches[0]['client_id']),matches[0]['name']
+                return None,staged[0][0],staged[0][1]['name']
+            raise ValueError('missing_client_reference')
+        def resolve_material(value):
+            mid=identifier(value.get('material_id',''),True)
+            ref=clean_text(value.get('material_ref',''),128,True)
+            name=clean_text(value.get('material_name',''),200,True)
+            if mid is not None:
+                item=materials.get(mid)
+                if not item:raise ValueError('foreign_or_missing_material')
+                if name and item['name'].casefold()!=name.casefold():raise ValueError('material_reference_conflict')
+                return mid,ref or 'material:'+str(mid),item['name']
+            if ref:
+                staged=normalized_materials.get(ref)
+                if staged:return staged.get('material_id'),ref,staged['name']
+                target=refs.get(ref)
+                if isinstance(target,int) and target in materials:return target,ref,materials[target]['name']
+            if name:
+                matches=existing_material_names.get(name.casefold(),[])
+                staged=[(key,item) for key,item in normalized_materials.items() if item['name'].casefold()==name.casefold()]
+                if len(matches)+len(staged)!=1:raise ValueError('ambiguous_or_missing_material_reference')
+                if matches:return matches[0]['material_id'],'material:'+str(matches[0]['material_id']),matches[0]['name']
+                return staged[0][1].get('material_id'),staged[0][0],staged[0][1]['name']
+            raise ValueError('missing_material_reference')
+        def resolve_operation(value,cid,cref):
+            oid=identifier(value.get('operation_id',''),True)
+            name=clean_text(value.get('operation_name',''),200,True)
+            if oid is not None:
+                item=operations.get(oid)
+                if not item or (cid is not None and item['client_id']!=cid):raise ValueError('foreign_or_missing_operation')
+                if name and item['name'].casefold()!=name.casefold():raise ValueError('operation_reference_conflict')
+                return oid,item['name']
+            if not name:raise ValueError('missing_operation_reference')
+            key=(cid if cid is not None else cref,name.casefold())
+            staged=normalized_operations.get(key)
+            if staged:return staged.get('operation_id'),staged['name']
+            if cid is None:raise ValueError('ambiguous_or_missing_operation_reference')
+            matches=existing_operation_names.get((cid,name.casefold()),[])
+            if len(matches)!=1:raise ValueError('ambiguous_or_missing_operation_reference')
+            return matches[0]['operation_id'],matches[0]['name']
+        def resolve_employee(value):
+            eid=identifier(value.get('employee_id',''),True)
+            name=clean_text(value.get('employee_name',''),200,True)
+            if eid is not None:
+                item=employees.get(eid)
+                if not item:raise ValueError('foreign_or_missing_employee')
+                if name and employee_name_key(item['full_name'])!=employee_name_key(name):raise ValueError('employee_identity_conflict')
+                return eid,None,item['full_name']
+            if not name:raise ValueError('missing_employee_reference')
+            key=employee_name_key(name);matches=existing_employee_names.get(key,[]);staged=normalized_employees.get(key)
+            if len(matches)+(1 if staged else 0)!=1:raise ValueError('employee_identity_ambiguous')
+            if staged:return staged.get('employee_id'),staged['employee_ref'],staged['full_name']
+            return int(matches[0]['employee_id']),None,matches[0]['full_name']
         for sheet in parsed['sheets']:
             for source in parsed['rows'][sheet]:
                 row=dict(sheet=sheet,row=source['_row'],classification='new',errors=[],normalized={},before={},changes={})
@@ -113,12 +205,13 @@ class ExcelImport:
                         before=state[sheet][0];normalized={k:value[k] for k in REQUISITES+('director',)}
                         if not row['errors']:row['classification']='unchanged' if same(before,normalized,normalized) else 'update'
                     elif sheet=='Клиенты':
-                        ref=clean_text(value['client_ref'],128);cid=identifier(value['client_id'],True)
+                        name=clean_text(value['name']);cid=identifier(value['client_id'],True)
+                        ref=clean_text(value['client_ref'],128,True) or 'client:name:'+name.casefold()
                         if ref in seen[sheet]:raise ValueError('duplicate_client_reference')
                         seen[sheet].add(ref)
                         if cid is not None and cid in client_ids_seen:raise ValueError('duplicate_client_id')
                         if cid is not None:client_ids_seen.add(cid)
-                        name=clean_text(value['name']);before=clients.get(cid,{})
+                        before=clients.get(cid,{})
                         if cid is not None and not before:raise ValueError('foreign_or_missing_client')
                         normalized=dict(client_ref=ref,client_id=cid,name=name,active=active(value['active'],before.get('active',1)),**{k:value[k] for k in REQUISITES+('contact_person',)})
                         if name.casefold() in seen_names[sheet] or any(c['name'].casefold()==name.casefold() and c['client_id']!=cid for c in clients.values()):
@@ -127,14 +220,15 @@ class ExcelImport:
                         if not row['errors']:row['classification']='unchanged' if before and same(before,normalized,[k for k in normalized if k not in ('client_ref','client_id')]) else 'update' if before else 'new'
                         refs[ref]=cid or ref;normalized_clients[ref]=normalized
                     elif sheet=='Сотрудники':
-                        ref=clean_text(value['employee_ref'],128);eid=identifier(value['employee_id'],True);uid=identifier(value['user_id'],True)
+                        name=clean_text(value['full_name']);name_key=employee_name_key(name)
+                        ref=clean_text(value['employee_ref'],128,True) or 'employee:name:'+name_key
+                        eid=identifier(value['employee_id'],True);uid=identifier(value['user_id'],True)
                         if ref in seen[sheet] or (eid is not None and eid in employee_ids_seen) or (uid is not None and uid in user_ids_seen):raise ValueError('duplicate_employee_identity')
                         seen[sheet].add(ref)
                         if eid is not None:employee_ids_seen.add(eid)
                         if uid is not None:user_ids_seen.add(uid)
-                        name=clean_text(value['full_name']);before=employees.get(eid,{})
+                        before=employees.get(eid,{})
                         if eid is not None and not before:raise ValueError('foreign_or_missing_employee')
-                        name_key=employee_name_key(name)
                         if eid is None and (name_key in seen_names[sheet] or any(employee_name_key(e['full_name'])==name_key for e in state['_employees'])):
                             issue(row,'employee_identity_ambiguous','conflict')
                         seen_names[sheet].add(name_key)
@@ -166,23 +260,20 @@ class ExcelImport:
                             before={k:v for k,v in before.items() if k not in ('user_id','role','active')}
                         compare=['full_name','profile_username','user_id','role','active']
                         if not row['errors']:row['classification']='unchanged' if before and not create_access and same(before,normalized,compare) else 'update' if before else 'new'
-                    else:
-                        cid=identifier(value['client_id'],True);oid=identifier(value['operation_id'],True);ref=value['client_ref']
-                        target=refs.get(ref) if ref else None
-                        if ref and target is None:raise ValueError('ambiguous_or_missing_client_reference')
-                        if cid is not None and cid not in clients:raise ValueError('foreign_or_missing_client')
-                        if cid is not None and target is not None and target!=cid:raise ValueError('client_reference_conflict')
-                        target=cid if cid is not None else target
-                        if target is None:raise ValueError('missing_client_reference')
-                        if ref and any(r['sheet']=='Клиенты' and r['normalized'].get('client_ref')==ref and r['errors'] for r in output):raise ValueError('invalid_client_reference')
-                        name=clean_text(value['name']);key=(target,oid or name.casefold())
+                        normalized_employees[name_key]=normalized
+                    elif sheet=='Операции_Тарифы':
+                        cid=identifier(value['client_id'],True);oid=identifier(value['operation_id'],True);ref=clean_text(value['client_ref'],128,True)
+                        client_value=dict(value,client_id=str(cid) if cid is not None else value.get('client_id',''),client_ref=ref or value.get('client_ref',''))
+                        cid,cref,cname=resolve_client(client_value)
+                        if cref and any(r['sheet']=='Клиенты' and r['normalized'].get('client_ref')==cref and r['errors'] for r in output):raise ValueError('invalid_client_reference')
+                        name=clean_text(value['name']);key=(cid if cid is not None else cref,oid or name.casefold())
                         if key in seen[sheet]:raise ValueError('duplicate_operation_row')
                         seen[sheet].add(key);before=operations.get(oid,{})
-                        if oid is not None and (not before or before['client_id']!=target):raise ValueError('foreign_or_missing_operation')
-                        normalized=dict(client_ref=ref,client_id=target,operation_id=oid,name=name,active=active(value['active'],before.get('active',1)),
+                        if oid is not None and (not before or (cid is not None and before['client_id']!=cid)):raise ValueError('foreign_or_missing_operation')
+                        normalized=dict(client_ref=cref,client_id=cid,client_name=cname,operation_id=oid,name=name,active=active(value['active'],before.get('active',1)),
                                         employee_rate=money(value['employee_rate']),client_rate=money(value['client_rate'],True),effective_from=timestamp(value['effective_from']),effective_to=timestamp(value['effective_to']))
                         if normalized['effective_to'] is not None:raise ValueError('effective_end_not_supported_by_current_tariff_model')
-                        if any(o['client_id']==target and o['name'].casefold()==name.casefold() and o['operation_id']!=oid for o in operations.values()):issue(row,'operation_unique_conflict','conflict')
+                        if cid is not None and any(o['client_id']==cid and o['name'].casefold()==name.casefold() and o['operation_id']!=oid for o in operations.values()):issue(row,'operation_unique_conflict','conflict')
                         changed_rates=bool(before) and (normalized['employee_rate']!=money(before['employee_rate']) or normalized['client_rate']!=money(before['client_rate'],True))
                         versions=[t for t in state['_tariffs'] if t['operation_id']==oid] if oid else []
                         if changed_rates or (oid is None and normalized['effective_from']):
@@ -192,7 +283,77 @@ class ExcelImport:
                         elif before and normalized['effective_from'] not in (None,timestamp(before['effective_from'])):
                             issue(row,'tariff_date_change_without_new_rates','conflict')
                         normalized['append_tariff']=changed_rates or not before
+                        normalized['operation_key']=str(cid if cid is not None else cref)+'|'+name.casefold()
                         if not row['errors']:row['classification']='update' if before and (changed_rates or normalized['name']!=before['name'] or normalized['active']!=before['active']) else 'unchanged' if before else 'new'
+                        normalized_operations[(cid if cid is not None else cref,name.casefold())]=normalized
+                    elif sheet=='Материалы':
+                        name=clean_text(value['name']);mid=identifier(value['material_id'],True)
+                        ref=clean_text(value['material_ref'],128,True) or 'material:name:'+name.casefold()
+                        if ref in seen[sheet] or (mid is not None and mid in material_ids_seen):raise ValueError('duplicate_material_identity')
+                        seen[sheet].add(ref)
+                        if mid is not None:material_ids_seen.add(mid)
+                        before=materials.get(mid,{})
+                        if mid is not None and not before:raise ValueError('foreign_or_missing_material')
+                        normalized=dict(material_ref=ref,material_id=mid,name=name,unit=clean_text(value['unit'],50),
+                                        unit_cost=money(value['unit_cost']),min_stock=decimal_number(value['min_stock'],True),
+                                        active=active(value['active'],before.get('active',1)))
+                        duplicates=existing_material_names.get(name.casefold(),[])
+                        if name.casefold() in seen_names[sheet] or any(m['material_id']!=mid for m in duplicates):issue(row,'material_unique_conflict','conflict')
+                        seen_names[sheet].add(name.casefold())
+                        if before:
+                            before_cost=money(str(before.get('unit_cost') or 0));before_min=decimal_number(str(before.get('min_stock') or 0),True)
+                            changed=normalized['name']!=before.get('name') or normalized['unit']!=(before.get('unit') or '') or normalized['unit_cost']!=before_cost or normalized['min_stock']!=before_min or normalized['active']!=before.get('active',1)
+                            if not row['errors']:row['classification']='update' if changed else 'unchanged'
+                        normalized_materials[ref]=normalized;refs[ref]=mid or ref
+                    elif sheet=='Приход_материалов':
+                        mid,mref,mname=resolve_material(value)
+                        quantity=decimal_number(value['quantity'],positive=True);unit_cost=money(value['unit_cost'],True)
+                        before={}
+                        normalized=dict(material_id=mid,material_ref=mref,material_name=mname,quantity=quantity,unit_cost=unit_cost,
+                                        note=clean_text(value['note'],500,True) or '')
+                        row['classification']='new'
+                    elif sheet=='Нормы_материалов':
+                        cid,cref,cname=resolve_client(value);oid,oname=resolve_operation(value,cid,cref);mid,mref,mname=resolve_material(value)
+                        nid=identifier(value['norm_id'],True)
+                        if nid is not None and nid in norm_ids_seen:raise ValueError('duplicate_norm_id')
+                        if nid is not None:norm_ids_seen.add(nid)
+                        before=norms.get(nid,{}) if nid is not None else {}
+                        if nid is not None and (not before or (oid is not None and before['operation_id']!=oid) or (mid is not None and before['material_id']!=mid)):raise ValueError('foreign_or_missing_norm')
+                        if nid is None and oid is not None and mid is not None:
+                            matches=[item for item in norms.values() if item['operation_id']==oid and item['material_id']==mid]
+                            if len(matches)>1:raise ValueError('ambiguous_norm_reference')
+                            if len(matches)==1:before=matches[0];nid=before['norm_id']
+                        op_key=(cid if cid is not None else cref,oname.casefold());key=(oid if oid is not None else op_key,mid if mid is not None else mref)
+                        if key in seen[sheet]:raise ValueError('duplicate_norm_row')
+                        seen[sheet].add(key)
+                        normalized=dict(norm_id=nid,client_id=cid,client_ref=cref,client_name=cname,operation_id=oid,operation_name=oname,
+                                        operation_key=str(op_key[0])+'|'+op_key[1],material_id=mid,material_ref=mref,material_name=mname,
+                                        qty_per_unit=decimal_number(value['qty_per_unit'],positive=True),active=active(value['active'],before.get('active',1)))
+                        if before:
+                            before_qty=decimal_number(str(before.get('qty_per_unit') or 0),positive=True)
+                            changed=normalized['qty_per_unit']!=before_qty or normalized['active']!=before.get('active',1)
+                            row['classification']='update' if changed else 'unchanged'
+                        else:row['classification']='new'
+                    elif sheet=='Выработка':
+                        eid,eref,ename=resolve_employee(value);cid,cref,cname=resolve_client(value);oid,oname=resolve_operation(value,cid,cref)
+                        target_user_id=None
+                        if eid is not None:
+                            linked=[u for u in users.values() if u.get('employee_id')==eid and u.get('active') and 'work.write' in rights.effective(self.r,u)]
+                            if len(linked)!=1:raise ValueError('employee_access_missing_for_work')
+                            target_user_id=linked[0]['id']
+                        else:
+                            staged=normalized_employees.get(employee_name_key(ename))
+                            if not staged or not staged.get('create_access') or not staged.get('active') or 'work.write' not in rights.defaults(staged.get('role')):raise ValueError('employee_access_missing_for_work')
+                        before={}
+                        quantity_value=Decimal(decimal_number(value['quantity'],positive=True))
+                        if quantity_value!=quantity_value.to_integral_value() or quantity_value>1000000:raise ValueError('invalid_work_quantity')
+                        op_key=(cid if cid is not None else cref,oname.casefold())
+                        normalized=dict(employee_id=eid,employee_ref=eref,employee_name=ename,target_user_id=target_user_id,
+                                        client_id=cid,client_ref=cref,client_name=cname,operation_id=oid,operation_name=oname,
+                                        operation_key=str(op_key[0])+'|'+op_key[1],quantity=int(quantity_value),
+                                        product=clean_text(value['product'],500,True) or '')
+                        row['classification']='new'
+                    else:raise ValueError('unsupported_sheet')
                     row['normalized']=normalized;row['before']=before
                     row['changes']={key:dict(before=before.get(key),after=value) for key,value in normalized.items() if key not in ('client_ref','employee_ref','append_tariff','create_access','initial_pin') and before.get(key)!=value}
                 except (ValueError,PermissionError) as error:

@@ -50,8 +50,8 @@ def route(service,storage,action,method,values,company=None):
         invoice=service.invoice_current(values.get('invoice_id'))
         from excel_template import catalog, SHEETS
         catalogs=catalog(service,company)
-        company_sheet,_,clients_sheet,_=SHEETS.keys()
-        client=next((row for row in catalogs[clients_sheet] if row['id']==invoice['client_id']),None)
+        company_sheet,clients_sheet='Компания','Клиенты'
+        client=next((row for row in catalogs[clients_sheet] if row.get('client_id')==invoice['client_id']),None)
         if client is None: raise PermissionError('Клиент недоступен')
         company_profile=catalogs[company_sheet][0]
         invoice=dict(invoice,lines=[dict(line) for line in invoice.get('snapshot',{}).get('lines',invoice.get('lines',[]))])
