@@ -45,3 +45,9 @@ SHA-256: 4BA9DF1921C9B88C8286B196F06F0A29A1ABFCDED84AFCC6E81F82BC2B0F3708.
 
 ## Правило продолжения
 Одновременно допускается один write-агент на одну интеграционную ветку. Независимые reviewers работают read-only. Любая уникальная локальная работа сначала получает rescue commit/branch или локальный проверяемый rescue snapshot, затем переносится на актуальный origin/main, проходит тесты/CI и только после этого merge.
+
+## Дополнительное сохранение после checkpoint
+- rescue/final-work-dirty-20261006 -> c6bf6f17fa9ffd87406564545018e694ea173c82; сохранены 23 файла dirty Final-Work как исторический rescue, без merge в main.
+- rescue/ios-release-dirty-20261006 -> 040d532b179cc2f36baaa72521adcf7c50ecbe6e; сохранены 13 файлов dirty iOS/Excel как исторический rescue, без merge в main.
+- Старые PR #1 и #3 закрыты как superseded; их ветки и коммиты не удалены.
+- Повторный запуск OpenCode reviewer через общий service завершился сразу с Agent not found: portal-reviewer. Новые параллельные OpenCode review-задачи до исправления launcher/config не запускать.
