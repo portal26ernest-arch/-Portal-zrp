@@ -370,6 +370,30 @@ class PortalAPITest(unittest.TestCase):
         self.assertEqual(portal.audit_route('/api/v3/invitations/123'),'/api/v3/invitations/{id}')
         self.assertEqual(portal.audit_route('/api/v3/unlisted-secret-path'),'unknown')
 
+    def test_relay_route_is_auditable_and_module_scoped(self):
+        self.assertEqual(portal.audit_route('/api/v3/messenger-relay-ticket'),'/api/v3/messenger-relay-ticket')
+        self.assertEqual(portal.company_module_for_route('/api/v3/messenger-relay-ticket'),'messenger')
+
+    def test_relay_ticket_is_session_bound_secret_free_and_role_restricted(self):
+        env={
+            'PORTAL_MESSENGER_RELAY_URL':'https://api.vart-portal.ru:9443',
+            'PORTAL_MESSENGER_RELAY_SECRET':'z'*48,
+            'PORTAL_MESSENGER_RELAY_TTL_SECONDS':'3600',
+            'PORTAL_TELEGRAM_RELAY_REQUIRED':'0',
+        }
+        self.request('/api/v3/messenger-relay-ticket',status=401)
+        with patch.dict(os.environ,env,clear=False):
+            data=self.request('/api/v3/messenger-relay-ticket',self.worker)['data']
+        self.assertTrue(data['enabled'])
+        self.assertEqual(data['provider'],'telegram')
+        self.assertTrue(data['username'].startswith(f'v2.telegram.{self.worker_id}.1.'))
+        self.assertNotIn('secret',json.dumps(data).lower())
+        manager_id=portal.save_user({'username':'relay-manager','pin':'1234','role':'manager'})
+        with portal.db() as conn:
+            manager_token=portal.create_session(conn,manager_id)
+        with patch.dict(os.environ,env,clear=False):
+            self.request('/api/v3/messenger-relay-ticket',manager_token,status=403)
+
 
 class PostgreSQLDatabaseNameValidationTest(unittest.TestCase):
     def test_split_control_and_tenant_databases_are_supported(self):

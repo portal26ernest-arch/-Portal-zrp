@@ -34,7 +34,7 @@ import documents_api
 import excel_import
 from document_domain import LocalFileStorage
 
-BUILD_ID = "PORTAL Server · 4.8.0"
+BUILD_ID = "PORTAL Server · 4.8.1-relay1"
 CONFIG = load_config(os.environ)
 DB_PATH = CONFIG.sqlite_path
 tenants.configure(CONFIG)
@@ -775,7 +775,7 @@ def audit_route(path):
     parts = path.strip("/").split("/")
     known = {"api", "platform", "companies", "audit", "me", "company", "dashboard", "clients", "admin",
              "operations", "work", "mine", "payroll", "materials", "jobs", "invoices", "users", "login",
-             "v3", "invitations"}
+             "v3", "invitations", "messenger-relay-ticket"}
     if any(p not in known and not p.isdecimal() for p in parts):
         return "unknown"
     return "/" + "/".join("{id}" if p.isdecimal() else p for p in parts)
@@ -796,7 +796,7 @@ def company_module_for_route(path):
             'users':'users','invitations':'users','company-access':'users','presence':'users','activity':'users','audit':'users','employee-name-history':'users','employee-aliases':'users',
             'tasks':'jobs','batches':'batches','shipments':'batches','returns':'batches',
             'permissions':'permissions','tariffs':'tariffs','finance':'radar','expenses':'expenses',
-            'analytics':'analytics','settings':'control','documents':'documents',
+            'analytics':'analytics','settings':'control','documents':'documents','messenger-relay-ticket':'messenger',
             'document-file':'documents','document-metadata':'documents','document-history':'documents','document-upload':'documents',
             'document-archive':'documents','document-generate':'documents','document-template':'excelImport',
             'document-template-blank':'excelImport','document-template-info':'excelImport',
@@ -1125,6 +1125,12 @@ class Handler(BaseHTTPRequestHandler):
                     catalog=business_rights.public_catalog(),
                     heartbeat_seconds=activity.configuration(repo)[0] if ready else None,
                     company=company_sync,server_time=now_text()))
+            if action=='messenger-relay-ticket' and method=='GET':
+                user=self.request_user or {}
+                if user.get('role') in {'director','manager'} and not user.get('technical_owner'):
+                    raise PermissionError('Messenger недоступен для этой роли')
+                from messenger_relay_auth import issue_ticket
+                return self.send_json(dict(ok=True,data=issue_ticket(int(user['id']),int(repo.company_id))))
             if not repo.ready(): raise ValueError('Этап 3 ещё не подключён оператором к этой компании')
             if action=='company-access' and method=='GET':
                 service=Production(repo,self.request_user);service.need_management_role()
