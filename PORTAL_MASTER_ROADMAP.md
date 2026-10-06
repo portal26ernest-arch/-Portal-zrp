@@ -498,3 +498,12 @@ Current roadmap counts are **93 ✅ / 15 🟡 / 6 ⏳ / 12 🔌**. Current-SHA S
 - [x] CI follow-up: первый полный PR Server CI выявил календарно-зависимый regression test — тест ставил работу на фиксированное `2026-10-05T12:00`, а тестовый тариф уже создавался позже в тот же день. Тест переведён на динамический будущий период относительно даты запуска; продуктовая логика тарифа не ослаблялась. Targeted regression + role authorization checks: 3/3 OK.
 - [ ] Повторный полный GitHub Actions после calendar-test fix должен быть зелёным перед merge.
 - 2026-10-06 Code Interpreter CI follow-up: первый PR Android UI run выявил только race в новом Playwright assertion — HTTP mock уже зарегистрировал POST, но тест читал `#codeInterpreterResult` до завершения promise/render. Продуктовый код не менялся; тест теперь ждёт появления фактического текста результата перед assert. Повторный PR CI обязателен перед merge.
+
+### Infrastructure hardening + observability — 06.10.2026
+- [ ] В работе: ветка `assistant/security-hardening-20261006` основана на актуальном `origin/main` `c74bd8b`.
+- [ ] Добавить отдельный security CI: secret scanning, repository/filesystem vulnerability + misconfiguration scanning, Python dependency audit, workflow/shell linting. Новые проверки не должны ослаблять существующие release gates.
+- [ ] Развернуть изолированный Uptime Kuma для внешнего контроля `api.vart-portal.ru`, `reserve-api.vart-portal.ru`, `/api/ping`, `/api/ready`, `/web/` и срока TLS; публикация статуса не должна раскрывать внутренние адреса/секреты.
+- [ ] Создать приватный `PORTAL Ops` connector/plugin с read-first операциями для GitHub/VPS/health/backups/tunnels; write/deploy/DNS/database mutations — только с явным подтверждением владельца.
+- [ ] Подготовить off-site backup через restic/rclone в независимое S3/B2-совместимое хранилище: шифрование клиентским ключом, retention, restore-test и контроль SHA; до подключения внешнего storage production backup policy не менять.
+- [ ] Инструментировать PORTAL в PostHog для error tracking/health/product telemetry без персональных и чувствительных данных; feature flags использовать только для безопасных rollout-ов, не для обхода серверных прав.
+- [ ] Context7 подключён и используется как источник актуальной документации при изменениях внешних SDK/Actions/CLI.
