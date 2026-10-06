@@ -1,0 +1,21 @@
+name: PORTAL Messenger Relay external smoke
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/messenger-relay-external-smoke.yml'
+      - 'ops/smoke_messenger_relay_external.py'
+      - 'PORTAL_MASTER_ROADMAP.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unauthenticated-relay-boundary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify public TLS relay returns 407 without credentials
+        run: python ops/smoke_messenger_relay_external.py
