@@ -27,9 +27,16 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
     static func isValidServerURL(_ value: String) -> Bool {
         guard let components = URLComponents(string: value.trimmingCharacters(in: .whitespacesAndNewlines)),
               ["http", "https"].contains(components.scheme?.lowercased() ?? ""),
-              components.host != nil, components.user == nil, components.password == nil,
+              let host = components.host?.lowercased(), !host.isEmpty,
+              components.scheme?.lowercased() == "https" || isLoopbackHost(host),
+              components.user == nil, components.password == nil,
               components.query == nil, components.fragment == nil else { return false }
         return components.path.isEmpty || components.path == "/"
+    }
+
+    private static func isLoopbackHost(_ host: String) -> Bool {
+        host == "localhost" || host.hasSuffix(".localhost") || host == "::1" ||
+            host.range(of: #"^127(?:\.\d{1,3}){3}$"#, options: .regularExpression) != nil
     }
     static func isAllowedExternalURL(_ url: URL) -> Bool {
         guard url.scheme?.lowercased() == "https",
@@ -49,8 +56,7 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
               components.query == nil, components.fragment == nil,
               components.port == nil || components.port == 443,
               components.path.isEmpty || components.path == "/",
-              host != "localhost", !host.hasSuffix(".localhost"),
-              host != "portal.invalid", !host.hasSuffix(".trycloudflare.com") else { return nil }
+              host == "api.vart-portal.ru" || host == "reserve-api.vart-portal.ru" else { return nil }
         components.scheme = "https"
         components.host = host
         components.port = nil
@@ -338,7 +344,8 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
 
         let method = (payload["method"] as? String ?? "GET").uppercased()
         guard ["GET", "POST"].contains(method),
-              let url = URL(string: serverURL + path) else {
+              Self.isValidServerURL(serverURL),
+              let url = URL(string: serverURL + path), url.scheme?.lowercased() == "https" || isLoopbackURL(url) else {
             deliver(id: id, object: ["ok": false, "httpStatus": 0, "error": "Недопустимый API-запрос"])
             return
         }
@@ -415,6 +422,12 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
             }
             if !didDeliverCached { self.deliver(id: id, object: object) }
         }.resume()
+    }
+
+    private func isLoopbackURL(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased(), scheme == "http",
+              let host = url.host?.lowercased() else { return false }
+        return Self.isLoopbackHost(host)
     }
 
     private func invalidateCache(serverOrigin: String, companyID: String, mutationPath: String) {
