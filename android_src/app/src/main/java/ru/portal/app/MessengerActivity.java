@@ -20,6 +20,7 @@ import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
 /**
  * Device-local Messenger container. It deliberately has no PORTAL JavaScript bridge:
@@ -28,7 +29,11 @@ import android.widget.TextView;
 public final class MessengerActivity extends Activity {
     static final String TELEGRAM_URL = "https://web.telegram.org/a/";
     static final String MAX_URL = "https://web.max.ru/";
+    static final String ACTION_CLEAR_SESSION = "ru.portal.app.action.CLEAR_MESSENGER_SESSION";
+    private static boolean dataDirectorySuffixConfigured;
     private WebView browser;
+    private boolean clearingSession;
+    private String pendingProvider;
     private Button telegram;
     private Button max;
     private String provider = "telegram";
@@ -44,19 +49,39 @@ public final class MessengerActivity extends Activity {
     @SuppressLint("SetJavaScriptEnabled")
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
-        if (Build.VERSION.SDK_INT >= 28) {
-            try { WebView.setDataDirectorySuffix("portal_messenger"); } catch (IllegalStateException ignored) { }
+        if (Build.VERSION.SDK_INT >= 28 && !dataDirectorySuffixConfigured) {
+            try {
+                WebView.setDataDirectorySuffix("portal_messenger");
+                dataDirectorySuffixConfigured = true;
+            } catch (IllegalStateException unavailable) { finish(); return; }
+        }
+        if (ACTION_CLEAR_SESSION.equals(getIntent().getAction())) {
+            if (Build.VERSION.SDK_INT < 28) { finish(); return; }
+            clearingSession = true;
+            pendingProvider = null;
+            clearProviderData(() -> {
+                clearingSession = false;
+                if (pendingProvider != null) {
+                    provider = pendingProvider;
+                    pendingProvider = null;
+                    createMessengerUI();
+                } else finish();
+            });
+            return;
         }
         provider = normalizedProvider(getIntent().getStringExtra("provider"));
         if (Build.VERSION.SDK_INT < 28) {
-            // Android 8 cannot safely use a second persistent WebView data directory while PORTAL is open.
-            // Fail safe to the same official provider URL in the system browser instead of sharing PORTAL WebView storage.
-            Uri official = Uri.parse("max".equals(provider) ? MAX_URL : TELEGRAM_URL);
-            try { startActivity(new Intent(Intent.ACTION_VIEW, official)); } catch (Exception ignored) { }
+            // API 26-27 cannot safely host the isolated WebView process/profile required here.
+            // Do not fall back to the OS browser, whose provider session is not PORTAL-user scoped.
+            Toast.makeText(this, "Мессенджер требует Android 9 или новее для изоляции сессии", Toast.LENGTH_LONG).show();
             finish();
             return;
         }
 
+        createMessengerUI();
+    }
+
+    private void createMessengerUI() {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Color.rgb(245, 248, 253));
@@ -126,6 +151,15 @@ public final class MessengerActivity extends Activity {
         select(provider);
     }
 
+    private void clearProviderData(Runnable complete) {
+        CookieManager cookies = CookieManager.getInstance();
+        cookies.removeAllCookies(removed -> {
+            WebStorage.getInstance().deleteAllData();
+            cookies.flush();
+            runOnUiThread(complete);
+        });
+    }
+
     private Button tab(String label, String key) {
         Button button = new Button(this);
         button.setText(label);
@@ -150,6 +184,35 @@ public final class MessengerActivity extends Activity {
         String target = "max".equals(provider) ? MAX_URL : TELEGRAM_URL;
         Uri current = browser.getUrl() == null ? null : Uri.parse(browser.getUrl());
         if (current == null || !target.equalsIgnoreCase(current.toString())) browser.loadUrl(target);
+    }
+
+    @Override protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        if (ACTION_CLEAR_SESSION.equals(intent.getAction())) {
+            pendingProvider = null;
+            clearingSession = true;
+            if (browser != null) { browser.stopLoading(); browser.clearCache(true); browser.clearFormData(); browser.clearHistory(); browser.destroy(); browser = null; }
+            clearProviderData(() -> {
+                clearingSession = false;
+                if (pendingProvider != null) {
+                    provider = pendingProvider;
+                    pendingProvider = null;
+                    createMessengerUI();
+                } else finish();
+            });
+            return;
+        }
+        String requestedProvider = normalizedProvider(intent.getStringExtra("provider"));
+        if (clearingSession) {
+            pendingProvider = requestedProvider;
+            return;
+        }
+        if (browser != null) select(requestedProvider);
+        else {
+            provider = requestedProvider;
+            createMessengerUI();
+        }
     }
 
     @Override public void onBackPressed() {

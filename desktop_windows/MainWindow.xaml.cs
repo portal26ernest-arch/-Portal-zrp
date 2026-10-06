@@ -34,6 +34,7 @@ public partial class MainWindow : Window
     private string? _pendingPersistOrigin;
     private DesktopCacheBridge? _cacheBridge;
     private static MessengerWindow? _messengerWindow;
+    private Task _messengerClearTask = Task.CompletedTask;
 
     public MainWindow()
     {
@@ -295,6 +296,7 @@ public partial class MainWindow : Window
             }
             if (SameOrigin(target, _serverOrigin)) return;
             e.Cancel = true;
+            if (target.Scheme == "portal-messenger") return;
             OpenExternalHttps(target);
         };
         Browser.CoreWebView2.NewWindowRequested += (_, e) =>
@@ -302,8 +304,21 @@ public partial class MainWindow : Window
             e.Handled = true;
             if (Uri.TryCreate(e.Uri, UriKind.Absolute, out var custom) && custom.Scheme == "portal-messenger")
             {
-                var provider = custom.Query.Contains("provider=max", StringComparison.OrdinalIgnoreCase) ? "max" : "telegram";
-                _ = OpenMessengerWindowAsync(provider);
+                if (!string.IsNullOrEmpty(custom.UserInfo) || !custom.IsDefaultPort || !string.IsNullOrEmpty(custom.Fragment)) return;
+                if (custom.Host.Equals("clear", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!string.IsNullOrEmpty(custom.Query) || !string.IsNullOrEmpty(custom.AbsolutePath.Trim('/'))) return;
+                    _messengerClearTask = ClearMessengerSessionAsync();
+                }
+                else if (custom.Host.Equals("open", StringComparison.OrdinalIgnoreCase) && string.IsNullOrEmpty(custom.AbsolutePath.Trim('/')))
+                {
+                    var query = System.Web.HttpUtility.ParseQueryString(custom.Query);
+                    if (query.AllKeys.Length != 1 || !string.Equals(query.AllKeys[0], "provider", StringComparison.OrdinalIgnoreCase)) return;
+                    var provider = query["provider"]?.Equals("max", StringComparison.OrdinalIgnoreCase) == true ? "max" : "telegram";
+                    if (!string.Equals(query["provider"], "max", StringComparison.OrdinalIgnoreCase) &&
+                        !string.Equals(query["provider"], "telegram", StringComparison.OrdinalIgnoreCase)) return;
+                    _ = OpenMessengerWindowAsync(provider);
+                }
                 return;
             }
             if (_serverOrigin is not null && Uri.TryCreate(e.Uri, UriKind.Absolute, out var target))
@@ -362,15 +377,34 @@ public partial class MainWindow : Window
         _browserEventsAttached = true;
     }
 
-    private async Task OpenMessengerWindowAsync(string provider = "telegram")
+    private async Task OpenMessengerWindowAsync(string provider)
     {
         try
         {
+            await _messengerClearTask;
             if (_messengerWindow is null) _messengerWindow = new MessengerWindow(_settingsDir);
             await _messengerWindow.OpenProviderAsync(provider);
             _messengerWindow.ShowSingleton();
         }
         catch { }
+    }
+
+    private async Task ClearMessengerSessionAsync()
+    {
+        if (_messengerWindow is not null)
+        {
+            await _messengerWindow.ClearAndCloseAsync();
+            _messengerWindow = null;
+        }
+        else
+        {
+            try
+            {
+                var profile = Path.Combine(_settingsDir, "MessengerWebView2");
+                if (Directory.Exists(profile)) Directory.Delete(profile, recursive: true);
+            }
+            catch { }
+        }
     }
 
     private async Task ApplyDesktopExperienceAsync()

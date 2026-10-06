@@ -22,6 +22,20 @@ final class MessengerViewController: UIViewController, WKNavigationDelegate, WKU
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+    static func clear(completion: @escaping () -> Void) { clearProviderData(in: .default(), completion: completion) }
+
+    private static func clearProviderData(in store: WKWebsiteDataStore, completion: @escaping () -> Void) {
+        store.fetchDataRecords(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes()) { records in
+            let providers = records.filter { record in
+                let domain = record.displayName.lowercased()
+                return domain == "telegram.org" || domain == "web.telegram.org" || domain.hasSuffix(".telegram.org") ||
+                    domain == "max.ru" || domain == "web.max.ru" || domain.hasSuffix(".max.ru")
+            }
+            guard !providers.isEmpty else { completion(); return }
+            store.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), for: providers, completionHandler: completion)
+        }
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
@@ -72,6 +86,11 @@ final class MessengerViewController: UIViewController, WKNavigationDelegate, WKU
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        if navigationAction.targetFrame?.isMainFrame == false {
+            decisionHandler(.allow)
+            return
+        }
+        guard navigationAction.targetFrame?.isMainFrame == true else { decisionHandler(.cancel); return }
         guard Self.isAllowedTopLevel(navigationAction.request.url) else { decisionHandler(.cancel); return }
         decisionHandler(.allow)
     }

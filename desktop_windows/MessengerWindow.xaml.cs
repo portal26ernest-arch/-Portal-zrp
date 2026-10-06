@@ -39,6 +39,24 @@ public partial class MessengerWindow : Window
         Activate();
     }
 
+    internal void CloseForIdentityChange()
+    {
+        _closeRequested = true;
+        Close();
+    }
+
+    internal async Task ClearAndCloseAsync()
+    {
+        try
+        {
+            if (MessengerBrowser.CoreWebView2 is not null)
+                await MessengerBrowser.CoreWebView2.Profile.ClearBrowsingDataAsync(CoreWebView2BrowsingDataKinds.AllProfile);
+        }
+        catch { }
+        _closeRequested = true;
+        Close();
+    }
+
     internal static bool IsAllowedProviderUri(Uri? uri)
     {
         if (uri is null || uri.Scheme != Uri.UriSchemeHttps || !string.IsNullOrEmpty(uri.UserInfo) || (uri.Port != 443 && !uri.IsDefaultPort)) return false;

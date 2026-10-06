@@ -15,12 +15,16 @@ const messengerXaml=fs.readFileSync(path.join(repo,'desktop_windows/MessengerWin
 assert.match(messengerWindow,/https:\/\/web\.telegram\.org\/a\//);
 assert.match(messengerWindow,/https:\/\/web\.max\.ru\//);
 assert.match(messengerWindow,/MessengerWebView2/);
+assert.match(messengerWindow,/Path\.Combine\(_settingsDir, "MessengerWebView2"\)/);
+assert.match(messengerWindow,/ClearBrowsingDataAsync\(CoreWebView2BrowsingDataKinds\.AllProfile\)/);
+assert.match(code,/ClearMessengerSessionAsync/);
+assert.doesNotMatch(code,/MessengerIdentityKey|company.*user|identityKey/);
 assert.match(messengerWindow,/IsAllowedProviderUri/);
 assert.doesNotMatch(messengerWindow,/portalSession|Bearer|token|companyJson/);
 assert.match(messengerXaml,/TelegramTab/);
 assert.match(messengerXaml,/MaxTab/);
 assert.match(code,/private static MessengerWindow\? _messengerWindow/);
-assert.match(code,/OpenMessengerWindowAsync\(string provider/);
+assert.match(code,/OpenMessengerWindowAsync\(string provider\)/);
 assert.match(xaml,/x:Name="HomeButton"[^>]+Click="Home_Click"/);
 assert.match(xaml,/PreviewMouseWheel="Browser_PreviewMouseWheel"/);
 assert.match(code,/ExecuteScriptAsync\("Boolean\(window\.portalBack && window\.portalBack\(\)\)"\)/);

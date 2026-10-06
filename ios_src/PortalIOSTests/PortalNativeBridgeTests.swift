@@ -21,6 +21,13 @@ final class PortalNativeBridgeTests: XCTestCase {
         XCTAssertFalse(PortalNativeBridge.isAllowedExternalURL(try XCTUnwrap(URL(string: "https://example.com/"))))
     }
 
+    func testMessengerAllowsOnlyOfficialProviderHosts() throws {
+        XCTAssertTrue(MessengerViewController.isAllowedTopLevel(try XCTUnwrap(URL(string: "https://web.telegram.org/a/"))))
+        XCTAssertTrue(MessengerViewController.isAllowedTopLevel(try XCTUnwrap(URL(string: "https://web.max.ru/"))))
+        XCTAssertFalse(MessengerViewController.isAllowedTopLevel(try XCTUnwrap(URL(string: "https://telegram.org/"))))
+        XCTAssertFalse(MessengerViewController.isAllowedTopLevel(try XCTUnwrap(URL(string: "https://web.max.ru.evil.example/"))))
+    }
+
     func testOfficialServerDiscoveryURLValidation() {
         XCTAssertEqual(
             PortalNativeBridge.normalizeOfficialServerURL("https://api.vart-portal.ru/"),
