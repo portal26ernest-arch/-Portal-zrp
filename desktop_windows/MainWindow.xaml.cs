@@ -14,7 +14,7 @@ namespace Portal.Desktop;
 
 public partial class MainWindow : Window
 {
-    private const int CurrentBuild = 60;
+    private const int CurrentBuild = 61;
     private const long MaxInstallerBytes = 250L * 1024 * 1024;
     private const string GithubRepository = "portal26ernest-arch/-Portal-zrp";
     private const string ServerDiscoveryUrl = "https://raw.githubusercontent.com/portal26ernest-arch/-Portal-zrp/main/portal-server.json";
@@ -22,7 +22,7 @@ public partial class MainWindow : Window
     private const string TrustedFallbackServerOrigin = "https://api.vart-portal.ru";
     private static readonly TimeSpan ServerProbeTimeout = TimeSpan.FromSeconds(10);
     private const string WebViewSoftwareRenderingArguments = "--disable-gpu --disable-gpu-compositing";
-    private const string WebViewNetworkCompatibilityArguments = "--disable-http2";
+    private const string WebViewNetworkCompatibilityArguments = "--disable-http2 --disable-quic";
     private static readonly HttpClient Http = new(new HttpClientHandler { AllowAutoRedirect = false })
     {
         Timeout = TimeSpan.FromMinutes(5)
@@ -34,6 +34,7 @@ public partial class MainWindow : Window
     private bool _webRecoveryPending;
     private string? _pendingPersistOrigin;
     private DesktopCacheBridge? _cacheBridge;
+    private PortalConnectProxy? _portalProxy;
     private static MessengerWindow? _messengerWindow;
     private Task _messengerClearTask = Task.CompletedTask;
 
@@ -41,6 +42,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         Loaded += MainWindow_Loaded;
+        Closed += (_, _) => _portalProxy?.Dispose();
     }
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -147,18 +149,22 @@ public partial class MainWindow : Window
 
     private string WebViewArguments()
     {
+        // Route only PORTAL WebView traffic through the app-local CONNECT bridge. This avoids
+        // machine-specific Chromium/HTTPS filtering failures without changing system proxy/VPN.
+        var networkArguments = _portalProxy?.BrowserArguments ?? WebViewNetworkCompatibilityArguments;
+
         // Safe default after a real WebView2 154 incident where the DOM loaded and
         // navigation completed, but GPU composition presented a completely white surface.
         // PORTAL's UI is not graphics-heavy, so software composition is the reliable default.
         // Advanced operators can explicitly opt back into GPU rendering for diagnostics.
         var forceGpu = Environment.GetEnvironmentVariable("PORTAL_WEBVIEW_GPU");
-        if (string.Equals(forceGpu, "1", StringComparison.Ordinal)) return WebViewNetworkCompatibilityArguments;
+        if (string.Equals(forceGpu, "1", StringComparison.Ordinal)) return networkArguments;
 
         var forcedSoftware = Environment.GetEnvironmentVariable("PORTAL_WEBVIEW_SOFTWARE_RENDERING");
         var marker = Path.Combine(_settingsDir, "software-rendering.flag");
         if (string.Equals(forcedSoftware, "0", StringComparison.Ordinal) && !File.Exists(marker))
-            return WebViewNetworkCompatibilityArguments;
-        return WebViewNetworkCompatibilityArguments + " " + WebViewSoftwareRenderingArguments;
+            return networkArguments;
+        return networkArguments + " " + WebViewSoftwareRenderingArguments;
     }
 
     private string? LoadStoredOrigin()
@@ -221,6 +227,7 @@ public partial class MainWindow : Window
             if (Browser.CoreWebView2 is null)
             {
                 Directory.CreateDirectory(_settingsDir);
+                _portalProxy ??= PortalConnectProxy.Start();
                 var environmentOptions = new CoreWebView2EnvironmentOptions
                 {
                     // Software rendering is the compatibility-safe default after a production
@@ -642,7 +649,7 @@ public partial class MainWindow : Window
                 return new ServerRefreshResult(false, false, _serverOrigin);
 
             using var request = new HttpRequestMessage(HttpMethod.Get, ServerDiscoveryUrl);
-            request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.10.0");
+            request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.11.0");
             request.Headers.Accept.ParseAdd("application/json");
             using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
             response.EnsureSuccessStatusCode();
@@ -766,7 +773,7 @@ public partial class MainWindow : Window
     {
         using var request = new HttpRequestMessage(HttpMethod.Get,
             $"https://api.github.com/repos/{GithubRepository}/releases?per_page=50");
-        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.10.0");
+        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.11.0");
         request.Headers.Accept.ParseAdd("application/vnd.github+json");
         using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();
