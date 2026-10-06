@@ -6,8 +6,13 @@ ORPort 0
 ExitRelay 0
 StrictNodes 1
 ExitNodes {de},{nl},{fr},{at},{ch},{se},{fi}
+# The current owned VPS is on a network where direct Tor ORPorts are unreliable.
+# Use Tor's official Snowflake pluggable transport for the entry bridge; Telegram
+# still leaves through an exit selected from the Western-country allowlist above.
+UseBridges 1
+ClientTransportPlugin snowflake exec /usr/bin/snowflake-client
+Bridge snowflake 192.0.2.3:80 2B280B23E1107BB62ABFC40DDCC8824814F80A72 fingerprint=2B280B23E1107BB62ABFC40DDCC8824814F80A72 url=https://1098762253.rsc.cdn77.org front=www.phpmyadmin.net ice=stun:stun.antisip.com:3478,stun:stun.epygi.com:3478,stun:stun.uls.co.za:3478,stun:stun.voipgate.com:3478,stun:stun.mixvoip.com:3478,stun:stun.nextcloud.com:3478,stun:stun.bethesda.net:3478,stun:stun.nextcloud.com:443 utls-imitate=hellorandomizedalpn
 SafeLogging 1
 Log notice syslog
 
-# Tor version/policy support varies. Verify the actual observed exit country
-# before activation; this preference is not proof of the exit location.
+# Verify the observed exit country before activation; ExitNodes is policy, not proof.
