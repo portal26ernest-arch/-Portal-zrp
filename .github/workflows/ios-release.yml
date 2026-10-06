@@ -79,9 +79,11 @@ jobs:
           if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
             [[ "$GITHUB_REF_NAME" == "portal-ios-v$VERSION" ]] || { echo "::error::Tag must equal portal-ios-v$VERSION"; exit 1; }
           fi
-          echo "PORTAL_IOS_VERSION=$VERSION" >> "$GITHUB_ENV"
-          echo "PORTAL_IOS_BUILD=$BUILD" >> "$GITHUB_ENV"
-          echo "PORTAL_IOS_BUILD_DATE=$(date -u +%F)" >> "$GITHUB_ENV"
+          {
+            echo "PORTAL_IOS_VERSION=$VERSION"
+            echo "PORTAL_IOS_BUILD=$BUILD"
+            echo "PORTAL_IOS_BUILD_DATE=$(date -u +%F)"
+          } >> "$GITHUB_ENV"
 
       - name: Validate release configuration
         run: |
