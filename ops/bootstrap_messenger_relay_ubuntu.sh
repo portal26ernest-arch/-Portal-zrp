@@ -4,7 +4,11 @@ set -euo pipefail
 # Prepare a dedicated Tor client and, only when its existing TLS/secret config is
 # valid, the Telegram relay. Never creates relay secrets, DNS, TLS, or API config.
 if [[ "${EUID}" -ne 0 ]]; then echo "Run as root on the owned VPS." >&2; exit 1; fi
-if [[ ! -r /etc/os-release ]] || ! . /etc/os-release || "${ID:-}" != ubuntu; then
+if [[ ! -r /etc/os-release ]]; then
+  echo "This bootstrap supports Ubuntu only." >&2; exit 1
+fi
+. /etc/os-release
+if [[ "${ID:-}" != "ubuntu" ]]; then
   echo "This bootstrap supports Ubuntu only." >&2; exit 1
 fi
 REPO_ROOT="${PORTAL_RELAY_REPO_ROOT:-/srv/portal-messenger-relay/current}"
@@ -17,7 +21,7 @@ if [[ ! -f "${REPO_ROOT}/server/messenger_relay.py" || ! -f "${REPO_ROOT}/server
 fi
 [[ -f "${TORRC_SRC}" && -f "${TOR_SERVICE_SRC}" ]] || { echo "Tor deployment examples missing." >&2; exit 1; }
 apt-get update
-DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends tor python3 ca-certificates
+DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends tor tor-geoipdb snowflake-client python3 ca-certificates
 getent group portal-tor >/dev/null || groupadd --system portal-tor
 id portal-tor >/dev/null 2>&1 || useradd --system --gid portal-tor --home-dir /var/lib/portal-messenger-tor --shell /usr/sbin/nologin portal-tor
 install -d -o portal-tor -g portal-tor -m 0700 /var/lib/portal-messenger-tor
