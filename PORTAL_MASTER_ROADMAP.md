@@ -501,7 +501,7 @@ Current roadmap counts are **93 ✅ / 15 🟡 / 6 ⏳ / 12 🔌**. Current-SHA S
 
 ### Infrastructure hardening + observability — 06.10.2026
 - [ ] В работе: ветка `assistant/security-hardening-20261006` основана на актуальном `origin/main` `c74bd8b`.
-- [ ] Добавить отдельный security CI: secret scanning, repository/filesystem vulnerability + misconfiguration scanning, Python dependency audit, workflow/shell linting. Новые проверки не должны ослаблять существующие release gates.
+- [x] Добавлен отдельный security CI `.github/workflows/security-hardening.yml`: Gitleaks secret scan, Trivy filesystem vulnerability/misconfiguration/secret scan, `pip-audit` production/test requirements, ShellCheck и actionlint. Первый push workflow корректно остановлен master-control, потому что workflow и roadmap были отправлены раздельными push; gate не ослаблялся. Повторный latest CI после этой roadmap-записи обязателен перед merge.
 - [ ] Развернуть изолированный Uptime Kuma для внешнего контроля `api.vart-portal.ru`, `reserve-api.vart-portal.ru`, `/api/ping`, `/api/ready`, `/web/` и срока TLS; публикация статуса не должна раскрывать внутренние адреса/секреты.
 - [ ] Создать приватный `PORTAL Ops` connector/plugin с read-first операциями для GitHub/VPS/health/backups/tunnels; write/deploy/DNS/database mutations — только с явным подтверждением владельца.
 - [ ] Подготовить off-site backup через restic/rclone в независимое S3/B2-совместимое хранилище: шифрование клиентским ключом, retention, restore-test и контроль SHA; до подключения внешнего storage production backup policy не менять.
