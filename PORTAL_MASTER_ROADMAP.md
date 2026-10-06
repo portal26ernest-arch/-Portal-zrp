@@ -520,3 +520,5 @@ Current roadmap counts are **93 ✅ / 15 🟡 / 6 ⏳ / 12 🔌**. Current-SHA S
 - [ ] Подготовить off-site backup через restic/rclone в независимое S3/B2-совместимое хранилище: шифрование клиентским ключом, retention, restore-test и контроль SHA; до подключения внешнего storage production backup policy не менять.
 - [ ] Инструментировать PORTAL в PostHog для error tracking/health/product telemetry без персональных и чувствительных данных; feature flags использовать только для безопасных rollout-ов, не для обхода серверных прав.
 - [ ] Context7 подключён и используется как источник актуальной документации при изменениях внешних SDK/Actions/CLI.
+
+- [x] 2026-10-06 — Windows-local Messenger Relay SOCKS5 regression: fake upstream fixture now keeps the accepted tunnel open until the client closes, preventing WSAECONNRESET before the bind reply is consumed. Targeted python -m unittest test_messenger_relay test_messenger_adapters passes 12/12 on Ernest-com. PR #22 carries this portability-only test fix; production relay behavior is unchanged. Next: all CI green, then live VPS/Tor/TLS smoke and client smoke without third-party VPN.
