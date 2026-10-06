@@ -19,7 +19,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import okhttp3.ByteString;
+import okio.ByteString;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
