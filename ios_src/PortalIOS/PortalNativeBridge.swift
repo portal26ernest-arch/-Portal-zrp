@@ -134,7 +134,7 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
               send('setCacheCompany', {value:cacheCompany}); return !!cacheCompany;
             },
             clearCompanyCache: () => { send('clearCompanyCache', {}); return true; },
-            openMessengerWindow: provider => { const p=String(provider||'telegram').toLowerCase()==='max'?'max':'telegram'; send('openMessengerWindow', {provider:p}); return true; },
+            openMessengerWindow: (provider, relayJson) => { const p=String(provider||'telegram').toLowerCase()==='max'?'max':'telegram'; send('openMessengerWindow', {provider:p, relay: p==='telegram' ? String(relayJson||'') : ''}); return true; },
             clearMessengerSession: () => { send('clearMessengerSession',{}); return true; },
             queueMutation: json => ask('queueMutation', {json:String(json||'')}),
             pendingMutations: () => ask('pendingMutations', {}).then(rows => JSON.stringify(Array.isArray(rows)?rows:[])),
@@ -193,13 +193,14 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
             if !cacheCompany.isEmpty { _ = localCache.clearCompany(serverOrigin: serverURL, companyID: cacheCompany) }
         case "openMessengerWindow":
             let provider = (payload["provider"] as? String)?.lowercased() == "max" ? "max" : "telegram"
+            let relay = provider == "telegram" ? (payload["relay"] as? String ?? "") : ""
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 if self.messengerClearInProgress {
                     self.pendingMessengerProvider = provider
                     return
                 }
-                self.presentMessenger(provider)
+                self.presentMessenger(provider, relay: relay)
             }
         case "clearMessengerSession":
             DispatchQueue.main.async { [weak self] in
@@ -254,11 +255,11 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
         }
     }
 
-    private func presentMessenger(_ provider: String) {
+    private func presentMessenger(_ provider: String, relay: String = "") {
         guard let presenter = topViewController() else { return }
         let current = (presenter as? MessengerViewController) ?? (presenter.presentedViewController as? MessengerViewController)
-        if let current { current.selectProvider(provider); return }
-        let messenger = MessengerViewController(provider: provider)
+        if let current { current.selectProvider(provider, relayJSON: relay); return }
+        let messenger = MessengerViewController(provider: provider, relayJSON: relay)
         messenger.modalPresentationStyle = .fullScreen
         presenter.present(messenger, animated: true)
     }

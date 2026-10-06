@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Authenticated destination-restricted HTTPS CONNECT proxy for PORTAL Messenger.
+"""Authenticated Telegram-only destination-restricted HTTPS CONNECT proxy for PORTAL Messenger.
 
 This is intentionally not a general VPN or open proxy. It accepts only authenticated
-CONNECT tunnels to Telegram/MAX-owned hostnames on TCP/443 and logs no message bodies.
+CONNECT tunnels to Telegram-owned hostnames on TCP/443 and logs no message bodies.
 """
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ import os
 import socket
 import ssl
 import sys
+from urllib.parse import urlsplit
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -24,11 +25,38 @@ if str(HERE) not in sys.path:
 from messenger_relay_auth import REALM, validate_ticket
 
 MAX_HEADER = 32 * 1024
-ALLOWED_SUFFIXES = tuple(x.strip().lower() for x in os.environ.get(
-    "PORTAL_MESSENGER_RELAY_ALLOWED_SUFFIXES", "telegram.org,t.me,max.ru"
-).split(",") if x.strip())
+ALLOWED_SUFFIXES = ("telegram.org", "t.me")
 MAX_CONNECTIONS = max(8, min(int(os.environ.get("PORTAL_MESSENGER_RELAY_MAX_CONNECTIONS", "256")), 4096))
 SEMAPHORE = asyncio.Semaphore(MAX_CONNECTIONS)
+UPSTREAM_SOCKS5_ENV = "PORTAL_MESSENGER_RELAY_UPSTREAM_SOCKS5"
+
+
+def _parse_upstream_socks5(value: str | None):
+    """Return (host, port) for an explicitly loopback-only SOCKS5 URL."""
+    if value is None or value == "":
+        return None
+    try:
+        if "?" in value or "#" in value:
+            raise ValueError
+        parsed = urlsplit(value)
+        if parsed.scheme.lower() != "socks5" or parsed.username is not None or parsed.password is not None:
+            raise ValueError
+        if parsed.path or parsed.query or parsed.fragment or not parsed.hostname:
+            raise ValueError
+        host = parsed.hostname.lower()
+        if host not in {"127.0.0.1", "::1", "localhost"}:
+            raise ValueError
+        # urlsplit validates malformed bracket and port syntax when accessing port.
+        port = parsed.port
+        if port is None or not 1 <= port <= 65535:
+            raise ValueError
+        return host, port
+    except (ValueError, UnicodeError) as exc:
+        raise ValueError(f"{UPSTREAM_SOCKS5_ENV} must be a loopback socks5 URL") from exc
+
+
+def _configured_upstream():
+    return _parse_upstream_socks5(os.environ.get(UPSTREAM_SOCKS5_ENV))
 
 
 def _allowed_host(host: str) -> bool:
@@ -106,6 +134,57 @@ async def _connect_public(host: str, port: int):
     raise OSError("no public reachable address") from last
 
 
+async def _read_exactly(reader: asyncio.StreamReader, count: int) -> bytes:
+    return await asyncio.wait_for(reader.readexactly(count), timeout=10)
+
+
+async def _socks_drain(writer: asyncio.StreamWriter):
+    await asyncio.wait_for(writer.drain(), timeout=10)
+
+
+async def _connect_socks5(host: str, port: int, upstream=None):
+    upstream = upstream if upstream is not None else _configured_upstream()
+    if upstream is None:
+        return await _connect_public(host, port)
+    proxy_host, proxy_port = upstream
+    try:
+        reader, writer = await asyncio.wait_for(asyncio.open_connection(proxy_host, proxy_port), timeout=10)
+    except (OSError, TimeoutError) as exc:
+        raise OSError("SOCKS5 upstream unavailable") from exc
+    try:
+        writer.write(b"\x05\x01\x00")
+        await _socks_drain(writer)
+        if await _read_exactly(reader, 2) != b"\x05\x00":
+            raise OSError("SOCKS5 no-auth negotiation rejected")
+        try:
+            encoded_host = host.encode("idna")
+        except UnicodeError as exc:
+            raise ValueError("invalid SOCKS5 target hostname") from exc
+        if not encoded_host or len(encoded_host) > 253:
+            raise ValueError("invalid SOCKS5 target hostname")
+        if not 1 <= port <= 65535:
+            raise ValueError("invalid SOCKS5 target port")
+        writer.write(b"\x05\x01\x00\x03" + bytes((len(encoded_host),)) + encoded_host + port.to_bytes(2, "big"))
+        await _socks_drain(writer)
+        head = await _read_exactly(reader, 4)
+        version, reply, reserved, atyp = head
+        if version != 5 or reply != 0 or reserved != 0 or atyp not in (1, 3, 4):
+            raise OSError("SOCKS5 CONNECT rejected")
+        address_length = {1: 4, 4: 16}.get(atyp)
+        if atyp == 3:
+            address_length = (await _read_exactly(reader, 1))[0]
+            if address_length == 0:
+                raise OSError("invalid SOCKS5 bind address")
+        await _read_exactly(reader, address_length + 2)
+        return reader, writer
+    except (asyncio.IncompleteReadError, TimeoutError) as exc:
+        writer.transport.abort()
+        raise OSError("SOCKS5 upstream protocol failure") from exc
+    except BaseException:
+        writer.transport.abort()
+        raise
+
+
 async def _pipe(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
     try:
         while True:
@@ -148,7 +227,7 @@ async def handle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
             if port != 443 or not _allowed_host(host):
                 await _reply(writer, "403 Forbidden")
                 return
-            upstream_reader, upstream_writer = await _connect_public(host, port)
+            upstream_reader, upstream_writer = await _connect_socks5(host, port)
             writer.write(b"HTTP/1.1 200 Connection Established\r\nProxy-Agent: PORTAL-Relay\r\n\r\n")
             await writer.drain()
             print(json.dumps({"event":"relay_connect","remote":remote,"company_id":identity["company_id"],"user_id":identity["user_id"],"target":host}, separators=(",", ":")), flush=True)
@@ -182,9 +261,11 @@ def build_ssl_context(cert: str, key: str):
 async def serve(host: str, port: int, cert: str, key: str):
     if len(os.environ.get("PORTAL_MESSENGER_RELAY_SECRET", "")) < 32:
         raise SystemExit("PORTAL_MESSENGER_RELAY_SECRET must contain at least 32 characters")
+    upstream = _configured_upstream()
+    mode = "socks5-loopback" if upstream is not None else "direct"
     server = await asyncio.start_server(handle, host, port, ssl=build_ssl_context(cert, key), limit=MAX_HEADER)
     sockets = ", ".join(str(sock.getsockname()) for sock in (server.sockets or []))
-    print(json.dumps({"event":"relay_started","listen":sockets,"allowed_suffixes":ALLOWED_SUFFIXES}), flush=True)
+    print(json.dumps({"event":"relay_started","listen":sockets,"allowed_suffixes":ALLOWED_SUFFIXES,"upstream_mode":mode}), flush=True)
     async with server:
         await server.serve_forever()
 

@@ -15,6 +15,9 @@
         <Border Grid.Row="1" Background="#EAF2FF" Padding="10,6">
             <TextBlock x:Name="RelayStatus" Text="Канал: прямой" Foreground="#334155" FontSize="12"/>
         </Border>
-        <wv2:WebView2 x:Name="MessengerBrowser" Grid.Row="2"/>
+        <Grid Grid.Row="2">
+            <wv2:WebView2 x:Name="TelegramWebView2"/>
+            <wv2:WebView2 x:Name="MaxWebView2" Visibility="Collapsed"/>
+        </Grid>
     </Grid>
 </Window>

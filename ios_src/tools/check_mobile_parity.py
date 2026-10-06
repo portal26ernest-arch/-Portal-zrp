@@ -48,6 +48,15 @@ for source, label in ((android_messenger, "Android"), (ios_messenger, "iOS")):
         fail(f"{label} Messenger provider allowlist is incomplete")
 if "openMessengerWindow" not in android_bridge or "openMessengerWindow" not in bridge:
     fail("native Messenger bridge must exist on Android and iOS")
+for marker in ("ProxyConfiguration(httpCONNECTProxy", "applyCredential(username:", "allowFailover = false", "iOS 17.0", "68C88C71-9F9B-4D43-9D85-514C0B9065E2", "7F1B82E8-7E0A-4B93-B10D-271CD988C09A", "providerData.fixed, provider == \"telegram\""):
+    if marker not in ios_messenger:
+        fail(f"iOS Telegram relay is missing {marker}")
+if "browser.configuration.websiteDataStore.proxyConfigurations" in ios_messenger:
+    fail("iOS Messenger must never mutate a WKWebView's data store after creation")
+if 'WKWebsiteDataStore(forIdentifier: identifier)' not in ios_messenger:
+    fail("iOS Messenger must use fixed provider data stores")
+if "v2.telegram" not in (ROOT / "server" / "messenger_relay_auth.py").read_text(encoding="utf-8"):
+    fail("relay ticket must be provider scoped")
 
 organizer = re.search(r"\{id:'organizer'[^\n]*", shared_core)
 if not organizer or "desktopOnly" in organizer.group(0):

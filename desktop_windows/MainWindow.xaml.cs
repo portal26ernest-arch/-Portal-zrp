@@ -418,12 +418,15 @@ public partial class MainWindow : Window
         }
         else
         {
-            try
+            foreach (var profileName in new[] { "MessengerWebView2-Telegram", "MessengerWebView2-Max", "MessengerWebView2" })
             {
-                var profile = Path.Combine(_settingsDir, "MessengerWebView2");
-                if (Directory.Exists(profile)) Directory.Delete(profile, recursive: true);
+                try
+                {
+                    var profile = Path.Combine(_settingsDir, profileName);
+                    if (Directory.Exists(profile)) Directory.Delete(profile, recursive: true);
+                }
+                catch { }
             }
-            catch { }
         }
     }
 
