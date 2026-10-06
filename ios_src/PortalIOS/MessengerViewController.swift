@@ -41,7 +41,7 @@ final class MessengerViewController: UIViewController, WKNavigationDelegate, WKU
             if providerData.fixed, provider == "telegram", let ticket = ticket(relayJSON), ticket.enabled,
                let components = URLComponents(string: ticket.proxyURL), let host = components.host,
                let port = NWEndpoint.Port(rawValue: UInt16(components.port ?? 443)) {
-                let proxy = ProxyConfiguration(httpCONNECTProxy: .hostPort(host: NWEndpoint.Host(host), port: port), tlsOptions: nil)
+                var proxy = ProxyConfiguration(httpCONNECTProxy: .hostPort(host: NWEndpoint.Host(host), port: port), tlsOptions: nil)
                 proxy.applyCredential(username: ticket.username, password: ticket.password)
                 proxy.allowFailover = false
                 store.proxyConfigurations = [proxy]
