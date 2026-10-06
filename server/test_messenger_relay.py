@@ -100,7 +100,14 @@ class Socks5RelayTest(unittest.IsolatedAsyncioTestCase):
             self.requests.append(header + domain + port)
             writer.write(b"\x05\x00\x00\x01\x7f\x00\x00\x01\x00\x50")
             await writer.drain()
-            writer.close()
+            # Keep the accepted tunnel alive until the client closes it. Closing
+            # immediately after the SOCKS5 success reply can surface as WSAECONNRESET
+            # on Windows before StreamReader consumes the full bind-address reply.
+            try:
+                await reader.read()
+            finally:
+                writer.close()
+                await writer.wait_closed()
         self.server = await asyncio.start_server(fake_socks, "127.0.0.1", 0)
         self.port = self.server.sockets[0].getsockname()[1]
 
