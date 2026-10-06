@@ -42,6 +42,7 @@ HOST = CONFIG.host
 PORT = CONFIG.port
 SESSION_HOURS = 24 * 30
 LOGIN_LIMITER = LoginLimiter()
+CODE_INTERPRETER_LIMITER = LoginLimiter()
 # Deployment must list only proxies that overwrite X-Real-IP, never arbitrary peers.
 TRUSTED_LOGIN_PROXIES = tuple(value.strip() for value in os.environ.get('PORTAL_TRUSTED_LOGIN_PROXIES','').split(',') if value.strip())
 GLOBAL_ROLE = "platform_owner"
@@ -778,7 +779,7 @@ def audit_route(path):
     parts = path.strip("/").split("/")
     known = {"api", "platform", "companies", "audit", "me", "company", "dashboard", "clients", "admin",
              "operations", "work", "mine", "payroll", "materials", "jobs", "invoices", "users", "login",
-             "v3", "invitations"}
+             "v3", "invitations", "code-interpreter"}
     if any(p not in known and not p.isdecimal() for p in parts):
         return "unknown"
     return "/" + "/".join("{id}" if p.isdecimal() else p for p in parts)
@@ -799,7 +800,7 @@ def company_module_for_route(path):
             'users':'users','invitations':'users','company-access':'users','presence':'users','activity':'users','audit':'users','employee-name-history':'users','employee-aliases':'users',
             'tasks':'jobs','batches':'batches','shipments':'batches','returns':'batches',
             'permissions':'permissions','tariffs':'tariffs','finance':'radar','expenses':'expenses',
-            'analytics':'analytics','settings':'control','documents':'documents',
+            'analytics':'analytics','code-interpreter':'analytics','settings':'control','documents':'documents',
             'document-file':'documents','document-metadata':'documents','document-history':'documents','document-upload':'documents',
             'document-archive':'documents','document-generate':'documents','document-template':'excelImport',
             'document-template-blank':'excelImport','document-template-info':'excelImport',
@@ -1194,6 +1195,41 @@ class Handler(BaseHTTPRequestHandler):
                         'summary':labels.get(payload.get('event'),'Изменение в системе')})
                 offset=(page-1)*limit
                 return self.send_json({'ok':True,'data':{'items':items[offset:offset+limit],'page':page,'limit':limit,'total':len(items)}})
+            if action=='code-interpreter':
+                import openai_code_interpreter as code_interpreter
+                user=self.request_user or {}
+                if not (user.get('technical_owner') or user.get('role') in {'admin','director'}):
+                    raise PermissionError('AI-аналитик доступен только управляющему, директору или Platform Owner')
+                if method=='GET':
+                    return self.send_json(dict(ok=True,data=code_interpreter.public_status(os.environ)))
+                if method!='POST':
+                    raise ValueError('Метод Code Interpreter не поддерживается')
+                status=code_interpreter.public_status(os.environ)
+                if not status['enabled']:
+                    return self.error_json('Code Interpreter отключён оператором PORTAL',503)
+                if not status['configured']:
+                    return self.error_json('OPENAI_API_KEY не настроен на сервере PORTAL',503)
+                retry=CODE_INTERPRETER_LIMITER.consume(
+                    ('code-interpreter',repo.company_id,user.get('id')),10,300)
+                if retry:
+                    return self.send_json({'ok':False,'error':'Слишком много AI-запросов. Повторите позже.',
+                                           'retry_after':retry},429,headers={'Retry-After':retry})
+                body=parse_body(self)
+                unknown=set(body)-{'prompt','request_id'}
+                if unknown:
+                    raise ValueError('Code Interpreter принимает только поля prompt и request_id')
+                request_id=body.get('request_id')
+                if request_id is not None and (not isinstance(request_id,str) or not request_id or len(request_id)>128):
+                    raise ValueError('Некорректный request_id')
+                try:
+                    result=code_interpreter.run(body.get('prompt'),os.environ)
+                except code_interpreter.CodeInterpreterUnavailable as exc:
+                    return self.error_json(exc,503)
+                except code_interpreter.CodeInterpreterRemoteError as exc:
+                    return self.error_json(exc,502)
+                repo.audit(user,'ai.code_interpreter.used',result.get('response_id') or 'response',request_id=request_id)
+                conn.commit()
+                return self.send_json(dict(ok=True,data=result))
             if action in excel_import.IMPORT_ACTIONS:
                 if not repo.has_table('portal_excel_imports'):raise ValueError('Сначала примените миграцию Documents/Excel')
                 service=Production(repo,self.request_user)
