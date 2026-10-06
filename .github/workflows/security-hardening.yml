@@ -98,6 +98,13 @@ jobs:
             -v "$PWD/prometheus:/etc/prometheus:ro" \
             prom/prometheus:v3.15.0 \
             check rules /etc/prometheus/rules/portal.rules.yml
+      - name: Blackbox exporter config
+        working-directory: ops/monitoring
+        run: |
+          docker run --rm --entrypoint /bin/blackbox_exporter \
+            -v "$PWD/blackbox:/etc/blackbox_exporter:ro" \
+            prom/blackbox-exporter:v0.28.0 \
+            --config.file=/etc/blackbox_exporter/blackbox.yml --config.check
       - name: Alertmanager config
         working-directory: ops/monitoring
         run: |
