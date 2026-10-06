@@ -1,0 +1,13 @@
+# Dedicated PORTAL Telegram relay client. Install as /etc/tor/portal-messenger-torrc.
+ClientOnly 1
+DataDirectory /var/lib/portal-messenger-tor
+SocksPort 127.0.0.1:19050 IsolateSOCKSAuth
+ORPort 0
+ExitRelay 0
+StrictNodes 1
+ExitNodes {de},{nl},{fr},{at},{ch},{se},{fi}
+SafeLogging 1
+Log notice syslog
+
+# Tor version/policy support varies. Verify the actual observed exit country
+# before activation; this preference is not proof of the exit location.

@@ -17,7 +17,7 @@ from urllib.parse import urlsplit
 
 REALM = "PORTAL Messenger Relay"
 DEFAULT_TTL_SECONDS = 12 * 60 * 60
-USERNAME_RE = re.compile(r"^v1\.(\d+)\.(\d+)\.(\d+)\.([A-Za-z0-9_-]{8,64})$")
+USERNAME_RE = re.compile(r"^v2\.telegram\.(\d+)\.(\d+)\.(\d+)\.([A-Za-z0-9_-]{8,64})$")
 
 
 def _b64url(data: bytes) -> str:
@@ -43,15 +43,17 @@ def normalize_proxy_url(value: str) -> str:
 
 
 def relay_status(env=os.environ):
+    required_value = str(env.get("PORTAL_TELEGRAM_RELAY_REQUIRED", "0")).strip().lower()
+    required = required_value in {"1", "true", "yes", "on"}
     url = env.get("PORTAL_MESSENGER_RELAY_URL", "").strip()
     secret = env.get("PORTAL_MESSENGER_RELAY_SECRET", "")
     if not url or len(secret) < 32:
-        return {"enabled": False}
+        return {"provider": "telegram", "enabled": False, "required": required}
     try:
         normalized = normalize_proxy_url(url)
     except ValueError:
-        return {"enabled": False}
-    return {"enabled": True, "proxy_url": normalized, "realm": REALM}
+        return {"provider": "telegram", "enabled": False, "required": required}
+    return {"provider": "telegram", "enabled": True, "required": required, "proxy_url": normalized, "realm": REALM}
 
 
 def issue_ticket(user_id: int, company_id: int, env=os.environ, now: int | None = None):
@@ -65,7 +67,7 @@ def issue_ticket(user_id: int, company_id: int, env=os.environ, now: int | None 
     issued = int(time.time() if now is None else now)
     expires = issued + ttl
     nonce = secrets.token_urlsafe(12)
-    username = f"v1.{user_id}.{company_id}.{expires}.{nonce}"
+    username = f"v2.telegram.{user_id}.{company_id}.{expires}.{nonce}"
     password = _b64url(hmac.new(env["PORTAL_MESSENGER_RELAY_SECRET"].encode("utf-8"), username.encode("utf-8"), hashlib.sha256).digest())
     return {
         **status,
@@ -89,4 +91,4 @@ def validate_ticket(username: str, password: str, secret: str, now: int | None =
     expected = _b64url(hmac.new(secret.encode("utf-8"), username.encode("utf-8"), hashlib.sha256).digest())
     if not hmac.compare_digest(expected, password):
         return None
-    return {"user_id": int(user_id), "company_id": int(company_id), "expires": expires}
+    return {"user_id": int(user_id), "company_id": int(company_id), "expires": expires, "scope": "telegram"}

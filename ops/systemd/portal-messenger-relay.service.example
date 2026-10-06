@@ -1,5 +1,5 @@
 [Unit]
-Description=PORTAL Messenger Relay
+Description=PORTAL Telegram Relay
 After=network-online.target
 Wants=network-online.target
 
@@ -8,8 +8,8 @@ Type=simple
 User=portal
 Group=portal
 EnvironmentFile=/etc/portal-production/messenger-relay.env
-WorkingDirectory=/srv/portal-production/current/server
-ExecStart=/usr/bin/python3 /srv/portal-production/current/server/messenger_relay.py
+WorkingDirectory=/srv/portal-messenger-relay/current/server
+ExecStart=/usr/bin/python3 /srv/portal-messenger-relay/current/server/messenger_relay.py
 Restart=on-failure
 RestartSec=3
 NoNewPrivileges=true

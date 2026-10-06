@@ -4,6 +4,7 @@ import calendar
 import hashlib
 import io
 import json
+import os
 import sqlite3
 import unittest
 import uuid
@@ -1056,11 +1057,23 @@ class ProductionTest(unittest.TestCase):
             self.assertTrue(ticket['enabled'])
             self.assertEqual(ticket['proxy_url'],'https://relay.vart-portal.ru:9443')
             self.assertEqual(ticket['realm'],'PORTAL Messenger Relay')
-            self.assertTrue(ticket['username'].startswith('v1.'))
+            self.assertTrue(ticket['username'].startswith('v2.telegram.'))
+            self.assertEqual(ticket['provider'],'telegram')
+            self.assertFalse(ticket['required'])
             self.assertGreater(len(ticket['password']),30)
             self.assertNotIn('PORTAL_MESSENGER_RELAY_SECRET',ticket)
             self.get('messenger-relay-ticket',self.role_token('manager'),status=403)
             self.get('messenger-relay-ticket',self.role_token('director'),status=403)
+        with patch.dict('os.environ',{'PORTAL_TELEGRAM_RELAY_REQUIRED':'true'},clear=False):
+            os.environ.pop('PORTAL_MESSENGER_RELAY_URL',None)
+            os.environ.pop('PORTAL_MESSENGER_RELAY_SECRET',None)
+            unavailable=self.get('messenger-relay-ticket',self.worker)['data']
+            self.assertEqual(unavailable,{'provider':'telegram','enabled':False,'required':True})
+        with patch.dict('os.environ',{'PORTAL_TELEGRAM_RELAY_REQUIRED':'maybe'},clear=False):
+            os.environ.pop('PORTAL_MESSENGER_RELAY_URL',None)
+            os.environ.pop('PORTAL_MESSENGER_RELAY_SECRET',None)
+            unknown=self.get('messenger-relay-ticket',self.worker)['data']
+            self.assertEqual(unknown,{'provider':'telegram','enabled':False,'required':False})
 
     def test_notification_center_read_receipt_is_per_user_and_tenant(self):
         batch=self.batch();task=self.task(batch)

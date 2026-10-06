@@ -22,6 +22,9 @@ assert.match(app,/httpStatus===401[^\n]*logout\(false,true\)/);
 assert.match(app,/DOMContentLoaded[\s\S]*await enterApp\(\)/);
 assert.match(app,/DOMContentLoaded[\s\S]*catch\{try\{window\.PortalNative\?\.clearMessengerSession\?\.\(\)/);
 assert.match(app,/openMessengerWindow\?\.\(p,relay\)/);
+assert.match(app,/provider:'telegram',enabled:false,required:true/);
+assert.match(app,/if\(p==='telegram'&&!preActivation\)\{toast\(/);
+assert.match(app,/preActivation=ticket\.enabled===false&&ticket\.required===false/);
 
 // Android uses one isolated process profile and identity-free CLEAR action.
 assert.match(manifest,/\.MessengerActivity[\s\S]*android:process=":messenger"[\s\S]*android:launchMode="singleTask"/);
@@ -31,6 +34,15 @@ assert.match(android,/removeAllCookies[\s\S]*WebStorage\.getInstance\(\)\.delete
 assert.match(android,/clearingSession[\s\S]*pendingProvider[\s\S]*clearProviderData/);
 assert.match(android,/if \(clearingSession\)[\s\S]*pendingProvider = requestedProvider/);
 assert.doesNotMatch(android,/identityKey|company_id|user_id|SHA-256|getStringExtra\("company"|getStringExtra\("user"/);
+assert.match(android,/private boolean relayRequired = true/);
+assert.match(android,/relayRequired = true;[\s\S]*if \(raw == null \|\| raw\.isBlank\(\)\) return/);
+assert.match(android,/Instant\.parse\(data\.getString\("expires_at"\)\)/);
+assert.doesNotMatch(android,/relayTried|directNetworkErrors/);
+const relayListener=android.indexOf('setProxyOverride(config');
+const telegramLoad=android.indexOf('loadCurrent();',relayListener);
+assert.ok(relayListener>=0&&telegramLoad>relayListener,'Telegram must load only after the proxy override listener');
+const clearListener=android.indexOf('clearProxyOverride(');
+assert.ok(clearListener>=0&&android.indexOf('loadCurrent();',clearListener)>clearListener,'MAX must load only after proxy clear listener');
 assert.match(androidBridge,/openMessengerWindow\(String provider, String relayJson\)/);
 assert.match(androidBridge,/clearMessengerSession\(\)/);
 assert.doesNotMatch(androidBridge,/setMessengerIdentity|validMessengerIdentity/);
@@ -38,24 +50,38 @@ assert.match(adapter,/openMessengerWindow: \(provider,relayJson=''\) =>/);
 assert.match(adapter,/clearMessengerSession: \(\) =>/);
 assert.doesNotMatch(adapter,/setMessengerIdentity|openMessengerWindow: \(provider, company|clearMessengerSession: \(company/);
 
-// Desktop has exactly one profile directory; custom scheme handlers consume provider only.
-assert.match(desktop,/Path\.Combine\(_settingsDir, "MessengerWebView2"\)/);
+// Desktop uses distinct fixed provider profiles and never shares the Telegram proxy with MAX.
+assert.match(desktop,/MessengerWebView2-Telegram/);
+assert.match(desktop,/MessengerWebView2-Max/);
+assert.match(desktop,/InitializeViewAsync\(MaxWebView2, MaxProfileName, null, false\)/);
+assert.match(desktop,/InitializeViewAsync\(TelegramWebView2, TelegramProfileName,[\s\S]*--proxy-server=/);
+assert.match(desktop,/if \(telegram\) view\.CoreWebView2\.BasicAuthenticationRequested/);
+assert.match(desktop,/DateTimeOffset\.TryParse\(expires\.GetString\(\)[\s\S]*expiry <= DateTimeOffset\.UtcNow/);
+assert.doesNotMatch(desktop,/proxy-bypass-list/);
+assert.match(desktop,/InitializeViewAsync\(MaxWebView2, MaxProfileName, null, false\)/);
 assert.match(desktopBridge,/custom\.Host\.Equals\("open"[\s\S]*query\["provider"\]/);
 assert.match(desktopBridge,/custom\.Host\.Equals\("clear"[\s\S]*ClearMessengerSessionAsync\(\)/);
 assert.match(desktopBridge,/OpenMessengerWindowAsync\(string provider = "telegram", string\? relayJson = null\)/);
 assert.match(desktopBridge,/messengerClearTask = ClearMessengerSessionAsync\(\)/);
 assert.match(desktopBridge,/OpenMessengerWindowAsync\(string provider = "telegram", string\? relayJson = null\)[\s\S]*await _messengerClearTask/);
-assert.doesNotMatch(desktop+desktopBridge,/identityKey|company_id|user_id|forIdentifier/);
+assert.doesNotMatch(desktop+desktopBridge,/identityKey|company_id|user_id/);
 assert.match(desktop,/ClearBrowsingDataAsync\(CoreWebView2BrowsingDataKinds\.AllProfile\)/);
 
-// iOS uses one default provider store, clearing Telegram/MAX data without PORTAL website data.
-assert.match(ios,/config\.websiteDataStore = \.default\(\)/);
-assert.match(ios,/static func clear\(completion:[\s\S]*clearProviderData\(in: \.default\(\)/);
+// iOS uses two fixed provider stores and never mutates the PORTAL default store proxy.
+assert.match(ios,/68C88C71-9F9B-4D43-9D85-514C0B9065E2/);
+assert.match(ios,/7F1B82E8-7E0A-4B93-B10D-271CD988C09A/);
+assert.match(ios,/WKWebsiteDataStore\(forIdentifier: identifier\)/);
+assert.match(ios,/static func clear\(completion:[\s\S]*providerStore\("telegram"\)[\s\S]*providerStore\("max"\)/);
+assert.doesNotMatch(ios,/browser\.configuration\.websiteDataStore\.proxyConfigurations/);
+assert.match(ios,/proxy\.allowFailover = false/);
+assert.match(ios,/proxy\.applyCredential\(username: ticket\.username, password: ticket\.password\)/);
+assert.match(ios,/expiryDate > Date\(\)/);
+assert.match(ios,/if providerData\.fixed, provider == "telegram"/);
 assert.match(ios,/domain == "telegram\.org"[\s\S]*domain == "max\.ru"/);
 assert.match(iosBridge,/messengerClearInProgress[\s\S]*pendingMessengerProvider/);
-assert.doesNotMatch(ios,/forIdentifier|identityKey|company: String|user: String/);
+assert.doesNotMatch(ios,/identityKey|company: String|user: String/);
 assert.match(ios,/targetFrame\?\.isMainFrame == false[\s\S]*isAllowedTopLevel/);
-assert.match(iosBridge,/openMessengerWindow: provider[\s\S]*\{provider:p\}/);
+assert.match(iosBridge,/openMessengerWindow: \(provider, relayJson\)[\s\S]*\{provider:p, relay: p==='telegram'/);
 assert.match(iosBridge,/clearMessengerSession: \(\) =>/);
 assert.doesNotMatch(iosBridge,/setMessengerIdentity|company: company, user: user/);
 

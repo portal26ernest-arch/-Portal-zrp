@@ -25,7 +25,14 @@ assert.doesNotMatch(main,/setMessengerIdentity|validMessengerIdentity|company, S
 assert.match(messenger,/ProxyController\.getInstance\(\)\.setProxyOverride/);
 assert.match(messenger,/WebViewFeature\.PROXY_OVERRIDE/);
 assert.match(messenger,/onReceivedHttpAuthRequest/);
-assert.match(messenger,/Relay: АВТО/);
+assert.match(messenger,/relayButton\.setVisibility\(View\.GONE\)/);
+assert.match(messenger,/relayRequired = true/);
+assert.match(messenger,/Build\.VERSION\.SDK_INT < 28 \|\| !relayConfigured\(\)/);
+assert.match(messenger,/if \("max"\.equals\(provider\)\) \{ relayActive = false; useDirectChannel\(\); return; \}/);
+const androidRelay=messenger.slice(messenger.indexOf('private void useRelayChannel'),messenger.indexOf('@Override protected void onNewIntent'));
+const androidDirect=messenger.slice(messenger.indexOf('private void useDirectChannel'),messenger.indexOf('private void useRelayChannel'));
+assert.ok(androidRelay.indexOf('ProxyController.getInstance().setProxyOverride') < androidRelay.indexOf('loadCurrent();'), 'Android must configure the relay before Telegram load');
+assert.match(androidDirect,/clearProxyOverride\(ContextCompat\.getMainExecutor\(this\), \(\) -> \{[\s\S]*loadCurrent\(\);/,'Android must clear relay and load MAX from the listener');
 assert.doesNotMatch(messenger,/addJavascriptInterface|PortalNative|Bearer|BOT_TOKEN|client_secret/i);
 assert.match(main,/openMessengerWindow\(String provider, String relayJson\)/);
 assert.match(main,/SYSTEM_UI_FLAG_IMMERSIVE_STICKY/);
