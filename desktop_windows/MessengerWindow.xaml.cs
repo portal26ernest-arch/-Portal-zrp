@@ -5,7 +5,7 @@ using System.Windows;
 
 namespace Portal.Desktop;
 
-internal sealed record MessengerRelayTicket(bool Enabled, string ProxyUrl, string UserName, string Password, string Realm)
+public sealed record MessengerRelayTicket(bool Enabled, string ProxyUrl, string UserName, string Password, string Realm)
 {
     public static MessengerRelayTicket? Parse(string? raw)
     {
