@@ -77,7 +77,7 @@ assert.ok(discovery.indexOf('normalizeOfficialApiUrl') < discovery.indexOf('putS
 assert.doesNotMatch(discovery,/Authorization|Bearer|requestAsync/,'Android discovery must not send auth while validating an advertised origin');
 assert.match(localCache,/migrateOutboxOrigin\(String oldOrigin, String newOrigin, int failAfterCopies\)/);
 assert.ok(localCache.indexOf('failAfterCopies >= 0') < localCache.indexOf('// The new origin is complete'), 'Android migration fault injection must stop before source cleanup');
-assert.ok(localCache.indexOf('for (File company : companies) {\n                File[] rows') > localCache.indexOf('// The new origin is complete'), 'Android migration must defer source cleanup until all target copies finish');
+assert.ok(/for \(File company : companies\) \{\r?\n\s+File\[\] rows/.test(localCache.slice(localCache.indexOf('// The new origin is complete'))), 'Android migration must defer source cleanup until all target copies finish');
 assert.match(main,/TRUSTED_FALLBACK_API_URL = "https:\/\/reserve-api\.vart-portal\.ru"/);
 assert.match(main,/resolveServerForRequest\(getServerUrl\(\)\)/);
 assert.match(main,/probeOfficialServer\(TRUSTED_FALLBACK_API_URL\)/);
