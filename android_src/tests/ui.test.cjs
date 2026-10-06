@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const zlib = require('node:zlib');
 const {pathToFileURL} = require('node:url');
 let chromium;
 try { ({chromium}=require('playwright')); } catch { chromium=null; }
@@ -17,7 +18,16 @@ const core=context.PortalCore;
 async function screenshot(page,name){if(process.env.PORTAL_UI_SCREENSHOTS){fs.mkdirSync(process.env.PORTAL_UI_SCREENSHOTS,{recursive:true});await page.screenshot({path:path.join(process.env.PORTAL_UI_SCREENSHOTS,name+'.png'),fullPage:true});}}
 
 test('all shipped JavaScript parses',()=>{
-  for(const file of ['core.js','app.js','screens.js','production.js','preview.js','documents_excel.js'])new vm.Script(fs.readFileSync(path.join(assets,file),'utf8'),{filename:file});
+  for(const file of ['core.js','app.js','screens.js','production.js','production_part1.js','production_part2.js','production_part3.js','preview.js','documents_excel.js'])new vm.Script(fs.readFileSync(path.join(assets,file),'utf8'),{filename:file});
+});
+test('production delivery shards exactly match canonical source and remain small',()=>{
+  const canonical=fs.readFileSync(path.join(assets,'production.js'));
+  const parts=[1,2,3].map(i=>fs.readFileSync(path.join(assets,`production_part${i}.js`)));
+  assert.deepEqual(Buffer.concat(parts),canonical);
+  for(const [index,part] of parts.entries())assert.ok(zlib.gzipSync(part,{level:6}).length<20000,`production_part${index+1}.js exceeds safe compressed size`);
+  const html=fs.readFileSync(path.join(assets,'index.html'),'utf8');
+  assert.doesNotMatch(html,/src="production\.js"/);
+  assert.match(html,/production_part1\.js[\s\S]*production_part2\.js[\s\S]*production_part3\.js/);
 });
 test('AI analyst UI is management-only and sends only the explicit prompt',()=>{
   const production=fs.readFileSync(path.join(assets,'production.js'),'utf8');

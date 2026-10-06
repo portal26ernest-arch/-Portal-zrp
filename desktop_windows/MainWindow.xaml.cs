@@ -14,7 +14,7 @@ namespace Portal.Desktop;
 
 public partial class MainWindow : Window
 {
-    private const int CurrentBuild = 58;
+    private const int CurrentBuild = 59;
     private const long MaxInstallerBytes = 250L * 1024 * 1024;
     private const string GithubRepository = "portal26ernest-arch/-Portal-zrp";
     private const string ServerDiscoveryUrl = "https://raw.githubusercontent.com/portal26ernest-arch/-Portal-zrp/main/portal-server.json";
@@ -142,11 +142,18 @@ public partial class MainWindow : Window
 
     private string WebViewArguments()
     {
-        var forced = Environment.GetEnvironmentVariable("PORTAL_WEBVIEW_SOFTWARE_RENDERING");
+        // Safe default after a real WebView2 154 incident where the DOM loaded and
+        // navigation completed, but GPU composition presented a completely white surface.
+        // PORTAL's UI is not graphics-heavy, so software composition is the reliable default.
+        // Advanced operators can explicitly opt back into GPU rendering for diagnostics.
+        var forceGpu = Environment.GetEnvironmentVariable("PORTAL_WEBVIEW_GPU");
+        if (string.Equals(forceGpu, "1", StringComparison.Ordinal)) return string.Empty;
+
+        var forcedSoftware = Environment.GetEnvironmentVariable("PORTAL_WEBVIEW_SOFTWARE_RENDERING");
         var marker = Path.Combine(_settingsDir, "software-rendering.flag");
-        return string.Equals(forced, "1", StringComparison.Ordinal) || File.Exists(marker)
-            ? WebViewSoftwareRenderingArguments
-            : string.Empty;
+        if (string.Equals(forcedSoftware, "0", StringComparison.Ordinal) && !File.Exists(marker))
+            return string.Empty;
+        return WebViewSoftwareRenderingArguments;
     }
 
     private string? LoadStoredOrigin()
@@ -211,9 +218,8 @@ public partial class MainWindow : Window
                 Directory.CreateDirectory(_settingsDir);
                 var environmentOptions = new CoreWebView2EnvironmentOptions
                 {
-                    // GPU rendering is the fast default. On Windows/GPU driver combinations
-                    // that show a blank WebView2 surface, software rendering remains an explicit
-                    // compatibility fallback via environment flag or local marker.
+                    // Software rendering is the compatibility-safe default after a production
+                    // white-surface incident with WebView2 GPU composition. GPU remains opt-in.
                     AdditionalBrowserArguments = WebViewArguments()
                 };
                 var env = await CoreWebView2Environment.CreateAsync(
@@ -631,7 +637,7 @@ public partial class MainWindow : Window
                 return new ServerRefreshResult(false, false, _serverOrigin);
 
             using var request = new HttpRequestMessage(HttpMethod.Get, ServerDiscoveryUrl);
-            request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.8.0");
+            request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.9.0");
             request.Headers.Accept.ParseAdd("application/json");
             using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
             response.EnsureSuccessStatusCode();
@@ -755,7 +761,7 @@ public partial class MainWindow : Window
     {
         using var request = new HttpRequestMessage(HttpMethod.Get,
             $"https://api.github.com/repos/{GithubRepository}/releases?per_page=50");
-        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.8.0");
+        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.9.0");
         request.Headers.Accept.ParseAdd("application/vnd.github+json");
         using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();
