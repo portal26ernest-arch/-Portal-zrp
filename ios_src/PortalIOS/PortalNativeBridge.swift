@@ -35,7 +35,7 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
     }
 
     private static func isLoopbackHost(_ host: String) -> Bool {
-        host == "localhost" || host.hasSuffix(".localhost") || host == "::1" ||
+        host == "localhost" || host.hasSuffix(".localhost") || host == "::1" || host == "[::1]" ||
             host.range(of: #"^127(?:\.\d{1,3}){3}$"#, options: .regularExpression) != nil
     }
     static func isAllowedExternalURL(_ url: URL) -> Bool {
