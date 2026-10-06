@@ -72,4 +72,4 @@ jobs:
           sudo apt-get install -y shellcheck
           # SC1090 is expected for the intentionally dynamic certbot ENV_FILE source path.\n          find ops -type f -name '*.sh' -print0 | xargs -0 -r shellcheck -x -e SC1090
       - name: actionlint
-        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12
