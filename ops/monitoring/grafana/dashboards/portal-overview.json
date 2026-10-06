@@ -1,0 +1,44 @@
+{
+  "annotations": {"list": []},
+  "editable": false,
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Endpoints UP",
+      "datasource": {"type": "prometheus", "uid": "portal-prometheus"},
+      "targets": [{"expr": "sum(probe_success{job=\"portal-http\"})", "refId": "A"}],
+      "gridPos": {"h": 7, "w": 6, "x": 0, "y": 0}
+    },
+    {
+      "type": "gauge",
+      "title": "CPU utilization",
+      "datasource": {"type": "prometheus", "uid": "portal-prometheus"},
+      "targets": [{"expr": "1 - avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}},
+      "gridPos": {"h": 7, "w": 6, "x": 6, "y": 0}
+    },
+    {
+      "type": "gauge",
+      "title": "Memory utilization",
+      "datasource": {"type": "prometheus", "uid": "portal-prometheus"},
+      "targets": [{"expr": "1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)", "refId": "A"}],
+      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}},
+      "gridPos": {"h": 7, "w": 6, "x": 12, "y": 0}
+    },
+    {
+      "type": "timeseries",
+      "title": "Endpoint latency",
+      "datasource": {"type": "prometheus", "uid": "portal-prometheus"},
+      "targets": [{"expr": "probe_duration_seconds{job=\"portal-http\"}", "legendFormat": "{{instance}}", "refId": "A"}],
+      "gridPos": {"h": 8, "w": 18, "x": 0, "y": 7}
+    }
+  ],
+  "schemaVersion": 42,
+  "tags": ["PORTAL", "monitoring"],
+  "templating": {"list": []},
+  "time": {"from": "now-6h", "to": "now"},
+  "timezone": "browser",
+  "title": "PORTAL Overview",
+  "uid": "portal-overview",
+  "version": 1
+}

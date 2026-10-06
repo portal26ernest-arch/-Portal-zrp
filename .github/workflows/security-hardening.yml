@@ -73,3 +73,35 @@ jobs:
           # SC1090 is expected for the intentionally dynamic certbot ENV_FILE source path.\n          find ops -type f -name '*.sh' -print0 | xargs -0 -r shellcheck -x -e SC1090
       - name: actionlint
         run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12
+
+  monitoring-config:
+    name: Self-hosted monitoring config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static monitoring guard
+        run: python ops/monitoring/validate_monitoring.py
+      - name: Docker Compose schema
+        working-directory: ops/monitoring
+        run: docker compose config --quiet
+      - name: Prometheus config
+        working-directory: ops/monitoring
+        run: |
+          docker run --rm --entrypoint /bin/promtool \
+            -v "$PWD/prometheus:/etc/prometheus:ro" \
+            prom/prometheus:v3.15.0 \
+            check config /etc/prometheus/prometheus.yml
+      - name: Prometheus alert rules
+        working-directory: ops/monitoring
+        run: |
+          docker run --rm --entrypoint /bin/promtool \
+            -v "$PWD/prometheus:/etc/prometheus:ro" \
+            prom/prometheus:v3.15.0 \
+            check rules /etc/prometheus/rules/portal.rules.yml
+      - name: Alertmanager config
+        working-directory: ops/monitoring
+        run: |
+          docker run --rm --entrypoint /bin/amtool \
+            -v "$PWD/alertmanager:/etc/alertmanager:ro" \
+            prom/alertmanager:v0.34.1 \
+            check-config /etc/alertmanager/alertmanager.yml
