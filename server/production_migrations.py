@@ -28,6 +28,7 @@ def migrate(conn, company_id, dialect=None):
         migrate_employee_aliases(r)
         migrate_organizer_requests(r)
         migrate_session_storage(r)
+        migrate_notification_messenger(r)
         return
     # Current catalog baseline, not a reconstruction or recalculation of history.
     for operation in r.catalog('operations'):
@@ -52,6 +53,19 @@ def migrate(conn, company_id, dialect=None):
     migrate_employee_aliases(r)
     migrate_organizer_requests(r)
     migrate_session_storage(r)
+    migrate_notification_messenger(r)
+
+def migrate_notification_messenger(r):
+    """Version 16 enables user-owned read receipts and immutable Messenger records."""
+    if r.sql('SELECT 1 FROM portal_production_migrations WHERE company_id=? AND version=16',(r.company_id,)).fetchone(): return
+    if r.dialect=='sqlite':
+        r.sql('DROP TRIGGER IF EXISTS production_no_update')
+        r.sql("CREATE TRIGGER production_no_update BEFORE UPDATE ON portal_production WHEN OLD.kind NOT IN ('batches','tasks','permissions','settings','access_sessions','work_timers','products','organizer_tasks','organizer_requests','notification_reads') BEGIN SELECT RAISE(ABORT,'production history is immutable'); END")
+    else:
+        row=r.sql("SELECT pg_get_functiondef('portal_production_immutable()'::regprocedure)").fetchone()
+        if not row or "'notification_reads'" not in row[0]:
+            raise RuntimeError('Apply PostgreSQL notification/Messenger migration with the migration operator first')
+    r.sql('INSERT INTO portal_production_migrations(company_id,version,applied_at) VALUES(?,16,?)',(r.company_id,utcnow()))
 
 def migrate_session_storage(r):
     from session_security import migrate_tokens

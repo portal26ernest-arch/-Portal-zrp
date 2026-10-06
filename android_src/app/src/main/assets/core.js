@@ -7,7 +7,8 @@ globalThis.PortalCore = (() => {
     {id:'payroll',title:'Зарплата',icon:'wallet',description:'Начисления и выплаты'},
     {id:'payrollPeriods',title:'Расчётные периоды',icon:'wallet',description:'Предпросмотр и закрытие зарплаты',production:true},
     {id:'teamChat',title:'Команда',icon:'users',description:'Внутренний чат сотрудников',production:true},
-    {id:'organizer',title:'Органайзер',icon:'bell',description:'Задачи, календарь и напоминания',production:true,desktopOnly:true},
+    {id:'messenger',title:'Messenger',icon:'message',description:'Личные рабочие аккаунты Telegram и MAX',production:true},
+    {id:'organizer',title:'Органайзер',icon:'bell',description:'Задачи, календарь и напоминания',production:true},
     {id:'clients',title:'Клиенты',icon:'clients',description:'Клиенты и операции'},
     {id:'materials',title:'Склад',icon:'box',description:'Материалы и остатки'},
     {id:'invoices',title:'Счета и оплаты',icon:'receipt',description:'Оплаты и задолженность'},
@@ -25,13 +26,14 @@ globalThis.PortalCore = (() => {
     {id:'news',title:'Новости',icon:'bell',description:'Ozon и Wildberries',production:true},
     {id:'excelImport',title:'Импорт Excel',icon:'file',description:'Шаблон, проверка и загрузка',production:true},
     {id:'wms',title:'WMS / ТСД',icon:'box',description:'Сканирование и складские операции',preview:true},
-    {id:'notifications',title:'Уведомления',icon:'bell',description:'Что требует внимания',preview:true}
+    {id:'notifications',title:'Центры уведомлений',icon:'bell',description:'Задачи, Messenger и Органайзер'}
   ];
   function can(page,user,company) {
-    if (page==='organizer' && !globalThis.__PORTAL_DESKTOP__) return false;
     if (['about','settings'].includes(page)) return true;
     if (company?.module_toggles?.[page] === false) return false;
     if (!user || !roles[user.role]) return false;
+    if(page==='messenger')return !['director','manager'].includes(user.role);
+    if(page==='notifications')return true;
     if (Array.isArray(user.permissions) && (user.role!=='platform_owner'||company)) {
       if(page==='excelImport'){
         const needed=['imports.manage','users.manage','clients.manage','rates.employee','rates.client','company.settings','documents.manage','documents.read'];

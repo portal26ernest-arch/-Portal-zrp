@@ -10,6 +10,17 @@ const mascots=fs.readFileSync(path.join(repo,'android_src/app/src/main/assets/de
 const cache=fs.readFileSync(path.join(repo,'desktop_windows/DesktopCacheBridge.cs'),'utf8');
 const windowsWorkflow=fs.readFileSync(path.join(repo,'.github/workflows/windows-desktop.yml'),'utf8');
 const signature=fs.readFileSync(path.join(repo,'desktop_windows/DesktopUpdateSignature.cs'),'utf8');
+const messengerWindow=fs.readFileSync(path.join(repo,'desktop_windows/MessengerWindow.xaml.cs'),'utf8');
+const messengerXaml=fs.readFileSync(path.join(repo,'desktop_windows/MessengerWindow.xaml'),'utf8');
+assert.match(messengerWindow,/https:\/\/web\.telegram\.org\/a\//);
+assert.match(messengerWindow,/https:\/\/web\.max\.ru\//);
+assert.match(messengerWindow,/MessengerWebView2/);
+assert.match(messengerWindow,/IsAllowedProviderUri/);
+assert.doesNotMatch(messengerWindow,/portalSession|Bearer|token|companyJson/);
+assert.match(messengerXaml,/TelegramTab/);
+assert.match(messengerXaml,/MaxTab/);
+assert.match(code,/private static MessengerWindow\? _messengerWindow/);
+assert.match(code,/OpenMessengerWindowAsync\(string provider/);
 assert.match(xaml,/x:Name="HomeButton"[^>]+Click="Home_Click"/);
 assert.match(xaml,/PreviewMouseWheel="Browser_PreviewMouseWheel"/);
 assert.match(code,/ExecuteScriptAsync\("Boolean\(window\.portalBack && window\.portalBack\(\)\)"\)/);

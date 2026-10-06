@@ -1034,6 +1034,39 @@ class ProductionTest(unittest.TestCase):
         self.assertTrue(result['server_time'])
         self.request('/api/v3/work',self.owner,dict(request_id='owner-work',client_id=1,operation_id=1,quantity=1),status=400,extra_headers={'X-Portal-Company':'1'})
 
+    def test_personal_messenger_is_owner_only_secret_free_and_role_restricted(self):
+        account=self.post('messenger',dict(mode='create_account',platform='telegram',label='Рабочий Telegram'),self.worker)['data']
+        self.assertEqual((account['owner_user_id'],account['account_type'],account['connection_state']),
+                         (self.request('/api/me',self.worker)['user']['id'],'personal_work','adapter_unconfigured'))
+        self.assertEqual(self.get('messenger',self.worker)['data']['accounts'][0]['id'],account['id'])
+        self.post('messenger',dict(mode='create_conversation',account_id=account['id'],title='Рабочая беседа'),self.worker)
+        self.assertEqual(self.get('messenger',self.worker)['data']['conversations'][0]['title'],'Рабочая беседа')
+        self.get('messenger',self.role_token('manager'),status=403)
+        self.get('messenger',self.role_token('director'),status=403)
+        self.post('messenger',dict(mode='create_account',platform='max',label='bad',password='invented'),self.worker,status=400)
+        self.assertEqual(len(self.get('messenger',self.worker)['data']['accounts']),1)
+        self.assertEqual(self.get('messenger',self.other_admin)['data']['accounts'],[])
+
+    def test_notification_center_read_receipt_is_per_user_and_tenant(self):
+        batch=self.batch();task=self.task(batch)
+        user_id=self.request('/api/me',self.worker)['user']['id']
+        with portal.tenants.company_scope(1),portal.db() as conn:
+            repo=Repository(conn,1)
+            repo.insert('organizer_tasks',dict(assignee_user_id=user_id,created_by=user_id,title='Своя задача',
+                due_at='2026-10-06T12:00:00',status='new',priority='normal',recurrence='none'))
+            conn.commit()
+        before=self.get('notification-centers',self.worker)['data']
+        task_center=next(center for center in before if center['center']=='TASKS')
+        self.assertEqual(task_center['unread_count'],1)
+        task_item=task_center['items'][0]
+        self.post('notification-read',dict(center='TASKS',item_id=task_item['id']),self.worker)
+        after=self.get('notification-centers',self.worker)['data']
+        self.assertEqual(next(center for center in after if center['center']=='TASKS')['unread_count'],0)
+        self.get('notification-centers',self.other_admin)
+        with portal.tenants.company_scope(1),portal.db() as conn:
+            own=Repository(conn,1).get('notification_reads',f'{user_id}:TASKS:{task_item["id"]}')
+        self.assertEqual(own['user_id'],user_id)
+
     def test_desktop_organizer_hierarchy_recurrence_and_company_isolation(self):
         director=self.role_token('director');manager=self.role_token('manager')
         with portal.tenants.company_scope(1):

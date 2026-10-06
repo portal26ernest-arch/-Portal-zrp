@@ -9,6 +9,11 @@ ANDROID_RELEASE = ROOT / "android_src" / "release.properties"
 IOS_PROJECT = ROOT / "ios_src" / "project.yml"
 IOS_BRIDGE = ROOT / "ios_src" / "PortalIOS" / "PortalNativeBridge.swift"
 IOS_LOCAL_CACHE = ROOT / "ios_src" / "PortalIOS" / "PortalLocalCache.swift"
+SHARED_CORE = ROOT / "android_src" / "app" / "src" / "main" / "assets" / "core.js"
+SHARED_PRODUCTION = ROOT / "android_src" / "app" / "src" / "main" / "assets" / "production.js"
+ANDROID_BRIDGE = ROOT / "android_src" / "app" / "src" / "main" / "java" / "ru" / "portal" / "app" / "MainActivity.java"
+ANDROID_MESSENGER = ROOT / "android_src" / "app" / "src" / "main" / "java" / "ru" / "portal" / "app" / "MessengerActivity.java"
+IOS_MESSENGER = ROOT / "ios_src" / "PortalIOS" / "MessengerViewController.swift"
 
 
 def fail(message: str) -> None:
@@ -30,6 +35,32 @@ android = read_properties(ANDROID_RELEASE)
 project = IOS_PROJECT.read_text(encoding="utf-8")
 bridge = IOS_BRIDGE.read_text(encoding="utf-8")
 local_cache = IOS_LOCAL_CACHE.read_text(encoding="utf-8") if IOS_LOCAL_CACHE.exists() else ""
+shared_core = SHARED_CORE.read_text(encoding="utf-8")
+shared_production = SHARED_PRODUCTION.read_text(encoding="utf-8")
+android_bridge = ANDROID_BRIDGE.read_text(encoding="utf-8")
+android_messenger = ANDROID_MESSENGER.read_text(encoding="utf-8")
+ios_messenger = IOS_MESSENGER.read_text(encoding="utf-8")
+for source, label in ((android_messenger, "Android"), (ios_messenger, "iOS")):
+    for host in ("web.telegram.org", "web.max.ru"):
+        if host not in source:
+            fail(f"{label} Messenger missing official host {host}")
+    if "telegram.org" not in source or "max.ru" not in source:
+        fail(f"{label} Messenger provider allowlist is incomplete")
+if "openMessengerWindow" not in android_bridge or "openMessengerWindow" not in bridge:
+    fail("native Messenger bridge must exist on Android and iOS")
+
+organizer = re.search(r"\{id:'organizer'[^\n]*", shared_core)
+if not organizer or "desktopOnly" in organizer.group(0):
+    fail("organizer must remain in the shared mobile module catalog")
+if "page==='organizer' && !globalThis.__PORTAL_DESKTOP__" in shared_core:
+    fail("organizer has a Desktop-only permission guard")
+if "screens.organizer=async()=>{\n  if(!globalThis.__PORTAL_DESKTOP__)" in shared_production:
+    fail("organizer screen remains Desktop-only")
+for source, marker, label in ((bridge, 'scheduleOrganizerReminders', 'iOS'), (android_bridge, 'scheduleOrganizerReminders', 'Android'), (shared_production, 'organizerReminderCheck', 'shared UI')):
+    if marker not in source:
+        fail(f"{label} is missing organizer reminder scheduling")
+if "UNUserNotificationCenter" not in bridge or "AlarmManager" not in android_bridge:
+    fail("native local notification schedulers must exist on Android and iOS")
 
 version_name = android.get("versionName")
 version_code = android.get("versionCode")

@@ -18,7 +18,8 @@ KINDS = {'batches','tasks','works','tariffs','permissions','plans','usage','expe
          'payroll_periods','invoice_revisions','documents','products','notifications','reminder_job_runs',
          'client_name_history','client_aliases','employee_name_history','employee_aliases',
          'chat_messages','chat_pins','chat_attachments','organizer_tasks','organizer_events','organizer_requests','organizer_request_events','organizer_request_attachments'}
-MUTABLE = {'batches','tasks','permissions','settings','access_sessions','work_timers','products','organizer_tasks','organizer_requests'}
+KINDS.update({'notification_reads','messenger_accounts','messenger_conversations','messenger_messages'})
+MUTABLE = {'batches','tasks','permissions','settings','access_sessions','work_timers','products','organizer_tasks','organizer_requests','notification_reads'}
 DELETABLE = {'chat_messages','chat_pins','chat_attachments'}
 
 def utcnow():

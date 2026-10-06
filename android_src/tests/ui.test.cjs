@@ -45,7 +45,7 @@ test('system sticker catalog, rendering and absence notice use structured safe f
   assert.match(renderContext.renderChatSystem({message_type:'sticker',sticker_key:'accepted'}),/stickers\/accepted\.svg/);
   assert.match(renderContext.renderChatSystem({message_type:'sticker',sticker_key:'../evil'}),/недоступен/i);
 });
-test('desktop Organizer exposes director requests in Russian and stays desktop-only',()=>{
+test('shared mobile Organizer exposes director requests and native reminders',()=>{
   const production=fs.readFileSync(path.join(assets,'production.js'),'utf8');
   const coreSource=fs.readFileSync(path.join(assets,'core.js'),'utf8');
   for(const label of ['Мои запросы','Входящие запросы','Новый запрос директору','Создать задачу из запроса','Закупка материалов'])assert.match(production,new RegExp(label));
@@ -54,10 +54,13 @@ test('desktop Organizer exposes director requests in Russian and stays desktop-o
   assert.match(production,/organizer-request-events\?organizer_request_id=/);
   assert.match(production,/organizer-request-file\?id=/);
   assert.match(production,/allowed\('organizer\.request\.create'\)/);
-  assert.match(production,/canCreateDirectorRequest=\(\)=>allowed\('organizer\.request\.create'\)&&\['manager','admin'\]\.includes\(S\.me\?\.role\)/);
+  assert.match(production,/canCreateDirectorRequest=\(\)=>can\('organizer'\)&&allowed\('organizer\.request\.create'\)&&\['manager','admin'\]\.includes\(S\.me\?\.role\)/);
   assert.match(production,/allowed\('organizer\.request\.decide'\)/);
-  assert.match(coreSource,/id:'organizer'.*desktopOnly:true/);
-  assert.match(coreSource,/page==='organizer' && !globalThis\.__PORTAL_DESKTOP__/);
+  assert.match(coreSource,/id:'organizer'.*production:true/);
+  assert.doesNotMatch(coreSource,/page==='organizer' && !globalThis\.__PORTAL_DESKTOP__/);
+  assert.doesNotMatch(production,/screens\.organizer=async\(\)=>\{\s*if\(!globalThis\.__PORTAL_DESKTOP__/);
+  assert.match(production,/globalThis\.__PORTAL_ANDROID__\|\|globalThis\.__PORTAL_IOS__/);
+  assert.match(production,/scheduleOrganizerReminders/);
 });
 
 test('marketplace news is live/empty, escaped and links only to official HTTPS hosts',()=>{
@@ -79,7 +82,7 @@ test('time-based greeting uses local hour boundaries',()=>{
   assert.throws(()=>core.timeGreeting(24),/hour must be 0\.\.23/);
 });
 test('role capabilities and employee linkage',()=>{
-  const expected={admin:['work','payroll','clients','materials','invoices','users','jobs','reports','news','wms','notifications'],director:['work','payroll','clients','materials','invoices','users','jobs','reports','news','wms','notifications'],manager:['work','payroll','clients','materials','invoices','jobs','reports','news','wms','notifications'],packer:['work','payroll','materials','jobs'],shift:[],accountant:[]};
+  const expected={admin:['work','payroll','messenger','clients','materials','invoices','users','jobs','reports','news','wms','notifications'],director:['work','payroll','clients','materials','invoices','users','jobs','reports','news','wms','notifications'],manager:['work','payroll','clients','materials','invoices','jobs','reports','news','wms','notifications'],packer:['work','payroll','messenger','materials','jobs','notifications'],shift:['messenger','notifications'],accountant:['messenger','notifications']};
   for(const [role,pages] of Object.entries(expected)){
     for(const m of core.modules)assert.equal(core.can(m.id,{role,employee_id:101},{id:1}),pages.includes(m.id),role+':'+m.id);
     assert.equal(core.can('work',{role}, {id:1}),false);
@@ -106,11 +109,15 @@ test('effective permissions enforce the current company role matrix',()=>{
     assert.equal(core.can(page,{role:'manager',employee_id:101,permissions:manager},company),false,'manager forbidden:'+page);
   for(const page of ['work','payroll','materials','jobs'])
     assert.equal(core.can(page,{role:'packer',employee_id:101,permissions:packer},company),true,'packer:'+page);
-  for(const page of ['teamChat','clients','invoices','reports','news','wms','notifications','organizer','radar','expenses','analytics','documents','users','permissions'])
+  for(const page of ['teamChat','clients','invoices','reports','news','wms','organizer','radar','expenses','analytics','documents','users','permissions'])
     assert.equal(core.can(page,{role:'packer',employee_id:101,permissions:packer},company),false,'packer forbidden:'+page);
   for(const role of ['shift','accountant']){
-    for(const m of core.modules)assert.equal(core.can(m.id,{role,employee_id:101,permissions:[]},company),false,role+':'+m.id);
+    for(const m of core.modules)assert.equal(core.can(m.id,{role,employee_id:101,permissions:[]},company),['messenger','notifications'].includes(m.id),role+':'+m.id);
   }
+  context.__PORTAL_DESKTOP__=false;
+  assert.equal(core.can('organizer',{role:'manager',employee_id:101,permissions:manager},company),true,'manager organizer on mobile');
+  assert.equal(core.can('organizer',{role:'packer',employee_id:101,permissions:packer},company),false,'organizer remains permission gated');
+  assert.equal(core.can('organizer',{role:'manager',employee_id:101,permissions:manager},{...company,module_toggles:{organizer:false}}),false,'organizer module toggle');
   delete context.__PORTAL_DESKTOP__;
 });
 
@@ -639,7 +646,8 @@ test('browser UI regression',async t=>{
       const {page,errors}=await fixture(browser,'platform_owner');
       await login(page);
       await page.locator('[data-action=editPlatformCompany][data-id="2"]').click();
-      assert.equal(await page.locator('[data-platform-module]').count(),23);
+      assert.equal(await page.locator('[data-platform-module]').count(),24);
+      assert.equal(await page.locator('#module-toggle-organizer').count(),1);
       await page.locator('#module-toggle-work').uncheck();
       await page.locator('#platformCompanyForm [type=submit]').click();
       await page.waitForFunction(()=>mock.calls.some(c=>c.method==='POST'&&c.url==='/api/platform/companies/2'));

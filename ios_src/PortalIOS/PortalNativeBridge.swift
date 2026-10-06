@@ -1,6 +1,7 @@
 import Foundation
 import UIKit
 import WebKit
+import UserNotifications
 
 final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessageHandlerWithReply, WKNavigationDelegate {
     static let handlerName = "portalNative"
@@ -14,6 +15,7 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
     private let localCache = PortalLocalCache()
     private var cacheCompany = ""
     private var userContentController: WKUserContentController?
+    private var activeObserver: NSObjectProtocol?
 
     private var defaultServer: String {
         (Bundle.main.object(forInfoDictionaryKey: "PORTALDefaultAPIURL") as? String) ?? "https://portal.invalid"
@@ -130,6 +132,7 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
               send('setCacheCompany', {value:cacheCompany}); return !!cacheCompany;
             },
             clearCompanyCache: () => { send('clearCompanyCache', {}); return true; },
+            openMessengerWindow: provider => { const p=String(provider||'telegram').toLowerCase()==='max'?'max':'telegram'; send('openMessengerWindow', {provider:p}); return true; },
             queueMutation: json => ask('queueMutation', {json:String(json||'')}),
             pendingMutations: () => ask('pendingMutations', {}).then(rows => JSON.stringify(Array.isArray(rows)?rows:[])),
             removeMutation: requestId => ask('removeMutation', {requestId:String(requestId||'')}),
@@ -143,7 +146,8 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
             saveBase64FileAsync: (id, name, mime, b64) =>
               send('saveFile', {id:String(id), name:String(name||''), mime:String(mime||''), b64:String(b64||'')}),
             shareBase64FileAsync: (id, name, mime, b64, recipient, subject, message) =>
-              send('shareFile', {id:String(id), name:String(name||''), mime:String(mime||''), b64:String(b64||''), recipient:String(recipient||''), subject:String(subject||''), message:String(message||'')})
+              send('shareFile', {id:String(id), name:String(name||''), mime:String(mime||''), b64:String(b64||''), recipient:String(recipient||''), subject:String(subject||''), message:String(message||'')}),
+            scheduleOrganizerReminders: json => send('scheduleOrganizerReminders', {json:String(json||'[]')})
           };
           window.__PORTAL_IOS__ = true;
           document.documentElement.classList.add('ios-client');
@@ -156,9 +160,14 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
         controller.add(self, name: Self.handlerName)
         controller.addScriptMessageHandler(self, contentWorld: .page, name: Self.replyHandlerName)
         controller.addUserScript(WKUserScript(source: bootstrapScript(), injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        activeObserver = NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.webView?.evaluateJavaScript("window.portalForegroundRefresh&&window.portalForegroundRefresh()")
+        }
     }
 
     func detach() {
+        if let activeObserver { NotificationCenter.default.removeObserver(activeObserver) }
+        activeObserver = nil
         userContentController?.removeScriptMessageHandler(forName: Self.handlerName)
         userContentController?.removeScriptMessageHandler(forName: Self.replyHandlerName, contentWorld: .page)
         userContentController = nil
@@ -179,6 +188,18 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
             cacheCompany = value.range(of: #"^[1-9][0-9]{0,9}$"#, options: .regularExpression) != nil ? value : ""
         case "clearCompanyCache":
             if !cacheCompany.isEmpty { _ = localCache.clearCompany(serverOrigin: serverURL, companyID: cacheCompany) }
+        case "openMessengerWindow":
+            let provider = (payload["provider"] as? String)?.lowercased() == "max" ? "max" : "telegram"
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let presenter = self.topViewController() else { return }
+                if let current = presenter as? MessengerViewController { current.selectProvider(provider); return }
+                if let current = presenter.presentedViewController as? MessengerViewController { current.selectProvider(provider); return }
+                let messenger = MessengerViewController(provider: provider)
+                messenger.modalPresentationStyle = .fullScreen
+                presenter.present(messenger, animated: true)
+            }
+        case "scheduleOrganizerReminders":
+            scheduleOrganizerReminders(payload["json"] as? String ?? "[]")
         case "requestAsync":
             request(payload)
         case "checkUpdates":
@@ -202,6 +223,50 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
         default:
             break
         }
+    }
+
+    private func scheduleOrganizerReminders(_ json: String) {
+        guard let data = json.data(using: .utf8),
+              let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]], rows.count <= 50 else { return }
+        let center = UNUserNotificationCenter.current()
+        let prefix = "portal-organizer-"
+        center.getPendingNotificationRequests { pending in
+            center.removePendingNotificationRequests(withIdentifiers: pending.map(\.identifier).filter { $0.hasPrefix(prefix) })
+            let now = Date()
+            let upperBound = now.addingTimeInterval(30 * 24 * 60 * 60)
+            let requests = rows.compactMap { row -> UNNotificationRequest? in
+                guard let id = row["id"] as? String, id.range(of: #"^[A-Za-z0-9_-]{1,80}$"#, options: .regularExpression) != nil,
+                      let value = row["at"] as? String else { return nil }
+                let date = Self.organizerDate(from: value)
+                guard let date, date > now, date < upperBound else { return nil }
+                let content = UNMutableNotificationContent()
+                content.title = "Напоминание PORTAL"
+                content.body = String((row["title"] as? String ?? "Задача").prefix(160))
+                content.sound = .default
+                let trigger = UNCalendarNotificationTrigger(dateMatching: Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: date), repeats: false)
+                return UNNotificationRequest(identifier: prefix + id, content: content, trigger: trigger)
+            }
+            guard !requests.isEmpty else { return }
+            center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+                guard granted else { return }
+                requests.forEach { center.add($0) { _ in } }
+            }
+        }
+    }
+
+    private static func organizerDate(from value: String) -> Date? {
+        if let date = ISO8601DateFormatter().date(from: value) { return date }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = fractional.date(from: value) { return date }
+        let local = DateFormatter()
+        local.locale = Locale(identifier: "en_US_POSIX")
+        local.timeZone = .current
+        for format in ["yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd'T'HH:mm:ss"] {
+            local.dateFormat = format
+            if let date = local.date(from: value) { return date }
+        }
+        return nil
     }
 
 

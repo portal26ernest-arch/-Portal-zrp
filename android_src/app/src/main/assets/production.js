@@ -113,9 +113,9 @@ screens.dashboard=async()=>{
   if(!S.stage3)return previous.dashboard();
   const [d,organizerRows,organizerRequestIncoming,organizerRequestMine,timers]=await Promise.all([
     productionGet('today'),
-    globalThis.__PORTAL_DESKTOP__&&allowed('organizer.read')?productionGet('organizer?scope=incoming'):Promise.resolve([]),
-    globalThis.__PORTAL_DESKTOP__&&allowed('organizer.request.decide')?productionGet('organizer-requests?scope=incoming'):Promise.resolve([]),
-    globalThis.__PORTAL_DESKTOP__&&canCreateDirectorRequest()?productionGet('organizer-requests?scope=mine'):Promise.resolve([]),
+    can('organizer')?productionGet('organizer?scope=incoming'):Promise.resolve([]),
+    can('organizer')&&allowed('organizer.request.decide')?productionGet('organizer-requests?scope=incoming'):Promise.resolve([]),
+    canCreateDirectorRequest()?productionGet('organizer-requests?scope=mine'):Promise.resolve([]),
     allowed('work.write')||allowed('tasks.read')?productionGet('timers'):Promise.resolve([])
   ]);
   S.productionTasks=d.tasks||[];S.activeTimers=timers;
@@ -490,7 +490,7 @@ function organizerCalendar(rows,month){
     cells.push('<div class="card" style="min-height:92px;padding:10px"><b>'+day+'</b>'+dayRows.slice(0,4).map(t=>'<button type="button" class="btn text block" data-action="organizerHistory" data-id="'+esc(t.id)+'" style="text-align:left;padding:4px 0">'+esc(t.title)+'</button>').join('')+(dayRows.length>4?'<span class="meta">Ещё '+(dayRows.length-4)+'</span>':'')+'</div>');
   }
   return '<div class="row between"><button class="btn secondary" data-action="organizerMonth" data-shift="-1">← Предыдущий</button><h2>'+esc(month.toLocaleDateString('ru-RU',{month:'long',year:'numeric'}))+'</h2><button class="btn secondary" data-action="organizerMonth" data-shift="1">Следующий →</button></div>'+
-    '<div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;margin:14px 0">'+names.map(x=>'<div class="meta" style="text-align:center"><b>'+x+'</b></div>').join('')+cells.join('')+'</div>';
+    '<div class="organizer-calendar-scroll"><div class="organizer-calendar-grid">'+names.map(x=>'<div class="meta organizer-calendar-weekday"><b>'+x+'</b></div>').join('')+cells.join('')+'</div></div>';
 }
 function organizerFiltered(rows,view){
   const now=new Date(),today=organizerDay(now);
@@ -515,7 +515,7 @@ async function refreshOrganizer(){
 }
 const organizerRequestType={materials_purchase:'Закупка материалов',equipment_purchase:'Закупка оборудования',repair:'Ремонт',expense:'Расходы',tariff_change:'Изменение условий/тарифов',hr:'Кадровый вопрос',other:'Другое'};
 const organizerRequestStatus={new:'Новый',review:'На рассмотрении',approved:'Одобрен',rejected:'Отклонён',needs_info:'Нужна информация',done:'Выполнен'};
-const canCreateDirectorRequest=()=>allowed('organizer.request.create')&&['manager','admin'].includes(S.me?.role);
+const canCreateDirectorRequest=()=>can('organizer')&&allowed('organizer.request.create')&&['manager','admin'].includes(S.me?.role);
 function organizerRequestCard(r){
   let details='<p class="meta">Автор: '+esc(r.created_by_name)+' · Директор: '+esc(r.director_name||'—')+(r.responsible_name?' · Ответственный: '+esc(r.responsible_name):'')+'</p>';
   if(r.requested_due_at)details+='<p><b>Желаемый срок:</b> '+esc(organizerMoment(r.requested_due_at))+'</p>';
@@ -539,8 +539,7 @@ async function refreshOrganizerRequests(){
   if($('organizerIncomingRequests'))$('organizerIncomingRequests').innerHTML='<div class="list">'+(incoming.map(organizerRequestCard).join('')||'<p class="empty">Входящих запросов нет</p>')+'</div>';
 }
 screens.organizer=async()=>{
-  if(!globalThis.__PORTAL_DESKTOP__)throw new Error('Органайзер доступен в версии PORTAL для компьютера');
-  if(!allowed('organizer.read'))throw new Error('Нет доступа к органайзеру');
+  if(!can('organizer'))throw new Error('Нет доступа к органайзеру');
   S.organizerView=S.organizerView||'today';S.organizerUsers=await productionGet('organizer-users');
   S.organizerDirectors=canCreateDirectorRequest()?await productionGet('organizer-directors'):[];
   S.organizerRequestUsers=allowed('organizer.assign')&&(isOwner()||['director','admin'].includes(S.me.role))?await productionGet('organizer-request-responsibles'):[];
@@ -679,9 +678,15 @@ actions.organizerHistory=async button=>{
   openSheet(t.title,'<p><b>Исполнитель:</b> '+esc(t.assignee_name)+'</p><p><b>Срок:</b> '+esc(organizerMoment(t.due_at))+'</p><h3>История</h3><div class="list">'+events.slice().reverse().map(e=>'<div class="item"><b>'+esc(eventNames[e.event]||'Изменение')+'</b><p class="meta">'+esc(e.actor_name)+' · '+esc(organizerMoment(e.occurred_at))+'</p>'+(e.event==='rescheduled'&&e.detail?'<p>'+esc(e.detail)+'</p>':'')+'</div>').join('')+'</div>');
 };
 async function organizerReminderCheck(){
-  if(!globalThis.__PORTAL_DESKTOP__||!S.token||!allowed('organizer.read'))return;
+  if(!S.token||!can('organizer'))return;
   try{
     const rows=await productionGet('organizer?scope=incoming'),now=Date.now();
+    if(globalThis.__PORTAL_ANDROID__||globalThis.__PORTAL_IOS__){
+      const reminders=rows.filter(organizerActive).map(t=>({id:String(t.id),title:String(t.title||'Задача'),at:String(t.remind_at||t.due_at||'')})).filter(t=>Number.isFinite(Date.parse(t.at))&&Date.parse(t.at)>now&&Date.parse(t.at)<now+30*86400000);
+      try{globalThis.PortalNative?.scheduleOrganizerReminders?.(JSON.stringify(reminders));}catch{}
+      return;
+    }
+    if(!globalThis.__PORTAL_DESKTOP__)return;
     S.organizerReminderSeen=S.organizerReminderSeen||new Set();
     for(const t of rows){
       if(!organizerActive(t))continue;
@@ -693,4 +698,4 @@ async function organizerReminderCheck(){
     }
   }catch{}
 }
-function startOrganizerReminderWatch(){clearInterval(S.organizerReminderTimer);if(!globalThis.__PORTAL_DESKTOP__||!allowed('organizer.read'))return;organizerReminderCheck();S.organizerReminderTimer=setInterval(organizerReminderCheck,60000);}
+function startOrganizerReminderWatch(){clearInterval(S.organizerReminderTimer);if(!S.token||!can('organizer')){if(globalThis.__PORTAL_ANDROID__||globalThis.__PORTAL_IOS__)try{globalThis.PortalNative?.scheduleOrganizerReminders?.('[]');}catch{}return;}organizerReminderCheck();S.organizerReminderTimer=setInterval(organizerReminderCheck,60000);}

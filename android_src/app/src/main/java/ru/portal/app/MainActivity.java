@@ -2,6 +2,10 @@ package ru.portal.app;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.AlarmManager;
+import android.app.PendingIntent;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.ClipData;
@@ -14,6 +18,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.Manifest;
 import android.provider.MediaStore;
 import android.util.Base64;
 import android.webkit.JavascriptInterface;
@@ -25,6 +30,8 @@ import android.webkit.WebViewClient;
 import android.webkit.WebResourceRequest;
 import android.view.View;
 import androidx.core.content.FileProvider;
+import androidx.core.app.NotificationCompat;
+import androidx.core.content.ContextCompat;
 
 import org.json.JSONObject;
 
@@ -44,12 +51,14 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.UUID;
+import org.json.JSONArray;
 
 public class MainActivity extends Activity {
     private static final int FILE_CHOOSER_REQUEST = 42032;
     private WebView webView;
     private PortalBridge bridge;
     private ValueCallback<Uri[]> filePathCallback;
+    private static final int NOTIFICATION_PERMISSION_REQUEST = 6201;
 
     @SuppressLint({"SetJavaScriptEnabled", "JavascriptInterface"})
     @Override
@@ -136,6 +145,11 @@ public class MainActivity extends Activity {
         );
     }
 
+    @Override protected void onResume() {
+        super.onResume();
+        if (webView != null) webView.postDelayed(() -> webView.evaluateJavascript("window.portalForegroundRefresh&&window.portalForegroundRefresh()", null), 250);
+    }
+
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
@@ -211,6 +225,63 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public String getBuild() {
             return "PORTAL Android · Build " + BuildConfig.VERSION_NAME;
+        }
+
+        @JavascriptInterface
+        public boolean openMessengerWindow(String provider) {
+            String selected = "max".equalsIgnoreCase(provider) ? "max" : "telegram";
+            try {
+                Intent intent = new Intent(context, MessengerActivity.class).putExtra("provider", selected);
+                intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+                context.startActivity(intent);
+                return true;
+            } catch (Exception ignored) { return false; }
+        }
+
+        @JavascriptInterface
+        public void scheduleOrganizerReminders(String json) {
+            if (!(context instanceof Activity)) return;
+            Activity activity = (Activity) context;
+            try {
+                JSONArray reminders = new JSONArray(json == null ? "[]" : json);
+                if (reminders.length() > 50) return;
+                if (reminders.length() > 0 && Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                    activity.runOnUiThread(() -> activity.requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, NOTIFICATION_PERMISSION_REQUEST));
+                    return;
+                }
+                NotificationManager notifications = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+                if (notifications == null) return;
+                if (Build.VERSION.SDK_INT >= 26) notifications.createNotificationChannel(new NotificationChannel("organizer_reminders", "Напоминания Органайзера", NotificationManager.IMPORTANCE_DEFAULT));
+                AlarmManager alarms = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+                if (alarms == null) return;
+                SharedPreferences reminderPrefs = context.getSharedPreferences("organizer_reminders", Context.MODE_PRIVATE);
+                java.util.Set<String> previous = reminderPrefs.getStringSet("ids", java.util.Collections.emptySet());
+                java.util.Set<String> current = new java.util.HashSet<>();
+                for (int i = 0; i < reminders.length(); i++) {
+                    JSONObject reminder = reminders.optJSONObject(i);
+                    if (reminder == null) continue;
+                    String id = reminder.optString("id", "");
+                    String title = reminder.optString("title", "Задача");
+                    long at;
+                    try {
+                        String value = reminder.optString("at", "");
+                        try { at = java.time.Instant.parse(value).toEpochMilli(); }
+                        catch (Exception noZone) { at = java.time.LocalDateTime.parse(value).atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli(); }
+                    } catch (Exception ignored) { continue; }
+                    if (!id.matches("[A-Za-z0-9_-]{1,80}") || at <= System.currentTimeMillis()) continue;
+                    current.add(id);
+                    int requestId = id.hashCode();
+                    Intent intent = new Intent(context, OrganizerReminderReceiver.class).putExtra("id", id).putExtra("title", title);
+                    PendingIntent pending = PendingIntent.getBroadcast(context, requestId, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+                    if (Build.VERSION.SDK_INT >= 23) alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending); else alarms.set(AlarmManager.RTC_WAKEUP, at, pending);
+                }
+                for (String id : previous) if (!current.contains(id)) {
+                    Intent intent = new Intent(context, OrganizerReminderReceiver.class);
+                    PendingIntent pending = PendingIntent.getBroadcast(context, id.hashCode(), intent, PendingIntent.FLAG_NO_CREATE | PendingIntent.FLAG_IMMUTABLE);
+                    if (pending != null) { alarms.cancel(pending); pending.cancel(); }
+                }
+                reminderPrefs.edit().putStringSet("ids", current).apply();
+            } catch (Exception ignored) { }
         }
 
         @JavascriptInterface
