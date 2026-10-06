@@ -213,6 +213,17 @@ PYTHONUNBUFFERED=1
 EOF
 chmod 0600 "$ENV_FILE"
 
+# Apply application-level production migrations that intentionally have no raw
+# SQL file (currently hashed session storage/version 15) before the service's
+# strict startup schema gate runs. The CLI still connects through the limited
+# staging runtime roles declared above; no production database is involved.
+echo "[5b/9] Application runtime migrations"
+set -a
+# shellcheck disable=SC1090
+source "$ENV_FILE"
+set +a
+"$VENV/bin/python" -B "$REPO/server/portal_app_server.py" --migrate-stage3 1
+
 echo "[6/9] systemd staging API"
 if ! id -u portal-stage7 >/dev/null 2>&1; then
   useradd --system --user-group --home-dir "$ROOT" --shell /usr/sbin/nologin portal-stage7
