@@ -7,11 +7,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>PORTAL.Desktop</AssemblyName>
     <RootNamespace>Portal.Desktop</RootNamespace>
-    <Version>5.9.0</Version>
-    <FileVersion>5.9.0.59</FileVersion>
-    <AssemblyVersion>5.9.0.0</AssemblyVersion>
-    <InformationalVersion>5.9.0-webview-white-screen-hotfix</InformationalVersion>
-    <PortalBuildNumber Condition="'$(PortalBuildNumber)' == ''">59</PortalBuildNumber>
+    <Version>5.10.0</Version>
+    <FileVersion>5.10.0.60</FileVersion>
+    <AssemblyVersion>5.10.0.0</AssemblyVersion>
+    <InformationalVersion>5.10.0-network-cutover-hotfix</InformationalVersion>
+    <PortalBuildNumber Condition="'$(PortalBuildNumber)' == ''">60</PortalBuildNumber>
     <PortalBuildDate Condition="'$(PortalBuildDate)' == ''">$([System.DateTime]::UtcNow.ToString('yyyy-MM-dd'))</PortalBuildDate>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>

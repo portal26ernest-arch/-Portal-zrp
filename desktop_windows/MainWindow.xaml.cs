@@ -14,14 +14,15 @@ namespace Portal.Desktop;
 
 public partial class MainWindow : Window
 {
-    private const int CurrentBuild = 59;
+    private const int CurrentBuild = 60;
     private const long MaxInstallerBytes = 250L * 1024 * 1024;
     private const string GithubRepository = "portal26ernest-arch/-Portal-zrp";
     private const string ServerDiscoveryUrl = "https://raw.githubusercontent.com/portal26ernest-arch/-Portal-zrp/main/portal-server.json";
-    private const string PrimaryServerOrigin = "https://api.vart-portal.ru";
-    private const string TrustedFallbackServerOrigin = "https://reserve-api.vart-portal.ru";
-    private static readonly TimeSpan ServerProbeTimeout = TimeSpan.FromSeconds(5);
+    private const string PrimaryServerOrigin = "https://reserve-api.vart-portal.ru";
+    private const string TrustedFallbackServerOrigin = "https://api.vart-portal.ru";
+    private static readonly TimeSpan ServerProbeTimeout = TimeSpan.FromSeconds(10);
     private const string WebViewSoftwareRenderingArguments = "--disable-gpu --disable-gpu-compositing";
+    private const string WebViewNetworkCompatibilityArguments = "--disable-http2";
     private static readonly HttpClient Http = new(new HttpClientHandler { AllowAutoRedirect = false })
     {
         Timeout = TimeSpan.FromMinutes(5)
@@ -88,12 +89,16 @@ public partial class MainWindow : Window
             if (!candidates.Contains(normalized, StringComparer.OrdinalIgnoreCase)) candidates.Add(normalized);
         }
 
-        Add(preferred);
         var mayUsePortalFallback = string.IsNullOrWhiteSpace(preferred) || IsAutomaticPortalOrigin(preferred);
         if (mayUsePortalFallback)
         {
+            // A stored automatic endpoint must not override the current control-plane preference.
             Add(PrimaryServerOrigin);
             Add(TrustedFallbackServerOrigin);
+        }
+        else
+        {
+            Add(preferred);
         }
 
         foreach (var candidate in candidates)
@@ -147,13 +152,13 @@ public partial class MainWindow : Window
         // PORTAL's UI is not graphics-heavy, so software composition is the reliable default.
         // Advanced operators can explicitly opt back into GPU rendering for diagnostics.
         var forceGpu = Environment.GetEnvironmentVariable("PORTAL_WEBVIEW_GPU");
-        if (string.Equals(forceGpu, "1", StringComparison.Ordinal)) return string.Empty;
+        if (string.Equals(forceGpu, "1", StringComparison.Ordinal)) return WebViewNetworkCompatibilityArguments;
 
         var forcedSoftware = Environment.GetEnvironmentVariable("PORTAL_WEBVIEW_SOFTWARE_RENDERING");
         var marker = Path.Combine(_settingsDir, "software-rendering.flag");
         if (string.Equals(forcedSoftware, "0", StringComparison.Ordinal) && !File.Exists(marker))
-            return string.Empty;
-        return WebViewSoftwareRenderingArguments;
+            return WebViewNetworkCompatibilityArguments;
+        return WebViewNetworkCompatibilityArguments + " " + WebViewSoftwareRenderingArguments;
     }
 
     private string? LoadStoredOrigin()
@@ -637,7 +642,7 @@ public partial class MainWindow : Window
                 return new ServerRefreshResult(false, false, _serverOrigin);
 
             using var request = new HttpRequestMessage(HttpMethod.Get, ServerDiscoveryUrl);
-            request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.9.0");
+            request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.10.0");
             request.Headers.Accept.ParseAdd("application/json");
             using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
             response.EnsureSuccessStatusCode();
@@ -761,7 +766,7 @@ public partial class MainWindow : Window
     {
         using var request = new HttpRequestMessage(HttpMethod.Get,
             $"https://api.github.com/repos/{GithubRepository}/releases?per_page=50");
-        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.9.0");
+        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.10.0");
         request.Headers.Accept.ParseAdd("application/vnd.github+json");
         using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();
