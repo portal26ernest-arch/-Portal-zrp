@@ -9,6 +9,8 @@ assert.match(messenger,/https:\/\/web\.telegram\.org\/a\//);
 assert.match(messenger,/https:\/\/web\.max\.ru\//);
 assert.match(messenger,/WebView\.setDataDirectorySuffix\("portal_messenger"\)/);
 assert.match(messenger,/clearProviderData\(/);
+assert.match(messenger,/import android\.webkit\.WebStorage;/);
+assert.doesNotMatch(main,/@JavascriptInterface\s*@JavascriptInterface/);
 assert.match(messenger,/ACTION_CLEAR_SESSION/);
 assert.match(messenger,/host\.equalsIgnoreCase\("web\.telegram\.org"\)/);
 assert.match(messenger,/host\.equalsIgnoreCase\("web\.max\.ru"\)/);

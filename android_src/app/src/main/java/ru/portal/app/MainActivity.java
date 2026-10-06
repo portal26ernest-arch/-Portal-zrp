@@ -239,7 +239,6 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        @JavascriptInterface
         public void clearMessengerSession() {
             Intent intent = new Intent(context, MessengerActivity.class).setAction(MessengerActivity.ACTION_CLEAR_SESSION)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
