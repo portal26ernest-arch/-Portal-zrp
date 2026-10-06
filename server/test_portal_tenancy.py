@@ -238,7 +238,7 @@ class CompanyIsolationTest(unittest.TestCase):
         self.request("/api/platform/companies/2",self.owner,{"monthly_price":123456,"user_limit":30})
         rows = self.request("/api/platform/audit",self.owner)["rows"]
         encoded=json.dumps(rows)
-        for secret in ("Owner-secret-canary-123","PIN-canary-8976","bad-password-canary",self.owner,self.other_admin):
+        for secret in ("Owner-secret-canary-123","PIN-canary-8976","bad-password-canary",self.owner,self.other_admin):  # gitleaks:allow
             self.assertNotIn(secret,encoded)
         self.assertTrue(any(r["event"]=="god_login" and r["outcome"]=="denied" for r in rows))
         self.assertTrue(any(r["event"]=="god_access" and r["company_id"]==self.other for r in rows))

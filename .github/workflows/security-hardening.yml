@@ -23,7 +23,7 @@ jobs:
         run: |
           docker run --rm \
             -v "$PWD:/repo" \
-            zricethezav/gitleaks:v8.28.0 \
+            zricethezav/gitleaks:v8.30.1 \
             git /repo --redact --no-banner
 
   repository-security:
