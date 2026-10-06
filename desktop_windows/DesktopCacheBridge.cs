@@ -192,6 +192,9 @@ public sealed class DesktopCacheBridge
     }
 
     public static bool MigrateOutboxOrigin(string settingsDir, string oldOrigin, string newOrigin)
+        => MigrateOutboxOrigin(settingsDir, oldOrigin, newOrigin, null);
+
+    internal static bool MigrateOutboxOrigin(string settingsDir, string oldOrigin, string newOrigin, Action<int>? afterCopy)
     {
         try
         {
@@ -202,6 +205,7 @@ public sealed class DesktopCacheBridge
             if (!Directory.Exists(source)) return true;
             var target = Path.Combine(baseDir, Hash(newOrigin.ToLowerInvariant()));
             Directory.CreateDirectory(target);
+            var copied = 0;
             foreach (var company in Directory.GetDirectories(source))
             {
                 var name = Path.GetFileName(company);
@@ -211,17 +215,34 @@ public sealed class DesktopCacheBridge
                 foreach (var row in Directory.GetFiles(company, "*.bin"))
                 {
                     var destination = Path.Combine(targetCompany, Path.GetFileName(row));
-                    if (File.Exists(destination))
-                    {
-                        File.Delete(row);
-                        continue;
-                    }
-                    File.Move(row, destination);
+                    if (File.Exists(destination)) continue;
+                    var temp = destination + ".migrating";
+                    if (File.Exists(temp)) File.Delete(temp);
+                    File.Copy(row, temp, overwrite: false);
+                    File.Move(temp, destination);
+                    copied++;
+                    afterCopy?.Invoke(copied);
                 }
-                if (Directory.GetFileSystemEntries(company).Length == 0) Directory.Delete(company);
             }
-            if (Directory.GetFileSystemEntries(source).Length != 0) return false;
-            Directory.Delete(source);
+            // Complete the target copy before callers switch the stored origin.
+            // Source cleanup is best effort so retries remain safe and idempotent.
+            foreach (var company in Directory.GetDirectories(source))
+            {
+                foreach (var row in Directory.GetFiles(company, "*.bin"))
+                {
+                    try { File.Delete(row); } catch { }
+                }
+                try
+                {
+                    if (Directory.GetFileSystemEntries(company).Length == 0) Directory.Delete(company);
+                }
+                catch { }
+            }
+            try
+            {
+                if (Directory.GetFileSystemEntries(source).Length == 0) Directory.Delete(source);
+            }
+            catch { }
             return true;
         }
         catch

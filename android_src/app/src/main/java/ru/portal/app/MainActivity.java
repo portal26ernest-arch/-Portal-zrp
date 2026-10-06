@@ -621,10 +621,18 @@ public class MainActivity extends Activity {
                 if (!"https".equalsIgnoreCase(u.getProtocol()) || host.isEmpty() || u.getUserInfo() != null
                         || u.getQuery() != null || u.getRef() != null || (u.getPort() != -1 && u.getPort() != 443)
                         || !(u.getPath().isEmpty() || "/".equals(u.getPath()))
-                        || "localhost".equals(host) || host.endsWith(".localhost") || "portal.invalid".equals(host)
-                        || host.endsWith(".trycloudflare.com")) return null;
+                        || !("api.vart-portal.ru".equals(host) || "reserve-api.vart-portal.ru".equals(host))) return null;
                 return "https://" + host;
             } catch (Exception e) { return null; }
+        }
+
+        private boolean isSafeServerTransport(URL url) {
+            if (url == null) return false;
+            if ("https".equalsIgnoreCase(url.getProtocol())) return true;
+            if (!"http".equalsIgnoreCase(url.getProtocol())) return false;
+            String host = url.getHost() == null ? "" : url.getHost().toLowerCase(Locale.ROOT);
+            return "localhost".equals(host) || host.endsWith(".localhost")
+                    || host.matches("127(?:\\.[0-9]{1,3}){3}") || "::1".equals(host);
         }
 
         private boolean probeOfficialServer(String base) {
@@ -889,7 +897,7 @@ public class MainActivity extends Activity {
             while (value.endsWith("/")) value = value.substring(0, value.length() - 1);
             try {
                 URL url = new URL(value);
-                if (("http".equals(url.getProtocol()) || "https".equals(url.getProtocol())) && url.getUserInfo() == null
+                if (isSafeServerTransport(url) && url.getUserInfo() == null
                         && url.getQuery() == null && url.getRef() == null && (url.getPath().isEmpty() || "/".equals(url.getPath()))) {
                     prefs.edit().putString("server_url", value).apply();
                 }
@@ -911,6 +919,7 @@ public class MainActivity extends Activity {
             try {
                 if (path == null || !path.startsWith("/api/") || path.contains("\\") || path.contains("#")) throw new Exception("Некорректный API-путь");
                 URL url = new URL(base + path);
+                if (!isSafeServerTransport(url)) throw new Exception("Небезопасный адрес сервера");
                 conn = (HttpURLConnection) url.openConnection();
                 conn.setInstanceFollowRedirects(false);
                 conn.setConnectTimeout(8000);
