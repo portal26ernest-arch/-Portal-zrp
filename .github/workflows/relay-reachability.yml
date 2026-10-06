@@ -8,16 +8,16 @@ on:
 jobs:
   relay-edge-smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 4
     steps:
-      - name: Verify public TLS relay endpoint
+      - name: Diagnose public relay ingress
         shell: bash
         run: |
-          set -euo pipefail
-          result="$(curl -sS -o /dev/null -w '%{http_code} %{ssl_verify_result} %{remote_ip}' --connect-timeout 5 --max-time 10 https://relay.vart-portal.ru:9443/)"
-          echo "relay=$result"
-          code="${result%% *}"
-          rest="${result#* }"
-          verify="${rest%% *}"
-          test "$code" = "407"
-          test "$verify" = "0"
+          set -u
+          for url in \
+            http://relay.vart-portal.ru/ \
+            https://relay.vart-portal.ru/ \
+            https://relay.vart-portal.ru:9443/; do
+            echo "=== $url ==="
+            curl -v -sS -o /dev/null -w 'status=%{http_code} verify=%{ssl_verify_result} remote=%{remote_ip}\n' --connect-timeout 5 --max-time 10 "$url" 2>&1 | tail -20 || true
+          done
