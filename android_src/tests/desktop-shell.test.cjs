@@ -67,6 +67,11 @@ assert.match(code,/ProcessFailed[\s\S]+_webRecoveryPending[\s\S]+Browser\.Reload
 assert.match(app,/window\.portalBack=/);
 assert.match(app,/S\.history\.push\(S\.page\)/);
 assert.match(app,/window\.portalHome=/);
+assert.match(app,/openMessengerProvider=async button=>\{if\(button\?\.disabled\)return/);
+assert.match(app,/Promise\.race\(\[api\('GET','\/api\/v3\/messenger-relay-ticket'\),new Promise/);
+assert.match(app,/relay_ticket_timeout/);
+assert.match(app,/button\.textContent=p==='telegram'\?'Подключаем Telegram…':'Открываем MAX…'/);
+assert.match(app,/failClosed=\{provider:'telegram',enabled:false,required:true\}/);
 assert.match(app,/autoCheckUpdates\(\)/);
 assert.match(app,/HTTP разрешён только для локального сервера/);
 assert.match(app,/url\.protocol!=='https:'&&!\(url\.protocol==='http:'&&loopback\)/);
