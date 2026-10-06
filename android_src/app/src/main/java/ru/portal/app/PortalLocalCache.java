@@ -177,6 +177,11 @@ final class PortalLocalCache {
     }
 
     boolean migrateOutboxOrigin(String oldOrigin, String newOrigin) {
+        return migrateOutboxOrigin(oldOrigin, newOrigin, -1);
+    }
+
+    // Package-private fault seam for migration regression tests; -1 disables injection.
+    boolean migrateOutboxOrigin(String oldOrigin, String newOrigin, int failAfterCopies) {
         try {
             if (oldOrigin == null || newOrigin == null || oldOrigin.trim().isEmpty() || newOrigin.trim().isEmpty()
                     || oldOrigin.equalsIgnoreCase(newOrigin)) return true;
@@ -187,6 +192,7 @@ final class PortalLocalCache {
             if (!target.isDirectory() && !target.mkdirs()) return false;
             File[] companies = source.listFiles(File::isDirectory);
             if (companies == null) return false;
+            int copied = 0;
             for (File company : companies) {
                 if (!company.getName().matches("[1-9][0-9]{0,9}")) continue;
                 File targetCompany = new File(target, company.getName());
@@ -195,24 +201,29 @@ final class PortalLocalCache {
                 if (rows == null) return false;
                 for (File row : rows) {
                     File destination = new File(targetCompany, row.getName());
-                    if (destination.exists()) {
-                        if (!row.delete()) return false;
-                        continue;
+                    if (destination.exists()) continue;
+                    byte[] bytes = readLimited(row, MAX_OUTBOX_ITEM * 2);
+                    File temp = new File(targetCompany, row.getName() + ".migrating");
+                    try (FileOutputStream out = new FileOutputStream(temp)) {
+                        out.write(bytes);
+                        out.getFD().sync();
                     }
-                    if (!row.renameTo(destination)) {
-                        byte[] bytes = readLimited(row, MAX_OUTBOX_ITEM * 2);
-                        try (FileOutputStream out = new FileOutputStream(destination)) {
-                            out.write(bytes);
-                            out.getFD().sync();
-                        }
-                        if (!row.delete()) return false;
-                    }
+                    if (!temp.renameTo(destination)) { temp.delete(); return false; }
+                    copied++;
+                    if (failAfterCopies >= 0 && copied >= failAfterCopies) return false;
                 }
+            }
+            // The new origin is complete before callers persist it. Cleanup is best effort;
+            // keeping old copies makes retries safe and cannot split the active queue.
+            for (File company : companies) {
+                File[] rows = company.listFiles((d, name) -> name.endsWith(".bin"));
+                if (rows != null) for (File row : rows) row.delete();
                 File[] remaining = company.listFiles();
-                if (remaining != null && remaining.length == 0 && !company.delete()) return false;
+                if (remaining != null && remaining.length == 0) company.delete();
             }
             File[] remaining = source.listFiles();
-            return remaining != null && remaining.length == 0 && source.delete();
+            if (remaining != null && remaining.length == 0) source.delete();
+            return true;
         } catch (Exception ignored) {
             return false;
         }

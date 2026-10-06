@@ -1,5 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.IO;
+using System.Linq;
 using Portal.Desktop;
 
 using var signer = RSA.Create(3072);
@@ -25,3 +27,35 @@ if (DesktopUpdateSignature.Verify(payload, "unsigned", publicKey))
     throw new Exception("Malformed signature was accepted.");
 
 Console.WriteLine("Desktop update signature verification: OK");
+
+var migrationRoot = Path.Combine(Path.GetTempPath(), "portal-outbox-migration-test-" + Guid.NewGuid().ToString("N"));
+try
+{
+    const string oldOrigin = "https://api.vart-portal.ru";
+    const string newOrigin = "https://reserve-api.vart-portal.ru";
+    var source = Path.Combine(migrationRoot, "company-outbox", Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(oldOrigin.ToLowerInvariant()))).ToLowerInvariant(), "17");
+    Directory.CreateDirectory(source);
+    File.WriteAllText(Path.Combine(source, "request-a.bin"), "durable-a");
+    File.WriteAllText(Path.Combine(source, "request-b.bin"), "durable-b");
+
+    var injected = false;
+    var failed = DesktopCacheBridge.MigrateOutboxOrigin(migrationRoot, oldOrigin, newOrigin, copied =>
+    {
+        if (copied == 1) { injected = true; throw new IOException("injected copy failure"); }
+    });
+    if (failed || !injected) throw new Exception("Outbox migration fault injection did not fail after the first copy.");
+    if (Directory.GetFiles(source, "*.bin").Length != 2)
+        throw new Exception("Failed outbox migration changed the active origin queue.");
+    var target = Path.Combine(migrationRoot, "company-outbox", Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(newOrigin.ToLowerInvariant()))).ToLowerInvariant(), "17");
+    if (Directory.GetFiles(target, "*.bin").Length != 1)
+        throw new Exception("Fault injection did not leave exactly one staged target copy.");
+    if (!DesktopCacheBridge.MigrateOutboxOrigin(migrationRoot, oldOrigin, newOrigin))
+        throw new Exception("Retry did not complete the outbox migration.");
+    if (Directory.GetFiles(target, "*.bin").Length != 2 || Directory.Exists(source))
+        throw new Exception("Retried outbox migration lost or duplicated queued work.");
+}
+finally
+{
+    if (Directory.Exists(migrationRoot)) Directory.Delete(migrationRoot, recursive: true);
+}
+Console.WriteLine("Desktop outbox migration rollback and retry: OK");
