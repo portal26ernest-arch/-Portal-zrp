@@ -37,7 +37,7 @@
         <Grid Grid.Row="1">
             <wv2:WebView2 x:Name="Browser" Visibility="Collapsed" PreviewMouseWheel="Browser_PreviewMouseWheel"/>
 
-            <Border x:Name="SetupPanel" Background="#F5F8FD">
+            <Border x:Name="SetupPanel" Background="#F5F8FD" Visibility="Collapsed">
                 <Border Width="560" Padding="28" CornerRadius="14" Background="White"
                         BorderBrush="#E5E7EB" BorderThickness="1" HorizontalAlignment="Center"
                         VerticalAlignment="Center">
