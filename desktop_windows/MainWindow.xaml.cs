@@ -14,13 +14,13 @@ namespace Portal.Desktop;
 
 public partial class MainWindow : Window
 {
-    private const int CurrentBuild = 58;
+    private const int CurrentBuild = 59;
     private const long MaxInstallerBytes = 250L * 1024 * 1024;
     private const string GithubRepository = "portal26ernest-arch/-Portal-zrp";
     private const string ServerDiscoveryUrl = "https://raw.githubusercontent.com/portal26ernest-arch/-Portal-zrp/main/portal-server.json";
     private const string PrimaryServerOrigin = "https://api.vart-portal.ru";
     private const string TrustedFallbackServerOrigin = "https://reserve-api.vart-portal.ru";
-    private static readonly TimeSpan ServerProbeTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan ServerProbeTimeout = TimeSpan.FromSeconds(10);
     private const string WebViewSoftwareRenderingArguments = "--disable-gpu --disable-gpu-compositing";
     private static readonly HttpClient Http = new(new HttpClientHandler { AllowAutoRedirect = false })
     {
@@ -88,12 +88,17 @@ public partial class MainWindow : Window
             if (!candidates.Contains(normalized, StringComparer.OrdinalIgnoreCase)) candidates.Add(normalized);
         }
 
-        Add(preferred);
         var mayUsePortalFallback = string.IsNullOrWhiteSpace(preferred) || IsAutomaticPortalOrigin(preferred);
         if (mayUsePortalFallback)
         {
+            // A previous automatic fallback must never pin the next launch to reserve.
+            // Always retry the owned primary first; reserve remains a same-launch fallback.
             Add(PrimaryServerOrigin);
             Add(TrustedFallbackServerOrigin);
+        }
+        else
+        {
+            Add(preferred);
         }
 
         foreach (var candidate in candidates)
@@ -631,7 +636,7 @@ public partial class MainWindow : Window
                 return new ServerRefreshResult(false, false, _serverOrigin);
 
             using var request = new HttpRequestMessage(HttpMethod.Get, ServerDiscoveryUrl);
-            request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.8.0");
+            request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.8.1");
             request.Headers.Accept.ParseAdd("application/json");
             using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
             response.EnsureSuccessStatusCode();
@@ -755,7 +760,7 @@ public partial class MainWindow : Window
     {
         using var request = new HttpRequestMessage(HttpMethod.Get,
             $"https://api.github.com/repos/{GithubRepository}/releases?per_page=50");
-        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.8.0");
+        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.8.1");
         request.Headers.Accept.ParseAdd("application/vnd.github+json");
         using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();
