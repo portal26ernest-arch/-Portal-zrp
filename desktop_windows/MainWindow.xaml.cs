@@ -299,6 +299,20 @@ public partial class MainWindow : Window
             if (target.Scheme == "portal-messenger") return;
             OpenExternalHttps(target);
         };
+        Browser.CoreWebView2.WebMessageReceived += (_, e) =>
+        {
+            try
+            {
+                var message = e.TryGetWebMessageAsString();
+                using var json = JsonDocument.Parse(message);
+                var root = json.RootElement;
+                if (!root.TryGetProperty("type", out var type) || type.GetString() != "openMessenger") return;
+                var provider = root.TryGetProperty("provider", out var providerNode) && providerNode.GetString()?.Equals("max", StringComparison.OrdinalIgnoreCase) == true ? "max" : "telegram";
+                var relay = root.TryGetProperty("relay", out var relayNode) && relayNode.ValueKind == JsonValueKind.String ? relayNode.GetString() : null;
+                _ = Dispatcher.InvokeAsync(async () => await OpenMessengerWindowAsync(provider, relay));
+            }
+            catch { }
+        };
         Browser.CoreWebView2.NewWindowRequested += (_, e) =>
         {
             e.Handled = true;
@@ -377,13 +391,19 @@ public partial class MainWindow : Window
         _browserEventsAttached = true;
     }
 
-    private async Task OpenMessengerWindowAsync(string provider)
+    private async Task OpenMessengerWindowAsync(string provider = "telegram", string? relayJson = null)
     {
         try
         {
             await _messengerClearTask;
-            if (_messengerWindow is null) _messengerWindow = new MessengerWindow(_settingsDir);
-            await _messengerWindow.OpenProviderAsync(provider);
+            var relay = MessengerRelayTicket.Parse(relayJson);
+            if (_messengerWindow is not null && !_messengerWindow.AcceptsRelay(relay))
+            {
+                _messengerWindow.DisposeForRecreate();
+                _messengerWindow = null;
+            }
+            if (_messengerWindow is null) _messengerWindow = new MessengerWindow(_settingsDir, relay);
+            await _messengerWindow.OpenProviderAsync(provider, relay);
             _messengerWindow.ShowSingleton();
         }
         catch { }

@@ -1047,6 +1047,21 @@ class ProductionTest(unittest.TestCase):
         self.assertEqual(len(self.get('messenger',self.worker)['data']['accounts']),1)
         self.assertEqual(self.get('messenger',self.other_admin)['data']['accounts'],[])
 
+    def test_messenger_relay_ticket_is_short_lived_secret_free_and_role_restricted(self):
+        env={'PORTAL_MESSENGER_RELAY_URL':'https://relay.vart-portal.ru:9443',
+             'PORTAL_MESSENGER_RELAY_SECRET':'test-secret-'+'x'*40,
+             'PORTAL_MESSENGER_RELAY_TTL_SECONDS':'600'}
+        with patch.dict('os.environ',env,clear=False):
+            ticket=self.get('messenger-relay-ticket',self.worker)['data']
+            self.assertTrue(ticket['enabled'])
+            self.assertEqual(ticket['proxy_url'],'https://relay.vart-portal.ru:9443')
+            self.assertEqual(ticket['realm'],'PORTAL Messenger Relay')
+            self.assertTrue(ticket['username'].startswith('v1.'))
+            self.assertGreater(len(ticket['password']),30)
+            self.assertNotIn('PORTAL_MESSENGER_RELAY_SECRET',ticket)
+            self.get('messenger-relay-ticket',self.role_token('manager'),status=403)
+            self.get('messenger-relay-ticket',self.role_token('director'),status=403)
+
     def test_notification_center_read_receipt_is_per_user_and_tenant(self):
         batch=self.batch();task=self.task(batch)
         user_id=self.request('/api/me',self.worker)['user']['id']

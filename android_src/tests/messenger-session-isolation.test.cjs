@@ -21,7 +21,7 @@ assert.match(app,/function logout\([\s\S]*clearMessengerSession\?\.\(\)[\s\S]*S\
 assert.match(app,/httpStatus===401[^\n]*logout\(false,true\)/);
 assert.match(app,/DOMContentLoaded[\s\S]*await enterApp\(\)/);
 assert.match(app,/DOMContentLoaded[\s\S]*catch\{try\{window\.PortalNative\?\.clearMessengerSession\?\.\(\)/);
-assert.match(app,/openMessengerWindow\?\.\(p\)/);
+assert.match(app,/openMessengerWindow\?\.\(p,relay\)/);
 
 // Android uses one isolated process profile and identity-free CLEAR action.
 assert.match(manifest,/\.MessengerActivity[\s\S]*android:process=":messenger"[\s\S]*android:launchMode="singleTask"/);
@@ -31,10 +31,10 @@ assert.match(android,/removeAllCookies[\s\S]*WebStorage\.getInstance\(\)\.delete
 assert.match(android,/clearingSession[\s\S]*pendingProvider[\s\S]*clearProviderData/);
 assert.match(android,/if \(clearingSession\)[\s\S]*pendingProvider = requestedProvider/);
 assert.doesNotMatch(android,/identityKey|company_id|user_id|SHA-256|getStringExtra\("company"|getStringExtra\("user"/);
-assert.match(androidBridge,/openMessengerWindow\(String provider\)/);
+assert.match(androidBridge,/openMessengerWindow\(String provider, String relayJson\)/);
 assert.match(androidBridge,/clearMessengerSession\(\)/);
 assert.doesNotMatch(androidBridge,/setMessengerIdentity|validMessengerIdentity/);
-assert.match(adapter,/openMessengerWindow: provider =>/);
+assert.match(adapter,/openMessengerWindow: \(provider,relayJson=''\) =>/);
 assert.match(adapter,/clearMessengerSession: \(\) =>/);
 assert.doesNotMatch(adapter,/setMessengerIdentity|openMessengerWindow: \(provider, company|clearMessengerSession: \(company/);
 
@@ -42,9 +42,9 @@ assert.doesNotMatch(adapter,/setMessengerIdentity|openMessengerWindow: \(provide
 assert.match(desktop,/Path\.Combine\(_settingsDir, "MessengerWebView2"\)/);
 assert.match(desktopBridge,/custom\.Host\.Equals\("open"[\s\S]*query\["provider"\]/);
 assert.match(desktopBridge,/custom\.Host\.Equals\("clear"[\s\S]*ClearMessengerSessionAsync\(\)/);
-assert.match(desktopBridge,/OpenMessengerWindowAsync\(string provider\)/);
+assert.match(desktopBridge,/OpenMessengerWindowAsync\(string provider = "telegram", string\? relayJson = null\)/);
 assert.match(desktopBridge,/messengerClearTask = ClearMessengerSessionAsync\(\)/);
-assert.match(desktopBridge,/OpenMessengerWindowAsync\(string provider\)[\s\S]*await _messengerClearTask/);
+assert.match(desktopBridge,/OpenMessengerWindowAsync\(string provider = "telegram", string\? relayJson = null\)[\s\S]*await _messengerClearTask/);
 assert.doesNotMatch(desktop+desktopBridge,/identityKey|company_id|user_id|forIdentifier/);
 assert.match(desktop,/ClearBrowsingDataAsync\(CoreWebView2BrowsingDataKinds\.AllProfile\)/);
 

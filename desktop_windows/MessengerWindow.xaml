@@ -5,13 +5,16 @@
         Title="PORTAL Messenger · Telegram + MAX" Height="760" Width="560" MinHeight="480" MinWidth="380"
         WindowStartupLocation="CenterOwner" Background="#F5F8FD" Closing="MessengerWindow_Closing">
     <Grid>
-        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
         <Border Background="#0B5ED7" Padding="10">
             <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
                 <Button x:Name="TelegramTab" Grid.Column="0" Content="Telegram" Margin="0,0,5,0" Padding="12,8" Click="TelegramTab_Click"/>
                 <Button x:Name="MaxTab" Grid.Column="1" Content="MAX" Margin="5,0,0,0" Padding="12,8" Click="MaxTab_Click"/>
             </Grid>
         </Border>
-        <wv2:WebView2 x:Name="MessengerBrowser" Grid.Row="1"/>
+        <Border Grid.Row="1" Background="#EAF2FF" Padding="10,6">
+            <TextBlock x:Name="RelayStatus" Text="Канал: прямой" Foreground="#334155" FontSize="12"/>
+        </Border>
+        <wv2:WebView2 x:Name="MessengerBrowser" Grid.Row="2"/>
     </Grid>
 </Window>

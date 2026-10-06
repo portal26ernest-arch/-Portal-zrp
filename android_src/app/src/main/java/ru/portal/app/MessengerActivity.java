@@ -10,9 +10,10 @@ import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
 import android.webkit.CookieManager;
+import android.webkit.HttpAuthHandler;
 import android.webkit.WebChromeClient;
-import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceError;
+import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebStorage;
@@ -23,9 +24,21 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.core.content.ContextCompat;
+import androidx.webkit.ProxyConfig;
+import androidx.webkit.ProxyController;
+import androidx.webkit.WebViewFeature;
+
+import org.json.JSONObject;
+
+import java.net.URI;
+
 /**
- * Device-local Messenger container. It deliberately has no PORTAL JavaScript bridge:
- * provider cookies/session data stay inside the dedicated WebView process/profile.
+ * Device-local Telegram + MAX container.
+ *
+ * The PORTAL Relay is process-scoped and applies only to this dedicated :messenger
+ * WebView process. It never changes Android's system VPN/proxy settings and it never
+ * receives the PORTAL login token or provider cookies from the main PORTAL WebView.
  */
 public final class MessengerActivity extends Activity {
     static final String TELEGRAM_URL = "https://web.telegram.org/a/";
@@ -35,10 +48,20 @@ public final class MessengerActivity extends Activity {
     private WebView browser;
     private boolean clearingSession;
     private String pendingProvider;
+    private String pendingRelay;
     private Button telegram;
     private Button max;
-    private String provider = "telegram";
+    private Button relayButton;
     private TextView status;
+    private String provider = "telegram";
+    private boolean relayActive;
+    private boolean relayTried;
+    private int directNetworkErrors;
+    private String relayProxyUrl = "";
+    private String relayHost = "";
+    private String relayUser = "";
+    private String relayPassword = "";
+    private String relayRealm = "PORTAL Messenger Relay";
 
     public static boolean isAllowedTopLevel(Uri uri) {
         if (uri == null || !"https".equalsIgnoreCase(uri.getScheme()) || uri.getUserInfo() != null ||
@@ -65,12 +88,15 @@ public final class MessengerActivity extends Activity {
                 if (pendingProvider != null) {
                     provider = pendingProvider;
                     pendingProvider = null;
+                    readRelayTicket(pendingRelay);
+                    pendingRelay = null;
                     createMessengerUI();
                 } else finish();
             });
             return;
         }
         provider = normalizedProvider(getIntent().getStringExtra("provider"));
+        readRelayTicket(getIntent().getStringExtra("relay"));
         if (Build.VERSION.SDK_INT < 28) {
             // API 26-27 cannot safely host the isolated WebView process/profile required here.
             // Do not fall back to the OS browser, whose provider session is not PORTAL-user scoped.
@@ -93,12 +119,18 @@ public final class MessengerActivity extends Activity {
 
         telegram = tab("Telegram", "telegram");
         max = tab("MAX", "max");
+        relayButton = new Button(this);
+        relayButton.setAllCaps(false);
+        relayButton.setOnClickListener(v -> {
+            if (relayActive) useDirectChannel();
+            else useRelayChannel(false);
+        });
         tabs.addView(telegram, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
         tabs.addView(max, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        tabs.addView(relayButton, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
         root.addView(tabs, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
         status = new TextView(this);
-        status.setText("Загрузка официального клиента…");
         status.setGravity(Gravity.CENTER);
         status.setPadding(16, 8, 16, 8);
         status.setTextColor(Color.DKGRAY);
@@ -122,26 +154,41 @@ public final class MessengerActivity extends Activity {
             private boolean handleMainFrame(Uri uri) {
                 if (isAllowedTopLevel(uri)) return false;
                 showStatus("Переход заблокирован: разрешены только официальные Telegram и MAX");
-                return true; // fail closed: arbitrary top-level navigation never leaves this profile.
+                return true;
             }
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                // Provider apps legitimately use internal frames/blob flows. The allowlist is a
-                // top-level navigation boundary, not a blanket block on provider-owned internals.
                 if (!request.isForMainFrame()) return false;
                 return handleMainFrame(request.getUrl());
             }
             @Override public boolean shouldOverrideUrlLoading(WebView view, String url) { return handleMainFrame(Uri.parse(url)); }
             @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
-                showStatus("Загрузка официального клиента…");
+                if (!relayActive) directNetworkErrors = 0;
+                showStatus(relayActive ? "Загрузка через PORTAL Relay…" : "Прямое подключение…");
             }
             @Override public void onPageFinished(WebView view, String url) {
-                showStatus("");
+                showStatus(relayActive ? "PORTAL Relay активен" : "Прямое подключение");
+            }
+            @Override public void onReceivedHttpAuthRequest(WebView view, HttpAuthHandler handler, String host, String realm) {
+                if (relayActive && relayConfigured() && host != null && host.equalsIgnoreCase(relayHost) &&
+                        (realm == null || relayRealm.equals(realm))) {
+                    handler.proceed(relayUser, relayPassword);
+                } else handler.cancel();
             }
             @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-                if (request.isForMainFrame()) showLoadFailure();
+                int code = error == null ? 0 : error.getErrorCode();
+                if (!relayActive && relayConfigured() && !relayTried) {
+                    boolean networkFailure = code == WebViewClient.ERROR_HOST_LOOKUP || code == WebViewClient.ERROR_CONNECT ||
+                            code == WebViewClient.ERROR_TIMEOUT || code == WebViewClient.ERROR_IO || code == WebViewClient.ERROR_FAILED_SSL_HANDSHAKE;
+                    if (request.isForMainFrame() || (networkFailure && ++directNetworkErrors >= 3)) {
+                        relayTried = true;
+                        useRelayChannel(true);
+                        return;
+                    }
+                }
+                if (request.isForMainFrame()) showLoadFailure(code);
             }
             @Override public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse response) {
-                if (request.isForMainFrame() && response.getStatusCode() >= 400) showLoadFailure();
+                if (request.isForMainFrame() && response.getStatusCode() >= 400) showLoadFailure(response.getStatusCode());
             }
         });
         browser.setWebChromeClient(new WebChromeClient() {
@@ -149,7 +196,8 @@ public final class MessengerActivity extends Activity {
         });
         root.addView(browser, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
         setContentView(root);
-        select(provider);
+        updateTabs();
+        useDirectChannel();
     }
 
     private void clearProviderData(Runnable complete) {
@@ -170,21 +218,92 @@ public final class MessengerActivity extends Activity {
     }
 
     private static String normalizedProvider(String value) { return "max".equalsIgnoreCase(value) ? "max" : "telegram"; }
+
+    private void readRelayTicket(String raw) {
+        clearRelayTicket();
+        if (raw == null || raw.isBlank()) return;
+        try {
+            JSONObject data = new JSONObject(raw);
+            if (!data.optBoolean("enabled", false)) return;
+            String proxy = data.optString("proxy_url", "");
+            URI uri = URI.create(proxy);
+            if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null || uri.getUserInfo() != null ||
+                    (uri.getPort() != -1 && (uri.getPort() < 1 || uri.getPort() > 65535)) ||
+                    (uri.getPath() != null && !uri.getPath().isEmpty() && !"/".equals(uri.getPath()))) return;
+            relayProxyUrl = proxy.endsWith("/") ? proxy.substring(0, proxy.length() - 1) : proxy;
+            relayHost = uri.getHost();
+            relayUser = data.optString("username", "");
+            relayPassword = data.optString("password", "");
+            relayRealm = data.optString("realm", "PORTAL Messenger Relay");
+            if (relayUser.length() > 256 || relayPassword.length() > 256 || relayRealm.length() > 128) clearRelayTicket();
+        } catch (Exception ignored) { clearRelayTicket(); }
+    }
+
+    private void clearRelayTicket() {
+        relayProxyUrl = relayHost = relayUser = relayPassword = "";
+        relayRealm = "PORTAL Messenger Relay";
+    }
+
+    private boolean relayConfigured() {
+        return !relayProxyUrl.isEmpty() && !relayHost.isEmpty() && !relayUser.isEmpty() && !relayPassword.isEmpty() &&
+                WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE);
+    }
+
+    private void updateTabs() {
+        telegram.setEnabled(!"telegram".equals(provider));
+        max.setEnabled(!"max".equals(provider));
+        if (relayButton != null) {
+            relayButton.setEnabled(relayConfigured());
+            relayButton.setText(relayActive ? "Relay: ВКЛ" : (relayConfigured() ? "Relay: АВТО" : "Relay: НЕТ"));
+        }
+    }
+
     private void showStatus(String message) {
         if (status == null) return;
         status.setText(message);
         status.setVisibility(message == null || message.isEmpty() ? View.GONE : View.VISIBLE);
     }
-    private void showLoadFailure() {
-        showStatus("Официальный клиент не загрузился. Проверьте сеть/WebView и повторите переключение вкладки.");
+
+    private void showLoadFailure(int code) {
+        String suffix = code == WebViewClient.ERROR_PROXY_AUTHENTICATION ? " Ошибка авторизации Relay." : "";
+        showStatus("Официальный клиент не загрузился." + suffix + " Проверьте сеть и повторите.");
     }
+
+    private String targetUrl() { return "max".equals(provider) ? MAX_URL : TELEGRAM_URL; }
+    private void loadCurrent() { if (browser != null) browser.loadUrl(targetUrl()); }
+
     private void select(String key) {
         provider = normalizedProvider(key);
-        telegram.setEnabled(!"telegram".equals(provider));
-        max.setEnabled(!"max".equals(provider));
-        String target = "max".equals(provider) ? MAX_URL : TELEGRAM_URL;
-        Uri current = browser.getUrl() == null ? null : Uri.parse(browser.getUrl());
-        if (current == null || !target.equalsIgnoreCase(current.toString())) browser.loadUrl(target);
+        updateTabs();
+        loadCurrent();
+    }
+
+    private void useDirectChannel() {
+        relayActive = false;
+        updateTabs();
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)) {
+            loadCurrent();
+            return;
+        }
+        ProxyController.getInstance().clearProxyOverride(ContextCompat.getMainExecutor(this), () -> {
+            showStatus("Прямое подключение…");
+            loadCurrent();
+        });
+    }
+
+    private void useRelayChannel(boolean automatic) {
+        if (!relayConfigured()) {
+            showStatus("PORTAL Relay ещё не настроен сервером");
+            return;
+        }
+        relayActive = true;
+        relayTried = true;
+        updateTabs();
+        ProxyConfig config = new ProxyConfig.Builder().addProxyRule(relayProxyUrl).build();
+        ProxyController.getInstance().setProxyOverride(config, ContextCompat.getMainExecutor(this), () -> {
+            showStatus(automatic ? "Прямой канал недоступен — переключаемся на PORTAL Relay…" : "PORTAL Relay…");
+            loadCurrent();
+        });
     }
 
     @Override protected void onNewIntent(Intent intent) {
@@ -192,6 +311,7 @@ public final class MessengerActivity extends Activity {
         setIntent(intent);
         if (ACTION_CLEAR_SESSION.equals(intent.getAction())) {
             pendingProvider = null;
+            clearRelayTicket();
             clearingSession = true;
             if (browser != null) { browser.stopLoading(); browser.clearCache(true); browser.clearFormData(); browser.clearHistory(); browser.destroy(); browser = null; }
             clearProviderData(() -> {
@@ -199,6 +319,8 @@ public final class MessengerActivity extends Activity {
                 if (pendingProvider != null) {
                     provider = pendingProvider;
                     pendingProvider = null;
+                    readRelayTicket(pendingRelay);
+                    pendingRelay = null;
                     createMessengerUI();
                 } else finish();
             });
@@ -207,11 +329,17 @@ public final class MessengerActivity extends Activity {
         String requestedProvider = normalizedProvider(intent.getStringExtra("provider"));
         if (clearingSession) {
             pendingProvider = requestedProvider;
+            pendingRelay = intent.getStringExtra("relay");
             return;
         }
-        if (browser != null) select(requestedProvider);
+        if (browser != null) {
+            readRelayTicket(intent.getStringExtra("relay"));
+            updateTabs();
+            select(requestedProvider);
+        }
         else {
             provider = requestedProvider;
+            readRelayTicket(intent.getStringExtra("relay"));
             createMessengerUI();
         }
     }
@@ -226,6 +354,7 @@ public final class MessengerActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        clearRelayTicket();
         if (browser != null) { browser.stopLoading(); browser.destroy(); browser = null; }
         super.onDestroy();
     }
