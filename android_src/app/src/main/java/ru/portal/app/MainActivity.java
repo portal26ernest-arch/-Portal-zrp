@@ -228,10 +228,12 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public boolean openMessengerWindow(String provider) {
+        public boolean openMessengerWindow(String provider, String relayJson) {
             String selected = "max".equalsIgnoreCase(provider) ? "max" : "telegram";
             try {
-                Intent intent = new Intent(context, MessengerActivity.class).putExtra("provider", selected);
+                Intent intent = new Intent(context, MessengerActivity.class)
+                        .putExtra("provider", selected)
+                        .putExtra("relay", relayJson == null || relayJson.length() > 4096 ? "" : relayJson);
                 intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
                 context.startActivity(intent);
                 return true;
