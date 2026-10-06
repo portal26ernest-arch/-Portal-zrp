@@ -40,3 +40,13 @@ Bootstrap outline:
 6. Enable server-required mode only through a reviewed full runtime release. Verify Telegram on supported clients and confirm MAX plus PORTAL API/updates/documents remain direct.
 
 This repository change does not provision infrastructure, change DNS, install secrets/Tor, or activate the relay. The service templates and `ops/messenger-relay.env.example` remain examples; they contain placeholders only.
+
+## Cloudflare-compatible WSS transport
+
+For the current infrastructure, the preferred Telegram transport is WSS on standard TLS/443 through the owned Cloudflare Named Tunnel. The direct HTTPS CONNECT relay remains available for a future owned Western VPS, but it is not the required path on the current Moscow origin because external TLS handshakes to the direct origin were observed to stall while Cloudflare HTTPS remained reachable.
+
+The WSS service is `server/messenger_relay_ws.py`. It must bind to loopback only (default `127.0.0.1:9444`) and be exposed through the named tunnel as `wss://relay.vart-portal.ru/connect`. It reuses the same short-lived HMAC ticket and the same Telegram-only destination policy: TCP/443 only, `telegram.org` and `t.me` suffixes only. Telegram provider TLS is carried as opaque binary WebSocket frames and is never terminated by PORTAL. MAX, the main PORTAL WebView, updates, documents and all other device traffic remain direct.
+
+Clients create an app-local loopback HTTP CONNECT bridge only for Telegram. Android binds the bridge inside the dedicated `:messenger` process, Windows binds it only for the Telegram WebView2 profile, and iOS 17+ binds it only for the fixed Telegram WKWebsiteDataStore. Relay username/password are sent only as WSS Authorization headers; they must never be placed in URLs, query strings, logs, provider storage or PORTAL JavaScript.
+
+Deployment order is fail-closed: install the reviewed immutable SHA, install `portal-messenger-relay-ws.service`, verify loopback health, add the named-tunnel ingress before the final catch-all, route `relay.vart-portal.ru` to that named tunnel, run `ops/smoke_messenger_relay_ws.py --public-only`, then run the full smoke locally on the VPS using the protected env. Only after both smokes pass may the production API expose `PORTAL_MESSENGER_RELAY_WSS_URL=wss://relay.vart-portal.ru/connect` and `PORTAL_TELEGRAM_RELAY_REQUIRED=1`. Roll back the DNS/tunnel route or unset REQUIRED if the supported-client smoke fails.

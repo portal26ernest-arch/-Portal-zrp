@@ -1,0 +1,16 @@
+name: PORTAL Messenger Relay WSS live smoke
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  public-boundary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify public WSS boundary
+        run: python ops/smoke_messenger_relay_ws.py --public-only --url wss://relay.vart-portal.ru/connect

@@ -11,12 +11,20 @@ final class MessengerViewController: UIViewController, WKNavigationDelegate, WKU
     private let selector = UISegmentedControl(items: ["Telegram", "MAX"])
     private var provider: String
     private var relayJSON: String
+    private var wssLocalProxy: TelegramWssLocalProxy?
     private let status = UILabel()
 
     init(provider: String, relayJSON: String = "") {
-        self.provider = provider.lowercased() == "max" ? "max" : "telegram"
+        let normalizedProvider = provider.lowercased() == "max" ? "max" : "telegram"
+        self.provider = normalizedProvider
         self.relayJSON = relayJSON
-        self.browser = Self.makeBrowser(provider: self.provider, relayJSON: relayJSON)
+        var localProxy: TelegramWssLocalProxy?
+        if #available(iOS 17.0, *), normalizedProvider == "telegram",
+           let ticket = Self.ticket(relayJSON), ticket.enabled, !ticket.wssURL.isEmpty {
+            localProxy = try? TelegramWssLocalProxy(wssURL: ticket.wssURL, username: ticket.username, password: ticket.password)
+        }
+        self.wssLocalProxy = localProxy
+        self.browser = Self.makeBrowser(provider: normalizedProvider, relayJSON: relayJSON, localProxy: localProxy)
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -33,25 +41,35 @@ final class MessengerViewController: UIViewController, WKNavigationDelegate, WKU
         return (.default(), false)
     }
 
-    private static func makeBrowser(provider: String, relayJSON: String) -> WKWebView {
+    private static func makeBrowser(provider: String, relayJSON: String, localProxy: TelegramWssLocalProxy? = nil) -> WKWebView {
         let config = WKWebViewConfiguration()
         let providerData = providerStore(provider)
         let store = providerData.store
         if #available(iOS 17.0, *) {
-            if providerData.fixed, provider == "telegram", let ticket = ticket(relayJSON), ticket.enabled,
-               let components = URLComponents(string: ticket.proxyURL), let host = components.host,
-               let port = NWEndpoint.Port(rawValue: UInt16(components.port ?? 443)) {
-                var proxy = ProxyConfiguration(httpCONNECTProxy: .hostPort(host: NWEndpoint.Host(host), port: port), tlsOptions: nil)
-                proxy.applyCredential(username: ticket.username, password: ticket.password)
-                proxy.allowFailover = false
-                store.proxyConfigurations = [proxy]
+            if providerData.fixed, provider == "telegram", let ticket = ticket(relayJSON), ticket.enabled {
+                if let localProxy, let port = NWEndpoint.Port(rawValue: localProxy.port) {
+                    var proxy = ProxyConfiguration(
+                        httpCONNECTProxy: .hostPort(host: NWEndpoint.Host(localProxy.proxyHost), port: port),
+                        tlsOptions: nil
+                    )
+                    proxy.allowFailover = false
+                    store.proxyConfigurations = [proxy]
+                } else if !ticket.proxyURL.isEmpty,
+                          let components = URLComponents(string: ticket.proxyURL), let host = components.host,
+                          let port = NWEndpoint.Port(rawValue: UInt16(components.port ?? 443)) {
+                    var proxy = ProxyConfiguration(httpCONNECTProxy: .hostPort(host: NWEndpoint.Host(host), port: port), tlsOptions: nil)
+                    proxy.applyCredential(username: ticket.username, password: ticket.password)
+                    proxy.allowFailover = false
+                    store.proxyConfigurations = [proxy]
+                } else if providerData.fixed {
+                    store.proxyConfigurations = []
+                }
             } else if providerData.fixed { store.proxyConfigurations = [] }
         }
         config.websiteDataStore = store
         config.defaultWebpagePreferences.allowsContentJavaScript = true
         config.preferences.javaScriptCanOpenWindowsAutomatically = false
-        let web = WKWebView(frame: .zero, configuration: config)
-        return web
+        return WKWebView(frame: .zero, configuration: config)
     }
 
     static func clear(completion: @escaping () -> Void) {
@@ -117,23 +135,56 @@ final class MessengerViewController: UIViewController, WKNavigationDelegate, WKU
         return host == "web.telegram.org" || host == "web.max.ru"
     }
 
-    private struct RelayTicket { let enabled: Bool; let required: Bool; let proxyURL: String; let username: String; let password: String }
+    private struct RelayTicket {
+        let enabled: Bool
+        let required: Bool
+        let proxyURL: String
+        let wssURL: String
+        let username: String
+        let password: String
+    }
+
     private static func ticket(_ raw: String) -> RelayTicket? {
         guard let data = raw.data(using: .utf8), let item = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               item["provider"] as? String == "telegram", let enabled = item["enabled"] as? Bool,
               let required = item["required"] as? Bool else { return nil }
         let proxyURL = item["proxy_url"] as? String ?? ""
+        let wssURL = item["wss_url"] as? String ?? ""
         let username = item["username"] as? String ?? ""
         let password = item["password"] as? String ?? ""
         if enabled {
-            guard let components = URLComponents(string: proxyURL), components.scheme == "https", components.host != nil,
-                  components.user == nil, components.password == nil, components.path.isEmpty || components.path == "/",
-                  components.query == nil, components.fragment == nil, username.count <= 256, !username.isEmpty,
+            guard !proxyURL.isEmpty || !wssURL.isEmpty,
+                  username.count <= 256, !username.isEmpty,
                   password.count <= 256, !password.isEmpty,
-                  let expires = item["expires_at"] as? String, let expiryDate = ISO8601DateFormatter().date(from: expires), expiryDate > Date() else { return nil }
+                  let expires = item["expires_at"] as? String,
+                  let expiryDate = ISO8601DateFormatter().date(from: expires), expiryDate > Date() else { return nil }
+            if !proxyURL.isEmpty {
+                guard let components = URLComponents(string: proxyURL), components.scheme == "https", components.host != nil,
+                      components.user == nil, components.password == nil, components.path.isEmpty || components.path == "/",
+                      components.query == nil, components.fragment == nil,
+                      components.port == nil || (components.port! >= 1 && components.port! <= 65535) else { return nil }
+            }
+            if !wssURL.isEmpty {
+                guard let components = URLComponents(string: wssURL), components.scheme == "wss", components.host != nil,
+                      components.user == nil, components.password == nil, components.path == "/connect",
+                      components.query == nil, components.fragment == nil,
+                      components.port == nil || components.port == 443 else { return nil }
+            }
         }
-        return RelayTicket(enabled: enabled, required: required,
-                           proxyURL: proxyURL, username: username, password: password)
+        return RelayTicket(enabled: enabled, required: required, proxyURL: proxyURL, wssURL: wssURL,
+                           username: username, password: password)
+    }
+
+    private func prepareLocalWssProxy(for provider: String) {
+        wssLocalProxy?.close()
+        wssLocalProxy = nil
+        guard #available(iOS 17.0, *), provider == "telegram",
+              let ticket = Self.ticket(relayJSON), ticket.enabled, !ticket.wssURL.isEmpty else { return }
+        wssLocalProxy = try? TelegramWssLocalProxy(
+            wssURL: ticket.wssURL,
+            username: ticket.username,
+            password: ticket.password
+        )
     }
 
     func selectProvider(_ value: String, relayJSON: String? = nil) {
@@ -143,7 +194,8 @@ final class MessengerViewController: UIViewController, WKNavigationDelegate, WKU
         if nextProvider != provider || refreshTicket {
             browser.stopLoading(); browser.removeFromSuperview()
             provider = nextProvider
-            browser = Self.makeBrowser(provider: provider, relayJSON: self.relayJSON)
+            prepareLocalWssProxy(for: provider)
+            browser = Self.makeBrowser(provider: provider, relayJSON: self.relayJSON, localProxy: wssLocalProxy)
             browser.navigationDelegate = self; browser.uiDelegate = self; browser.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(browser)
             NSLayoutConstraint.activate([browser.topAnchor.constraint(equalTo: status.bottomAnchor, constant: 4), browser.leadingAnchor.constraint(equalTo: view.leadingAnchor), browser.trailingAnchor.constraint(equalTo: view.trailingAnchor), browser.bottomAnchor.constraint(equalTo: view.bottomAnchor)])
@@ -163,6 +215,12 @@ final class MessengerViewController: UIViewController, WKNavigationDelegate, WKU
                 return
             }
         }
+        if #available(iOS 17.0, *), provider == "telegram", let ticket, ticket.enabled,
+           !ticket.wssURL.isEmpty, wssLocalProxy == nil, ticket.proxyURL.isEmpty {
+            status.text = "Защищённый канал PORTAL временно недоступен."
+            browser.loadHTMLString("", baseURL: nil)
+            return
+        }
         status.text = provider == "telegram" && ticket?.enabled == true ? "Telegram: защищённый канал PORTAL" : "MAX: прямое подключение"
         let target = provider == "max" ? Self.maxURL : Self.telegramURL
         if browser.url?.absoluteString.caseInsensitiveCompare(target.absoluteString) != .orderedSame {
@@ -171,7 +229,13 @@ final class MessengerViewController: UIViewController, WKNavigationDelegate, WKU
     }
 
     @objc private func providerChanged() { selectProvider(selector.selectedSegmentIndex == 1 ? "max" : "telegram") }
-    @objc private func closeMessenger() { dismiss(animated: true) }
+    @objc private func closeMessenger() {
+        wssLocalProxy?.close()
+        wssLocalProxy = nil
+        dismiss(animated: true)
+    }
+
+    deinit { wssLocalProxy?.close() }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {

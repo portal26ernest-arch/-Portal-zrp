@@ -6,9 +6,12 @@ using System.Windows;
 
 namespace Portal.Desktop;
 
-public sealed record MessengerRelayTicket(bool Enabled, bool Required, string ProxyUrl, string UserName, string Password, string Realm)
+public sealed record MessengerRelayTicket(bool Enabled, bool Required, string ProxyUrl, string WssUrl, string UserName, string Password, string Realm)
 {
-    private static MessengerRelayTicket FailClosed => new(false, true, string.Empty, string.Empty, string.Empty, "PORTAL Messenger Relay");
+    private static MessengerRelayTicket FailClosed => new(false, true, string.Empty, string.Empty, string.Empty, string.Empty, "PORTAL Messenger Relay");
+    public bool HasDirectTransport => Enabled && !string.IsNullOrWhiteSpace(ProxyUrl);
+    public bool HasWssTransport => Enabled && !string.IsNullOrWhiteSpace(WssUrl);
+
     public static MessengerRelayTicket? Parse(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw) || raw.Length > 4096) return FailClosed;
@@ -17,19 +20,35 @@ public sealed record MessengerRelayTicket(bool Enabled, bool Required, string Pr
             using var json = JsonDocument.Parse(raw);
             var root = json.RootElement;
             if (!root.TryGetProperty("provider", out var provider) || provider.GetString() != "telegram") return FailClosed;
-            if (!root.TryGetProperty("enabled", out var enabled) || !root.TryGetProperty("required", out var requiredNode) || enabled.ValueKind is not (JsonValueKind.True or JsonValueKind.False) || requiredNode.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) return FailClosed;
+            if (!root.TryGetProperty("enabled", out var enabled) || !root.TryGetProperty("required", out var requiredNode) ||
+                enabled.ValueKind is not (JsonValueKind.True or JsonValueKind.False) ||
+                requiredNode.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) return FailClosed;
             var isEnabled = enabled.GetBoolean();
             var required = requiredNode.GetBoolean();
-            var proxy = isEnabled ? root.GetProperty("proxy_url").GetString() ?? string.Empty : string.Empty;
+            var proxy = isEnabled && root.TryGetProperty("proxy_url", out var proxyNode) ? proxyNode.GetString() ?? string.Empty : string.Empty;
+            var wss = isEnabled && root.TryGetProperty("wss_url", out var wssNode) ? wssNode.GetString() ?? string.Empty : string.Empty;
             var user = isEnabled ? root.GetProperty("username").GetString() ?? string.Empty : string.Empty;
             var password = isEnabled ? root.GetProperty("password").GetString() ?? string.Empty : string.Empty;
             var realm = root.TryGetProperty("realm", out var realmNode) ? realmNode.GetString() ?? "PORTAL Messenger Relay" : "PORTAL Messenger Relay";
-            if (isEnabled && (!Uri.TryCreate(proxy, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps || string.IsNullOrWhiteSpace(uri.Host) ||
-                !string.IsNullOrEmpty(uri.UserInfo) || (uri.Port != 443 && !uri.IsDefaultPort) && (uri.Port < 1 || uri.Port > 65535) ||
-                (uri.AbsolutePath != "/" && uri.AbsolutePath != string.Empty) || user.Length is < 1 or > 256 || password.Length is < 1 or > 256 || realm.Length > 128 ||
-                !root.TryGetProperty("expires_at", out var expires) || !DateTimeOffset.TryParse(expires.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var expiry) || expiry <= DateTimeOffset.UtcNow))
-                return FailClosed;
-            return new MessengerRelayTicket(isEnabled, required, proxy.TrimEnd('/'), user, password, realm);
+            if (isEnabled)
+            {
+                if (string.IsNullOrWhiteSpace(proxy) && string.IsNullOrWhiteSpace(wss)) return FailClosed;
+                if (!string.IsNullOrWhiteSpace(proxy) && (!Uri.TryCreate(proxy, UriKind.Absolute, out var proxyUri) ||
+                    proxyUri.Scheme != Uri.UriSchemeHttps || string.IsNullOrWhiteSpace(proxyUri.Host) ||
+                    !string.IsNullOrEmpty(proxyUri.UserInfo) || ((proxyUri.Port != 443 && !proxyUri.IsDefaultPort) && (proxyUri.Port < 1 || proxyUri.Port > 65535)) ||
+                    (proxyUri.AbsolutePath != "/" && proxyUri.AbsolutePath != string.Empty) || !string.IsNullOrEmpty(proxyUri.Query) || !string.IsNullOrEmpty(proxyUri.Fragment)))
+                    return FailClosed;
+                if (!string.IsNullOrWhiteSpace(wss) && (!Uri.TryCreate(wss, UriKind.Absolute, out var wssUri) ||
+                    wssUri.Scheme != "wss" || string.IsNullOrWhiteSpace(wssUri.Host) || !string.IsNullOrEmpty(wssUri.UserInfo) ||
+                    wssUri.Port != 443 || wssUri.AbsolutePath != "/connect" || !string.IsNullOrEmpty(wssUri.Query) || !string.IsNullOrEmpty(wssUri.Fragment)))
+                    return FailClosed;
+                if (user.Length is < 1 or > 256 || password.Length is < 1 or > 256 || realm.Length > 128 ||
+                    !root.TryGetProperty("expires_at", out var expires) ||
+                    !DateTimeOffset.TryParse(expires.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var expiry) ||
+                    expiry <= DateTimeOffset.UtcNow)
+                    return FailClosed;
+            }
+            return new MessengerRelayTicket(isEnabled, required, proxy.TrimEnd('/'), wss, user, password, realm);
         }
         catch { return FailClosed; }
     }
@@ -47,6 +66,7 @@ public partial class MessengerWindow : Window
     private bool _telegramInitialized;
     private string _provider = "telegram";
     private MessengerRelayTicket? _relay;
+    private MessengerWssLocalProxy? _wssLocalProxy;
 
     public MessengerWindow(string settingsDir, MessengerRelayTicket? relay = null)
     {
@@ -62,11 +82,20 @@ public partial class MessengerWindow : Window
 
     internal bool AcceptsRelay(MessengerRelayTicket? relay) =>
         (_relay is null && relay is null) || (_relay is not null && relay is not null &&
-         _relay.ProxyUrl.Equals(relay.ProxyUrl, StringComparison.OrdinalIgnoreCase));
+         _relay.ProxyUrl.Equals(relay.ProxyUrl, StringComparison.OrdinalIgnoreCase) &&
+         _relay.WssUrl.Equals(relay.WssUrl, StringComparison.OrdinalIgnoreCase) &&
+         (!_relay.HasWssTransport || (_relay.UserName == relay.UserName && _relay.Password == relay.Password)));
+
+    private void DisposeWssLocalProxy()
+    {
+        try { _wssLocalProxy?.Dispose(); } catch { }
+        _wssLocalProxy = null;
+    }
 
     internal void DisposeForRecreate()
     {
         _closeRequested = true;
+        DisposeWssLocalProxy();
         try { TelegramWebView2.Dispose(); MaxWebView2.Dispose(); } catch { }
         Close();
     }
@@ -101,6 +130,7 @@ public partial class MessengerWindow : Window
     internal void CloseForIdentityChange()
     {
         _closeRequested = true;
+        DisposeWssLocalProxy();
         Close();
     }
 
@@ -109,6 +139,7 @@ public partial class MessengerWindow : Window
         try { if (TelegramWebView2.CoreWebView2 is not null) await TelegramWebView2.CoreWebView2.Profile.ClearBrowsingDataAsync(CoreWebView2BrowsingDataKinds.AllProfile); } catch { }
         try { if (MaxWebView2.CoreWebView2 is not null) await MaxWebView2.CoreWebView2.Profile.ClearBrowsingDataAsync(CoreWebView2BrowsingDataKinds.AllProfile); } catch { }
         _closeRequested = true;
+        DisposeWssLocalProxy();
         try { TelegramWebView2.Dispose(); MaxWebView2.Dispose(); } catch { }
         DeleteProfileDirectory(TelegramProfileName);
         DeleteProfileDirectory(MaxProfileName);
@@ -133,11 +164,45 @@ public partial class MessengerWindow : Window
         _initialized = true;
     }
 
-    private async Task InitializeTelegramAsync()
+    private async Task<bool> InitializeTelegramAsync()
     {
-        if (_telegramInitialized) return;
-        await InitializeViewAsync(TelegramWebView2, TelegramProfileName, _relay?.Enabled == true ? new CoreWebView2EnvironmentOptions($"--proxy-server={_relay.ProxyUrl}") : null, true);
+        if (_telegramInitialized) return true;
+        CoreWebView2EnvironmentOptions? options = null;
+        if (_relay?.Enabled == true)
+        {
+            if (_relay.HasWssTransport)
+            {
+                try
+                {
+                    DisposeWssLocalProxy();
+                    _wssLocalProxy = MessengerWssLocalProxy.Start(_relay);
+                    options = new CoreWebView2EnvironmentOptions($"--proxy-server={_wssLocalProxy.ProxyUrl}");
+                }
+                catch
+                {
+                    DisposeWssLocalProxy();
+                    if (_relay.HasDirectTransport)
+                        options = new CoreWebView2EnvironmentOptions($"--proxy-server={_relay.ProxyUrl}");
+                    else
+                    {
+                        RelayStatus.Text = "Защищённый канал PORTAL временно недоступен.";
+                        return false;
+                    }
+                }
+            }
+            else if (_relay.HasDirectTransport)
+            {
+                options = new CoreWebView2EnvironmentOptions($"--proxy-server={_relay.ProxyUrl}");
+            }
+            else
+            {
+                RelayStatus.Text = "Защищённый канал PORTAL временно недоступен.";
+                return false;
+            }
+        }
+        await InitializeViewAsync(TelegramWebView2, TelegramProfileName, options, true);
         _telegramInitialized = true;
+        return true;
     }
 
     private async Task InitializeViewAsync(Microsoft.Web.WebView2.Wpf.WebView2 view, string profileName, CoreWebView2EnvironmentOptions? options, bool telegram)
@@ -156,7 +221,8 @@ public partial class MessengerWindow : Window
         if (telegram) view.CoreWebView2.BasicAuthenticationRequested += (_, e) =>
         {
             var relay = _relay;
-            if (relay is null || string.IsNullOrWhiteSpace(e.Challenge) || !e.Challenge.Contains(relay.Realm, StringComparison.Ordinal))
+            if (_wssLocalProxy is not null || relay?.HasDirectTransport != true ||
+                string.IsNullOrWhiteSpace(e.Challenge) || !e.Challenge.Contains(relay.Realm, StringComparison.Ordinal))
             {
                 e.Cancel = true;
                 return;
@@ -184,7 +250,12 @@ public partial class MessengerWindow : Window
             TelegramWebView2.Source = new Uri("about:blank");
             return;
         }
-        if (_provider == "telegram" && !_telegramInitialized) await InitializeTelegramAsync();
+        if (_provider == "telegram" && !_telegramInitialized && !await InitializeTelegramAsync())
+        {
+            TelegramWebView2.Visibility = Visibility.Visible;
+            MaxWebView2.Visibility = Visibility.Collapsed;
+            return;
+        }
         var browser = _provider == "telegram" ? TelegramWebView2 : MaxWebView2;
         browser.Visibility = Visibility.Visible;
         (_provider == "telegram" ? MaxWebView2 : TelegramWebView2).Visibility = Visibility.Collapsed;
