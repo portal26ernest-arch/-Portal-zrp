@@ -43,6 +43,12 @@ class Stage7DeploySafetyTests(unittest.TestCase):
         self.assertIn("('portal_test_stage7_staging', '8770', 'portal-stage7.service')", PG_INTEGRATION)
         self.assertIn("setval(pg_get_serial_sequence('companies','id')", DEPLOY)
 
+    def test_stage7_applies_application_migrations_before_startup_gate(self):
+        marker = '"$VENV/bin/python" -B "$REPO/server/portal_app_server.py" --migrate-stage3 1'
+        self.assertIn(marker, DEPLOY)
+        self.assertIn('source "$ENV_FILE"', DEPLOY)
+        self.assertLess(DEPLOY.index(marker), DEPLOY.index('systemctl restart "$SERVICE"'))
+
     def test_database_and_api_are_loopback_only(self):
         self.assertIn('PORTAL_APP_HOST=127.0.0.1', DEPLOY)
         self.assertIn('ss -ltn | grep -q "127.0.0.1:$API_PORT"', DEPLOY)
