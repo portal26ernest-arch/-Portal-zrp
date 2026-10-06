@@ -1,0 +1,23 @@
+name: PORTAL relay reachability
+
+on:
+  push:
+    branches:
+      - assistant/portal48-relay-ticket-backport-20261006
+
+jobs:
+  relay-edge-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Verify public TLS relay endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          result="$(curl -sS -o /dev/null -w '%{http_code} %{ssl_verify_result} %{remote_ip}' --connect-timeout 5 --max-time 10 https://relay.vart-portal.ru:9443/)"
+          echo "relay=$result"
+          code="${result%% *}"
+          rest="${result#* }"
+          verify="${rest%% *}"
+          test "$code" = "407"
+          test "$verify" = "0"
