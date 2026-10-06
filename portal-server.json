@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "revision": 2,
-  "apiUrl": "https://api.vart-portal.ru",
-  "updatedAt": "2026-10-04T20:15:00Z"
+  "revision": 3,
+  "apiUrl": "https://reserve-api.vart-portal.ru",
+  "updatedAt": "2026-10-06T23:33:00Z"
 }
