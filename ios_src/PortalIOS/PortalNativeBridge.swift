@@ -126,6 +126,7 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
               send('setCacheCompany', {value:cacheCompany}); return !!cacheCompany;
             },
             clearCompanyCache: () => { send('clearCompanyCache', {}); return true; },
+            openMessengerWindow: provider => { const p=String(provider||'telegram').toLowerCase()==='max'?'max':'telegram'; send('openMessengerWindow', {provider:p}); return true; },
             queueMutation: json => ask('queueMutation', {json:String(json||'')}),
             pendingMutations: () => ask('pendingMutations', {}).then(rows => JSON.stringify(Array.isArray(rows)?rows:[])),
             removeMutation: requestId => ask('removeMutation', {requestId:String(requestId||'')}),
@@ -181,6 +182,16 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
             cacheCompany = value.range(of: #"^[1-9][0-9]{0,9}$"#, options: .regularExpression) != nil ? value : ""
         case "clearCompanyCache":
             if !cacheCompany.isEmpty { _ = localCache.clearCompany(serverOrigin: serverURL, companyID: cacheCompany) }
+        case "openMessengerWindow":
+            let provider = (payload["provider"] as? String)?.lowercased() == "max" ? "max" : "telegram"
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let presenter = self.topViewController() else { return }
+                if let current = presenter as? MessengerViewController { current.selectProvider(provider); return }
+                if let current = presenter.presentedViewController as? MessengerViewController { current.selectProvider(provider); return }
+                let messenger = MessengerViewController(provider: provider)
+                messenger.modalPresentationStyle = .fullScreen
+                presenter.present(messenger, animated: true)
+            }
         case "scheduleOrganizerReminders":
             scheduleOrganizerReminders(payload["json"] as? String ?? "[]")
         case "requestAsync":

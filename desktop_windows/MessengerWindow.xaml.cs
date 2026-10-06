@@ -7,9 +7,12 @@ namespace Portal.Desktop;
 
 public partial class MessengerWindow : Window
 {
+    private static readonly Uri TelegramUri = new("https://web.telegram.org/a/");
+    private static readonly Uri MaxUri = new("https://web.max.ru/");
     private readonly string _settingsDir;
     private bool _closeRequested;
     private bool _initialized;
+    private string _provider = "telegram";
 
     public MessengerWindow(string settingsDir)
     {
@@ -19,22 +22,14 @@ public partial class MessengerWindow : Window
         StateChanged += (_, _) => SaveWindowState();
         LocationChanged += (_, _) => SaveWindowState();
         SizeChanged += (_, _) => SaveWindowState();
-        Loaded += async (_, _) => await EnsureBrowserAsync();
+        Loaded += async (_, _) => { await EnsureBrowserAsync(); await LoadProviderAsync(_provider); };
     }
 
-    public async Task LoadSessionAsync(string origin, string token, int? companyId, string? companyJson)
+    public async Task OpenProviderAsync(string? provider)
     {
-        if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps && !uri.IsLoopback)
-            throw new InvalidOperationException("Messenger requires the configured PORTAL server origin");
-        if (token.Length is < 16 or > 8192) throw new InvalidOperationException("Invalid authenticated session");
+        _provider = NormalizeProvider(provider);
         await EnsureBrowserAsync();
-        var session = JsonSerializer.Serialize(new { server = origin, token });
-        var company = companyJson ?? "null";
-        var script = "window.__PORTAL_DESKTOP__=true;window.__PORTAL_MESSENGER_COMPANY__=" + company + ";" +
-                     "sessionStorage.setItem('portalSession'," + JsonSerializer.Serialize(session) + ");";
-        await MessengerBrowser.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(script);
-        await MessengerBrowser.CoreWebView2.ExecuteScriptAsync(script);
-        MessengerBrowser.Source = new Uri(origin.TrimEnd('/') + "/web/");
+        await LoadProviderAsync(_provider);
     }
 
     public void ShowSingleton()
@@ -44,21 +39,46 @@ public partial class MessengerWindow : Window
         Activate();
     }
 
+    internal static bool IsAllowedProviderUri(Uri? uri)
+    {
+        if (uri is null || uri.Scheme != Uri.UriSchemeHttps || !string.IsNullOrEmpty(uri.UserInfo) || (uri.Port != 443 && !uri.IsDefaultPort)) return false;
+        return uri.Host.Equals("web.telegram.org", StringComparison.OrdinalIgnoreCase) ||
+               uri.Host.Equals("web.max.ru", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeProvider(string? value) => value?.Equals("max", StringComparison.OrdinalIgnoreCase) == true ? "max" : "telegram";
+    private static Uri ProviderUri(string provider) => provider == "max" ? MaxUri : TelegramUri;
+
     private async Task EnsureBrowserAsync()
     {
         if (_initialized) return;
-        Directory.CreateDirectory(Path.Combine(_settingsDir, "MessengerWebView2"));
-        var environment = await CoreWebView2Environment.CreateAsync(userDataFolder: Path.Combine(_settingsDir, "MessengerWebView2"));
+        var profile = Path.Combine(_settingsDir, "MessengerWebView2");
+        Directory.CreateDirectory(profile);
+        var environment = await CoreWebView2Environment.CreateAsync(userDataFolder: profile);
         await MessengerBrowser.EnsureCoreWebView2Async(environment);
         MessengerBrowser.CoreWebView2.Settings.AreDevToolsEnabled = false;
+        MessengerBrowser.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
         MessengerBrowser.CoreWebView2.NewWindowRequested += (_, e) => e.Handled = true;
         MessengerBrowser.CoreWebView2.NavigationStarting += (_, e) =>
         {
-            if (!Uri.TryCreate(e.Uri, UriKind.Absolute, out var target) || target.Scheme != Uri.UriSchemeHttps && !target.IsLoopback)
-                e.Cancel = true;
+            if (!Uri.TryCreate(e.Uri, UriKind.Absolute, out var target) || !IsAllowedProviderUri(target)) e.Cancel = true;
         };
         _initialized = true;
     }
+
+    private async Task LoadProviderAsync(string provider)
+    {
+        _provider = NormalizeProvider(provider);
+        TelegramTab.IsEnabled = _provider != "telegram";
+        MaxTab.IsEnabled = _provider != "max";
+        var target = ProviderUri(_provider);
+        if (MessengerBrowser.Source is null || !MessengerBrowser.Source.AbsoluteUri.Equals(target.AbsoluteUri, StringComparison.OrdinalIgnoreCase))
+            MessengerBrowser.Source = target;
+        await Task.CompletedTask;
+    }
+
+    private async void TelegramTab_Click(object sender, RoutedEventArgs e) => await LoadProviderAsync("telegram");
+    private async void MaxTab_Click(object sender, RoutedEventArgs e) => await LoadProviderAsync("max");
 
     private string StatePath => Path.Combine(_settingsDir, "messenger-window.json");
     private void RestoreWindowState()
@@ -80,7 +100,7 @@ public partial class MessengerWindow : Window
         try
         {
             Directory.CreateDirectory(_settingsDir);
-            var bounds = WindowState == WindowState.Normal ? RestoreBounds : RestoreBounds;
+            var bounds = RestoreBounds;
             var state = new MessengerWindowState(bounds.Left, bounds.Top, bounds.Width, bounds.Height, WindowState.ToString());
             File.WriteAllText(StatePath, JsonSerializer.Serialize(state));
         }

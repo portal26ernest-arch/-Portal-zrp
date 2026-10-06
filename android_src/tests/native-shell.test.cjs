@@ -4,6 +4,15 @@ const assert=require('node:assert/strict');
 
 const main=fs.readFileSync(path.join(__dirname,'../app/src/main/java/ru/portal/app/MainActivity.java'),'utf8');
 const localCache=fs.readFileSync(path.join(__dirname,'../app/src/main/java/ru/portal/app/PortalLocalCache.java'),'utf8');
+const messenger=fs.readFileSync(path.join(__dirname,'../app/src/main/java/ru/portal/app/MessengerActivity.java'),'utf8');
+assert.match(messenger,/https:\/\/web\.telegram\.org\/a\//);
+assert.match(messenger,/https:\/\/web\.max\.ru\//);
+assert.match(messenger,/WebView\.setDataDirectorySuffix\("portal_messenger"\)/);
+assert.match(messenger,/host\.equalsIgnoreCase\("web\.telegram\.org"\)/);
+assert.match(messenger,/host\.equalsIgnoreCase\("web\.max\.ru"\)/);
+assert.match(messenger,/return true; \/\/ fail closed/);
+assert.doesNotMatch(messenger,/addJavascriptInterface|PortalNative|Bearer|password|token/i);
+assert.match(main,/openMessengerWindow\(String provider\)/);
 assert.match(main,/SYSTEM_UI_FLAG_IMMERSIVE_STICKY/);
 assert.match(main,/SYSTEM_UI_FLAG_HIDE_NAVIGATION/);
 assert.match(main,/SYSTEM_UI_FLAG_FULLSCREEN/);

@@ -228,6 +228,17 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public boolean openMessengerWindow(String provider) {
+            String selected = "max".equalsIgnoreCase(provider) ? "max" : "telegram";
+            try {
+                Intent intent = new Intent(context, MessengerActivity.class).putExtra("provider", selected);
+                intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+                context.startActivity(intent);
+                return true;
+            } catch (Exception ignored) { return false; }
+        }
+
+        @JavascriptInterface
         public void scheduleOrganizerReminders(String json) {
             if (!(context instanceof Activity)) return;
             Activity activity = (Activity) context;

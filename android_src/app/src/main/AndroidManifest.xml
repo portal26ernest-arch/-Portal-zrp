@@ -18,6 +18,11 @@
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/share_paths" />
         </provider>
         <activity
+            android:name=".MessengerActivity"
+            android:exported="false"
+            android:process=":messenger"
+            android:screenOrientation="portrait" />
+        <activity
             android:name=".MainActivity"
             android:exported="true"
             android:screenOrientation="portrait">

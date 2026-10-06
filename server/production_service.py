@@ -1588,7 +1588,7 @@ class Production:
     def messenger_command(self,body):
         owner_access=self._messenger_allowed()
         mode=body.get('mode')
-        allowed_fields={'mode','platform','label','account_id','title'}
+        allowed_fields={'mode','platform','label','account_id','title','request_id'}
         if set(body)-allowed_fields:raise ValueError('Messenger принимает только описание личного аккаунта; секреты запрещены')
         if mode=='create_account':
             platform=body.get('platform')

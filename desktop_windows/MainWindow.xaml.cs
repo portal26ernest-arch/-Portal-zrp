@@ -301,7 +301,8 @@ public partial class MainWindow : Window
             e.Handled = true;
             if (Uri.TryCreate(e.Uri, UriKind.Absolute, out var custom) && custom.Scheme == "portal-messenger")
             {
-                _ = OpenMessengerWindowAsync();
+                var provider = custom.Query.Contains("provider=max", StringComparison.OrdinalIgnoreCase) ? "max" : "telegram";
+                _ = OpenMessengerWindowAsync(provider);
                 return;
             }
             if (_serverOrigin is not null && Uri.TryCreate(e.Uri, UriKind.Absolute, out var target))
@@ -360,20 +361,12 @@ public partial class MainWindow : Window
         _browserEventsAttached = true;
     }
 
-    private async Task OpenMessengerWindowAsync()
+    private async Task OpenMessengerWindowAsync(string provider = "telegram")
     {
-        if (Browser.CoreWebView2 is null || string.IsNullOrWhiteSpace(_serverOrigin)) return;
         try
         {
-            var raw = await Browser.ExecuteScriptAsync("JSON.stringify({token:S.token||'',company:S.company||null})");
-            var session = JsonSerializer.Deserialize<string>(raw);
-            if (string.IsNullOrWhiteSpace(session)) return;
-            using var document = JsonDocument.Parse(session);
-            var token = document.RootElement.GetProperty("token").GetString() ?? string.Empty;
-            if (token.Length == 0) return;
-            var companyJson = document.RootElement.TryGetProperty("company", out var company) && company.ValueKind == JsonValueKind.Object ? company.GetRawText() : null;
             if (_messengerWindow is null) _messengerWindow = new MessengerWindow(_settingsDir);
-            await _messengerWindow.LoadSessionAsync(_serverOrigin, token, null, companyJson);
+            await _messengerWindow.OpenProviderAsync(provider);
             _messengerWindow.ShowSingleton();
         }
         catch { }
