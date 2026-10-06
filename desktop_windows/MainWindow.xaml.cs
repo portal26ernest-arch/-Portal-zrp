@@ -22,6 +22,7 @@ public partial class MainWindow : Window
     private const string TrustedFallbackServerOrigin = "https://reserve-api.vart-portal.ru";
     private static readonly TimeSpan ServerProbeTimeout = TimeSpan.FromSeconds(10);
     private const string WebViewSoftwareRenderingArguments = "--disable-gpu --disable-gpu-compositing";
+    private const string WebViewNetworkCompatibilityArguments = "--disable-http2";
     private static readonly HttpClient Http = new(new HttpClientHandler { AllowAutoRedirect = false })
     {
         Timeout = TimeSpan.FromMinutes(5)
@@ -150,8 +151,8 @@ public partial class MainWindow : Window
         var forced = Environment.GetEnvironmentVariable("PORTAL_WEBVIEW_SOFTWARE_RENDERING");
         var marker = Path.Combine(_settingsDir, "software-rendering.flag");
         return string.Equals(forced, "1", StringComparison.Ordinal) || File.Exists(marker)
-            ? WebViewSoftwareRenderingArguments
-            : string.Empty;
+            ? WebViewNetworkCompatibilityArguments + " " + WebViewSoftwareRenderingArguments
+            : WebViewNetworkCompatibilityArguments;
     }
 
     private string? LoadStoredOrigin()

@@ -35,6 +35,20 @@ class WebStaticTests(unittest.TestCase):
         second=FakeHandler('/web/production.js',{'If-None-Match':etag,'Accept-Encoding':'gzip'}); web_static.serve(second)
         self.assertEqual(second.status,304); self.assertEqual(second.wfile.getvalue(),b'')
 
+    def test_production_chunks_reconstruct_source_and_fit_transport_budget(self):
+        names=[f'production-{index}.js' for index in range(1,5)]
+        source=(web_static.ASSETS/'production.js').read_bytes()
+        joined=b''.join((web_static.ASSETS/name).read_bytes() for name in names)
+        self.assertEqual(joined,source)
+        index=(web_static.ASSETS/'index.html').read_text(encoding='utf-8')
+        self.assertNotIn('src="production.js"',index)
+        for name in names:
+            self.assertIn(f'src="{name}"',index)
+            handler=FakeHandler('/web/'+name,{'Accept-Encoding':'gzip'}); web_static.serve(handler)
+            self.assertEqual(handler.status,200,name)
+            self.assertEqual(handler.headers.get('Content-Encoding'),'gzip',name)
+            self.assertLess(len(handler.wfile.getvalue()),20000,name)
+
     def test_rejects_traversal_and_non_allowlisted_files(self):
         for path in ['/webjunk','/web/../.env','/web/%2e%2e/.env','/web/%252e%252e/.env','/web/..%5c.env','/web/server.py','/web/.git/config','/web/index.html?x=../../etc/passwd']:
             handler=FakeHandler(path); web_static.serve(handler); self.assertEqual(handler.status,404,path)

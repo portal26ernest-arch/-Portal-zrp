@@ -75,6 +75,8 @@ assert.match(code,/private const int CurrentBuild = 59/);
 assert.ok(code.indexOf('Add(PrimaryServerOrigin);') < code.indexOf('Add(TrustedFallbackServerOrigin);'));
 assert.doesNotMatch(code,/Add\\(preferred\\);\\s*var mayUsePortalFallback/);
 assert.match(code,/WebViewSoftwareRenderingArguments = "--disable-gpu --disable-gpu-compositing"/);
+assert.match(code,/WebViewNetworkCompatibilityArguments = "--disable-http2"/);
+assert.match(code,/WebViewNetworkCompatibilityArguments \+ " " \+ WebViewSoftwareRenderingArguments/);
 assert.match(code,/AdditionalBrowserArguments = WebViewArguments\(\)/);
 assert.match(code,/PORTAL_WEBVIEW_SOFTWARE_RENDERING/);
 assert.match(code,/catch \(HttpRequestException\)[\s\S]+LoadGithubUpdateManifestAsync\(\)/);

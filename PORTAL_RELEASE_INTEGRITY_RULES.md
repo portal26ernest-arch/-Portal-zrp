@@ -41,7 +41,7 @@
 - `server/portal_app_server.py`
 - `server/web_static.py`
 - `android_src/app/src/main/assets/index.html`
-- `ui.css`, `core.js`, `app.js`, `screens.js`, `production.js`, `preview.js`
+- `ui.css`, `core.js`, `app.js`, `screens.js`, `production.js` (canonical source) and live `production-1.js`…`production-4.js` chunks, `preview.js`
 - `invoices.js`, `documents_excel.js`, `web_adapter.js`, `brand-mark.svg`
 - `stickers/catalog.json` и каталога sticker assets, если они присутствуют в текущем Git SHA
 

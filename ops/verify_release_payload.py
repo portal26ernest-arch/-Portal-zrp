@@ -17,6 +17,10 @@ REQUIRED_FILES = (
     "android_src/app/src/main/assets/screens.js",
     "android_src/app/src/main/assets/messenger_notifications.js",
     "android_src/app/src/main/assets/production.js",
+    "android_src/app/src/main/assets/production-1.js",
+    "android_src/app/src/main/assets/production-2.js",
+    "android_src/app/src/main/assets/production-3.js",
+    "android_src/app/src/main/assets/production-4.js",
     "android_src/app/src/main/assets/preview.js",
     "android_src/app/src/main/assets/invoices.js",
     "android_src/app/src/main/assets/documents_excel.js",
@@ -24,7 +28,7 @@ REQUIRED_FILES = (
     "android_src/app/src/main/assets/brand-mark.svg",
     "android_src/app/src/main/assets/stickers/catalog.json",
 )
-SMOKE_PATHS = ("/api/ping", "/api/ready", "/web/", "/web/app.js", "/web/production.js")
+SMOKE_PATHS = ("/api/ping", "/api/ready", "/web/", "/web/app.js", "/web/production-1.js", "/web/production-2.js", "/web/production-3.js", "/web/production-4.js")
 
 def verify_payload(root: Path):
     missing, empty = [], []
