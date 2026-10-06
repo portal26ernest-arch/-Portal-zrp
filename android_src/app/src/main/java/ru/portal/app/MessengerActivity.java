@@ -12,11 +12,14 @@ import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceError;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.LinearLayout;
+import android.widget.TextView;
 
 /**
  * Device-local Messenger container. It deliberately has no PORTAL JavaScript bridge:
@@ -29,6 +32,7 @@ public final class MessengerActivity extends Activity {
     private Button telegram;
     private Button max;
     private String provider = "telegram";
+    private TextView status;
 
     public static boolean isAllowedTopLevel(Uri uri) {
         if (uri == null || !"https".equalsIgnoreCase(uri.getScheme()) || uri.getUserInfo() != null ||
@@ -67,6 +71,13 @@ public final class MessengerActivity extends Activity {
         tabs.addView(max, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
         root.addView(tabs, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
 
+        status = new TextView(this);
+        status.setText("Загрузка официального клиента…");
+        status.setGravity(Gravity.CENTER);
+        status.setPadding(16, 8, 16, 8);
+        status.setTextColor(Color.DKGRAY);
+        root.addView(status, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
         browser = new WebView(this);
         WebSettings settings = browser.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -82,12 +93,30 @@ public final class MessengerActivity extends Activity {
         cookies.setAcceptThirdPartyCookies(browser, true);
 
         browser.setWebViewClient(new WebViewClient() {
-            private boolean handle(Uri uri) {
+            private boolean handleMainFrame(Uri uri) {
                 if (isAllowedTopLevel(uri)) return false;
+                showStatus("Переход заблокирован: разрешены только официальные Telegram и MAX");
                 return true; // fail closed: arbitrary top-level navigation never leaves this profile.
             }
-            @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) { return handle(request.getUrl()); }
-            @Override public boolean shouldOverrideUrlLoading(WebView view, String url) { return handle(Uri.parse(url)); }
+            @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                // Provider apps legitimately use internal frames/blob flows. The allowlist is a
+                // top-level navigation boundary, not a blanket block on provider-owned internals.
+                if (!request.isForMainFrame()) return false;
+                return handleMainFrame(request.getUrl());
+            }
+            @Override public boolean shouldOverrideUrlLoading(WebView view, String url) { return handleMainFrame(Uri.parse(url)); }
+            @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+                showStatus("Загрузка официального клиента…");
+            }
+            @Override public void onPageFinished(WebView view, String url) {
+                showStatus("");
+            }
+            @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                if (request.isForMainFrame()) showLoadFailure();
+            }
+            @Override public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse response) {
+                if (request.isForMainFrame() && response.getStatusCode() >= 400) showLoadFailure();
+            }
         });
         browser.setWebChromeClient(new WebChromeClient() {
             @Override public boolean onCreateWindow(WebView view, boolean dialog, boolean userGesture, android.os.Message resultMsg) { return false; }
@@ -106,6 +135,14 @@ public final class MessengerActivity extends Activity {
     }
 
     private static String normalizedProvider(String value) { return "max".equalsIgnoreCase(value) ? "max" : "telegram"; }
+    private void showStatus(String message) {
+        if (status == null) return;
+        status.setText(message);
+        status.setVisibility(message == null || message.isEmpty() ? View.GONE : View.VISIBLE);
+    }
+    private void showLoadFailure() {
+        showStatus("Официальный клиент не загрузился. Проверьте сеть/WebView и повторите переключение вкладки.");
+    }
     private void select(String key) {
         provider = normalizedProvider(key);
         telegram.setEnabled(!"telegram".equals(provider));
