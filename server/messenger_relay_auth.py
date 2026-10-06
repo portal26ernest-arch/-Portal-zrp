@@ -24,36 +24,68 @@ def _b64url(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).decode("ascii").rstrip("=")
 
 
-def normalize_proxy_url(value: str) -> str:
+def _normalize_owned_remote_url(value: str, *, scheme: str, label: str, allow_path: str = "") -> str:
     if not isinstance(value, str) or not value.strip():
-        raise ValueError("PORTAL_MESSENGER_RELAY_URL is not configured")
+        raise ValueError(f"{label} is not configured")
     value = value.strip()
     parsed = urlsplit(value)
-    if parsed.scheme.lower() != "https" or not parsed.hostname or parsed.username or parsed.password:
-        raise ValueError("Messenger relay must use a dedicated HTTPS proxy URL")
-    if parsed.path not in ("", "/") or parsed.query or parsed.fragment:
-        raise ValueError("Messenger relay URL must contain only scheme, host and optional port")
+    if parsed.scheme.lower() != scheme or not parsed.hostname or parsed.username or parsed.password:
+        raise ValueError(f"{label} must use a dedicated {scheme.upper()} URL")
+    expected_paths = ("", "/") if not allow_path else (allow_path,)
+    if parsed.path not in expected_paths or parsed.query or parsed.fragment:
+        raise ValueError(f"{label} contains an unexpected path/query/fragment")
     port = parsed.port or 443
     if not 1 <= port <= 65535:
-        raise ValueError("Messenger relay port is invalid")
+        raise ValueError(f"{label} port is invalid")
     host = parsed.hostname.lower()
     if host in {"localhost", "127.0.0.1", "::1"} or host.endswith(".localhost"):
-        raise ValueError("Messenger relay must use an owned remote HTTPS host")
-    return f"https://{host}" + ("" if port == 443 else f":{port}")
+        raise ValueError(f"{label} must use an owned remote host")
+    path = allow_path if allow_path else ""
+    return f"{scheme}://{host}" + ("" if port == 443 else f":{port}") + path
+
+
+def normalize_proxy_url(value: str) -> str:
+    return _normalize_owned_remote_url(
+        value,
+        scheme="https",
+        label="PORTAL_MESSENGER_RELAY_URL",
+    )
+
+
+def normalize_wss_url(value: str) -> str:
+    return _normalize_owned_remote_url(
+        value,
+        scheme="wss",
+        label="PORTAL_MESSENGER_RELAY_WSS_URL",
+        allow_path="/connect",
+    )
 
 
 def relay_status(env=os.environ):
     required_value = str(env.get("PORTAL_TELEGRAM_RELAY_REQUIRED", "0")).strip().lower()
     required = required_value in {"1", "true", "yes", "on"}
-    url = env.get("PORTAL_MESSENGER_RELAY_URL", "").strip()
     secret = env.get("PORTAL_MESSENGER_RELAY_SECRET", "")
-    if not url or len(secret) < 32:
-        return {"provider": "telegram", "enabled": False, "required": required}
-    try:
-        normalized = normalize_proxy_url(url)
-    except ValueError:
-        return {"provider": "telegram", "enabled": False, "required": required}
-    return {"provider": "telegram", "enabled": True, "required": required, "proxy_url": normalized, "realm": REALM}
+    status = {"provider": "telegram", "enabled": False, "required": required}
+    if len(secret) < 32:
+        return status
+
+    proxy_url = env.get("PORTAL_MESSENGER_RELAY_URL", "").strip()
+    wss_url = env.get("PORTAL_MESSENGER_RELAY_WSS_URL", "").strip()
+    if proxy_url:
+        try:
+            status["proxy_url"] = normalize_proxy_url(proxy_url)
+        except ValueError:
+            pass
+    if wss_url:
+        try:
+            status["wss_url"] = normalize_wss_url(wss_url)
+        except ValueError:
+            pass
+    if "proxy_url" not in status and "wss_url" not in status:
+        return status
+    status["enabled"] = True
+    status["realm"] = REALM
+    return status
 
 
 def issue_ticket(user_id: int, company_id: int, env=os.environ, now: int | None = None):
@@ -68,7 +100,13 @@ def issue_ticket(user_id: int, company_id: int, env=os.environ, now: int | None 
     expires = issued + ttl
     nonce = secrets.token_urlsafe(12)
     username = f"v2.telegram.{user_id}.{company_id}.{expires}.{nonce}"
-    password = _b64url(hmac.new(env["PORTAL_MESSENGER_RELAY_SECRET"].encode("utf-8"), username.encode("utf-8"), hashlib.sha256).digest())
+    password = _b64url(
+        hmac.new(
+            env["PORTAL_MESSENGER_RELAY_SECRET"].encode("utf-8"),
+            username.encode("utf-8"),
+            hashlib.sha256,
+        ).digest()
+    )
     return {
         **status,
         "username": username,
@@ -88,7 +126,14 @@ def validate_ticket(username: str, password: str, secret: str, now: int | None =
     current = int(time.time() if now is None else now)
     if expires < current or expires > current + 24 * 60 * 60 + 300:
         return None
-    expected = _b64url(hmac.new(secret.encode("utf-8"), username.encode("utf-8"), hashlib.sha256).digest())
+    expected = _b64url(
+        hmac.new(secret.encode("utf-8"), username.encode("utf-8"), hashlib.sha256).digest()
+    )
     if not hmac.compare_digest(expected, password):
         return None
-    return {"user_id": int(user_id), "company_id": int(company_id), "expires": expires, "scope": "telegram"}
+    return {
+        "user_id": int(user_id),
+        "company_id": int(company_id),
+        "expires": expires,
+        "scope": "telegram",
+    }

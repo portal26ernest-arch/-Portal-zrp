@@ -9,8 +9,10 @@ const android=read('android_src/app/src/main/java/ru/portal/app/MessengerActivit
 const androidBridge=read('android_src/app/src/main/java/ru/portal/app/MainActivity.java');
 const manifest=read('android_src/app/src/main/AndroidManifest.xml');
 const desktop=read('desktop_windows/MessengerWindow.xaml.cs');
+const desktopWss=read('desktop_windows/MessengerWssLocalProxy.cs');
 const desktopBridge=read('desktop_windows/MainWindow.xaml.cs');
 const ios=read('ios_src/PortalIOS/MessengerViewController.swift');
+const iosWss=read('ios_src/PortalIOS/TelegramWssLocalProxy.swift');
 const iosBridge=read('ios_src/PortalIOS/PortalNativeBridge.swift');
 const docs=read('docs/NOTIFICATION_CENTERS_AND_MESSENGER.md');
 
@@ -54,7 +56,7 @@ assert.doesNotMatch(adapter,/setMessengerIdentity|openMessengerWindow: \(provide
 assert.match(desktop,/MessengerWebView2-Telegram/);
 assert.match(desktop,/MessengerWebView2-Max/);
 assert.match(desktop,/InitializeViewAsync\(MaxWebView2, MaxProfileName, null, false\)/);
-assert.match(desktop,/InitializeViewAsync\(TelegramWebView2, TelegramProfileName,[\s\S]*--proxy-server=/);
+assert.match(desktop,/InitializeTelegramAsync\(\)[\s\S]*MessengerWssLocalProxy\.Start\(_relay\)[\s\S]*--proxy-server=/);
 assert.match(desktop,/if \(telegram\) view\.CoreWebView2\.BasicAuthenticationRequested/);
 assert.match(desktop,/DateTimeOffset\.TryParse\(expires\.GetString\(\)[\s\S]*expiry <= DateTimeOffset\.UtcNow/);
 assert.doesNotMatch(desktop,/proxy-bypass-list/);
@@ -66,6 +68,11 @@ assert.match(desktopBridge,/messengerClearTask = ClearMessengerSessionAsync\(\)/
 assert.match(desktopBridge,/OpenMessengerWindowAsync\(string provider = "telegram", string\? relayJson = null\)[\s\S]*await _messengerClearTask/);
 assert.doesNotMatch(desktop+desktopBridge,/identityKey|company_id|user_id/);
 assert.match(desktop,/ClearBrowsingDataAsync\(CoreWebView2BrowsingDataKinds\.AllProfile\)/);
+assert.match(desktop,/HasWssTransport[\s\S]*MessengerWssLocalProxy\.Start/);
+assert.match(desktopWss,/IPAddress\.Loopback/);
+assert.match(desktopWss,/Authorization", "Basic /);
+assert.match(desktopWss,/X-Portal-Target/);
+assert.doesNotMatch(desktopWss,/max\.ru|web\.max\.ru/i);
 
 // iOS uses two fixed provider stores and never mutates the PORTAL default store proxy.
 assert.match(ios,/68C88C71-9F9B-4D43-9D85-514C0B9065E2/);
@@ -77,6 +84,13 @@ assert.match(ios,/proxy\.allowFailover = false/);
 assert.match(ios,/proxy\.applyCredential\(username: ticket\.username, password: ticket\.password\)/);
 assert.match(ios,/expiryDate > Date\(\)/);
 assert.match(ios,/if providerData\.fixed, provider == "telegram"/);
+assert.match(ios,/TelegramWssLocalProxy/);
+assert.match(iosWss,/requiredLocalEndpoint = \.hostPort/);
+assert.match(iosWss,/Authorization/);
+assert.match(iosWss,/X-Portal-Target/);
+assert.match(iosWss,/value == "telegram\.org"[\s\S]*value\.hasSuffix\("\.telegram\.org"/);
+assert.doesNotMatch(iosWss,/max\.ru|web\.max\.ru/i);
+assert.doesNotMatch(iosWss,/URL\(string:.*username|URL\(string:.*password|\?.*(token|username|password)/i);
 assert.match(ios,/domain == "telegram\.org"[\s\S]*domain == "max\.ru"/);
 assert.match(iosBridge,/messengerClearInProgress[\s\S]*pendingMessengerProvider/);
 assert.doesNotMatch(ios,/identityKey|company: String|user: String/);

@@ -57,7 +57,9 @@ public final class MessengerActivity extends Activity {
     private String provider = "telegram";
     private boolean relayActive;
     private String relayProxyUrl = "";
+    private String relayWssUrl = "";
     private String relayHost = "";
+    private TelegramWssLocalProxy wssLocalProxy;
     private String relayUser = "";
     private String relayPassword = "";
     private String relayRealm = "PORTAL Messenger Relay";
@@ -165,7 +167,7 @@ public final class MessengerActivity extends Activity {
                 showStatus(relayActive ? "PORTAL Relay активен" : "Прямое подключение");
             }
             @Override public void onReceivedHttpAuthRequest(WebView view, HttpAuthHandler handler, String host, String realm) {
-                if (relayActive && relayConfigured() && host != null && host.equalsIgnoreCase(relayHost) &&
+                if (relayActive && wssLocalProxy == null && directRelayConfigured() && host != null && host.equalsIgnoreCase(relayHost) &&
                         (realm == null || relayRealm.equals(realm))) {
                     handler.proceed(relayUser, relayPassword);
                 } else handler.cancel();
@@ -217,30 +219,58 @@ public final class MessengerActivity extends Activity {
             boolean required = data.getBoolean("required");
             boolean enabled = data.getBoolean("enabled");
             if (!enabled) { relayRequired = required; clearRelayTicket(); return; }
-            String proxy = data.optString("proxy_url", "");
-            URI uri = URI.create(proxy);
-            if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null || uri.getUserInfo() != null ||
-                    (uri.getPort() != -1 && (uri.getPort() < 1 || uri.getPort() > 65535)) ||
-                    (uri.getPath() != null && !uri.getPath().isEmpty() && !"/".equals(uri.getPath()))) return;
-            relayProxyUrl = proxy.endsWith("/") ? proxy.substring(0, proxy.length() - 1) : proxy;
-            relayHost = uri.getHost();
+
+            String proxy = data.optString("proxy_url", "").trim();
+            if (!proxy.isEmpty()) {
+                URI uri = URI.create(proxy);
+                if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null || uri.getUserInfo() != null ||
+                        uri.getQuery() != null || uri.getFragment() != null ||
+                        (uri.getPort() != -1 && (uri.getPort() < 1 || uri.getPort() > 65535)) ||
+                        (uri.getPath() != null && !uri.getPath().isEmpty() && !"/".equals(uri.getPath()))) return;
+                relayProxyUrl = proxy.endsWith("/") ? proxy.substring(0, proxy.length() - 1) : proxy;
+                relayHost = uri.getHost();
+            }
+
+            String wss = data.optString("wss_url", "").trim();
+            if (!wss.isEmpty()) {
+                URI wsUri = URI.create(wss);
+                if (!"wss".equalsIgnoreCase(wsUri.getScheme()) || wsUri.getHost() == null || wsUri.getUserInfo() != null ||
+                        wsUri.getQuery() != null || wsUri.getFragment() != null || !"/connect".equals(wsUri.getPath()) ||
+                        (wsUri.getPort() != -1 && wsUri.getPort() != 443)) return;
+                relayWssUrl = wss;
+            }
+            if (relayProxyUrl.isEmpty() && relayWssUrl.isEmpty()) return;
+
             relayUser = data.optString("username", "");
             relayPassword = data.optString("password", "");
             relayRealm = data.optString("realm", "PORTAL Messenger Relay");
             long expiry = Instant.parse(data.getString("expires_at")).getEpochSecond();
-            if (expiry <= System.currentTimeMillis() / 1000L || relayUser.length() < 1 || relayUser.length() > 256 || relayPassword.length() < 1 || relayPassword.length() > 256 || relayRealm.length() > 128) {
+            if (expiry <= System.currentTimeMillis() / 1000L || relayUser.length() < 1 || relayUser.length() > 256 ||
+                    relayPassword.length() < 1 || relayPassword.length() > 256 || relayRealm.length() > 128) {
                 clearRelayTicket(); relayRequired = true;
             } else relayRequired = required;
         } catch (Exception ignored) { clearRelayTicket(); }
     }
 
+    private void closeWssLocalProxy() {
+        if (wssLocalProxy != null) {
+            try { wssLocalProxy.close(); } catch (Exception ignored) { }
+            wssLocalProxy = null;
+        }
+    }
+
     private void clearRelayTicket() {
-        relayProxyUrl = relayHost = relayUser = relayPassword = "";
+        closeWssLocalProxy();
+        relayProxyUrl = relayWssUrl = relayHost = relayUser = relayPassword = "";
         relayRealm = "PORTAL Messenger Relay";
     }
 
+    private boolean directRelayConfigured() {
+        return !relayProxyUrl.isEmpty() && !relayHost.isEmpty() && !relayUser.isEmpty() && !relayPassword.isEmpty();
+    }
+
     private boolean relayConfigured() {
-        return !relayProxyUrl.isEmpty() && !relayHost.isEmpty() && !relayUser.isEmpty() && !relayPassword.isEmpty() &&
+        return (!relayWssUrl.isEmpty() || directRelayConfigured()) && !relayUser.isEmpty() && !relayPassword.isEmpty() &&
                 WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE);
     }
 
@@ -281,6 +311,7 @@ public final class MessengerActivity extends Activity {
 
     private void useDirectChannel() {
         relayActive = false;
+        closeWssLocalProxy();
         updateTabs();
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)) {
             loadCurrent();
@@ -292,6 +323,16 @@ public final class MessengerActivity extends Activity {
         });
     }
 
+    private void activateProxyRule(String proxyRule, String statusText) {
+        relayActive = true;
+        updateTabs();
+        ProxyConfig config = new ProxyConfig.Builder().addProxyRule(proxyRule).build();
+        ProxyController.getInstance().setProxyOverride(config, ContextCompat.getMainExecutor(this), () -> {
+            showStatus(statusText);
+            loadCurrent();
+        });
+    }
+
     private void useRelayChannel(boolean automatic) {
         if (!"telegram".equals(provider)) { useDirectChannel(); return; }
         if (!relayConfigured()) {
@@ -299,13 +340,28 @@ public final class MessengerActivity extends Activity {
             else showStatus("PORTAL Relay ещё не настроен сервером");
             return;
         }
-        relayActive = true;
-        updateTabs();
-        ProxyConfig config = new ProxyConfig.Builder().addProxyRule(relayProxyUrl).build();
-        ProxyController.getInstance().setProxyOverride(config, ContextCompat.getMainExecutor(this), () -> {
-            showStatus("PORTAL Relay…");
-            loadCurrent();
-        });
+
+        closeWssLocalProxy();
+        if (!relayWssUrl.isEmpty()) {
+            try {
+                wssLocalProxy = TelegramWssLocalProxy.start(relayWssUrl, relayUser, relayPassword);
+                activateProxyRule(wssLocalProxy.proxyUrl(), "PORTAL Relay WSS…");
+                return;
+            } catch (Exception ignored) {
+                closeWssLocalProxy();
+                if (!directRelayConfigured()) {
+                    relayActive = false;
+                    showStatus("Защищённый канал PORTAL временно недоступен.");
+                    return;
+                }
+            }
+        }
+        if (directRelayConfigured()) {
+            activateProxyRule(relayProxyUrl, "PORTAL Relay…");
+            return;
+        }
+        relayActive = false;
+        showStatus("Защищённый канал PORTAL временно недоступен.");
     }
 
     @Override protected void onNewIntent(Intent intent) {

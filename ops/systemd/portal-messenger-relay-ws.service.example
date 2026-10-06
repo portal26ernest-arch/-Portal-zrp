@@ -1,0 +1,28 @@
+[Unit]
+Description=PORTAL Telegram WSS Relay (loopback behind cloudflared)
+After=network-online.target portal-messenger-tor.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=portal
+Group=portal
+EnvironmentFile=/etc/portal-production/messenger-relay.env
+WorkingDirectory=/srv/portal-messenger-relay/current/server
+ExecStart=/usr/bin/python3 /srv/portal-messenger-relay/current/server/messenger_relay_ws.py
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LimitNOFILE=8192
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target

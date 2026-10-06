@@ -1,0 +1,7 @@
+# Insert before the final catch-all service in /etc/cloudflared/portal-production-primary.yml.
+# cloudflared automatically preserves WebSocket upgrades for ordinary HTTP ingress.
+- hostname: relay.vart-portal.ru
+  service: http://127.0.0.1:9444
+  originRequest:
+    httpHostHeader: relay.vart-portal.ru
+    connectTimeout: 10s
