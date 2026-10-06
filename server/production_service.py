@@ -1585,6 +1585,11 @@ class Production:
         return {'accounts':accounts,'conversations':conversations,
                 'adapters':{'telegram':'unconfigured','max':'unconfigured'}}
 
+    def messenger_relay_ticket(self):
+        self._messenger_allowed()
+        from messenger_relay_auth import issue_ticket
+        return issue_ticket(self.u['id'], self.r.company_id)
+
     def messenger_command(self,body):
         owner_access=self._messenger_allowed()
         mode=body.get('mode')
@@ -1707,6 +1712,7 @@ class Production:
         if action=='today':return self.today()
         if action=='notification-centers':return self.notification_centers()
         if action=='messenger':return self.messenger_rows()
+        if action=='messenger-relay-ticket':return self.messenger_relay_ticket()
         if action=='organizer':return self.organizer_rows(params)
         if action=='organizer-users':return self.organizer_users()
         if action=='organizer-events':return self.organizer_events(params)
