@@ -34,6 +34,7 @@ public partial class MainWindow : Window
     private bool _webRecoveryPending;
     private string? _pendingPersistOrigin;
     private DesktopCacheBridge? _cacheBridge;
+    private static MessengerWindow? _messengerWindow;
 
     public MainWindow()
     {
@@ -298,6 +299,11 @@ public partial class MainWindow : Window
         Browser.CoreWebView2.NewWindowRequested += (_, e) =>
         {
             e.Handled = true;
+            if (Uri.TryCreate(e.Uri, UriKind.Absolute, out var custom) && custom.Scheme == "portal-messenger")
+            {
+                _ = OpenMessengerWindowAsync();
+                return;
+            }
             if (_serverOrigin is not null && Uri.TryCreate(e.Uri, UriKind.Absolute, out var target))
             {
                 if (SameOrigin(target, _serverOrigin)) Browser.Source = target;
@@ -354,6 +360,25 @@ public partial class MainWindow : Window
         _browserEventsAttached = true;
     }
 
+    private async Task OpenMessengerWindowAsync()
+    {
+        if (Browser.CoreWebView2 is null || string.IsNullOrWhiteSpace(_serverOrigin)) return;
+        try
+        {
+            var raw = await Browser.ExecuteScriptAsync("JSON.stringify({token:S.token||'',company:S.company||null})");
+            var session = JsonSerializer.Deserialize<string>(raw);
+            if (string.IsNullOrWhiteSpace(session)) return;
+            using var document = JsonDocument.Parse(session);
+            var token = document.RootElement.GetProperty("token").GetString() ?? string.Empty;
+            if (token.Length == 0) return;
+            var companyJson = document.RootElement.TryGetProperty("company", out var company) && company.ValueKind == JsonValueKind.Object ? company.GetRawText() : null;
+            if (_messengerWindow is null) _messengerWindow = new MessengerWindow(_settingsDir);
+            await _messengerWindow.LoadSessionAsync(_serverOrigin, token, null, companyJson);
+            _messengerWindow.ShowSingleton();
+        }
+        catch { }
+    }
+
     private async Task ApplyDesktopExperienceAsync()
     {
         if (Browser.CoreWebView2 is null) return;
@@ -395,7 +420,7 @@ public partial class MainWindow : Window
     const nav=document.getElementById('nav'); if(!nav) return;
     if(typeof isOwner==='function' && isOwner() && !S.company){nav.innerHTML=navButton('companies','clients','Компании')+'<div class="nav-spacer"></div>'+navButton('settings','settings','Настройки');return;}
     const byId=Object.fromEntries(PortalCore.modules.map(m=>[m.id,m]));
-    const groups=[['Работа',['organizer','work','jobs','batches','teamChat','notifications']],['Управление',['clients','users','permissions','tariffs']],['Учёт и финансы',['payroll','payrollPeriods','materials','invoices','expenses','documents','excelImport']],['Аналитика',['radar','analytics','reports','news']],['Система',['control','wms']]];
+    const groups=[['Работа',['organizer','work','jobs','batches','teamChat','messenger','notifications']],['Управление',['clients','users','permissions','tariffs']],['Учёт и финансы',['payroll','payrollPeriods','materials','invoices','expenses','documents','excelImport']],['Аналитика',['radar','analytics','reports','news']],['Система',['control','wms']]];
     let html=navButton('dashboard','home','Главная');
     for(const [title,ids] of groups){const allowed=ids.map(id=>byId[id]).filter(m=>m&&can(m.id));if(!allowed.length)continue;html+='<div class="nav-group"><div class="nav-group-title">'+esc(title)+'</div>'+allowed.map(m=>navButton(m.id,m.icon,m.title)).join('')+'</div>';}
     nav.innerHTML=html+'<div class="nav-spacer"></div>'+navButton('settings','settings','Настройки');

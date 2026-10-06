@@ -15,6 +15,7 @@ REQUIRED_FILES = (
     "android_src/app/src/main/assets/core.js",
     "android_src/app/src/main/assets/app.js",
     "android_src/app/src/main/assets/screens.js",
+    "android_src/app/src/main/assets/messenger_notifications.js",
     "android_src/app/src/main/assets/production.js",
     "android_src/app/src/main/assets/preview.js",
     "android_src/app/src/main/assets/invoices.js",

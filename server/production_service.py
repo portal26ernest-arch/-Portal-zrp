@@ -1571,7 +1571,81 @@ class Production:
                 units_per_hour=sum(w['quantity'] for w in timed_today)/(today_seconds/3600) if today_seconds>0 else None)
         return result
 
+    def _messenger_allowed(self):
+        if self.u.get('role') in {'director','manager'} and not self.u.get('technical_owner'):
+            raise PermissionError('Messenger недоступен для этой роли')
+        return bool(self.u.get('technical_owner'))
+
+    def messenger_rows(self):
+        owner_access=self._messenger_allowed()
+        accounts=[row for row in self.r.list('messenger_accounts') if owner_access or row.get('owner_user_id')==self.u['id']]
+        account_ids={row['id'] for row in accounts}
+        conversations=[row for row in self.r.list('messenger_conversations')
+                       if (owner_access or row.get('owner_user_id')==self.u['id']) and row.get('account_id') in account_ids]
+        return {'accounts':accounts,'conversations':conversations,
+                'adapters':{'telegram':'unconfigured','max':'unconfigured'}}
+
+    def messenger_command(self,body):
+        owner_access=self._messenger_allowed()
+        mode=body.get('mode')
+        allowed_fields={'mode','platform','label','account_id','title'}
+        if set(body)-allowed_fields:raise ValueError('Messenger принимает только описание личного аккаунта; секреты запрещены')
+        if mode=='create_account':
+            platform=body.get('platform')
+            if platform not in {'telegram','max'}:raise ValueError('Поддерживаются только Telegram и MAX')
+            label=text(body.get('label'),'Название аккаунта')
+            if len(label)>80:raise ValueError('Название аккаунта: до 80 символов')
+            if any(row.get('owner_user_id')==self.u['id'] and row.get('platform')==platform for row in self.r.list('messenger_accounts')):
+                raise ValueError('Личный аккаунт этой платформы уже добавлен')
+            return self.r.insert('messenger_accounts',dict(owner_user_id=self.u['id'],platform=platform,
+                account_type='personal_work',label=label,connection_state='adapter_unconfigured'))
+        if mode=='create_conversation':
+            account=self.r.get('messenger_accounts',str(body.get('account_id','')))
+            if not owner_access and account.get('owner_user_id')!=self.u['id']:raise PermissionError('Личный аккаунт недоступен')
+            title=text(body.get('title'),'Название беседы')
+            if len(title)>120:raise ValueError('Название беседы: до 120 символов')
+            return self.r.insert('messenger_conversations',dict(owner_user_id=self.u['id'],account_id=account['id'],title=title,
+                platform=account['platform'],connection_state='adapter_unconfigured'))
+        raise ValueError('Неизвестное действие Messenger')
+
+    def notification_centers(self):
+        sources={'TASKS':[],'MESSENGER':[],'ORGANIZER':[]}
+        if 'tasks.read' in self.permissions:
+            sources['TASKS']=[dict(id=str(row['id']),title=row.get('operation_name','Задание'),source='task')
+                              for row in self.task_rows() if self.u['id'] in row.get('assignees',[])]
+        if 'organizer.read' in self.permissions:
+            sources['ORGANIZER']=[dict(id=str(row['id']),title=row.get('title','Задача'),source='organizer')
+                                  for row in self.organizer_rows({'scope':['mine']}) if row.get('status') not in {'done','cancelled'}]
+        if self.u.get('role') not in {'director','manager'} or self.u.get('technical_owner'):
+            owned={row['id'] for row in self.r.list('messenger_conversations') if row.get('owner_user_id')==self.u['id']}
+            sources['MESSENGER']=[dict(id=str(row['id']),title=row.get('title','Беседа'),source='messenger')
+                                  for row in self.r.list('messenger_messages') if row.get('conversation_id') in owned and row.get('direction')=='incoming']
+        result=[]
+        for center,items in sources.items():
+            visible=[]
+            for item in items:
+                key=f"{self.u['id']}:{center}:{item['id']}"
+                read=self.r.get('notification_reads',key,False)
+                item['read']=bool(read)
+                visible.append(item)
+            result.append({'center':center,'unread_count':sum(not item['read'] for item in visible),'items':visible})
+        return result
+
+    def notification_read(self,body):
+        center=body.get('center');item_id=body.get('item_id')
+        if center not in {'TASKS','MESSENGER','ORGANIZER'} or not isinstance(item_id,str) or not item_id or len(item_id)>128:
+            raise ValueError('Укажите центр и идентификатор уведомления')
+        center_data=next(row for row in self.notification_centers() if row['center']==center)
+        if item_id not in {row['id'] for row in center_data['items']}:
+            raise PermissionError('Уведомление недоступно')
+        key=f"{self.u['id']}:{center}:{item_id}"
+        current=self.r.get('notification_reads',key,False)
+        value=dict(current or {'id':key,'user_id':self.u['id'],'center':center,'item_id':item_id},read_at=self.clock())
+        return self.r.update('notification_reads',value) if current else self.r.insert('notification_reads',value,key)
+
     def command(self,action,body):
+        if action=='notification-read':return self.notification_read(body)
+        if action=='messenger':return self.messenger_command(body)
         if 'company_id' in body and (type(body['company_id']) is not int or body['company_id']!=self.r.company_id):raise PermissionError('Компания определяется сессией')
         methods={'batches':self.batch,'products':self.product,'client-requisites':self.save_client_requisites,'tasks':self.task,'work':self.work,'timers':self.timer,'links':self.link,'tariffs':self.create_tariff,'permissions':self.set_permissions,'usage':self.usage,'expenses':self.expense,'invoices':self.invoice,'payments':self.payment,'settings':self.settings,'shipments':self.ship,'returns':self.return_batch,'payroll-periods':self.payroll_period,'payroll-settlements':self.payroll_settlement,'chat':self.chat_command,'documents':self.document,'organizer':self.organizer,'organizer-requests':self.organizer_request}
         if action not in methods: raise ValueError('Действие не поддерживается')
@@ -1631,6 +1705,8 @@ class Production:
 
     def query(self,action,params):
         if action=='today':return self.today()
+        if action=='notification-centers':return self.notification_centers()
+        if action=='messenger':return self.messenger_rows()
         if action=='organizer':return self.organizer_rows(params)
         if action=='organizer-users':return self.organizer_users()
         if action=='organizer-events':return self.organizer_events(params)

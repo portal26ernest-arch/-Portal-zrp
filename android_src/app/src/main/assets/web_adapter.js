@@ -198,6 +198,7 @@
       try { return cacheCompany ? Number(desktopCache()?.PendingMutationCount(String(cacheCompany)) || 0) : 0; }
       catch { return 0; }
     },
+    openMessengerWindow: () => { try { window.open('portal-messenger://open','_blank'); return true; } catch { return false; } },
     checkUpdates: id => result(id, {ok:true, configured:false, web:true}),
     requestAsync: async (id, method, path, body, token, company) => {
       const verb = String(method || 'GET').toUpperCase();
