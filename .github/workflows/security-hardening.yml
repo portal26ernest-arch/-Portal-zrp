@@ -24,7 +24,7 @@ jobs:
           docker run --rm \
             -v "$PWD:/repo" \
             zricethezav/gitleaks:v8.28.0 \
-            git --source=/repo --redact --no-banner
+            git /repo --redact --no-banner
 
   repository-security:
     name: Vulnerabilities and misconfigurations
@@ -32,7 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Trivy filesystem scan
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -70,6 +70,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y shellcheck
-          find ops -type f -name '*.sh' -print0 | xargs -0 -r shellcheck -x
+          # SC1090 is expected for the intentionally dynamic certbot ENV_FILE source path.\n          find ops -type f -name '*.sh' -print0 | xargs -0 -r shellcheck -x -e SC1090
       - name: actionlint
         run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7
