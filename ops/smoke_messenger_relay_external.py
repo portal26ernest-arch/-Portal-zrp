@@ -8,8 +8,20 @@ HOST = "relay.vart-portal.ru"
 PORT = 9443
 TARGET = "web.telegram.org"
 
+# Diagnostic: standard HTTPS reachability of the direct DNS hostname. Certificate
+# validation is intentionally disabled here because nginx does not serve this relay
+# hostname; this probe only distinguishes provider filtering of 9443 from all TCP/TLS.
+diag = ssl._create_unverified_context()
+try:
+    with socket.create_connection((HOST, 443), timeout=8) as raw:
+        with diag.wrap_socket(raw, server_hostname=HOST) as tls:
+            print(f"DIAG standard443_tls={tls.version()}")
+except Exception as exc:
+    print(f"DIAG standard443_failed={type(exc).__name__}")
+
 context = ssl.create_default_context()
 with socket.create_connection((HOST, PORT), timeout=12) as raw:
+    raw.settimeout(12)
     with context.wrap_socket(raw, server_hostname=HOST) as tls:
         cert = tls.getpeercert()
         sans = {value for kind, value in cert.get("subjectAltName", ()) if kind == "DNS"}
