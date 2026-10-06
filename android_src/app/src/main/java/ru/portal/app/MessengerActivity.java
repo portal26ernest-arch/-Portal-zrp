@@ -16,11 +16,13 @@ import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
+import android.webkit.WebStorage;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.core.content.ContextCompat;
 import androidx.webkit.ProxyConfig;
@@ -41,8 +43,12 @@ import java.net.URI;
 public final class MessengerActivity extends Activity {
     static final String TELEGRAM_URL = "https://web.telegram.org/a/";
     static final String MAX_URL = "https://web.max.ru/";
-
+    static final String ACTION_CLEAR_SESSION = "ru.portal.app.action.CLEAR_MESSENGER_SESSION";
+    private static boolean dataDirectorySuffixConfigured;
     private WebView browser;
+    private boolean clearingSession;
+    private String pendingProvider;
+    private String pendingRelay;
     private Button telegram;
     private Button max;
     private Button relayButton;
@@ -67,18 +73,42 @@ public final class MessengerActivity extends Activity {
     @SuppressLint("SetJavaScriptEnabled")
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
-        if (Build.VERSION.SDK_INT >= 28) {
-            try { WebView.setDataDirectorySuffix("portal_messenger"); } catch (IllegalStateException ignored) { }
+        if (Build.VERSION.SDK_INT >= 28 && !dataDirectorySuffixConfigured) {
+            try {
+                WebView.setDataDirectorySuffix("portal_messenger");
+                dataDirectorySuffixConfigured = true;
+            } catch (IllegalStateException unavailable) { finish(); return; }
+        }
+        if (ACTION_CLEAR_SESSION.equals(getIntent().getAction())) {
+            if (Build.VERSION.SDK_INT < 28) { finish(); return; }
+            clearingSession = true;
+            pendingProvider = null;
+            clearProviderData(() -> {
+                clearingSession = false;
+                if (pendingProvider != null) {
+                    provider = pendingProvider;
+                    pendingProvider = null;
+                    readRelayTicket(pendingRelay);
+                    pendingRelay = null;
+                    createMessengerUI();
+                } else finish();
+            });
+            return;
         }
         provider = normalizedProvider(getIntent().getStringExtra("provider"));
         readRelayTicket(getIntent().getStringExtra("relay"));
         if (Build.VERSION.SDK_INT < 28) {
-            Uri official = Uri.parse("max".equals(provider) ? MAX_URL : TELEGRAM_URL);
-            try { startActivity(new Intent(Intent.ACTION_VIEW, official)); } catch (Exception ignored) { }
+            // API 26-27 cannot safely host the isolated WebView process/profile required here.
+            // Do not fall back to the OS browser, whose provider session is not PORTAL-user scoped.
+            Toast.makeText(this, "Мессенджер требует Android 9 или новее для изоляции сессии", Toast.LENGTH_LONG).show();
             finish();
             return;
         }
 
+        createMessengerUI();
+    }
+
+    private void createMessengerUI() {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Color.rgb(245, 248, 253));
@@ -170,6 +200,15 @@ public final class MessengerActivity extends Activity {
         useDirectChannel();
     }
 
+    private void clearProviderData(Runnable complete) {
+        CookieManager cookies = CookieManager.getInstance();
+        cookies.removeAllCookies(removed -> {
+            WebStorage.getInstance().deleteAllData();
+            cookies.flush();
+            runOnUiThread(complete);
+        });
+    }
+
     private Button tab(String label, String key) {
         Button button = new Button(this);
         button.setText(label);
@@ -181,6 +220,7 @@ public final class MessengerActivity extends Activity {
     private static String normalizedProvider(String value) { return "max".equalsIgnoreCase(value) ? "max" : "telegram"; }
 
     private void readRelayTicket(String raw) {
+        clearRelayTicket();
         if (raw == null || raw.isBlank()) return;
         try {
             JSONObject data = new JSONObject(raw);
@@ -266,6 +306,44 @@ public final class MessengerActivity extends Activity {
         });
     }
 
+    @Override protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        if (ACTION_CLEAR_SESSION.equals(intent.getAction())) {
+            pendingProvider = null;
+            clearRelayTicket();
+            clearingSession = true;
+            if (browser != null) { browser.stopLoading(); browser.clearCache(true); browser.clearFormData(); browser.clearHistory(); browser.destroy(); browser = null; }
+            clearProviderData(() -> {
+                clearingSession = false;
+                if (pendingProvider != null) {
+                    provider = pendingProvider;
+                    pendingProvider = null;
+                    readRelayTicket(pendingRelay);
+                    pendingRelay = null;
+                    createMessengerUI();
+                } else finish();
+            });
+            return;
+        }
+        String requestedProvider = normalizedProvider(intent.getStringExtra("provider"));
+        if (clearingSession) {
+            pendingProvider = requestedProvider;
+            pendingRelay = intent.getStringExtra("relay");
+            return;
+        }
+        if (browser != null) {
+            readRelayTicket(intent.getStringExtra("relay"));
+            updateTabs();
+            select(requestedProvider);
+        }
+        else {
+            provider = requestedProvider;
+            readRelayTicket(intent.getStringExtra("relay"));
+            createMessengerUI();
+        }
+    }
+
     @Override public void onBackPressed() {
         if (browser != null && browser.canGoBack()) browser.goBack(); else super.onBackPressed();
     }
@@ -276,7 +354,7 @@ public final class MessengerActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
-        relayPassword = "";
+        clearRelayTicket();
         if (browser != null) { browser.stopLoading(); browser.destroy(); browser = null; }
         super.onDestroy();
     }

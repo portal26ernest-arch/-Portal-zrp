@@ -199,6 +199,7 @@
       catch { return 0; }
     },
     openMessengerWindow: (provider,relayJson='') => { if(!window.__PORTAL_DESKTOP__)return false; try { const p=String(provider||'telegram').toLowerCase()==='max'?'max':'telegram'; if(window.chrome?.webview?.postMessage){ window.chrome.webview.postMessage(JSON.stringify({type:'openMessenger',provider:p,relay:relayJson||''})); return true; } window.open('portal-messenger://open?provider='+p,'_blank'); return true; } catch { return false; } },
+    clearMessengerSession: () => { try { window.open('portal-messenger://clear','_blank'); } catch {} },
     checkUpdates: id => result(id, {ok:true, configured:false, web:true}),
     requestAsync: async (id, method, path, body, token, company) => {
       const verb = String(method || 'GET').toUpperCase();
