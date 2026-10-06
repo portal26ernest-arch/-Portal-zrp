@@ -1,4 +1,4 @@
-# PORTAL MASTER ROADMAP
+﻿# PORTAL MASTER ROADMAP
 
 > **ЕДИНСТВЕННЫЙ ИСТОЧНИК ИСТИНЫ ДЛЯ ПРОЕКТА PORTAL.**
 >
@@ -46,6 +46,7 @@
 - [x] Исправить Desktop/Web «Поделиться…» для одноразового кода сотрудника: если Web Share API присутствует, но системное меню Windows/WebView2 не открывается, безопасно fallback на копирование кода без красной ошибки; AbortError считать обычной отменой пользователем.
 
 ### В работе
+- [ ] 2026-10-06 — Android Messenger blank-screen hotfix после реального smoke на Samsung: официальный Telegram/MAX контейнер открывался, но содержимое оставалось белым. Исправление 5.3/53: strict allowlist остаётся только для top-level provider navigation, internal subframe/blob flows официальных web-клиентов больше не блокируются; добавлены main-frame load/error status и regression guards. Ветка `assistant/messenger-webview-fix-20261006`; обязательны Android APK/UI/security CI и физический повторный smoke Telegram+MAX перед закрытием.
 - [ ] 2026-10-06 — Органайзер: мобильная и Desktop-версия сведены в один релизный контур. Убрано ограничение Desktop-only; сохранены права `organizer.*` и module toggle; на Android/iOS работают задачи, статусы, сроки, календарь, запросы директору, комментарии/вложения, foreground refresh и локальные напоминания (Android AlarmManager / iOS UserNotifications). Мобильный календарь адаптирован под узкий экран. Android/iOS версия 5.2 (52). Ветка `assistant/messenger-notifications-20261006`; локальные build-security/native-shell/desktop-shell/mobile parity/UI 48/48 и targeted server 9/9 PASS. Следующий шаг: полный GitHub CI -> merge -> signed Android 5.2 release -> физический smoke обновления на телефоне.
 - [ ] 2026-10-06 — Серверный контур перед Android 5.2 проверен: release default `https://api.vart-portal.ru`, trusted fallback `https://reserve-api.vart-portal.ru`, discovery `portal-server.json` из `main`; оба production endpoint `/api/ping` и `/api/ready` отвечают 200 с Ernest-com. Fallback/discovery логика сохранена при объединении с актуальным `main`.
 - [ ] 2026-10-06 — unified consolidation: агент ChatGPT, ветка assistant/unified-consolidation-20261006 от main 8b6466b. Monitoring PR #13 уже слит; уникальный Codex security/outbox commit сохранён rescue-веткой и перенесён поверх актуального main. Два зависших OpenCode Messenger-review процесса остановлены после rescue snapshot. Messenger 33b754e оставлен отдельным до исправления identity-bound provider storage/logout cleanup. Dirty legacy worktree сохранены локальным rescue-архивом; чувствительные Stage7 CSV запрещено публиковать в public GitHub. Локально native-shell/Desktop/build-security/diff-check PASS. Следующий gate: commit+push → полный GitHub CI → merge только при зелёных checks; затем последовательный разбор старых worktree и Messenger hardening. iOS CI follow-up: первый полный gate выявил IPv6 loopback representation [::1] в URLComponents; native validator расширен на bracketed IPv6 loopback, mobile parity/native/release-config checks проходят локально. Повторный полный CI обязателен; merge только после зелёного iOS unit-test и остальных checks.
@@ -513,3 +514,4 @@ Current roadmap counts are **93 ✅ / 15 🟡 / 6 ⏳ / 12 🔌**. Current-SHA S
 - [ ] Подготовить off-site backup через restic/rclone в независимое S3/B2-совместимое хранилище: шифрование клиентским ключом, retention, restore-test и контроль SHA; до подключения внешнего storage production backup policy не менять.
 - [ ] Инструментировать PORTAL в PostHog для error tracking/health/product telemetry без персональных и чувствительных данных; feature flags использовать только для безопасных rollout-ов, не для обхода серверных прав.
 - [ ] Context7 подключён и используется как источник актуальной документации при изменениях внешних SDK/Actions/CLI.
+
