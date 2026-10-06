@@ -101,8 +101,8 @@ assert.ok(desktopDiscovery.indexOf('TryNormalizeOfficialOrigin') < desktopDiscov
 assert.doesNotMatch(desktopDiscovery,/Authorization|Bearer|AccessToken/,'Desktop discovery must not send auth while validating an advertised origin');
 assert.match(code,/if \(!IsAutomaticPortalOrigin\(origin\)\)[\s\S]+_cacheBridge = null;[\s\S]+return;/);
 assert.match(code,/AddHostObjectToScript\("portalDesktopCache", _cacheBridge\)/);
-assert.match(code,/TrustedFallbackServerOrigin = "https:\/\/reserve-api\.vart-portal\.ru"/);
-assert.match(code,/PrimaryServerOrigin = "https:\/\/api\.vart-portal\.ru"/);
+assert.match(code,/PrimaryServerOrigin = "https:\/\/reserve-api\.vart-portal\.ru"/);
+assert.match(code,/TrustedFallbackServerOrigin = "https:\/\/api\.vart-portal\.ru"/);
 assert.match(code,/uri\.Scheme\.Equals\(Uri\.UriSchemeHttps/);
 assert.match(code,/uri\.IsLoopback/);
 assert.match(code,/ConnectFirstAvailablePortalServerAsync/);

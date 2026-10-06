@@ -18,8 +18,8 @@ public partial class MainWindow : Window
     private const long MaxInstallerBytes = 250L * 1024 * 1024;
     private const string GithubRepository = "portal26ernest-arch/-Portal-zrp";
     private const string ServerDiscoveryUrl = "https://raw.githubusercontent.com/portal26ernest-arch/-Portal-zrp/main/portal-server.json";
-    private const string PrimaryServerOrigin = "https://api.vart-portal.ru";
-    private const string TrustedFallbackServerOrigin = "https://reserve-api.vart-portal.ru";
+    private const string PrimaryServerOrigin = "https://reserve-api.vart-portal.ru";
+    private const string TrustedFallbackServerOrigin = "https://api.vart-portal.ru";
     private static readonly TimeSpan ServerProbeTimeout = TimeSpan.FromSeconds(10);
     private const string WebViewSoftwareRenderingArguments = "--disable-gpu --disable-gpu-compositing";
     private const string WebViewNetworkCompatibilityArguments = "--disable-http2";
@@ -92,8 +92,8 @@ public partial class MainWindow : Window
         var mayUsePortalFallback = string.IsNullOrWhiteSpace(preferred) || IsAutomaticPortalOrigin(preferred);
         if (mayUsePortalFallback)
         {
-            // A previous automatic fallback must never pin the next launch to reserve.
-            // Always retry the owned primary first; reserve remains a same-launch fallback.
+            // Do not let a previously persisted automatic endpoint override the current
+            // control-plane preference. Try the preferred owned endpoint first, then fallback.
             Add(PrimaryServerOrigin);
             Add(TrustedFallbackServerOrigin);
         }
