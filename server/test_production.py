@@ -69,6 +69,33 @@ class ProductionTest(unittest.TestCase):
         self.assertEqual(rights.defaults('shift'),set())
         self.assertEqual(rights.defaults('accountant'),set())
 
+    def test_code_interpreter_is_server_only_role_scoped_and_audited(self):
+        manager=self.role_token('manager');director=self.role_token('director')
+        disabled={'PORTAL_CODE_INTERPRETER_ENABLED':'false','OPENAI_API_KEY':''}
+        with patch.dict(portal.os.environ,disabled,clear=False):
+            status=self.get('code-interpreter',self.admin)['data']
+            self.assertFalse(status['enabled']);self.assertFalse(status['configured'])
+            self.get('code-interpreter',self.worker,status=403)
+            self.get('code-interpreter',manager,status=403)
+            self.post('code-interpreter',dict(prompt='2+2'),self.admin,status=503)
+
+        enabled={'PORTAL_CODE_INTERPRETER_ENABLED':'true','PORTAL_CODE_INTERPRETER_MODEL':'gpt-5.4-mini',
+                 'PORTAL_CODE_INTERPRETER_MEMORY':'1g','OPENAI_API_KEY':'test-only-secret'}
+        fake={'text':'4','response_id':'resp_route','model':'gpt-5.4-mini','container_id':'cntr_route'}
+        with patch.dict(portal.os.environ,enabled,clear=False),patch('openai_code_interpreter.run',return_value=fake) as run:
+            result=self.post('code-interpreter',dict(prompt='Посчитай 2+2'),director)['data']
+            self.assertEqual(result['text'],'4')
+            run.assert_called_once()
+            self.post('code-interpreter',dict(prompt='x',unexpected=True),director,status=400)
+        with portal.tenants.company_scope(1),portal.db() as conn:
+            audits=[json.loads(row['payload']) for row in conn.execute(
+                "SELECT payload FROM portal_production WHERE company_id=1 AND kind='audit'")]
+        event=next(item for item in audits if item.get('event')=='ai.code_interpreter.used')
+        serialized=json.dumps(event,ensure_ascii=False)
+        self.assertEqual(event['entity_id'],'resp_route')
+        self.assertNotIn('Посчитай 2+2',serialized)
+        self.assertNotIn('test-only-secret',serialized)
+
     def test_direct_employee_account_creation_for_admin_and_director(self):
         director=self.role_token('director')
         manager=self.role_token('manager')

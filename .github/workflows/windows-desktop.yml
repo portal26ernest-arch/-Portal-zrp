@@ -143,7 +143,7 @@ jobs:
           tag="portal-desktop-v${VERSION}"
           sha256=$(awk '{print tolower($1)}' "release/${package}.sha256")
           [[ "$sha256" =~ ^[0-9a-f]{64}$ ]]
-          version_parts=(${VERSION//./ })
+          IFS='.' read -r -a version_parts <<< "$VERSION"
           build=$((version_parts[0] * 10 + version_parts[1]))
           download_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/${package}"
           printf 'PORTAL-DESKTOP-UPDATE-V1\n%s\n%s\n%s\n%s\n' "$build" "$VERSION" "$download_url" "$sha256" > "$payload"

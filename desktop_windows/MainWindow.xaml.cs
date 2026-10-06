@@ -20,7 +20,6 @@ public partial class MainWindow : Window
     private const string ServerDiscoveryUrl = "https://raw.githubusercontent.com/portal26ernest-arch/-Portal-zrp/main/portal-server.json";
     private const string PrimaryServerOrigin = "https://api.vart-portal.ru";
     private const string TrustedFallbackServerOrigin = "https://reserve-api.vart-portal.ru";
-    private const string LegacyServerOrigin = "https://2a03-6f00-a--1-f426.sslip.io";
     private static readonly TimeSpan ServerProbeTimeout = TimeSpan.FromSeconds(5);
     private const string WebViewSoftwareRenderingArguments = "--disable-gpu --disable-gpu-compositing";
     private static readonly HttpClient Http = new(new HttpClientHandler { AllowAutoRedirect = false })
@@ -76,8 +75,7 @@ public partial class MainWindow : Window
     {
         if (!TryNormalizeOrigin(raw, out var origin, out _)) return false;
         return origin.Equals(PrimaryServerOrigin, StringComparison.OrdinalIgnoreCase) ||
-               origin.Equals(TrustedFallbackServerOrigin, StringComparison.OrdinalIgnoreCase) ||
-               origin.Equals(LegacyServerOrigin, StringComparison.OrdinalIgnoreCase);
+               origin.Equals(TrustedFallbackServerOrigin, StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task<bool> ConnectFirstAvailablePortalServerAsync(string? preferred)
@@ -95,7 +93,6 @@ public partial class MainWindow : Window
         {
             Add(PrimaryServerOrigin);
             Add(TrustedFallbackServerOrigin);
-            Add(LegacyServerOrigin);
         }
 
         foreach (var candidate in candidates)
@@ -196,6 +193,10 @@ public partial class MainWindow : Window
             return false;
         }
 
+        var host = uri.IdnHost;
+        if (!host.Equals("api.vart-portal.ru", StringComparison.OrdinalIgnoreCase) &&
+            !host.Equals("reserve-api.vart-portal.ru", StringComparison.OrdinalIgnoreCase))
+            return false;
         origin = uri.GetLeftPart(UriPartial.Authority).TrimEnd('/');
         return true;
     }
@@ -428,6 +429,11 @@ public partial class MainWindow : Window
     {
         if (Browser.CoreWebView2 is null) return;
         try { Browser.CoreWebView2.RemoveHostObjectFromScript("portalDesktopCache"); } catch { }
+        if (!IsAutomaticPortalOrigin(origin))
+        {
+            _cacheBridge = null;
+            return;
+        }
         _cacheBridge = new DesktopCacheBridge(_settingsDir, origin);
         Browser.CoreWebView2.AddHostObjectToScript("portalDesktopCache", _cacheBridge);
     }
