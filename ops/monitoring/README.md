@@ -20,6 +20,7 @@ The declarative Prometheus probes cover:
 - https://api.vart-portal.ru/api/ready
 - https://vart-portal.ru/web/
 - https://reserve-api.vart-portal.ru/api/ping
+- SSH banner on api.vart-portal.ru:22 (must actually return SSH-2.0-, not merely accept TCP)
 
 Uptime Kuma should mirror these checks plus certificate-expiry checks. Prometheus remains the canonical declarative probe/rule source because Uptime Kuma monitor management uses an internal API whose compatibility is not guaranteed.
 

@@ -9,3 +9,11 @@ modules:
       fail_if_ssl: false
       tls_config:
         insecure_skip_verify: false
+
+  ssh_banner:
+    prober: tcp
+    timeout: 7s
+    tcp:
+      preferred_ip_protocol: ip4
+      query_response:
+        - expect: "^SSH-2.0-"

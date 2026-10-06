@@ -54,6 +54,9 @@ for endpoint in [
     if endpoint not in prom:
         errors.append(f"missing endpoint: {endpoint}")
 
+if "api.vart-portal.ru:22" not in prom or "module: [ssh_banner]" not in prom:
+    errors.append("missing SSH banner probe")
+
 dashboard = json.loads(
     (ROOT / "grafana" / "dashboards" / "portal-overview.json").read_text(encoding="utf-8")
 )
