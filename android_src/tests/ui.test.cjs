@@ -685,6 +685,7 @@ test('browser UI regression',async t=>{
       await page.waitForFunction(()=>mock.calls.some(c=>c.method==='POST'&&c.url==='/api/v3/code-interpreter'));
       const aiCall=await page.evaluate(()=>mock.calls.findLast(c=>c.method==='POST'&&c.url==='/api/v3/code-interpreter'));
       assert.deepEqual(aiCall.body,{prompt:'Посчитай среднее: 10, 15'});
+      await page.waitForFunction(()=>document.querySelector('#codeInterpreterResult')?.innerText.includes('Среднее значение: 12.5'));
       assert.match(await page.locator('#codeInterpreterResult').innerText(),/Среднее значение: 12\.5/);
       assert.deepEqual(errors,[]);await page.close();
     });
