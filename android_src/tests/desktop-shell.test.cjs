@@ -120,7 +120,7 @@ assert.match(app,/autoCheckUpdates\(\)/);
 assert.match(app,/HTTP разрешён только для локального сервера/);
 assert.match(app,/url\.protocol!=='https:'&&!\(url\.protocol==='http:'&&loopback\)/);
 assert.match(xaml,/Content="Обновить PORTAL"[^>]+Click="CheckUpdate_Click"/);
-assert.match(code,/private const int CurrentBuild = 70/);
+assert.match(code,/private const int CurrentBuild = 71/);
 assert.match(code,/WebViewSoftwareRenderingArguments = "--disable-gpu --disable-gpu-compositing"/);
 assert.match(code,/WebViewNetworkCompatibilityArguments = "--disable-http2 --disable-quic"/);
 assert.match(code,/AdditionalBrowserArguments = WebViewArguments\(\)/);
@@ -132,7 +132,7 @@ assert.match(code,/catch \(HttpRequestException\)[\s\S]+LoadGithubUpdateManifest
 assert.match(code,/catch \(TaskCanceledException\)[\s\S]+LoadGithubUpdateManifestAsync\(\)/);
 assert.match(code,/if \(_serverOrigin is not null\)[\s\S]+githubManifest = await LoadGithubUpdateManifestAsync\(\)/);
 assert.doesNotMatch(code,/Сначала подключитесь к серверу PORTAL/);
-assert.match(code,/PORTAL-Desktop\/5\.12\.8/);
+assert.match(code,/PORTAL-Desktop\/5\.12\.9/);
 assert.match(code,/DownloadAndInstallUpdate\(manifest, downloadUri\)/);
 assert.match(code,/ServerDiscoveryUrl = "https:\/\/raw\.githubusercontent\.com\/portal26ernest-arch\/-Portal-zrp\/main\/portal-server\.json"/);
 assert.match(code,/RefreshOfficialServerAsync\(\)/);
@@ -179,6 +179,10 @@ assert.match(fs.readFileSync(path.join(repo,'desktop_windows/Portal.Desktop.cspr
 assert.match(windowsWorkflow,/PORTAL_DESKTOP_UPDATE_SIGNING_PRIVATE_KEY/);
 assert.match(windowsWorkflow,/openssl dgst -sha256 -sign/);
 assert.match(windowsWorkflow,/portal-desktop-update\.json/);
+assert.ok(windowsWorkflow.includes('update_build: ${{ steps.meta.outputs.update_build }}'));
+assert.ok(windowsWorkflow.includes('BUILD: ${{ needs.windows-desktop.outputs.update_build }}'));
+assert.match(windowsWorkflow,/PortalUpdateBuild/);
+assert.doesNotMatch(windowsWorkflow,/version_parts|version_parts\[0\] \* 10/);
 assert.match(windowsWorkflow,/test -n "\$PORTAL_DESKTOP_UPDATE_SIGNING_PRIVATE_KEY"/);
 assert.match(code,/githubManifest\.Build > serverManifest\.Build/);
 assert.match(code,/portal-desktop-43-style/);

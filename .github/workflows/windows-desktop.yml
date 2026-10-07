@@ -38,6 +38,7 @@ jobs:
   windows-desktop:
     outputs:
       version: ${{ steps.meta.outputs.version }}
+      update_build: ${{ steps.meta.outputs.update_build }}
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
@@ -69,8 +70,15 @@ jobs:
         run: |
           $project = [xml](Get-Content -LiteralPath "desktop_windows/Portal.Desktop.csproj" -Raw)
           $version = [string]$project.Project.PropertyGroup.Version
+          $fileVersion = [string]$project.Project.PropertyGroup.FileVersion
+          $updateBuild = [string]$project.Project.PropertyGroup.PortalUpdateBuild
           if ([string]::IsNullOrWhiteSpace($version)) { throw "Desktop version is missing" }
+          if ($updateBuild -notmatch '^[1-9][0-9]*$') { throw "Desktop updater build is missing or invalid" }
+          if ($fileVersion -ne "$version.$updateBuild") { throw "Desktop FileVersion must be <Version>.<PortalUpdateBuild>" }
+          $mainWindow = Get-Content -LiteralPath "desktop_windows/MainWindow.xaml.cs" -Raw
+          if ($mainWindow -notmatch "private const int CurrentBuild = $updateBuild;") { throw "Desktop CurrentBuild must equal PortalUpdateBuild" }
           "version=$version" >> $env:GITHUB_OUTPUT
+          "update_build=$updateBuild" >> $env:GITHUB_OUTPUT
       - name: Validate installer PowerShell syntax
         shell: pwsh
         run: |
@@ -134,6 +142,7 @@ jobs:
         env:
           PORTAL_DESKTOP_UPDATE_SIGNING_PRIVATE_KEY: ${{ secrets.PORTAL_DESKTOP_UPDATE_SIGNING_PRIVATE_KEY }}
           VERSION: ${{ needs.windows-desktop.outputs.version }}
+          BUILD: ${{ needs.windows-desktop.outputs.update_build }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
@@ -148,8 +157,8 @@ jobs:
           tag="portal-desktop-v${VERSION}"
           sha256=$(awk '{print tolower($1)}' "release/${package}.sha256")
           [[ "$sha256" =~ ^[0-9a-f]{64}$ ]]
-          IFS='.' read -r -a version_parts <<< "$VERSION"
-          build=$((version_parts[0] * 10 + version_parts[1]))
+          [[ "$BUILD" =~ ^[1-9][0-9]*$ ]]
+          build="$BUILD"
           download_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/${package}"
           printf 'PORTAL-DESKTOP-UPDATE-V1\n%s\n%s\n%s\n%s\n' "$build" "$VERSION" "$download_url" "$sha256" > "$payload"
           openssl dgst -sha256 -sign "$key" -out "$signature" "$payload"
