@@ -50,6 +50,8 @@ assert.match(code,/private static MessengerWindow\? _messengerWindow/);
 assert.match(code,/OpenMessengerWindowAsync\(string provider = "telegram", string\? relayJson = null\)/);
 assert.ok(code.indexOf('_messengerWindow.ShowSingleton();') < code.indexOf('await _messengerWindow.OpenProviderAsync(provider, relay);'),'Messenger window must be shown before WebView2 provider initialization');
 assert.doesNotMatch(messengerWindow,/Loaded \+= async \(_,_\) => \{ await EnsureBrowserAsync\(\); await LoadProviderAsync\(_provider\); \};/,'Messenger must not race provider initialization from Loaded');
+assert.match(messengerWindow,/MessengerSoftwareRenderingArguments = "--disable-gpu --disable-gpu-compositing"/);
+assert.match(messengerWindow,/browserArguments \+ " " \+ MessengerSoftwareRenderingArguments/);
 
 assert.match(code,/await _messengerClearTask;[\s\S]+MessengerRelayTicket\.Parse\(relayJson\)/);
 assert.match(xaml,/x:Name="HomeButton"[^>]+Click="Home_Click"/);

@@ -61,7 +61,7 @@ public partial class MessengerWindow : Window
     private readonly string _settingsDir;
     private const string TelegramProfileName = "MessengerWebView2-Telegram";
     private const string MaxProfileName = "MessengerWebView2-Max";
-    private const string WebViewRenderingArguments = "--disable-gpu --disable-gpu-compositing";
+    private const string MessengerSoftwareRenderingArguments = "--disable-gpu --disable-gpu-compositing";
     private bool _closeRequested;
     private bool _initialized;
     private bool _telegramInitialized;
@@ -176,13 +176,13 @@ public partial class MessengerWindow : Window
                 {
                     DisposeWssLocalProxy();
                     _wssLocalProxy = MessengerWssLocalProxy.Start(_relay);
-                    options = new CoreWebView2EnvironmentOptions($"{WebViewRenderingArguments} --proxy-server={_wssLocalProxy.ProxyUrl}");
+                    options = new CoreWebView2EnvironmentOptions($"--proxy-server={_wssLocalProxy.ProxyUrl}");
                 }
                 catch
                 {
                     DisposeWssLocalProxy();
                     if (_relay.HasDirectTransport)
-                        options = new CoreWebView2EnvironmentOptions($"{WebViewRenderingArguments} --proxy-server={_relay.ProxyUrl}");
+                        options = new CoreWebView2EnvironmentOptions($"--proxy-server={_relay.ProxyUrl}");
                     else
                     {
                         RelayStatus.Text = "Защищённый канал PORTAL временно недоступен.";
@@ -192,7 +192,7 @@ public partial class MessengerWindow : Window
             }
             else if (_relay.HasDirectTransport)
             {
-                options = new CoreWebView2EnvironmentOptions($"{WebViewRenderingArguments} --proxy-server={_relay.ProxyUrl}");
+                options = new CoreWebView2EnvironmentOptions($"--proxy-server={_relay.ProxyUrl}");
             }
             else
             {
@@ -207,9 +207,15 @@ public partial class MessengerWindow : Window
 
     private async Task InitializeViewAsync(Microsoft.Web.WebView2.Wpf.WebView2 view, string profileName, CoreWebView2EnvironmentOptions? options, bool telegram)
     {
-        if (options is null) options = new CoreWebView2EnvironmentOptions(WebViewRenderingArguments);
         var profile = Path.Combine(_settingsDir, profileName);
         Directory.CreateDirectory(profile);
+        // Messenger WebView2 must use the same software-composition safeguard as the main PORTAL view.
+        // On affected Windows/WebView2 154 systems the page and network load correctly but the WPF surface stays white.
+        var browserArguments = options?.AdditionalBrowserArguments ?? string.Empty;
+        var mergedBrowserArguments = string.IsNullOrWhiteSpace(browserArguments)
+            ? MessengerSoftwareRenderingArguments
+            : browserArguments + " " + MessengerSoftwareRenderingArguments;
+        options = new CoreWebView2EnvironmentOptions(mergedBrowserArguments);
         var environment = await CoreWebView2Environment.CreateAsync(null, profile, options);
         await view.EnsureCoreWebView2Async(environment);
         view.CoreWebView2.Settings.AreDevToolsEnabled = false;
