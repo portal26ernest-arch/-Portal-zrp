@@ -421,8 +421,10 @@ public partial class MainWindow : Window
                 _messengerWindow = null;
             }
             if (_messengerWindow is null) _messengerWindow = new MessengerWindow(_settingsDir, relay);
-            await _messengerWindow.OpenProviderAsync(provider, relay);
+            // WebView2 WPF needs a realized/visible host window before controller initialization.
+            // Show first, then initialize the provider; otherwise failures are invisible to the user.
             _messengerWindow.ShowSingleton();
+            await _messengerWindow.OpenProviderAsync(provider, relay);
         }
         catch { }
     }
