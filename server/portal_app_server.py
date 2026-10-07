@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 import portal_tenancy as tenants
-from production_repository import Repository
+from production_repository import Repository, utcnow
 from production_service import Production
 from employee_identity import (account_directory, assigned_client_ids, canonical_user_payload,
     create_employee_card, create_invited_account, employee_exists, employee_id_for_user,
@@ -1299,9 +1299,47 @@ class Handler(BaseHTTPRequestHandler):
                 service=Production(repo,self.request_user)
                 storage=LocalFileStorage(os.environ.get('PORTAL_DOCUMENT_ROOT',str(Path(DB_PATH).resolve().parent/'.portal-documents')))
                 values=parse_body(self) if method=='POST' else parse_qs(urlparse(self.path).query)
-                if action in documents_api.TEMPLATE_ACTIONS:
-                    result=documents_api.template_route(service,storage,action,method,values,tenants.get_company(DB_PATH,repo.company_id))
-                else:result=documents_api.route(service,storage,action,method,values,tenants.get_company(DB_PATH,repo.company_id))
+                try:
+                    if action in documents_api.TEMPLATE_ACTIONS:
+                        result=documents_api.template_route(service,storage,action,method,values,tenants.get_company(DB_PATH,repo.company_id))
+                    else:
+                        result=documents_api.route(service,storage,action,method,values,tenants.get_company(DB_PATH,repo.company_id))
+                except Exception as exc:
+                    if method=='POST' and action=='document-generate' and not isinstance(exc, PermissionError):
+                        try:
+                            conn.rollback()
+                            repo.lock()
+                            document_type=values.get('document_type')
+                            if not isinstance(document_type,str) or not 1<=len(document_type)<=80 or not all(ch.isalnum() or ch in '_-' for ch in document_type):
+                                document_type='document'
+                            request_id=values.get('request_id')
+                            seed=request_id if isinstance(request_id,str) and 1<=len(request_id)<=200 else utcnow()
+                            digest=hashlib.sha256(f'{repo.company_id}|{document_type}|{seed}'.encode()).hexdigest()
+                            key='document-error:'+digest
+                            occurred_at=utcnow()
+                            repo.insert_once('notifications',dict(event='document_error',reminder_kind='document_error',
+                                entity_id=document_type,title='Ошибка генерации документа',idempotency_key=key,
+                                occurred_at=occurred_at),key)
+                            conn.commit()
+                        except Exception:
+                            try:conn.rollback()
+                            except Exception:pass
+                    raise
+                if method=='POST' and action=='document-generate':
+                    try:
+                        document_type=values.get('document_type')
+                        if not isinstance(document_type,str) or not 1<=len(document_type)<=80 or not all(ch.isalnum() or ch in '_-' for ch in document_type):
+                            document_type='document'
+                        request_id=values.get('request_id')
+                        result_id=result.get('id') if isinstance(result,dict) else None
+                        seed=request_id if isinstance(request_id,str) and 1<=len(request_id)<=200 else str(result_id or utcnow())
+                        digest=hashlib.sha256(f'{repo.company_id}|{document_type}|{seed}'.encode()).hexdigest()
+                        key='document-recovered:'+digest
+                        repo.insert_once('notifications',dict(event='document_recovered',reminder_kind='document_recovered',
+                            entity_id=document_type,title='Документ успешно сформирован',idempotency_key=key,
+                            occurred_at=utcnow()),key)
+                    except Exception:
+                        pass
                 if method=='POST':conn.commit()
                 return self.send_json(dict(ok=True,data=result))
             if method=='POST':repo.lock()

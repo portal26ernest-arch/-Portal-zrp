@@ -295,6 +295,60 @@ class ProductionTest(unittest.TestCase):
         if closed_payroll is None:self.assertIsNone(data['closed_month_payroll'])
         else:self.assertEqual((data['closed_month_payroll']['accrued'],data['closed_month_payroll']['paid'],data['closed_month_payroll']['balance']),closed_payroll)
 
+    def test_today_control_channels_are_live_and_document_errors_persist_safely(self):
+        work=self.work()
+        first=self.get('today')['data']
+        channels={item['id']:item for item in first['control_channels']}
+        self.assertTrue({'material_low','payment_late','not_invoiced','payroll_period','document_error'} <= set(channels))
+        self.assertEqual(channels['not_invoiced']['status'],'warning')
+        self.assertGreater(channels['not_invoiced']['amount'],0)
+        invoice=self.post('invoices',dict(work_ids=[work['id']],due_at='2020-01-01'))['data']
+        second=self.get('today')['data'];channels={item['id']:item for item in second['control_channels']}
+        self.assertEqual(channels['not_invoiced']['status'],'ok')
+        self.assertEqual(channels['payment_late']['status'],'warning')
+        self.assertGreater(channels['payment_late']['amount'],0)
+
+        body={'document_type':'not-a-real-document-type','request_id':'document-error-once'}
+        self.post('document-generate',body,status=400)
+        self.post('document-generate',body,status=400)
+        third=self.get('today')['data'];channels={item['id']:item for item in third['control_channels']}
+        self.assertEqual(channels['document_error']['status'],'critical')
+        self.assertEqual(channels['document_error']['count'],1)
+        self.assertTrue(any(item.get('type')=='document_error' for item in third['attention']))
+        self.post('document-generate',body,self.worker,status=403)
+        recovered=self.post('document-generate',{'document_type':'invoice_pdf','invoice_id':invoice['id'],
+            'request_id':'document-recovered-once'})['data']
+        self.assertEqual(recovered['status'],'ready')
+        fourth=self.get('today')['data'];channels={item['id']:item for item in fourth['control_channels']}
+        self.assertEqual(channels['document_error']['status'],'ok')
+        self.assertEqual(channels['document_error']['count'],0)
+        with portal.tenants.company_scope(1),portal.db() as conn:
+            events=Repository(conn,1).list('notifications')
+        rows=[row for row in events if row.get('event')=='document_error']
+        self.assertEqual(len(rows),1)
+        self.assertEqual(set(rows[0]) & {'error','message','exception','traceback'},set())
+        self.assertEqual(len([row for row in events if row.get('event')=='document_recovered']),1)
+
+    def test_payroll_control_channel_marks_finished_half_month_ready_then_closed(self):
+        current=self.work()
+        with portal.tenants.company_scope(1),portal.db() as conn:
+            repo=Repository(conn,1)
+            historical=dict(repo.get('works',current['id']),completed_at='2026-10-10T12:00:00.000000',
+                            created_at='2026-10-10T12:00:00.000000')
+            for key in ('id','company_id'):historical.pop(key,None)
+            repo.insert('works',historical)
+            admin_user=next(user for user in repo.catalog('users') if user['id']==self.admin_id)
+            fixed=Production(repo,admin_user,lambda:'2026-10-16T10:00:00.000000')
+            before={item['id']:item for item in fixed.today()['control_channels']}['payroll_period']
+            self.assertEqual((before['period_start'],before['period_end']),('2026-10-01','2026-10-15'))
+            self.assertEqual(before['status'],'warning')
+            closed=fixed.payroll_period({'period_start':'2026-10-01','period_end':'2026-10-15'})
+            conn.commit()
+            after={item['id']:item for item in fixed.today()['control_channels']}['payroll_period']
+        self.assertEqual(closed['status'],'closed')
+        self.assertEqual(after['status'],'ok')
+        self.assertTrue(after['closed'])
+
     def test_chat_stickers_absence_validation_idempotency_and_tenant_scope(self):
         self.assertEqual([item['key'] for item in self.get('chat-sticker-catalog')['data']],
                          ['accepted','in_progress','done','help','important','thanks'])
