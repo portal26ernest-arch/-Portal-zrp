@@ -25,14 +25,15 @@ public sealed class DesktopCacheBridge
         Directory.CreateDirectory(_outboxRoot);
     }
 
-    public string Read(string companyId, string cacheKey)
+    public string Read(string cacheScope, string cacheKey)
     {
         try
         {
-            var path = CachePath(companyId, cacheKey);
+            var path = CachePath(cacheScope, cacheKey);
             if (path is null || !File.Exists(path)) return string.Empty;
             var encrypted = File.ReadAllBytes(path);
-            if (encrypted.Length > MaxPayloadBytes * 2) return string.Empty;            var plain = ProtectedData.Unprotect(
+            if (encrypted.Length > MaxPayloadBytes * 2) return string.Empty;
+            var plain = ProtectedData.Unprotect(
                 encrypted,
                 optionalEntropy: null,
                 scope: DataProtectionScope.CurrentUser);
@@ -45,11 +46,11 @@ public sealed class DesktopCacheBridge
         }
     }
 
-    public bool Write(string companyId, string cacheKey, string json)
+    public bool Write(string cacheScope, string cacheKey, string json)
     {
         try
         {
-            var path = CachePath(companyId, cacheKey);
+            var path = CachePath(cacheScope, cacheKey);
             if (path is null || string.IsNullOrWhiteSpace(json)) return false;
             var plain = Encoding.UTF8.GetBytes(json);
             if (plain.Length > MaxPayloadBytes) return false;
@@ -58,7 +59,8 @@ public sealed class DesktopCacheBridge
                 optionalEntropy: null,
                 scope: DataProtectionScope.CurrentUser);
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            var temp = path + ".tmp";            File.WriteAllBytes(temp, encrypted);
+            var temp = path + ".tmp";
+            File.WriteAllBytes(temp, encrypted);
             File.Move(temp, path, overwrite: true);
             return true;
         }
@@ -68,13 +70,13 @@ public sealed class DesktopCacheBridge
         }
     }
 
-    public bool ClearCompany(string companyId)
+    public bool ClearCompany(string cacheScope)
     {
         try
         {
-            var companyDir = CompanyDirectory(companyId);
-            if (companyDir is null || !Directory.Exists(companyDir)) return true;
-            Directory.Delete(companyDir, recursive: true);
+            var scopeDir = CacheScopeDirectory(cacheScope);
+            if (scopeDir is null || !Directory.Exists(scopeDir)) return true;
+            Directory.Delete(scopeDir, recursive: true);
             return true;
         }
         catch
@@ -83,13 +85,53 @@ public sealed class DesktopCacheBridge
         }
     }
 
-    public bool Delete(string companyId, string cacheKey)
+    public bool Delete(string cacheScope, string cacheKey)
     {
         try
         {
-            var path = CachePath(companyId, cacheKey);
+            var path = CachePath(cacheScope, cacheKey);
             if (path is null || !File.Exists(path)) return true;
             File.Delete(path);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public bool MarkStale(string cacheScope, string keysJson)
+    {
+        try
+        {
+            var dir = CacheScopeDirectory(cacheScope);
+            if (dir is null || !Directory.Exists(dir) || string.IsNullOrWhiteSpace(keysJson)) return false;
+            var keys = JsonSerializer.Deserialize<string[]>(keysJson) ?? Array.Empty<string>();
+            if (keys.Length == 0 || keys.Length > 64) return false;
+            foreach (var path in Directory.GetFiles(dir, "*.bin"))
+            {
+                try
+                {
+                    var encrypted = File.ReadAllBytes(path);
+                    if (encrypted.Length > MaxPayloadBytes * 2) continue;
+                    var plain = ProtectedData.Unprotect(encrypted, optionalEntropy: null, scope: DataProtectionScope.CurrentUser);
+                    using var document = JsonDocument.Parse(plain);
+                    var root = document.RootElement;
+                    if (!root.TryGetProperty("key", out var keyNode)) continue;
+                    var key = keyNode.GetString() ?? string.Empty;
+                    if (!keys.Any(prefix => key.Equals(prefix, StringComparison.Ordinal) || key.StartsWith(prefix + "?", StringComparison.Ordinal))) continue;
+
+                    var map = JsonSerializer.Deserialize<Dictionary<string, object?>>(plain) ?? new();
+                    map["staleAt"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    var updated = JsonSerializer.SerializeToUtf8Bytes(map);
+                    if (updated.Length > MaxPayloadBytes) continue;
+                    var protectedBytes = ProtectedData.Protect(updated, optionalEntropy: null, scope: DataProtectionScope.CurrentUser);
+                    var temp = path + ".tmp";
+                    File.WriteAllBytes(temp, protectedBytes);
+                    File.Move(temp, path, overwrite: true);
+                }
+                catch { }
+            }
             return true;
         }
         catch
@@ -257,17 +299,24 @@ public sealed class DesktopCacheBridge
         return Path.Combine(_outboxRoot, id.ToString());
     }
 
-    private string? CachePath(string companyId, string cacheKey)
+    private string? CachePath(string cacheScope, string cacheKey)
     {
-        var dir = CompanyDirectory(companyId);
+        var dir = CacheScopeDirectory(cacheScope);
         if (dir is null || string.IsNullOrWhiteSpace(cacheKey) || cacheKey.Length > 2048) return null;
         return Path.Combine(dir, Hash(cacheKey) + ".bin");
     }
 
-    private string? CompanyDirectory(string companyId)
+    private string? CacheScopeDirectory(string cacheScope)
     {
-        if (!long.TryParse(companyId, out var id) || id < 1) return null;
-        return Path.Combine(_root, id.ToString());
+        if (string.IsNullOrWhiteSpace(cacheScope) || cacheScope.Length > 2048) return null;
+        var parts = cacheScope.Split('|', 4);
+        if (parts.Length != 4 || !long.TryParse(parts[0], out var companyId) || companyId < 1 ||
+            !long.TryParse(parts[1], out var userId) || userId < 1) return null;
+        var role = parts[2];
+        var permissions = parts[3];
+        if (role.Length is < 2 or > 40 || role.Any(c => !(char.IsAsciiLetterLower(c) || c == '_'))) return null;
+        if (permissions.Length > 1500 || permissions.Any(c => !(char.IsAsciiLetterOrDigit(c) || c is '.' or '_' or '-' or ','))) return null;
+        return Path.Combine(_root, companyId.ToString(), Hash(cacheScope));
     }
 
     private static string Hash(string value)
