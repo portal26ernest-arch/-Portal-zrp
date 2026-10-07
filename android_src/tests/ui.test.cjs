@@ -203,12 +203,13 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
     if(web)window.__PORTAL_WEB__=true;
     const user={id:1,username:role,display_name:'Тестовый пользователь',role,company_id:1,employee_id:role==='platform_owner'?null:101};
     const client={id:1,name:'Клиент',active:1};
-    window.mock={calls:[],offline:false,rejectWrite:false,failUrls:[],hold:false,held:[],update:{ok:true,configured:false},timer:null,stage3Today:null,stage3Batches:null,stage3Shipments:null,stage3Tasks:null,stage3Economy:null,stage3Finance:null,stage3Permissions:null,stage3Invoices:null,stage3Users:null,clientNameHistory:[],clientAliases:[],clientRequisites:{legal_name:'ООО Тест',inn:'TEST-INN-001'},tariffHistory:[],presenceOnline:true,saved:null,previewMode:'ok',applyMode:'ok',payrollPaid:2000,invites:[],products:[]};
+    window.mock={calls:[],offline:false,rejectWrite:false,failUrls:[],forbiddenUrls:[],cachedUrls:[],hold:false,held:[],update:{ok:true,configured:false},timer:null,stage3Today:null,stage3Batches:null,stage3Shipments:null,stage3Tasks:null,stage3Economy:null,stage3Finance:null,stage3Permissions:null,stage3Invoices:null,stage3Users:null,clientNameHistory:[],clientAliases:[],clientRequisites:{legal_name:'ООО Тест',inn:'TEST-INN-001'},tariffHistory:[],presenceOnline:true,saved:null,previewMode:'ok',applyMode:'ok',payrollPaid:2000,invites:[],products:[]};
     const respond=(id,data)=>setTimeout(()=>window.PortalBridgeResult(id,JSON.stringify(data)),0);
     window.PortalNative={getServerUrl:()=> 'http://127.0.0.1:8765',getAppMetadata:()=>JSON.stringify(metadata),checkUpdates:id=>respond(id,mock.update),saveBase64FileAsync(id,filename,mime,file_b64){mock.saved={filename,mime,file_b64};respond(id,{ok:true,location:'Downloads/PORTAL/'+filename});},requestAsync(id,method,url,payload,token,company){
       mock.calls.push({method,url,body:payload?JSON.parse(payload):null,token,company});
       if(mock.offline)return respond(id,{ok:false,network:true,error:'Нет соединения'});
       if(mock.rejectWrite&&method==='POST')return respond(id,{ok:false,httpStatus:401});
+      if(mock.forbiddenUrls.includes(url))return respond(id,{ok:false,httpStatus:403,error:'Недостаточно прав'});
       if(mock.failUrls.includes(url))return respond(id,{ok:false,httpStatus:503,error:'Синтетическая ошибка источника'});
       let data={ok:true};
       if(stage3&&url==='/api/v3/meta')Object.assign(data,{ready:true,heartbeat_seconds:60,permissions:mock.stage3Permissions||['work.write','tasks.read','tasks.manage','batches.receive','finance.read','invoices.read','invoices.create','users.manage','access.history.read','payroll.own'],catalog:[{code:'work.write',group:'Работа',label:'Вносить свою выработку',recommended:['Сборщик']},{code:'access.history.read',group:'Сотрудники',label:'Просматривать историю входов сотрудников',recommended:['Управляющий','Администратор']}]});
@@ -274,6 +275,7 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
       else if(url==='/api/users')Object.assign(data,{users:[user],employees:[{employee_id:101,full_name:'Сотрудник'}],roles:{admin:'Администратор',manager:'Менеджер',packer:'Сотрудник'}});
       else if(url.endsWith('/clients'))data.clients=[{...client,name:mock.clientNameOverride||client.name}];
       else if(url==='/api/clients/1')Object.assign(data,{client,stats:{},requisites:{}});
+      if(mock.cachedUrls.includes(url)){data.cached=true;data.stale=true;data.cached_at='2026-10-07T06:00:00Z';}
       if(mock.hold&&url.startsWith('/api/dashboard'))mock.held.push(()=>respond(id,data));else respond(id,data);
     }};
   },{role,metadata,stage3,web});
@@ -331,6 +333,34 @@ test('browser UI regression',async t=>{
       await page.locator('#loginUser').fill('tester');await page.locator('#loginPin').fill('1234');await page.locator('#loginSubmit').click();
       await page.waitForSelector('#loginError:not(.hidden)');assert.equal(await page.locator('#app').isVisible(),false);
       assert.equal(await page.locator('#loginSubmit').isEnabled(),true);assert.deepEqual(errors,[]);await page.close();
+    });
+    await t.test('transient network failure restores the previous working screen',async()=>{
+      const {page,errors}=await fixture(browser,'manager');await login(page);
+      const before=await page.locator('#content').innerText();
+      await page.evaluate(async()=>{mock.offline=true;await go('clients');});
+      await page.waitForFunction(()=>S.page==='dashboard'&&!document.querySelector('#content .loading'));
+      assert.equal(await page.locator('#content').innerText(),before);
+      assert.doesNotMatch(await page.locator('#content').innerText(),/Не удалось загрузить/);
+      assert.match(await page.locator('#toast').innerText(),/Работаем с локальными данными/);
+      assert.deepEqual(errors,[]);await page.close();
+    });
+    await t.test('cached read is visible as local data without blocking the section',async()=>{
+      const {page,errors}=await fixture(browser,'manager');await login(page);
+      await page.evaluate(()=>{mock.cachedUrls=['/api/clients'];});
+      await page.evaluate(()=>go('clients'));
+      await page.waitForSelector('#content .local-data-notice');
+      assert.match(await page.locator('#content .local-data-notice').innerText(),/Локальные данные/);
+      assert.doesNotMatch(await page.locator('#content').innerText(),/Не удалось загрузить/);
+      assert.deepEqual(errors,[]);await page.close();
+    });
+    await t.test('403 remains fail-closed and is not treated as offline fallback',async()=>{
+      const {page,errors}=await fixture(browser,'manager');await login(page);
+      await page.evaluate(()=>{mock.forbiddenUrls=['/api/clients'];});
+      await page.evaluate(()=>go('clients'));
+      await page.waitForFunction(()=>document.querySelector('#content').innerText.includes('Не удалось загрузить'));
+      assert.match(await page.locator('#content').innerText(),/Недостаточно прав/);
+      assert.equal(await page.evaluate(()=>S.page),'clients');
+      assert.deepEqual(errors,[]);await page.close();
     });
     await t.test('each role renders all its allowed screens and hides forbidden tiles',async()=>{
       for(const role of ['admin','director','manager','packer','loader','driver','shift','accountant']){
