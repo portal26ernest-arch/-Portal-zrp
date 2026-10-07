@@ -22,6 +22,7 @@ test('browser uses shared shell, same-origin API and session scoped token storag
   assert.ok(!/[?&]token=/i.test(adapter));
   assert.ok(app.includes('sessionScopedStorage=browserClient&&!window.__PORTAL_DESKTOP__'));
   assert.ok(app.includes('sessionScopedStorage?sessionStorage:localStorage'));
+  assert.ok(app.includes("return !!window.__PORTAL_DESKTOP__&&PORTAL_AUTOMATIC_SERVERS.has(a)&&PORTAL_AUTOMATIC_SERVERS.has(b)"));
   assert.ok(app.includes('sessionStorage.clear()'));
 });
 
