@@ -39,7 +39,7 @@ class MonitoringDeploymentGuards(unittest.TestCase):
         self.assertIn('[[ "$(git -C "$REPO" rev-parse HEAD)" == "$SHA" ]]', DEPLOY)
         self.assertIn('git -C "$REPO" status --porcelain --untracked-files=all', DEPLOY)
 
-    def test_preflight_is_read_only_and_missing_gates_fail_closed(self) -> None:
+    def test_deploy_is_explicit_and_preflight_fails_closed(self) -> None:
         self.assertIn("--deploy", DEPLOY)
         self.assertIn("--install-docker", DEPLOY)
         self.assertIn('(( DEPLOY == 0 ))', DEPLOY)

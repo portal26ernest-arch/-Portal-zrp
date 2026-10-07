@@ -70,10 +70,10 @@ mkdir -p "$SECRETS"
 chmod 0700 /etc/portal-monitoring "$SECRETS"
 secret="$SECRETS/grafana_admin_password"
 [[ -s "$secret" ]] || fail "missing $secret; create a unique strong secret out-of-band (not printed or generated here)"
+[[ ! -L "$secret" ]] || fail "password secret must be a regular file, not a symlink"
 chmod 0600 "$secret"
 secret_len=$(wc -c < "$secret")
 (( secret_len >= 20 )) || fail "Grafana admin password secret is too weak (minimum 20 bytes)"
-[[ ! -L "$secret" ]] || fail "password secret must be a regular file, not a symlink"
 python3 - "$secret" <<'PY'
 import pathlib, sys
 value = pathlib.Path(sys.argv[1]).read_bytes().rstrip(b"\r\n")
