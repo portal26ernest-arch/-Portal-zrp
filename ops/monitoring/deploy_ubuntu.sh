@@ -144,7 +144,7 @@ check_local() {
   for i in {1..30}; do curl --fail --silent --show-error "$url" >/dev/null 2>&1 && return 0; sleep 2; done
   return 1
 }
-check_local http://127.0.0.1:3000/api/health || fail "Grafana loopback health check failed"
+check_local http://127.0.0.1:3002/api/health || fail "Grafana loopback health check failed"
 check_local http://127.0.0.1:3001/ || fail "Uptime Kuma loopback check failed"
 check_local http://127.0.0.1:9090/-/ready || fail "Prometheus loopback readiness failed"
 check_local http://127.0.0.1:9093/-/ready || fail "Alertmanager loopback readiness failed"
