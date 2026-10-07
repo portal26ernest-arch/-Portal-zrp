@@ -32,6 +32,7 @@ public partial class MainWindow : Window
     private string? _serverOrigin;
     private bool _browserEventsAttached;
     private bool _webRecoveryPending;
+    private bool _hasLoadedPortalDocument;
     private string? _pendingPersistOrigin;
     private DesktopCacheBridge? _cacheBridge;
     private PortalConnectProxy? _portalProxy;
@@ -380,10 +381,21 @@ public partial class MainWindow : Window
                         return;
                     }
                 }
+                if (_hasLoadedPortalDocument)
+                {
+                    StatusText.Text = "Связь нестабильна · локальные данные доступны";
+                    try
+                    {
+                        if (Browser.CanGoBack) Browser.GoBack();
+                    }
+                    catch { }
+                    return;
+                }
                 ShowSetup($"Не удалось загрузить PORTAL ({e.WebErrorStatus}). Проверьте сеть и сервер.");
                 return;
             }
 
+            _hasLoadedPortalDocument = true;
             StatusText.Text = "Подключено";
             if (_pendingPersistOrigin is not null &&
                 _pendingPersistOrigin.Equals(_serverOrigin, StringComparison.OrdinalIgnoreCase))

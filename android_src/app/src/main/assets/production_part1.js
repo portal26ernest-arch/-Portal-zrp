@@ -7,6 +7,7 @@ function applyProductionMeta(r){
   if(!S.stage3)return;
   S.me.permissions=Array.isArray(r.permissions)?r.permissions:[];
   S.permissionCatalog=Array.isArray(r.catalog)?r.catalog:[];
+  try{window.PortalNative?.setCacheIdentity?.(String(S.me?.id||''),String(S.me?.role||''),JSON.stringify(S.me.permissions));}catch{}
   S.heartbeatSeconds=r.heartbeat_seconds||60;
   if(r.company&&S.company&&Number(r.company.id)===Number(S.company.id)){
     S.company={...S.company,...r.company};

@@ -41,13 +41,21 @@ test('Web Share cancellation is explicit and native-only controls are hidden',()
   assert.ok(adapter.includes("document.documentElement.classList.add('web-client')"));
 });
 
-test('Desktop cache is company-scoped, encrypted by native bridge and never used for auth',()=>{
-  for(const value of ['portalDesktopCache','setCacheCompany','cacheCompany','CACHEABLE','cacheRead','cacheWrite','ClearCompany','Delete','invalidationKeys','30 * 24 * 60 * 60 * 1000','queueMutation','pendingMutations','removeMutation']) assert.ok(adapter.includes(value),value);
+test('Desktop cache is company + user + permission scoped, encrypted and fail-safe',()=>{
+  for(const value of ['portalDesktopCache','setCacheCompany','setCacheIdentity','cacheCompany','cacheIdentity','cacheScope','CACHEABLE','cacheRead','cacheWrite','ClearCompany','MarkStale','invalidationKeys','30 * 24 * 60 * 60 * 1000','queueMutation','pendingMutations','removeMutation']) assert.ok(adapter.includes(value),value);
   assert.ok(app.includes("PortalNative.setCacheCompany(String(S.company?.id||S.me.company_id||''))"));
   assert.ok(app.includes("PortalNative.setCacheCompany(String(c.id))"));
-  assert.ok(!adapter.includes("CACHEABLE = [/^\\/api\\/(?:login|me|platform)"));
-  assert.ok(adapter.includes("verb === 'GET' && !!token && !!cacheCompany"));
-  assert.ok(adapter.includes("INVALIDATES_CACHE.test(target)"));
+  assert.ok(adapter.includes("user + '|' + safeRole + '|' + signature"));
+  assert.ok(adapter.includes("verb === 'GET' && !!token && !!cacheScope()"));
+  assert.ok(adapter.includes("cached:true,stale:cached.stale,cached_at"));
+  assert.ok(adapter.includes('FETCH_TIMEOUT_MS = 20 * 1000'));
+  assert.ok(adapter.includes('new AbortController()'));
+  assert.ok(adapter.includes('signal:controller.signal'));
+  for(const endpoint of ['dashboard','payroll\\/mine','work\\/mine','notification-centers','organizer-requests','payroll-settlements','expenses','presence']) assert.ok(adapter.includes(endpoint),endpoint);
+  for(const forbidden of ['/api/login','/api/me','/api/platform','messenger-relay-ticket','code-interpreter']) assert.equal(adapter.includes("CACHEABLE = ['"+forbidden),false,forbidden);
+  assert.ok(adapter.includes("invalidationKeys(target).length"));
+  assert.ok(app.includes("setCacheIdentity?.('','','[]')"));
+  assert.ok(app.includes("setCacheIdentity?.('','')"));
 });
 
 test('local-first performance contract uses long cache, 10-minute sync, bulk tariffs and parallel dashboard',()=>{
@@ -60,6 +68,12 @@ test('local-first performance contract uses long cache, 10-minute sync, bulk tar
   assert.match(production,/queueLocalMutation\(path,payload,requestId\)/);
   assert.match(production,/api\('GET','\/api\/v3\/meta'/);
   assert.match(production,/applyProductionMeta\(meta\)/);
+  assert.match(production,/setCacheIdentity\?\.\(String\(S\.me\?\.id\|\|''\),String\(S\.me\?\.role\|\|''\),JSON\.stringify\(S\.me\.permissions\)\)/);
+  assert.match(app,/LOCAL_PREWARM_PATHS/);
+  assert.match(app,/Локальные данные/);
+  assert.match(app,/Связь с сервером временно недоступна\. Работаем с локальными данными\./);
+  assert.match(app,/isTransientNetworkError\(e\)&&previousHtml/);
+  assert.match(app,/error\.network=true;error\.timeout=true/);
   assert.match(production,/S\.company=\{\.\.\.S\.company,\.\.\.r\.company\}/);
   for(const action of ['work','links','batches','tasks','shipments','returns']) assert.ok(production.includes(`'${action}'`),action);
   assert.doesNotMatch(production,/LOCAL_OUTBOX_PATHS[^\n]*(?:timers|payments|invoices|permissions|settings|tariffs|payroll)/);
