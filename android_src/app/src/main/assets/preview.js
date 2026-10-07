@@ -160,7 +160,7 @@
   }
   function controlChannelHtml(item){
     const labels={ok:'В норме',warning:'Требует внимания',critical:'Ошибка',info:'Инфо'};
-    const badge=item.status==='ok'?'green':item.status==='info'?'':'amber';
+    const badge=item.status==='ok'?'green':item.status==='critical'?'red':item.status==='info'?'':'amber';
     const metrics=[];
     if(Number(item.count)>0)metrics.push(`Событий: ${num(item.count)}`);
     if(Number(item.amount)>0)metrics.push(`Сумма: ${rub(item.amount)}`);
