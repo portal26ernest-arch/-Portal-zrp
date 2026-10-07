@@ -1497,6 +1497,7 @@ class Production:
 
     def today(self):
         settings=self.settings();now=datetime.fromisoformat(self.clock())+timedelta(minutes=settings['utc_offset_minutes']);day=now.date().isoformat()
+        local_day=now.date()
         works=self.scoped('works');local_dates={w['id']:company_date(w['completed_at'],settings['utc_offset_minutes']) for w in works}
         today_works=[w for w in works if local_dates[w['id']].isoformat()==day]
         month_works=[w for w in works if local_dates[w['id']].year==now.year and local_dates[w['id']].month==now.month]
@@ -1506,24 +1507,112 @@ class Production:
         manager=bool({'tasks.manage','batches.receive','finance.read'} & self.permissions)
         if manager:
             for b in batches:
-                if b['due_at'] and not b['ready'] and b['due_at']<self.clock():attention.append(dict(type='batch_late',label='Партия просрочена',batch_id=b['id'],number=b['number']))
+                if b['due_at'] and not b['ready'] and b['due_at']<self.clock():
+                    attention.append(dict(type='batch_late',label='Партия просрочена',batch_id=b['id'],number=b['number']))
+
+        control_channels=[]
+        low_materials=[]
         if 'materials.read' in self.permissions:
-            for m in self.r.catalog('materials'):
-                if m['active'] and m['stock_qty']<=m['min_stock']:attention.append(dict(type='material_low',label='Критический остаток материала',name=m['name'],quantity=m['stock_qty']))
+            low_materials=[m for m in self.r.catalog('materials') if m['active'] and m['stock_qty']<=m['min_stock']]
+            for m in low_materials:
+                attention.append(dict(type='material_low',label='Критический остаток материала',name=m['name'],quantity=m['stock_qty']))
+            control_channels.append(dict(id='material_low',title='Низкий остаток',description='Склад и расходные материалы',
+                status='warning' if low_materials else 'ok',count=len(low_materials),page='materials',
+                summary=(f'Ниже минимального остатка: {len(low_materials)}' if low_materials else 'Остатки выше установленных минимумов')))
+
         unbilled=[]
         if {'invoices.create','invoices.read','finance.read'} & self.permissions:
             billed=self.billed_work_ids();unbilled=[w for w in works if w['id'] not in billed]
-            if unbilled:attention.append(dict(type='not_invoiced',label='Выполненная работа не выставлена клиенту',amount=sum(w['revenue'] for w in unbilled),clients=[dict(client_id=cid,amount=sum(w['revenue'] for w in unbilled if w['client_id']==cid),work_ids=[w['id'] for w in unbilled if w['client_id']==cid]) for cid in sorted({w['client_id'] for w in unbilled})]))
+            if unbilled:
+                attention.append(dict(type='not_invoiced',label='Выполненная работа не выставлена клиенту',
+                    amount=sum(w['revenue'] for w in unbilled),
+                    clients=[dict(client_id=cid,amount=sum(w['revenue'] for w in unbilled if w['client_id']==cid),
+                        work_ids=[w['id'] for w in unbilled if w['client_id']==cid]) for cid in sorted({w['client_id'] for w in unbilled})]))
+            control_channels.append(dict(id='not_invoiced',title='Не выставлена работа',description='Контроль выполненных работ',
+                status='warning' if unbilled else 'ok',count=len(unbilled),amount=sum(w['revenue'] for w in unbilled),page='invoices',
+                summary=(f'Не выставлено работ: {len(unbilled)}' if unbilled else 'Выполненные работы включены в счета')))
+
         invoices=self.invoices() if 'invoices.read' in self.permissions else []
+        overdue_invoices=[]
         for i in invoices:
-            if i['due_at'] and i['remaining'] and company_date(i['due_at'],settings['utc_offset_minutes']).isoformat()<day:attention.append(dict(type='payment_late',label='Просрочена оплата',invoice_id=i['id'],amount=i['remaining']))
+            if i['due_at'] and i['remaining'] and company_date(i['due_at'],settings['utc_offset_minutes']).isoformat()<day:
+                overdue_invoices.append(i)
+                attention.append(dict(type='payment_late',label='Просрочена оплата',invoice_id=i['id'],amount=i['remaining']))
+        if 'invoices.read' in self.permissions:
+            control_channels.append(dict(id='payment_late',title='Просроченный счёт',description='Дебиторка и оплаты',
+                status='warning' if overdue_invoices else 'ok',count=len(overdue_invoices),
+                amount=sum(i['remaining'] for i in overdue_invoices),page='invoices',
+                summary=(f'Просроченных счетов: {len(overdue_invoices)}' if overdue_invoices else 'Просроченных счетов нет')))
+
+        notification_rows=(self.r.list_recent('notifications',50,'occurred_at')
+                           if {'invoices.read','finance.read','documents.read'} & self.permissions else [])
         if {'invoices.read','finance.read'} & self.permissions:
-            notices=self.r.list_recent('notifications',20,'occurred_at')
-            attention.extend(dict(type='reminder',label=item['title'],entity_id=item['entity_id'],notification_id=item['id']) for item in notices)
+            reminders=[item for item in notification_rows if item.get('event')=='reminder']
+            attention.extend(dict(type='reminder',label=item['title'],entity_id=item['entity_id'],notification_id=item['id'])
+                             for item in reminders)
+
+        if {'payroll.all','payroll.close'} & self.permissions:
+            if local_day.day>15:
+                period_start=local_day.replace(day=1);period_end=local_day.replace(day=15)
+            else:
+                period_end=local_day.replace(day=1)-timedelta(days=1);period_start=period_end.replace(day=16)
+            period_start_text=period_start.isoformat();period_end_text=period_end.isoformat()
+            period_works=[w for w in works if period_start<=local_dates[w['id']]<=period_end]
+            closed_period=next((p for p in self.r.list_by('payroll_periods',status='closed')
+                                if p['period_start']==period_start_text and p['period_end']==period_end_text),None)
+            payroll_ready=bool(period_works) and closed_period is None
+            payroll_amount=sum(w['salary'] for w in period_works)
+            payroll_people=len({w['user_id'] for w in period_works})
+            if payroll_ready:
+                attention.append(dict(type='payroll_ready',label='Расчётный период готов к закрытию',
+                    amount=payroll_amount,count=payroll_people,period_start=period_start_text,period_end=period_end_text))
+            if closed_period:
+                payroll_summary='Период закрыт'
+            elif period_works:
+                payroll_summary=f'Готов к закрытию · сотрудников: {payroll_people}'
+            else:
+                payroll_summary='Нет начислений для закрытия'
+            control_channels.append(dict(id='payroll_period',title='Расчётный период',description='Готовность зарплаты к закрытию',
+                status='warning' if payroll_ready else 'ok',count=payroll_people if payroll_ready else 0,
+                amount=payroll_amount if payroll_ready else 0,page='payrollPeriods',summary=payroll_summary,
+                period_start=period_start_text,period_end=period_end_text,closed=bool(closed_period)))
+
+        if 'documents.read' in self.permissions:
+            def parsed_at(value):
+                if not value:return None
+                try:
+                    parsed=datetime.fromisoformat(str(value).replace('Z','+00:00'))
+                    if parsed.tzinfo is not None:
+                        parsed=parsed.astimezone(timezone.utc).replace(tzinfo=None)
+                    return parsed
+                except (TypeError,ValueError):
+                    return None
+            recovery_times=[parsed_at(item.get('occurred_at')) for item in notification_rows
+                            if item.get('event')=='document_recovered']
+            recovery_times=[value for value in recovery_times if value is not None]
+            recovered_at=max(recovery_times) if recovery_times else None
+            document_errors=[]
+            for item in notification_rows:
+                if item.get('event')!='document_error':continue
+                occurred=parsed_at(item.get('occurred_at'))
+                if recovered_at is None or occurred is None or occurred>recovered_at:
+                    document_errors.append(item)
+            if document_errors:
+                attention.append(dict(type='document_error',label='Ошибка документа',count=len(document_errors),
+                    occurred_at=document_errors[0].get('occurred_at')))
+            control_channels.append(dict(id='document_error',title='Ошибка документа',description='Excel/PDF и файловое хранилище',
+                status='critical' if document_errors else 'ok',count=len(document_errors),page='documents',
+                summary=(f'Активных ошибок: {len(document_errors)}' if document_errors else 'Ошибок генерации документов нет'),
+                last_occurred_at=document_errors[0].get('occurred_at') if document_errors else None))
+
         check='monday' if now.weekday()==0 and now.strftime('%H:%M')>=settings['monday_time'] else 'wednesday' if now.weekday()==2 and now.strftime('%H:%M')>=settings['wednesday_time'] else None
-        if check and invoices:attention.append(dict(type='control_'+check,label='Контроль счетов и оплат',paid=sum(i['status']=='paid' for i in invoices),partial=sum(i['status']=='partial' for i in invoices),unpaid=sum(i['status']=='unpaid' for i in invoices),not_invoiced=len(unbilled)))
+        if check and invoices:
+            attention.append(dict(type='control_'+check,label='Контроль счетов и оплат',
+                paid=sum(i['status']=='paid' for i in invoices),partial=sum(i['status']=='partial' for i in invoices),
+                unpaid=sum(i['status']=='unpaid' for i in invoices),not_invoiced=len(unbilled)))
         tasks=self.task_rows(task_source,works,batch_rows,self.r.catalog('clients')) if 'tasks.read' in self.permissions else []
-        result=dict(date=day,mode='management' if manager else 'worker',own_quantity=sum(w['quantity'] for w in mine),attention=attention,tasks=tasks)
+        result=dict(date=day,mode='management' if manager else 'worker',own_quantity=sum(w['quantity'] for w in mine),
+                    attention=attention,control_channels=control_channels,tasks=tasks)
         if 'payroll.own' in self.permissions:result['own_salary']=sum(w['salary'] for w in mine)
         if manager:
             result.update(active_batches=sum(b['stage'] not in ('shipped','returned') for b in batches),
@@ -1556,7 +1645,6 @@ class Production:
         if 'invoices.read' in self.permissions:result['debt']=sum(i['remaining'] for i in invoices)
         if 'invoices.read' in self.permissions:
             open_invoices=[i for i in invoices if i['remaining']>0]
-            overdue_invoices=[i for i in open_invoices if i.get('due_at') and company_date(i['due_at'],settings['utc_offset_minutes']).isoformat()<day]
             result['open_invoice_count']=len(open_invoices)
             result['overdue_invoice_count']=len(overdue_invoices)
             result['overdue_debt']=sum(i['remaining'] for i in overdue_invoices)

@@ -130,21 +130,56 @@
       `<div class="warehouse-grid">${flows.map(name=>`<button class="warehouse-action" data-action="previewFeature" data-title="${esc(name)}" data-text="Сценарий: задание → сканирование → проверка PORTAL → подтверждение TalAnt → следующий товар."><span>${icon('check')}</span><b>${esc(name)}</b></button>`).join('')}</div>`+
       '<div class="notice">TalAnt остаётся WMS-ядром. Preview не обращается напрямую к его базе и не выполняет складские записи.</div>');
   };
+  async function portalUpdateControlChannel(){
+    const base={id:'portal_update',title:'Обновление PORTAL',description:'Новая APK и описание изменений',page:'about'};
+    if(browserClient||typeof window.PortalNative?.checkUpdates!=='function'){
+      return {...base,status:'info',count:0,summary:'Проверка версии выполняется в установленном приложении'};
+    }
+    let state=S.update;
+    if(!state||state.state==='checking'){
+      try{
+        const result=await nativePromise(id=>PortalNative.checkUpdates(id));
+        state=PortalCore.updateState(S.metadata||{},result);
+        S.update=state;
+      }catch{
+        state={state:'error',title:'Не удалось проверить обновления',description:'Сервис обновлений недоступен'};
+      }
+    }
+    if(state.state==='available'){
+      const version=state.release?.versionName||'новая версия';
+      const build=state.release?.buildNumber?` · сборка ${state.release.buildNumber}`:'';
+      return {...base,status:'warning',count:1,summary:`Доступна ${version}${build}`};
+    }
+    if(state.state==='error'||state.state==='unconfigured'){
+      return {...base,status:'warning',count:1,summary:state.title||'Проверка обновлений недоступна'};
+    }
+    if(state.state==='downloading')return {...base,status:'info',count:0,summary:'Обновление загружается'};
+    if(state.state==='ready')return {...base,status:'info',count:0,summary:'APK готова к установке'};
+    if(state.state==='store')return {...base,status:'ok',count:0,summary:'Обновления управляются App Store'};
+    return {...base,status:'ok',count:0,summary:'Установлена последняя версия'};
+  }
+  function controlChannelHtml(item){
+    const labels={ok:'В норме',warning:'Требует внимания',critical:'Ошибка',info:'Инфо'};
+    const badge=item.status==='ok'?'green':item.status==='info'?'':'amber';
+    const metrics=[];
+    if(Number(item.count)>0)metrics.push(`Событий: ${num(item.count)}`);
+    if(Number(item.amount)>0)metrics.push(`Сумма: ${rub(item.amount)}`);
+    if(item.period_start&&item.period_end)metrics.push(`${date(item.period_start)} — ${date(item.period_end)}`);
+    const action=item.page&&can(item.page)?`<button class="btn secondary" data-action="go" data-page="${esc(item.page)}">Открыть</button>`:'';
+    return `<article class="item control-channel"><div class="row between"><div class="grow"><b>${esc(item.title||'Канал контроля')}</b><p class="meta">${esc(item.description||'')}</p></div><span class="badge ${badge}">${esc(labels[item.status]||'Статус')}</span></div><p>${esc(item.summary||'')}</p>${metrics.length?`<p class="meta">${metrics.join(' · ')}</p>`:''}${action}</article>`;
+  }
   screens.notifications=async()=>{
-    let live=[];
-    if(S.stage3){try{live=(await productionGet('today')).attention||[];}catch{}}
-    const planned=[
-      ['Низкий остаток','Склад и расходные материалы'],
-      ['Просроченный счёт','Дебиторка и оплаты'],
-      ['Не выставлена работа','Контроль выполненных работ'],
-      ['Расчётный период','Готовность зарплаты к закрытию'],
-      ['Ошибка документа','Excel/PDF и файловое хранилище'],
-      ['WMS / TalAnt','Ошибки синхронизации и подтверждения'],
-      ['Обновление PORTAL','Новая APK и описание изменений']
-    ];
-    paint(heading('Уведомления','Что требует внимания прямо сейчас',previewBadge)+
+    let dashboard={attention:[],control_channels:[]};
+    if(S.stage3){try{dashboard=await productionGet('today');}catch{}}
+    const live=dashboard.attention||[];
+    const channels=[...(dashboard.control_channels||[])];
+    channels.push(await portalUpdateControlChannel());
+    const desired=['material_low','payment_late','not_invoiced','payroll_period','document_error','portal_update'];
+    channels.sort((a,b)=>desired.indexOf(a.id)-desired.indexOf(b.id));
+    paint(heading('Уведомления','Что требует внимания прямо сейчас','<span class="badge green">LIVE</span>')+
       `<section class="dashboard-section"><div class="section-label"><h2>Текущие события</h2><span class="meta">LIVE</span></div><div class="attention-stack">${attentionHtml(live)}</div></section>`+
-      `<section class="dashboard-section"><div class="section-label"><h2>Каналы контроля</h2><span class="meta">Preview</span></div><div class="list">${planned.map(([t,d])=>`<div class="item"><div class="row between"><b>${esc(t)}</b><span class="badge preview">Preview</span></div><p class="meta">${esc(d)}</p></div>`).join('')}</div></section>`);
+      `<section class="dashboard-section"><div class="section-label"><h2>Каналы контроля</h2><span class="meta">LIVE</span></div><div class="list">${channels.map(controlChannelHtml).join('')||'<p class="empty">Нет доступных каналов контроля</p>'}</div></section>`+
+      `<section class="dashboard-section"><div class="section-label"><h2>WMS / TalAnt</h2><span class="meta">Preview</span></div>${previewCard('WMS / TalAnt','Ошибки синхронизации и подтверждения')}</section>`);
   };
 
   screens.clients=async()=>{

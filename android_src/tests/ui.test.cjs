@@ -988,3 +988,15 @@ test('self-service PIN change settings flow is masked, validates mismatch and hi
     assert.equal(await page.locator('[data-action=changePin]').count(),0);assert.deepEqual(errors,[]);await page.close();
   }finally{await browser.close();}
 });
+
+
+test('control center uses live server channels and native PORTAL update state',()=>{
+  const preview=fs.readFileSync(path.join(assets,'preview.js'),'utf8');
+  assert.match(preview,/control_channels/);
+  assert.match(preview,/portalUpdateControlChannel/);
+  assert.match(preview,/PortalNative\?\.checkUpdates/);
+  assert.match(preview,/id:'portal_update'/);
+  assert.match(preview,/document_error/);
+  assert.match(preview,/WMS \/ TalAnt/);
+  assert.match(preview,/Preview/);
+});
