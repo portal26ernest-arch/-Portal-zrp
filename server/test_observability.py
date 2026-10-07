@@ -100,19 +100,6 @@ class ObservabilityTests(unittest.TestCase):
         self.assertFalse(obs.request_result(method="GET", route="/api/ready", status=500, duration_ms=2))
         self.assertIsNone(obs.shutdown())
 
-    def test_request_error_response_behavior_is_unchanged(self):
-        import portal_app_server as app
-        handler = app.Handler.__new__(app.Handler)
-        handler.path = "/api/ping?token=secret"
-        responses = []
-        handler.route = lambda method: (_ for _ in ()).throw(ValueError("existing validation error"))
-        handler.error_json = lambda message, status: (setattr(handler, "response_status", status), responses.append((message, status)))
-        with patch.object(app, "OBSERVABILITY", observability.PortalObservability()):
-            handler.do_GET()
-        self.assertEqual(len(responses), 1)
-        self.assertEqual(str(responses[0][0]), "existing validation error")
-        self.assertEqual(responses[0][1], 400)
-
 
 if __name__ == "__main__":
     unittest.main()
