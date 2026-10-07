@@ -56,6 +56,11 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "8.0.x"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.x"
+      - name: Enforce complete Desktop module navigation
+        run: node android_src/tests/desktop-shell.test.cjs
       - name: Verify Desktop update signatures
         run: dotnet run --project desktop_windows.Tests/Portal.Desktop.UpdateSignature.Tests.csproj --configuration Release
       - name: Resolve Desktop version
