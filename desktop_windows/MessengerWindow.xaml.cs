@@ -59,7 +59,7 @@ public partial class MessengerWindow : Window
     private static readonly Uri MaxUri = new("https://web.max.ru/");
     private readonly string _settingsDir;
     private const string TelegramProfileName = "MessengerWebView2-Telegram-5.12.6";
-    private const string TelegramEdgeProfileName = "MessengerEdge-Telegram";
+    private const string TelegramEdgeProfileName = "MessengerEdge-Telegram-5.12.7";
     private const string MaxProfileName = "MessengerWebView2-Max";
     private const string MessengerSoftwareRenderingArguments = "--disable-gpu --disable-gpu-compositing";
     private bool _closeRequested;
@@ -143,6 +143,7 @@ public partial class MessengerWindow : Window
         try { TelegramWebView2.Dispose(); MaxWebView2.Dispose(); } catch { }
         DeleteProfileDirectory(TelegramProfileName);
         DeleteProfileDirectory("MessengerWebView2-Telegram");
+        DeleteProfileDirectory("MessengerEdge-Telegram");
         DeleteProfileDirectory(TelegramEdgeProfileName);
         DeleteProfileDirectory(MaxProfileName);
         Close();
@@ -162,7 +163,6 @@ public partial class MessengerWindow : Window
     {
         if (_initialized) return;
         await InitializeViewAsync(MaxWebView2, MaxProfileName, null, false);
-        if (_relay?.Enabled == true && _relay.HasWssTransport) await InitializeTelegramAsync();
         _initialized = true;
     }
 
@@ -175,12 +175,10 @@ public partial class MessengerWindow : Window
             return false;
         }
 
-        CoreWebView2EnvironmentOptions options;
         try
         {
             DisposeWssLocalProxy();
             _wssLocalProxy = MessengerWssLocalProxy.Start(_relay);
-            options = new CoreWebView2EnvironmentOptions($"--proxy-server={_wssLocalProxy.ProxyUrl}");
         }
         catch
         {
@@ -189,7 +187,6 @@ public partial class MessengerWindow : Window
             return false;
         }
 
-        await InitializeViewAsync(TelegramWebView2, TelegramProfileName, options, true);
         _telegramInitialized = true;
         return true;
     }
@@ -218,25 +215,7 @@ public partial class MessengerWindow : Window
         {
             if (_provider != (telegram ? "telegram" : "max")) return;
             RelayStatus.Text = e.IsSuccess ? (telegram ? "Telegram: защищённый WSS-канал PORTAL" : "MAX: прямое подключение") : $"Не удалось загрузить: {e.WebErrorStatus}";
-            if (telegram && e.IsSuccess) _ = VerifyTelegramSurfaceAsync(view);
         };
-    }
-
-    private async Task VerifyTelegramSurfaceAsync(Microsoft.Web.WebView2.Wpf.WebView2 view)
-    {
-        await Task.Delay(TimeSpan.FromSeconds(5));
-        if (_provider != "telegram" || view.CoreWebView2 is null || !view.IsVisible) return;
-        try
-        {
-            var visible = await view.ExecuteScriptAsync("(()=>{const b=document.body;if(!b)return false;const t=(b.innerText||\'\').trim();return t.length>20||b.children.length>2;})()");
-            if (string.Equals(visible, "true", StringComparison.OrdinalIgnoreCase)) return;
-        }
-        catch { return; }
-
-        if (LaunchTelegramCompatibilityWindow())
-            RelayStatus.Text = "Telegram открыт в совместимом защищённом окне PORTAL.";
-        else
-            RelayStatus.Text = "Telegram загрузился без интерфейса. Перезапустите PORTAL и повторите попытку.";
     }
 
     private bool LaunchTelegramCompatibilityWindow()
@@ -245,7 +224,8 @@ public partial class MessengerWindow : Window
         var edgeCandidates = new[]
         {
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Microsoft", "Edge", "Application", "msedge.exe"),
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Microsoft", "Edge", "Application", "msedge.exe")
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Microsoft", "Edge", "Application", "msedge.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft", "Edge", "Application", "msedge.exe")
         };
         var edge = edgeCandidates.FirstOrDefault(File.Exists);
         if (edge is null) return false;
@@ -265,27 +245,34 @@ public partial class MessengerWindow : Window
         _provider = NormalizeProvider(provider);
         TelegramTab.IsEnabled = _provider != "telegram";
         MaxTab.IsEnabled = _provider != "max";
-        var target = ProviderUri(_provider);
-        if (_provider == "telegram" && (_relay?.Enabled != true || !_relay.HasWssTransport))
+
+        if (_provider == "telegram")
         {
-            RelayStatus.Text = "Telegram доступен только через защищённый WSS-канал PORTAL; канал пока недоступен.";
-            TelegramWebView2.Visibility = Visibility.Visible; MaxWebView2.Visibility = Visibility.Collapsed;
-            TelegramWebView2.Source = new Uri("about:blank");
-            return;
-        }
-        if (_provider == "telegram" && !_telegramInitialized && !await InitializeTelegramAsync())
-        {
-            TelegramWebView2.Visibility = Visibility.Visible;
+            TelegramWebView2.Visibility = Visibility.Collapsed;
             MaxWebView2.Visibility = Visibility.Collapsed;
+            if (_relay?.Enabled != true || !_relay.HasWssTransport)
+            {
+                RelayStatus.Text = "Telegram доступен только через защищённый WSS-канал PORTAL; канал пока недоступен.";
+                return;
+            }
+            if (!_telegramInitialized && !await InitializeTelegramAsync()) return;
+            if (LaunchTelegramCompatibilityWindow())
+            {
+                RelayStatus.Text = "Telegram: защищённый WSS-канал PORTAL. Открыто отдельное окно.";
+                Hide();
+            }
+            else
+            {
+                RelayStatus.Text = "Не удалось открыть защищённое окно Telegram. Требуется Microsoft Edge.";
+            }
             return;
         }
-        var browser = _provider == "telegram" ? TelegramWebView2 : MaxWebView2;
-        browser.Visibility = Visibility.Visible;
-        (_provider == "telegram" ? MaxWebView2 : TelegramWebView2).Visibility = Visibility.Collapsed;
-        RelayStatus.Text = _provider == "telegram"
-            ? "Telegram: защищённый WSS-канал PORTAL" : "MAX: прямое подключение";
-        if (browser.Source is null || !browser.Source.AbsoluteUri.Equals(target.AbsoluteUri, StringComparison.OrdinalIgnoreCase)) browser.Source = target;
-        await Task.CompletedTask;
+
+        TelegramWebView2.Visibility = Visibility.Collapsed;
+        MaxWebView2.Visibility = Visibility.Visible;
+        RelayStatus.Text = "MAX: прямое подключение";
+        if (MaxWebView2.Source is null || !MaxWebView2.Source.AbsoluteUri.Equals(MaxUri.AbsoluteUri, StringComparison.OrdinalIgnoreCase))
+            MaxWebView2.Source = MaxUri;
     }
 
     private async void TelegramTab_Click(object sender, RoutedEventArgs e) => await LoadProviderAsync("telegram");

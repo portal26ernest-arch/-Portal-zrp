@@ -7,11 +7,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>PORTAL.Desktop</AssemblyName>
     <RootNamespace>Portal.Desktop</RootNamespace>
-    <Version>5.12.6</Version>
-    <FileVersion>5.12.6.68</FileVersion>
-    <AssemblyVersion>5.12.6.0</AssemblyVersion>
-    <InformationalVersion>5.12.6-telegram-compatibility-fallback</InformationalVersion>
-    <PortalBuildNumber Condition="'$(PortalBuildNumber)' == ''">68</PortalBuildNumber>
+    <Version>5.12.7</Version>
+    <FileVersion>5.12.7.69</FileVersion>
+    <AssemblyVersion>5.12.7.0</AssemblyVersion>
+    <InformationalVersion>5.12.7-telegram-edge-primary</InformationalVersion>
+    <PortalBuildNumber Condition="'$(PortalBuildNumber)' == ''">69</PortalBuildNumber>
     <PortalBuildDate Condition="'$(PortalBuildDate)' == ''">$([System.DateTime]::UtcNow.ToString('yyyy-MM-dd'))</PortalBuildDate>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
