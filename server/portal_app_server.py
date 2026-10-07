@@ -8,6 +8,7 @@ import os
 import secrets
 import sqlite3
 import sys
+import time
 from ipaddress import ip_address
 from decimal import Decimal
 from datetime import datetime, timedelta
@@ -30,6 +31,7 @@ from portal_config import load_config
 from pathlib import Path
 from login_throttle import LoginLimiter, client_ip
 from session_security import storage_key, migrate_tokens, revoke_sessions, authentication_lock
+from observability import PortalObservability
 import documents_api
 import excel_import
 from document_domain import LocalFileStorage
@@ -43,6 +45,7 @@ PORT = CONFIG.port
 SESSION_HOURS = 24 * 30
 LOGIN_LIMITER = LoginLimiter()
 CODE_INTERPRETER_LIMITER = LoginLimiter()
+OBSERVABILITY = PortalObservability()
 # Deployment must list only proxies that overwrite X-Real-IP, never arbitrary peers.
 TRUSTED_LOGIN_PROXIES = tuple(value.strip() for value in os.environ.get('PORTAL_TRUSTED_LOGIN_PROXIES','').split(',') if value.strip())
 GLOBAL_ROLE = "platform_owner"
@@ -860,13 +863,23 @@ class Handler(BaseHTTPRequestHandler):
         if web_path == "/web" or web_path.startswith("/web/"):
             from web_static import serve
             return serve(self)
+        started = time.monotonic()
+        exception_type = None
         try: self.route("GET")
         except PermissionError as e: self.error_json(e,403)
         except ValueError as e: self.error_json(e,400)
         except Exception as e:
+            exception_type = type(e)
             self.error_json("Внутренняя ошибка сервера",500)
+        finally:
+            OBSERVABILITY.request_result(method="GET", route=audit_route(web_path),
+                status=getattr(self, "response_status", 0),
+                duration_ms=(time.monotonic() - started) * 1000, exception_type=exception_type)
 
     def do_POST(self):
+        started = time.monotonic()
+        exception_type = None
+        post_path = urlparse(self.path).path
         try:
             # Consume bounded request bytes even on authorization failures, so
             # closing an HTTP/1.0 connection does not discard its error response.
@@ -876,7 +889,12 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError as e: self.error_json(e,400)
         except sqlite3.IntegrityError: self.error_json("Запись конфликтует с существующими данными",400)
         except Exception as e:
+            exception_type = type(e)
             self.error_json("Внутренняя ошибка сервера",500)
+        finally:
+            OBSERVABILITY.request_result(method="POST", route=audit_route(post_path),
+                status=getattr(self, "response_status", 0),
+                duration_ms=(time.monotonic() - started) * 1000, exception_type=exception_type)
 
     def route(self, method):
         self.tenant_request = False
@@ -1587,10 +1605,18 @@ def main():
         create_platform_owner(args.create_platform_owner, pin)
         print("Platform Owner создан. Существующие администраторы не повышались.")
         return
+    global OBSERVABILITY
+    OBSERVABILITY = PortalObservability.from_env(os.environ, build_id=BUILD_ID, environment=CONFIG.environment)
     print(BUILD_ID)
     print("База:", DB_PATH if CONFIG.backend == 'sqlite' else f'PostgreSQL {CONFIG.environment}')
     print(f"Сервер: http://{HOST}:{PORT}")
-    ThreadingHTTPServer((HOST,PORT),Handler).serve_forever()
+    server = ThreadingHTTPServer((HOST,PORT),Handler)
+    OBSERVABILITY.server_started()
+    try:
+        server.serve_forever()
+    finally:
+        server.server_close()
+        OBSERVABILITY.shutdown()
 
 if __name__ == "__main__":
     main()
