@@ -8,6 +8,9 @@ stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 root=/srv/portal/central/backups
 pgdir="$root/postgresql/daily"
 stdir="$root/storage/daily"
+completion="$root/central-backup-success.json"
+# A failed/interrupted run must never leave a fresh-looking success marker.
+rm -f -- "$completion"
 install -d -m 0750 "$pgdir" "$stdir"
 
 tenant_list="$(runuser -u postgres -- psql -d postgres -Atqc \
@@ -55,4 +58,28 @@ printf 'BACKED_UP_STORAGE bytes=%s\n' "$(stat -c %s "$storage_final")"
 # the parent directories are retained for an explicit rollback decision.
 find "$pgdir" -maxdepth 1 -type f -mtime +13 -delete
 find "$stdir" -maxdepth 1 -type f -mtime +13 -delete
+# Publish an atomic inventory only after every dump, restore-list check, tar, and
+# SHA sidecar succeeded. The off-site job independently re-hashes each file.
+python3 - "$root" "$stamp" "$completion" <<'PYMARKER'
+import hashlib, json, os, sys, tempfile
+from pathlib import Path
+root, stamp, completion = Path(sys.argv[1]), sys.argv[2], Path(sys.argv[3])
+files = sorted([*root.glob(f'postgresql/daily/*-{stamp}.dump'), *root.glob(f'postgresql/daily/*-{stamp}.dump.sha256'), *root.glob(f'storage/daily/central-storage-{stamp}.tar.gz'), *root.glob(f'storage/daily/central-storage-{stamp}.tar.gz.sha256')])
+expected_dbs = ['portal_prod_control', 'portal_prod_company_1']
+actual_dbs = {p.name.split('-', 1)[0] for p in files if p.name.endswith('.dump')}
+if not set(expected_dbs).issubset(actual_dbs) or not any(p.name == f'central-storage-{stamp}.tar.gz' for p in files):
+    raise SystemExit('central backup inventory is incomplete')
+entries=[]
+for path in files:
+    h=hashlib.sha256(path.read_bytes()).hexdigest()
+    entries.append({'path': path.relative_to(root).as_posix(), 'size': path.stat().st_size, 'sha256': h})
+data={'schema':1,'completed_at_utc':stamp,'files':entries}
+fd,tmp=tempfile.mkstemp(prefix='.central-backup-success.',suffix='.tmp',dir=root)
+try:
+    with os.fdopen(fd,'w',encoding='utf-8') as f:
+        json.dump(data,f,sort_keys=True); f.write('\n'); f.flush(); os.fsync(f.fileno())
+    os.replace(tmp,completion)
+finally:
+    if os.path.exists(tmp): os.unlink(tmp)
+PYMARKER
 echo 'BACKUP_SUCCESS=1 RETENTION_DAYS=14'

@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily encrypted PORTAL off-site backup
+
+[Timer]
+OnCalendar=*-*-* 04:20:00
+RandomizedDelaySec=45m
+Persistent=true
+Unit=portal-offsite-backup.service
+
+[Install]
+WantedBy=timers.target

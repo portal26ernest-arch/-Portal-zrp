@@ -1,0 +1,11 @@
+[Unit]
+Description=Weekly PORTAL off-site restore verification
+
+[Timer]
+OnCalendar=Sun *-*-* 05:30:00
+RandomizedDelaySec=30m
+Persistent=true
+Unit=portal-offsite-restore-test.service
+
+[Install]
+WantedBy=timers.target
