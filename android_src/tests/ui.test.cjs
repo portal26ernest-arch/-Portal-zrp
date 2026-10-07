@@ -20,6 +20,19 @@ async function screenshot(page,name){if(process.env.PORTAL_UI_SCREENSHOTS){fs.mk
 test('all shipped JavaScript parses',()=>{
   for(const file of ['core.js','app.js','screens.js','production.js','production_part1.js','production_part2.js','production_part3.js','preview.js','documents_excel.js'])new vm.Script(fs.readFileSync(path.join(assets,file),'utf8'),{filename:file});
 });
+test('notification control channels use live permission-scoped sources and exclude frozen WMS',()=>{
+  const preview=fs.readFileSync(path.join(assets,'preview.js'),'utf8');
+  const screen=preview.match(/screens\.notifications=async\(\)=>\{[\s\S]*?\n  \};/)?.[0];
+  assert.ok(screen,'live notification screen exists');
+  for(const title of ['Низкий остаток','Просроченный счёт','Не выставлена работа','Расчётный период','Ошибка документа','Обновление PORTAL'])assert.ok(screen.includes(title),title);
+  assert.match(screen,/productionGet\('today'\)/);
+  assert.match(screen,/productionGet\('payroll-periods'\)/);
+  assert.match(screen,/productionGet\('documents'\)/);
+  assert.match(screen,/PortalNative\?\.checkUpdates/);
+  assert.match(screen,/Нет источника данных/);
+  assert.match(screen,/Источник недоступен или вернул ошибку/);
+  assert.doesNotMatch(screen,/WMS|TalAnt|ТСД|Preview/);
+});
 test('production delivery shards exactly match canonical source and remain small',()=>{
   const canonical=fs.readFileSync(path.join(assets,'production.js'));
   const parts=[1,2,3].map(i=>fs.readFileSync(path.join(assets,`production_part${i}.js`)));
@@ -956,6 +969,24 @@ test('browser UI regression',async t=>{
       await page.locator('[data-action=employeeActivity]').click();await page.waitForSelector('#sheetContent');
       assert.match(await page.locator('#sheetContent').innerText(),/Просмотр истории входов недоступен/);
       assert.equal(await page.evaluate(()=>mock.calls.some(c=>c.url==='/api/v3/activity')),false);
+      assert.deepEqual(errors,[]);await page.close();
+    });
+    await t.test('notification channels render tenant data and report missing permissions or source failures',async()=>{
+      const {page,errors}=await fixture(browser,'manager',{width:390,height:844},true);
+      await page.evaluate(()=>{
+        mock.stage3Permissions=['materials.read','invoices.read','invoices.create','payroll.all','documents.read'];
+        mock.stage3Today={date:'2026-10-07',mode:'management',tasks:[],attention:[
+          {type:'material_low',label:'Критический остаток материала',name:'Коробка',quantity:1},
+          {type:'payment_late',label:'Просрочена оплата',amount:4500},
+          {type:'not_invoiced',label:'Выполненная работа не выставлена клиенту',amount:2000}
+        ]};
+        mock.failUrls=['/api/v3/documents'];
+      });
+      await login(page);await page.evaluate(()=>go('notifications'));
+      await page.waitForFunction(()=>document.querySelector('#content')?.innerText.includes('Низкий остаток'));
+      const text=await page.locator('#content').innerText();
+      for(const label of ['Коробка','Просроченный счёт','Не выставлена работа','Расчётный период','Ошибка документа','Проверка не выполнена'])assert.match(text,new RegExp(label));
+      assert.doesNotMatch(text,/WMS|TalAnt|ТСД|Preview/);
       assert.deepEqual(errors,[]);await page.close();
     });
   }finally{await browser.close();}

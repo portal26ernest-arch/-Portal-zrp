@@ -131,20 +131,36 @@
       '<div class="notice">TalAnt остаётся WMS-ядром. Preview не обращается напрямую к его базе и не выполняет складские записи.</div>');
   };
   screens.notifications=async()=>{
-    let live=[];
-    if(S.stage3){try{live=(await productionGet('today')).attention||[];}catch{}}
-    const planned=[
-      ['Низкий остаток','Склад и расходные материалы'],
-      ['Просроченный счёт','Дебиторка и оплаты'],
-      ['Не выставлена работа','Контроль выполненных работ'],
-      ['Расчётный период','Готовность зарплаты к закрытию'],
-      ['Ошибка документа','Excel/PDF и файловое хранилище'],
-      ['WMS / TalAnt','Ошибки синхронизации и подтверждения'],
-      ['Обновление PORTAL','Новая APK и описание изменений']
-    ];
-    paint(heading('Уведомления','Что требует внимания прямо сейчас',previewBadge)+
-      `<section class="dashboard-section"><div class="section-label"><h2>Текущие события</h2><span class="meta">LIVE</span></div><div class="attention-stack">${attentionHtml(live)}</div></section>`+
-      `<section class="dashboard-section"><div class="section-label"><h2>Каналы контроля</h2><span class="meta">Preview</span></div><div class="list">${planned.map(([t,d])=>`<div class="item"><div class="row between"><b>${esc(t)}</b><span class="badge preview">Preview</span></div><p class="meta">${esc(d)}</p></div>`).join('')}</div></section>`);
+    const permission=(...names)=>names.some(name=>allowed(name));
+    const channels=[];
+    const add=(title,description,hasAccess,load,find)=>channels.push({title,description,hasAccess,load,find});
+    add('Низкий остаток','Материалы компании',permission('materials.read'),async()=>productionGet('today'),data=>(data.attention||[]).filter(item=>item.type==='material_low'));
+    add('Просроченный счёт','Счета и остаток долга',permission('invoices.read'),async()=>productionGet('today'),data=>(data.attention||[]).filter(item=>item.type==='payment_late'));
+    add('Не выставлена работа','Выполненная работа без счёта',permission('invoices.create','invoices.read','finance.read'),async()=>productionGet('today'),data=>(data.attention||[]).filter(item=>item.type==='not_invoiced'));
+    add('Расчётный период','Закрытые периоды зарплаты компании',permission('payroll.all'),async()=>productionGet('payroll-periods'),()=>[]);
+    add('Ошибка документа','Проверка зарегистрированных файлов',permission('documents.read'),async()=>productionGet('documents'),data=>data.filter(document=>!/^[0-9a-f]{64}$/i.test(document.sha256||'')||!Number.isFinite(Number(document.size_bytes))||Number(document.size_bytes)<=0||!document.filename));
+    const rows=await Promise.all(channels.map(async channel=>{
+      if(!channel.hasAccess)return {...channel,state:'restricted',items:[]};
+      try{const data=await channel.load();return {...channel,state:'ready',items:channel.find(data),info:channel.title==='Расчётный период'?`Загружено закрытых периодов: ${data.length}.`:null};}
+      catch{return {...channel,state:'error',items:[]};}
+    }));
+    let update;
+    if(!browserClient&&typeof window.PortalNative?.checkUpdates==='function'){
+      try{const result=await nativePromise(id=>PortalNative.checkUpdates(id));update=PortalCore.updateState(S.metadata,result);}
+      catch{update={state:'error'};}
+    }else if(browserClient){
+      try{const response=await api('GET','/api/desktop-update');update={state:response?.version?'available':'error',manifest:response};}
+      catch(error){update={state:error?.status===404?'unconfigured':'error'};}
+    }else update={state:'unconfigured'};
+    const updateItems=update.state==='available'?[{title:`Доступна версия ${update.release?.versionName||update.manifest?.version||'PORTAL'}`}]:[];
+    rows.push({title:'Обновление PORTAL',description:'Официальный канал обновлений этого клиента',state:update.state==='latest'||update.state==='store'?'ready':update.state==='available'?'attention':update.state==='unconfigured'?'restricted':'error',items:updateItems});
+    const cards=rows.map(channel=>{
+      const state=channel.state==='attention'||channel.items?.length?'attention':channel.state;
+      const label=state==='attention'?`Требует внимания · ${channel.items.length}`:state==='ready'?'Проверено · событий нет':state==='restricted'?'Нет источника данных':'Проверка не выполнена';
+      const detail=channel.items?.length?`<div class="list">${channel.items.map(item=>`<article class="item"><b>${esc(item.label||item.title||item.filename||'Событие')}</b>${item.amount!=null?`<p>${rub(item.amount)}</p>`:''}${item.quantity!=null?`<p>${num(item.quantity)} · ${esc(item.name||'')}</p>`:''}${item.filename?`<p class="meta">${esc(item.filename)}</p>`:''}</article>`).join('')}</div>`:state==='error'?'<p class="meta">Источник недоступен или вернул ошибку. Состояние не подтверждено.</p>':state==='restricted'?'<p class="meta">Для достоверной проверки нужны соответствующие права.</p>':`<p class="meta">${esc(channel.info||'Источник данных проверен.')}</p>`;
+      return `<article class="item"><div class="row between"><div><b>${esc(channel.title)}</b><p class="meta">${esc(channel.description)}</p></div><span class="badge ${state==='attention'?'amber':state==='ready'?'green':'preview'}">${label}</span></div>${detail}</article>`;
+    }).join('');
+    paint(heading('Уведомления','Каналы контроля · актуальные данные')+`<section class="dashboard-section"><div class="list">${cards}</div></section>`);
   };
 
   screens.clients=async()=>{
