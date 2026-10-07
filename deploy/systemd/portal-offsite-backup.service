@@ -1,0 +1,29 @@
+[Unit]
+Description=Encrypted off-site PORTAL central backup
+Wants=network-online.target
+After=network-online.target
+RequiresMountsFor=/srv/portal/central/backups
+
+[Service]
+Type=oneshot
+User=portal-offsite
+Group=portal-backup-readers
+EnvironmentFile=/etc/portal/offsite-backup.env
+ExecStart=/usr/bin/python3 /srv/portal/current/ops/portal_offsite_restic.py backup --max-age-hours 30
+TimeoutStartSec=2h
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadOnlyPaths=/srv/portal/central/backups
+ReadWritePaths=/var/lib/portal-offsite /var/tmp
+StateDirectory=portal-offsite
+CacheDirectory=portal-offsite
