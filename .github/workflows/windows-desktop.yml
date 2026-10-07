@@ -38,6 +38,7 @@ jobs:
   windows-desktop:
     outputs:
       version: ${{ steps.meta.outputs.version }}
+      build: ${{ steps.meta.outputs.build }}
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
@@ -69,8 +70,19 @@ jobs:
         run: |
           $project = [xml](Get-Content -LiteralPath "desktop_windows/Portal.Desktop.csproj" -Raw)
           $version = [string]$project.Project.PropertyGroup.Version
+          $fileVersion = [string]$project.Project.PropertyGroup.FileVersion
           if ([string]::IsNullOrWhiteSpace($version)) { throw "Desktop version is missing" }
+          if ([string]::IsNullOrWhiteSpace($fileVersion)) { throw "Desktop FileVersion is missing" }
+          $versionParts = $version.Split('.')
+          $fileParts = $fileVersion.Split('.')
+          if ($versionParts.Count -ne 3 -or $fileParts.Count -ne 4) { throw "Desktop version/FileVersion format is invalid" }
+          if (($fileParts[0..2] -join '.') -ne $version) { throw "Desktop FileVersion must match Version in its first three components" }
+          $build = 0
+          if (-not [int]::TryParse($fileParts[3], [ref]$build) -or $build -lt 1) { throw "Desktop FileVersion build component is invalid" }
+          $source = Get-Content -LiteralPath "desktop_windows/MainWindow.xaml.cs" -Raw
+          if ($source -notmatch "private const int CurrentBuild = $build;") { throw "Desktop CurrentBuild must match FileVersion build component" }
           "version=$version" >> $env:GITHUB_OUTPUT
+          "build=$build" >> $env:GITHUB_OUTPUT
       - name: Validate installer PowerShell syntax
         shell: pwsh
         run: |
@@ -134,6 +146,7 @@ jobs:
         env:
           PORTAL_DESKTOP_UPDATE_SIGNING_PRIVATE_KEY: ${{ secrets.PORTAL_DESKTOP_UPDATE_SIGNING_PRIVATE_KEY }}
           VERSION: ${{ needs.windows-desktop.outputs.version }}
+          BUILD: ${{ needs.windows-desktop.outputs.build }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
@@ -148,8 +161,8 @@ jobs:
           tag="portal-desktop-v${VERSION}"
           sha256=$(awk '{print tolower($1)}' "release/${package}.sha256")
           [[ "$sha256" =~ ^[0-9a-f]{64}$ ]]
-          IFS='.' read -r -a version_parts <<< "$VERSION"
-          build=$((version_parts[0] * 10 + version_parts[1]))
+          [[ "$BUILD" =~ ^[1-9][0-9]*$ ]]
+          build="$BUILD"
           download_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/${package}"
           printf 'PORTAL-DESKTOP-UPDATE-V1\n%s\n%s\n%s\n%s\n' "$build" "$VERSION" "$download_url" "$sha256" > "$payload"
           openssl dgst -sha256 -sign "$key" -out "$signature" "$payload"

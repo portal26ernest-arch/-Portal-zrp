@@ -87,6 +87,12 @@ must(releaseWorkflow.includes('Release tag already exists: $TAG') &&
 must(desktopReleaseWorkflow.includes('PORTAL_DESKTOP_UPDATE_SIGNING_PRIVATE_KEY') &&
      desktopReleaseWorkflow.includes('portal-desktop-update.json'),
   'Desktop release must create and publish a signed update manifest');
+must(desktopReleaseWorkflow.includes('build: ${{ steps.meta.outputs.build }}') &&
+     desktopReleaseWorkflow.includes('BUILD: ${{ needs.windows-desktop.outputs.build }}') &&
+     desktopReleaseWorkflow.includes('FileVersion') &&
+     desktopReleaseWorkflow.includes('CurrentBuild must match FileVersion build component') &&
+     !desktopReleaseWorkflow.includes('version_parts[0] * 10 + version_parts[1]'),
+  'Desktop signed update manifest must use authoritative FileVersion/CurrentBuild build code');
 must(releaseWorkflow.includes('gh release create') && releaseWorkflow.includes('portal-update.json'),
   'Signed release must publish APK, checksum and manifest through GitHub Releases');
 must(!stagingWorkflow.includes('trycloudflare.com'),
