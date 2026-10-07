@@ -26,9 +26,7 @@ Uptime Kuma should mirror these checks plus certificate-expiry checks. Prometheu
 
 ## Secrets
 
-Create /etc/portal-monitoring/secrets/grafana_admin_password on the monitoring host with mode 0600. Never commit the password.
-
-Copy .env.example to .env only on the host if overrides are needed.
+Create `/etc/portal-monitoring/secrets/grafana_admin_password` on the monitoring host with mode 0600. Never commit the password. Optional Compose overrides may be supplied through a host-only `.env` file; no `.env` file is required by the checked-in configuration.
 
 ## Validation
 
@@ -39,6 +37,31 @@ Run from this directory:
     docker run --rm -v "$PWD/prometheus:/etc/prometheus:ro" prom/prometheus:v3.15.0 promtool check config /etc/prometheus/prometheus.yml
     docker run --rm -v "$PWD/prometheus:/etc/prometheus:ro" prom/prometheus:v3.15.0 promtool check rules /etc/prometheus/rules/portal.rules.yml
     docker run --rm -v "$PWD/alertmanager:/etc/alertmanager:ro" prom/alertmanager:v0.34.1 amtool check-config /etc/alertmanager/alertmanager.yml
+
+## Ubuntu preflight and deployment
+
+`deploy_ubuntu.sh` is a root-only, fail-closed workflow. It requires Ubuntu, at least 10 GiB free on `/srv`, at least 2 GiB RAM, a clean Git checkout whose `HEAD` is the supplied full SHA, and confirmation that the exact SHA is advertised by `origin`. It extracts the complete `ops/monitoring` directory with `git archive` from that commit; it does not copy a working tree. Existing version directories and Docker named volumes are retained. The active `current` symlink is switched only after the candidate passes config validation.
+
+Create the Grafana password out-of-band before running the script. The secret must be at least 20 bytes, high-entropy, and stored at `/etc/portal-monitoring/secrets/grafana_admin_password` with restrictive permissions. The script never generates or prints the secret. It refuses a missing/weak secret. Docker installation is opt-in and uses only packages from Ubuntu plus Docker's official Ubuntu apt repository.
+
+Preflight only (no stack start):
+
+    sudo ops/monitoring/deploy_ubuntu.sh --repo /srv/portal-source/repo --sha <exact-pushed-40-char-sha>
+
+Explicitly install Docker if absent and deploy:
+
+    sudo ops/monitoring/deploy_ubuntu.sh --repo /srv/portal-source/repo --sha <exact-pushed-40-char-sha> --install-docker --deploy
+
+The workflow validates Compose, Prometheus config/rules, Alertmanager and blackbox config before start. After start it checks local Grafana, Kuma, Prometheus and Alertmanager endpoints, then public PORTAL API/Web probes. No DNS or firewall rules are changed; published management ports remain bound to `127.0.0.1`. Logs: `cd /srv/portal-monitoring/current && docker compose logs --tail=100`.
+
+Rollback keeps both SHA directories and all named volumes. The script prints the exact symlink rollback command after successful smoke; inspect the prior version and run Compose from `/srv/portal-monitoring/previous`. Do not remove old release directories or volumes as part of routine rollback.
+
+The static/unit guards can be run on Windows or Linux with:
+
+    python -m unittest ops.monitoring.test_monitoring_deploy
+    python ops/monitoring/validate_monitoring.py
+
+This is code-ready tooling only. Do not infer monitoring availability until a separately authorized runtime deployment and its local/public smoke complete. A second independent owned host remains an external gate for detection of total failure of the monitored VPS; monitoring software on the same host cannot detect that host's complete loss.
 
 ## Deployment safety
 
