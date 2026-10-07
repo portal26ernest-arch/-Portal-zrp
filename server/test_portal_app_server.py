@@ -147,6 +147,21 @@ class PortalAPITest(unittest.TestCase):
         self.assertEqual(actual_status,status,(path,data))
         return data
 
+    def test_observability_error_hook_does_not_change_error_response(self):
+        handler = portal.Handler.__new__(portal.Handler)
+        handler.path = "/api/ping?token=secret"
+        responses = []
+        handler.route = lambda method: (_ for _ in ()).throw(ValueError("existing validation error"))
+        handler.error_json = lambda message, status: (
+            setattr(handler, "response_status", status),
+            responses.append((message, status)),
+        )
+        with patch.object(portal, "OBSERVABILITY", portal.PortalObservability()):
+            handler.do_GET()
+        self.assertEqual(len(responses), 1)
+        self.assertEqual(str(responses[0][0]), "existing validation error")
+        self.assertEqual(responses[0][1], 400)
+
     def login(self,username="worker",pin="1234",status=200):
         return self.request("/api/login",body={"username":username,"pin":pin},status=status)
 
