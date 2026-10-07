@@ -13,7 +13,7 @@
             </Grid>
         </Border>
         <Border Grid.Row="1" Background="#EAF2FF" Padding="10,6">
-            <TextBlock x:Name="RelayStatus" Text="Канал: прямой" Foreground="#334155" FontSize="12"/>
+            <TextBlock x:Name="RelayStatus" Text="Telegram: подключение к защищённому каналу PORTAL…" Foreground="#334155" FontSize="12"/>
         </Border>
         <Grid Grid.Row="2">
             <wv2:WebView2 x:Name="TelegramWebView2"/>

@@ -9,7 +9,6 @@ namespace Portal.Desktop;
 public sealed record MessengerRelayTicket(bool Enabled, bool Required, string ProxyUrl, string WssUrl, string UserName, string Password, string Realm)
 {
     private static MessengerRelayTicket FailClosed => new(false, true, string.Empty, string.Empty, string.Empty, string.Empty, "PORTAL Messenger Relay");
-    public bool HasDirectTransport => Enabled && !string.IsNullOrWhiteSpace(ProxyUrl);
     public bool HasWssTransport => Enabled && !string.IsNullOrWhiteSpace(WssUrl);
 
     public static MessengerRelayTicket? Parse(string? raw)
@@ -32,7 +31,7 @@ public sealed record MessengerRelayTicket(bool Enabled, bool Required, string Pr
             var realm = root.TryGetProperty("realm", out var realmNode) ? realmNode.GetString() ?? "PORTAL Messenger Relay" : "PORTAL Messenger Relay";
             if (isEnabled)
             {
-                if (string.IsNullOrWhiteSpace(proxy) && string.IsNullOrWhiteSpace(wss)) return FailClosed;
+                if (string.IsNullOrWhiteSpace(wss)) return FailClosed;
                 if (!string.IsNullOrWhiteSpace(proxy) && (!Uri.TryCreate(proxy, UriKind.Absolute, out var proxyUri) ||
                     proxyUri.Scheme != Uri.UriSchemeHttps || string.IsNullOrWhiteSpace(proxyUri.Host) ||
                     !string.IsNullOrEmpty(proxyUri.UserInfo) || ((proxyUri.Port != 443 && !proxyUri.IsDefaultPort) && (proxyUri.Port < 1 || proxyUri.Port > 65535)) ||
@@ -160,46 +159,33 @@ public partial class MessengerWindow : Window
     {
         if (_initialized) return;
         await InitializeViewAsync(MaxWebView2, MaxProfileName, null, false);
-        if (_relay?.Required != true || _relay.Enabled == true) await InitializeTelegramAsync();
+        if (_relay?.Enabled == true && _relay.HasWssTransport) await InitializeTelegramAsync();
         _initialized = true;
     }
 
     private async Task<bool> InitializeTelegramAsync()
     {
         if (_telegramInitialized) return true;
-        CoreWebView2EnvironmentOptions? options = null;
-        if (_relay?.Enabled == true)
+        if (_relay?.Enabled != true || !_relay.HasWssTransport)
         {
-            if (_relay.HasWssTransport)
-            {
-                try
-                {
-                    DisposeWssLocalProxy();
-                    _wssLocalProxy = MessengerWssLocalProxy.Start(_relay);
-                    options = new CoreWebView2EnvironmentOptions($"--proxy-server={_wssLocalProxy.ProxyUrl}");
-                }
-                catch
-                {
-                    DisposeWssLocalProxy();
-                    if (_relay.HasDirectTransport)
-                        options = new CoreWebView2EnvironmentOptions($"--proxy-server={_relay.ProxyUrl}");
-                    else
-                    {
-                        RelayStatus.Text = "Защищённый канал PORTAL временно недоступен.";
-                        return false;
-                    }
-                }
-            }
-            else if (_relay.HasDirectTransport)
-            {
-                options = new CoreWebView2EnvironmentOptions($"--proxy-server={_relay.ProxyUrl}");
-            }
-            else
-            {
-                RelayStatus.Text = "Защищённый канал PORTAL временно недоступен.";
-                return false;
-            }
+            RelayStatus.Text = "Telegram доступен только через защищённый WSS-канал PORTAL; канал пока недоступен.";
+            return false;
         }
+
+        CoreWebView2EnvironmentOptions options;
+        try
+        {
+            DisposeWssLocalProxy();
+            _wssLocalProxy = MessengerWssLocalProxy.Start(_relay);
+            options = new CoreWebView2EnvironmentOptions($"--proxy-server={_wssLocalProxy.ProxyUrl}");
+        }
+        catch
+        {
+            DisposeWssLocalProxy();
+            RelayStatus.Text = "Защищённый WSS-канал PORTAL временно недоступен.";
+            return false;
+        }
+
         await InitializeViewAsync(TelegramWebView2, TelegramProfileName, options, true);
         _telegramInitialized = true;
         return true;
@@ -225,22 +211,10 @@ public partial class MessengerWindow : Window
         {
             if (!Uri.TryCreate(e.Uri, UriKind.Absolute, out var target) || !IsAllowedProviderUri(target)) e.Cancel = true;
         };
-        if (telegram) view.CoreWebView2.BasicAuthenticationRequested += (_, e) =>
-        {
-            var relay = _relay;
-            if (_wssLocalProxy is not null || relay?.HasDirectTransport != true ||
-                string.IsNullOrWhiteSpace(e.Challenge) || !e.Challenge.Contains(relay.Realm, StringComparison.Ordinal))
-            {
-                e.Cancel = true;
-                return;
-            }
-            e.Response.UserName = relay.UserName;
-            e.Response.Password = relay.Password;
-        };
         view.CoreWebView2.NavigationCompleted += (_, e) =>
         {
             if (_provider != (telegram ? "telegram" : "max")) return;
-            RelayStatus.Text = e.IsSuccess ? (telegram && _relay?.Enabled == true ? "Telegram: защищённый канал PORTAL" : telegram ? "Telegram: прямое подключение" : "MAX: прямое подключение") : $"Не удалось загрузить: {e.WebErrorStatus}";
+            RelayStatus.Text = e.IsSuccess ? (telegram ? "Telegram: защищённый WSS-канал PORTAL" : "MAX: прямое подключение") : $"Не удалось загрузить: {e.WebErrorStatus}";
         };
     }
 
@@ -250,9 +224,9 @@ public partial class MessengerWindow : Window
         TelegramTab.IsEnabled = _provider != "telegram";
         MaxTab.IsEnabled = _provider != "max";
         var target = ProviderUri(_provider);
-        if (_provider == "telegram" && _relay?.Required == true && _relay.Enabled != true)
+        if (_provider == "telegram" && (_relay?.Enabled != true || !_relay.HasWssTransport))
         {
-            RelayStatus.Text = "Telegram доступен только через защищённый канал PORTAL; канал пока недоступен.";
+            RelayStatus.Text = "Telegram доступен только через защищённый WSS-канал PORTAL; канал пока недоступен.";
             TelegramWebView2.Visibility = Visibility.Visible; MaxWebView2.Visibility = Visibility.Collapsed;
             TelegramWebView2.Source = new Uri("about:blank");
             return;
@@ -266,8 +240,8 @@ public partial class MessengerWindow : Window
         var browser = _provider == "telegram" ? TelegramWebView2 : MaxWebView2;
         browser.Visibility = Visibility.Visible;
         (_provider == "telegram" ? MaxWebView2 : TelegramWebView2).Visibility = Visibility.Collapsed;
-        RelayStatus.Text = _provider == "telegram" && _relay?.Enabled == true
-            ? "Telegram: защищённый канал PORTAL" : "MAX: прямое подключение";
+        RelayStatus.Text = _provider == "telegram"
+            ? "Telegram: защищённый WSS-канал PORTAL" : "MAX: прямое подключение";
         if (browser.Source is null || !browser.Source.AbsoluteUri.Equals(target.AbsoluteUri, StringComparison.OrdinalIgnoreCase)) browser.Source = target;
         await Task.CompletedTask;
     }

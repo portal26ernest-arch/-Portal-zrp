@@ -25,8 +25,10 @@ assert.match(app,/DOMContentLoaded[\s\S]*await enterApp\(\)/);
 assert.match(app,/DOMContentLoaded[\s\S]*catch\{try\{window\.PortalNative\?\.clearMessengerSession\?\.\(\)/);
 assert.match(app,/openMessengerWindow\?\.\(p,relay\)/);
 assert.match(app,/provider:'telegram',enabled:false,required:true/);
-assert.match(app,/if\(p==='telegram'&&!preActivation\)\{toast\(/);
-assert.match(app,/preActivation=ticket\.enabled===false&&ticket\.required===false/);
+assert.match(app,/const hasWss=ticket\?\.enabled===true/);
+assert.match(app,/wss_url/);
+assert.doesNotMatch(app,/preActivation/);
+assert.doesNotMatch(app,/https:\/\/web\.telegram\.org\/a\/'\s*,\s*'_blank'/);
 
 // Android uses one isolated process profile and identity-free CLEAR action.
 assert.match(manifest,/\.MessengerActivity[\s\S]*android:process=":messenger"[\s\S]*android:launchMode="singleTask"/);
@@ -57,7 +59,7 @@ assert.match(desktop,/MessengerWebView2-Telegram/);
 assert.match(desktop,/MessengerWebView2-Max/);
 assert.match(desktop,/InitializeViewAsync\(MaxWebView2, MaxProfileName, null, false\)/);
 assert.match(desktop,/InitializeTelegramAsync\(\)[\s\S]*MessengerWssLocalProxy\.Start\(_relay\)[\s\S]*--proxy-server=/);
-assert.match(desktop,/if \(telegram\) view\.CoreWebView2\.BasicAuthenticationRequested/);
+assert.doesNotMatch(desktop,/BasicAuthenticationRequested/);
 assert.match(desktop,/DateTimeOffset\.TryParse\(expires\.GetString\(\)[\s\S]*expiry <= DateTimeOffset\.UtcNow/);
 assert.doesNotMatch(desktop,/proxy-bypass-list/);
 assert.match(desktop,/InitializeViewAsync\(MaxWebView2, MaxProfileName, null, false\)/);
@@ -69,6 +71,8 @@ assert.match(desktopBridge,/OpenMessengerWindowAsync\(string provider = "telegra
 assert.doesNotMatch(desktop+desktopBridge,/identityKey|company_id|user_id/);
 assert.match(desktop,/ClearBrowsingDataAsync\(CoreWebView2BrowsingDataKinds\.AllProfile\)/);
 assert.match(desktop,/HasWssTransport[\s\S]*MessengerWssLocalProxy\.Start/);
+assert.doesNotMatch(desktop,/HasDirectTransport/);
+assert.match(desktop,/Telegram доступен только через защищённый WSS-канал PORTAL/);
 assert.match(desktopWss,/IPAddress\.Loopback/);
 assert.match(desktopWss,/Authorization", "Basic /);
 assert.match(desktopWss,/X-Portal-Target/);
