@@ -12,10 +12,11 @@ DEPLOY = (ROOT / "deploy_ubuntu.sh").read_text(encoding="utf-8")
 
 class MonitoringDeploymentGuards(unittest.TestCase):
     def test_management_ports_are_loopback_only(self) -> None:
-        for port in (3000, 3001, 9090, 9093):
-            line = next(line for line in COMPOSE.splitlines() if f":{port}:{port}" in line)
-            self.assertIn(f'"127.0.0.1:{port}:{port}"', line)
+        for host_port, container_port in ((3002, 3000), (3001, 3001), (9090, 9090), (9093, 9093)):
+            line = next(line for line in COMPOSE.splitlines() if f":{host_port}:{container_port}" in line)
+            self.assertIn(f'"127.0.0.1:{host_port}:{container_port}"', line)
             self.assertNotIn("0.0.0.0", line)
+        self.assertNotIn('"127.0.0.1:3000:3000"', COMPOSE)
 
     def test_images_have_fixed_versions(self) -> None:
         images = re.findall(r"^\s+image:\s+(\S+)", COMPOSE, re.MULTILINE)
