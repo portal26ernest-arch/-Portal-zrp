@@ -20,7 +20,8 @@ test('browser uses shared shell, same-origin API and session scoped token storag
   assert.ok(adapter.includes("credentials:'same-origin'"));
   assert.ok(adapter.includes("redirect:'error'"));assert.ok(!adapter.includes('httpStatus:response.status, data'));
   assert.ok(!/[?&]token=/i.test(adapter));
-  assert.ok(app.includes('browserClient?sessionStorage:localStorage'));
+  assert.ok(app.includes('sessionScopedStorage=browserClient&&!window.__PORTAL_DESKTOP__'));
+  assert.ok(app.includes('sessionScopedStorage?sessionStorage:localStorage'));
   assert.ok(app.includes('sessionStorage.clear()'));
 });
 
