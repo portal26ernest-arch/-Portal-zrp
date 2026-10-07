@@ -14,7 +14,7 @@ const signature=fs.readFileSync(path.join(repo,'desktop_windows/DesktopUpdateSig
 const messengerWindow=fs.readFileSync(path.join(repo,'desktop_windows/MessengerWindow.xaml.cs'),'utf8');
 const messengerWss=fs.readFileSync(path.join(repo,'desktop_windows/MessengerWssLocalProxy.cs'),'utf8');
 const messengerXaml=fs.readFileSync(path.join(repo,'desktop_windows/MessengerWindow.xaml'),'utf8');
-assert.match(messengerWindow,/https:\/\/web\.telegram\.org\/a\//);
+assert.match(messengerWindow,/https:\/\/web\.telegram\.org\/k\//);
 assert.match(messengerWindow,/https:\/\/web\.max\.ru\//);
 assert.match(messengerWindow,/MessengerWebView2-Telegram/);
 assert.match(messengerWindow,/MessengerWebView2-Max/);
@@ -56,6 +56,12 @@ assert.ok(code.indexOf('_messengerWindow.ShowSingleton();') < code.indexOf('awai
 assert.doesNotMatch(messengerWindow,/Loaded \+= async \(_,_\) => \{ await EnsureBrowserAsync\(\); await LoadProviderAsync\(_provider\); \};/,'Messenger must not race provider initialization from Loaded');
 assert.match(messengerWindow,/MessengerSoftwareRenderingArguments = "--disable-gpu --disable-gpu-compositing"/);
 assert.match(messengerWindow,/browserArguments \+ " " \+ MessengerSoftwareRenderingArguments/);
+assert.match(messengerWindow,/https:\/\/web\.telegram\.org\/k\//);
+assert.match(messengerWindow,/MessengerWebView2-Telegram-5\.12\.6/);
+assert.match(messengerWindow,/VerifyTelegramSurfaceAsync/);
+assert.match(messengerWindow,/LaunchTelegramCompatibilityWindow/);
+assert.match(messengerWindow,/--app=/);
+assert.match(messengerWindow,/--proxy-server=/);
 
 assert.match(code,/await _messengerClearTask;[\s\S]+MessengerRelayTicket\.Parse\(relayJson\)/);
 assert.match(xaml,/x:Name="HomeButton"[^>]+Click="Home_Click"/);
@@ -92,7 +98,7 @@ assert.match(app,/autoCheckUpdates\(\)/);
 assert.match(app,/HTTP разрешён только для локального сервера/);
 assert.match(app,/url\.protocol!=='https:'&&!\(url\.protocol==='http:'&&loopback\)/);
 assert.match(xaml,/Content="Обновить PORTAL"[^>]+Click="CheckUpdate_Click"/);
-assert.match(code,/private const int CurrentBuild = 67/);
+assert.match(code,/private const int CurrentBuild = 68/);
 assert.match(code,/WebViewSoftwareRenderingArguments = "--disable-gpu --disable-gpu-compositing"/);
 assert.match(code,/WebViewNetworkCompatibilityArguments = "--disable-http2 --disable-quic"/);
 assert.match(code,/AdditionalBrowserArguments = WebViewArguments\(\)/);
@@ -104,7 +110,7 @@ assert.match(code,/catch \(HttpRequestException\)[\s\S]+LoadGithubUpdateManifest
 assert.match(code,/catch \(TaskCanceledException\)[\s\S]+LoadGithubUpdateManifestAsync\(\)/);
 assert.match(code,/if \(_serverOrigin is not null\)[\s\S]+githubManifest = await LoadGithubUpdateManifestAsync\(\)/);
 assert.doesNotMatch(code,/Сначала подключитесь к серверу PORTAL/);
-assert.match(code,/PORTAL-Desktop\/5\.12\.5/);
+assert.match(code,/PORTAL-Desktop\/5\.12\.6/);
 assert.match(code,/DownloadAndInstallUpdate\(manifest, downloadUri\)/);
 assert.match(code,/ServerDiscoveryUrl = "https:\/\/raw\.githubusercontent\.com\/portal26ernest-arch\/-Portal-zrp\/main\/portal-server\.json"/);
 assert.match(code,/RefreshOfficialServerAsync\(\)/);
