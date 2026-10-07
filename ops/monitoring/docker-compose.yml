@@ -1,6 +1,6 @@
 services:
   prometheus:
-    image: prom/prometheus:v3.15.0
+    image: quay.io/prometheus/prometheus:v3.15.0
     container_name: portal-prometheus
     restart: unless-stopped
     command:
@@ -22,7 +22,7 @@ services:
       - alertmanager
 
   node-exporter:
-    image: prom/node-exporter:v1.12.1
+    image: quay.io/prometheus/node-exporter:v1.12.1
     container_name: portal-node-exporter
     restart: unless-stopped
     command:
@@ -40,7 +40,7 @@ services:
       - no-new-privileges:true
 
   blackbox-exporter:
-    image: prom/blackbox-exporter:v0.28.0
+    image: quay.io/prometheus/blackbox-exporter:v0.28.0
     container_name: portal-blackbox-exporter
     restart: unless-stopped
     command:
@@ -52,7 +52,7 @@ services:
       - no-new-privileges:true
 
   alertmanager:
-    image: prom/alertmanager:v0.34.1
+    image: quay.io/prometheus/alertmanager:v0.34.1
     container_name: portal-alertmanager
     restart: unless-stopped
     command:
@@ -93,7 +93,7 @@ services:
       - prometheus
 
   uptime-kuma:
-    image: louislam/uptime-kuma:2.5.5
+    image: ghcr.io/louislam/uptime-kuma:2.5.5
     container_name: portal-uptime-kuma
     restart: unless-stopped
     ports:

@@ -34,12 +34,12 @@ for forbidden in [
         errors.append(f"public management bind forbidden: {forbidden}")
 
 for expected in [
-    "prom/prometheus:v3.15.0",
-    "prom/node-exporter:v1.12.1",
-    "prom/blackbox-exporter:v0.28.0",
-    "prom/alertmanager:v0.34.1",
+    "quay.io/prometheus/prometheus:v3.15.0",
+    "quay.io/prometheus/node-exporter:v1.12.1",
+    "quay.io/prometheus/blackbox-exporter:v0.28.0",
+    "quay.io/prometheus/alertmanager:v0.34.1",
     "grafana/grafana:13.2.3",
-    "louislam/uptime-kuma:2.5.5",
+    "ghcr.io/louislam/uptime-kuma:2.5.5",
 ]:
     if expected not in compose:
         errors.append(f"unpinned or missing image: {expected}")

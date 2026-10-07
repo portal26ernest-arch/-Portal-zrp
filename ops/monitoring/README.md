@@ -34,9 +34,9 @@ Run from this directory:
 
     python3 validate_monitoring.py
     docker compose config --quiet
-    docker run --rm --entrypoint /bin/promtool -v "$PWD/prometheus:/etc/prometheus:ro" prom/prometheus:v3.15.0 check config /etc/prometheus/prometheus.yml
-    docker run --rm --entrypoint /bin/promtool -v "$PWD/prometheus:/etc/prometheus:ro" prom/prometheus:v3.15.0 check rules /etc/prometheus/rules/portal.rules.yml
-    docker run --rm -v "$PWD/alertmanager:/etc/alertmanager:ro" prom/alertmanager:v0.34.1 amtool check-config /etc/alertmanager/alertmanager.yml
+    docker run --rm --entrypoint /bin/promtool -v "$PWD/prometheus:/etc/prometheus:ro" quay.io/prometheus/prometheus:v3.15.0 check config /etc/prometheus/prometheus.yml
+    docker run --rm --entrypoint /bin/promtool -v "$PWD/prometheus:/etc/prometheus:ro" quay.io/prometheus/prometheus:v3.15.0 check rules /etc/prometheus/rules/portal.rules.yml
+    docker run --rm -v "$PWD/alertmanager:/etc/alertmanager:ro" quay.io/prometheus/alertmanager:v0.34.1 amtool check-config /etc/alertmanager/alertmanager.yml
 
 ## Ubuntu preflight and deployment
 
