@@ -11,7 +11,7 @@ This directory contains the PORTAL-owned monitoring stack.
 - Alertmanager 0.34.1 — alert grouping/routing.
 - Grafana 13.2.3 — private dashboard.
 
-All management UIs bind to loopback only by default. Do not expose ports 3002, 3001, 9090, or 9093 directly to the Internet.
+All management UIs bind to loopback only by default. Do not expose ports 3002, 3001, 9090, or 9093 directly to the Internet. Port 3000 is already reserved by portal-site.service on the production VPS.
 
 ## Monitored endpoints
 
