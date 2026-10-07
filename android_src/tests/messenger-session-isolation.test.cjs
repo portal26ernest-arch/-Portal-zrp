@@ -55,7 +55,7 @@ assert.match(adapter,/clearMessengerSession: \(\) =>/);
 assert.doesNotMatch(adapter,/setMessengerIdentity|openMessengerWindow: \(provider, company|clearMessengerSession: \(company/);
 
 // Desktop uses distinct fixed provider profiles and never shares the Telegram proxy with MAX.
-assert.match(desktop,/MessengerWebView2-Telegram/);
+assert.match(desktop,/MessengerWebView2-Telegram-5.12.6/);
 assert.match(desktop,/MessengerWebView2-Max/);
 assert.match(desktop,/InitializeViewAsync\(MaxWebView2, MaxProfileName, null, false\)/);
 assert.match(desktop,/InitializeTelegramAsync\(\)[\s\S]*MessengerWssLocalProxy\.Start\(_relay\)[\s\S]*--proxy-server=/);
