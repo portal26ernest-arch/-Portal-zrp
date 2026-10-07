@@ -7,11 +7,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>PORTAL.Desktop</AssemblyName>
     <RootNamespace>Portal.Desktop</RootNamespace>
-    <Version>5.12.3</Version>
-    <FileVersion>5.12.3.65</FileVersion>
-    <AssemblyVersion>5.12.3.0</AssemblyVersion>
-    <InformationalVersion>5.12.3-relay-session-hotfix</InformationalVersion>
-    <PortalBuildNumber Condition="'$(PortalBuildNumber)' == ''">65</PortalBuildNumber>
+    <Version>5.12.4</Version>
+    <FileVersion>5.12.4.66</FileVersion>
+    <AssemblyVersion>5.12.4.0</AssemblyVersion>
+    <InformationalVersion>5.12.4-telegram-wss-only</InformationalVersion>
+    <PortalBuildNumber Condition="'$(PortalBuildNumber)' == ''">66</PortalBuildNumber>
     <PortalBuildDate Condition="'$(PortalBuildDate)' == ''">$([System.DateTime]::UtcNow.ToString('yyyy-MM-dd'))</PortalBuildDate>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
