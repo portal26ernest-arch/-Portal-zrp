@@ -11,7 +11,7 @@ This directory contains the PORTAL-owned monitoring stack.
 - Alertmanager 0.34.1 — alert grouping/routing.
 - Grafana 13.2.3 — private dashboard.
 
-All management UIs bind to loopback only by default. Do not expose ports 3000, 3001, 9090, or 9093 directly to the Internet.
+All management UIs bind to loopback only by default. Do not expose ports 3002, 3001, 9090, or 9093 directly to the Internet. Port 3000 is already reserved by portal-site.service on the production VPS.
 
 ## Monitored endpoints
 
@@ -75,6 +75,6 @@ This is code-ready tooling only. Do not infer monitoring availability until a se
 
 From an authorized workstation, use SSH port forwarding when the VPS SSH transport is available:
 
-    ssh -L 3000:127.0.0.1:3000 -L 3001:127.0.0.1:3001 portal-vps
+    ssh -L 3002:127.0.0.1:3002 -L 3001:127.0.0.1:3001 portal-vps
 
-Then open Grafana at http://127.0.0.1:3000 and Uptime Kuma at http://127.0.0.1:3001.
+Then open Grafana at http://127.0.0.1:3002 and Uptime Kuma at http://127.0.0.1:3001.
