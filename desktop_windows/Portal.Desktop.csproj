@@ -7,11 +7,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>PORTAL.Desktop</AssemblyName>
     <RootNamespace>Portal.Desktop</RootNamespace>
-    <Version>5.11.0</Version>
-    <FileVersion>5.11.0.61</FileVersion>
-    <AssemblyVersion>5.11.0.0</AssemblyVersion>
+    <Version>5.12.0</Version>
+    <FileVersion>5.12.0.62</FileVersion>
+    <AssemblyVersion>5.12.0.0</AssemblyVersion>
     <InformationalVersion>5.11.0-loopback-connect-hotfix</InformationalVersion>
-    <PortalBuildNumber Condition="'$(PortalBuildNumber)' == ''">61</PortalBuildNumber>
+    <PortalBuildNumber Condition="'$(PortalBuildNumber)' == ''">62</PortalBuildNumber>
     <PortalBuildDate Condition="'$(PortalBuildDate)' == ''">$([System.DateTime]::UtcNow.ToString('yyyy-MM-dd'))</PortalBuildDate>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>

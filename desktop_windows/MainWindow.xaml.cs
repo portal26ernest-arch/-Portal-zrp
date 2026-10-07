@@ -14,7 +14,7 @@ namespace Portal.Desktop;
 
 public partial class MainWindow : Window
 {
-    private const int CurrentBuild = 61;
+    private const int CurrentBuild = 62;
     private const long MaxInstallerBytes = 250L * 1024 * 1024;
     private const string GithubRepository = "portal26ernest-arch/-Portal-zrp";
     private const string ServerDiscoveryUrl = "https://raw.githubusercontent.com/portal26ernest-arch/-Portal-zrp/main/portal-server.json";
@@ -649,7 +649,7 @@ public partial class MainWindow : Window
                 return new ServerRefreshResult(false, false, _serverOrigin);
 
             using var request = new HttpRequestMessage(HttpMethod.Get, ServerDiscoveryUrl);
-            request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.11.0");
+            request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.12.0");
             request.Headers.Accept.ParseAdd("application/json");
             using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
             response.EnsureSuccessStatusCode();
@@ -773,7 +773,7 @@ public partial class MainWindow : Window
     {
         using var request = new HttpRequestMessage(HttpMethod.Get,
             $"https://api.github.com/repos/{GithubRepository}/releases?per_page=50");
-        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.11.0");
+        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.12.0");
         request.Headers.Accept.ParseAdd("application/vnd.github+json");
         using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();
