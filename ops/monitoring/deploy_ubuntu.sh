@@ -106,10 +106,10 @@ payload="$tmp/ops/monitoring"
 [[ -d "$payload" ]] || fail "could not extract complete monitoring directory from exact SHA"
 python3 "$payload/validate_monitoring.py"
 docker compose -f "$payload/docker-compose.yml" config --quiet
-docker run --rm -v "$payload/prometheus:/etc/prometheus:ro" prom/prometheus:v3.15.0 promtool check config /etc/prometheus/prometheus.yml
-docker run --rm -v "$payload/prometheus:/etc/prometheus:ro" prom/prometheus:v3.15.0 promtool check rules /etc/prometheus/rules/portal.rules.yml
-docker run --rm -v "$payload/alertmanager:/etc/alertmanager:ro" prom/alertmanager:v0.34.1 amtool check-config /etc/alertmanager/alertmanager.yml
-docker run --rm -v "$payload/blackbox:/etc/blackbox_exporter:ro" prom/blackbox-exporter:v0.28.0 --config.file=/etc/blackbox_exporter/blackbox.yml --config.check
+docker run --rm --entrypoint /bin/promtool -v "$payload/prometheus:/etc/prometheus:ro" prom/prometheus:v3.15.0 check config /etc/prometheus/prometheus.yml
+docker run --rm --entrypoint /bin/promtool -v "$payload/prometheus:/etc/prometheus:ro" prom/prometheus:v3.15.0 check rules /etc/prometheus/rules/portal.rules.yml
+docker run --rm --entrypoint /bin/amtool -v "$payload/alertmanager:/etc/alertmanager:ro" prom/alertmanager:v0.34.1 check-config /etc/alertmanager/alertmanager.yml
+docker run --rm --entrypoint /bin/blackbox_exporter -v "$payload/blackbox:/etc/blackbox_exporter:ro" prom/blackbox-exporter:v0.28.0 --config.file=/etc/blackbox_exporter/blackbox.yml --config.check
 
 if (( DEPLOY == 0 )); then
   echo "Preflight passed for exact SHA $SHA. No stack changes made; add --deploy to install/start."
