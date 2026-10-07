@@ -9,7 +9,7 @@ This directory contains the PORTAL-owned monitoring stack.
 - node_exporter 1.12.1 — host CPU/RAM/disk/load metrics.
 - blackbox_exporter 0.28.0 — HTTP/TLS probes for PORTAL public endpoints.
 - Alertmanager 0.34.1 — alert grouping/routing.
-- Grafana 13.3.0 — private dashboard.
+- Grafana 13.2.3 — private dashboard.
 
 All management UIs bind to loopback only by default. Do not expose ports 3000, 3001, 9090, or 9093 directly to the Internet.
 

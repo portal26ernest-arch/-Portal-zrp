@@ -38,7 +38,7 @@ for expected in [
     "prom/node-exporter:v1.12.1",
     "prom/blackbox-exporter:v0.28.0",
     "prom/alertmanager:v0.34.1",
-    "grafana/grafana:13.3.0",
+    "grafana/grafana:13.2.3",
     "louislam/uptime-kuma:2.5.5",
 ]:
     if expected not in compose:
