@@ -25,7 +25,7 @@ for path in REQUIRED:
 
 compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
 for forbidden in [
-    r'0\.0\.0\.0:3000',
+    r'0\.0\.0\.0:3002',
     r'0\.0\.0\.0:3001',
     r'0\.0\.0\.0:9090',
     r'0\.0\.0\.0:9093',
