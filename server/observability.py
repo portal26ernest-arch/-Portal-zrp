@@ -78,9 +78,12 @@ class PortalObservability:
             if client_factory is None:
                 from posthog import Posthog
                 client_factory = Posthog
+            # Current posthog-python Client API: explicit server mode and GeoIP off.
+            # Exception autocapture is intentionally never enabled; PORTAL emits only
+            # the hand-sanitized coarse events below.
             client = client_factory(
                 project_api_key=key, host=host, debug=False,
-                disable_geoip=True, enable_exception_autocapture=False,
+                disable_geoip=True, is_server=True,
             )
             slow_ms = env.get("PORTAL_POSTHOG_SLOW_MS", "2000")
             return cls(client, build_id=build_id, environment=environment, slow_ms=slow_ms)
@@ -102,7 +105,9 @@ class PortalObservability:
         try:
             # A fixed service identity groups deployment events without user or
             # tenant identifiers. Person profile processing is disabled above.
-            self.client.capture("portal-server", event, properties=payload)
+            # posthog-python 7.x accepts the event as the first positional
+            # argument; the fixed non-user service identity is a keyword argument.
+            self.client.capture(event, distinct_id="portal-server", properties=payload)
             return True
         except Exception:
             return False

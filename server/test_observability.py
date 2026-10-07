@@ -10,7 +10,7 @@ class FakeClient:
         self.events = []
         self.closed = False
 
-    def capture(self, distinct_id, event, properties=None):
+    def capture(self, event, *, distinct_id=None, properties=None):
         self.events.append((distinct_id, event, dict(properties or {})))
 
     def shutdown(self):
@@ -53,7 +53,8 @@ class ObservabilityTests(unittest.TestCase):
         self.assertTrue(obs.enabled)
         self.assertEqual(made[0].kwargs["host"], "https://eu.i.posthog.com")
         self.assertTrue(made[0].kwargs["disable_geoip"])
-        self.assertFalse(made[0].kwargs["enable_exception_autocapture"])
+        self.assertTrue(made[0].kwargs["is_server"])
+        self.assertNotIn("enable_exception_autocapture", made[0].kwargs)
         self.assertTrue(obs.server_started())
         distinct_id, event, props = made[0].events[-1]
         self.assertEqual((distinct_id, event), ("portal-server", "portal_server_started"))
