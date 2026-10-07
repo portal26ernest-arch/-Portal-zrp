@@ -77,7 +77,6 @@ public partial class MessengerWindow : Window
         StateChanged += (_, _) => SaveWindowState();
         LocationChanged += (_, _) => SaveWindowState();
         SizeChanged += (_, _) => SaveWindowState();
-        Loaded += async (_, _) => { await EnsureBrowserAsync(); await LoadProviderAsync(_provider); };
     }
 
     internal bool AcceptsRelay(MessengerRelayTicket? relay) =>
