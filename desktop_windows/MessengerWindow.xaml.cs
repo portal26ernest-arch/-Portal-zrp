@@ -61,6 +61,7 @@ public partial class MessengerWindow : Window
     private readonly string _settingsDir;
     private const string TelegramProfileName = "MessengerWebView2-Telegram";
     private const string MaxProfileName = "MessengerWebView2-Max";
+    private const string MessengerSoftwareRenderingArguments = "--disable-gpu --disable-gpu-compositing";
     private bool _closeRequested;
     private bool _initialized;
     private bool _telegramInitialized;
@@ -208,6 +209,13 @@ public partial class MessengerWindow : Window
     {
         var profile = Path.Combine(_settingsDir, profileName);
         Directory.CreateDirectory(profile);
+        // Messenger WebView2 must use the same software-composition safeguard as the main PORTAL view.
+        // On affected Windows/WebView2 154 systems the page and network load correctly but the WPF surface stays white.
+        var browserArguments = options?.AdditionalBrowserArguments ?? string.Empty;
+        var mergedBrowserArguments = string.IsNullOrWhiteSpace(browserArguments)
+            ? MessengerSoftwareRenderingArguments
+            : browserArguments + " " + MessengerSoftwareRenderingArguments;
+        options = new CoreWebView2EnvironmentOptions(mergedBrowserArguments);
         var environment = await CoreWebView2Environment.CreateAsync(null, profile, options);
         await view.EnsureCoreWebView2Async(environment);
         view.CoreWebView2.Settings.AreDevToolsEnabled = false;
