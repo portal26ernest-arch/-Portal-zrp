@@ -69,7 +69,8 @@ test('local-first performance contract uses long cache, 10-minute sync, bulk tar
   assert.match(production,/api\('GET','\/api\/v3\/meta'/);
   assert.match(production,/applyProductionMeta\(meta\)/);
   assert.match(production,/setCacheIdentity\?\.\(String\(S\.me\?\.id\|\|''\),String\(S\.me\?\.role\|\|''\),JSON\.stringify\(S\.me\.permissions\)\)/);
-  assert.match(app,/LOCAL_PREWARM_PATHS/);
+  assert.match(app,/LOCAL_PREWARM/);
+  assert.match(app,/item\.pages\.some\(page=>can\(page\)\)/);
   assert.match(app,/Локальные данные/);
   assert.match(app,/Связь с сервером временно недоступна\. Работаем с локальными данными\./);
   assert.match(app,/isTransientNetworkError\(e\)&&previousHtml/);
