@@ -110,7 +110,7 @@ function buildNav(){
   if(desktopNavQuery?.matches&&S.me){
     if(isOwner()&&!S.company){nav.innerHTML=navButton('companies','clients','Компании')+'<div class="nav-spacer"></div>'+navButton('settings','settings','Настройки');return;}
     const byId=Object.fromEntries(PortalCore.modules.map(m=>[m.id,m]));
-    const groups=[['Работа',['work','jobs','batches','teamChat','messenger','notifications']],['Управление',['clients','users','permissions','tariffs']],['Учёт и финансы',['payroll','payrollPeriods','materials','invoices','expenses','documents','excelImport']],['Аналитика',['radar','analytics','reports','news']],['Система',['control','wms']]];
+    const groups=[['Работа',['work','jobs','organizer','batches','teamChat','messenger','notifications']],['Управление',['clients','users','permissions','tariffs']],['Учёт и финансы',['payroll','payrollPeriods','materials','invoices','expenses','documents','excelImport']],['Аналитика',['radar','analytics','reports','news']],['Система',['control','wms']]];
     let html=navButton('dashboard','home','Главная');
     for(const [title,ids] of groups){const allowed=ids.map(id=>byId[id]).filter(m=>m&&can(m.id));if(!allowed.length)continue;html+=`<div class="nav-group"><div class="nav-group-title">${esc(title)}</div>${allowed.map(m=>navButton(m.id,m.icon,m.title)).join('')}</div>`;}
     nav.innerHTML=html+'<div class="nav-spacer"></div>'+navButton('settings','settings','Настройки');return;
