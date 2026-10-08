@@ -14,7 +14,7 @@ namespace Portal.Desktop;
 
 public partial class MainWindow : Window
 {
-    private const int CurrentBuild = 71;
+    private const int CurrentBuild = 72;
     private const long MaxInstallerBytes = 250L * 1024 * 1024;
     private const string GithubRepository = "portal26ernest-arch/-Portal-zrp";
     private const string ServerDiscoveryUrl = "https://raw.githubusercontent.com/portal26ernest-arch/-Portal-zrp/main/portal-server.json";
@@ -661,7 +661,7 @@ public partial class MainWindow : Window
                 return new ServerRefreshResult(false, false, _serverOrigin);
 
             using var request = new HttpRequestMessage(HttpMethod.Get, ServerDiscoveryUrl);
-            request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.12.9");
+            request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.12.10");
             request.Headers.Accept.ParseAdd("application/json");
             using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
             response.EnsureSuccessStatusCode();
@@ -785,7 +785,7 @@ public partial class MainWindow : Window
     {
         using var request = new HttpRequestMessage(HttpMethod.Get,
             $"https://api.github.com/repos/{GithubRepository}/releases?per_page=50");
-        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.12.9");
+        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.12.10");
         request.Headers.Accept.ParseAdd("application/vnd.github+json");
         using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();
@@ -798,14 +798,10 @@ public partial class MainWindow : Window
             if (release.TryGetProperty("prerelease", out var prerelease) && prerelease.GetBoolean()) continue;
             if (!release.TryGetProperty("tag_name", out var tagNode)) continue;
             var tag = tagNode.GetString() ?? string.Empty;
-            var match = Regex.Match(tag, @"^portal-desktop-v(\d+)\.(\d+)\.0$");
-            if (!match.Success || !int.TryParse(match.Groups[1].Value, out var major) ||
-                !int.TryParse(match.Groups[2].Value, out var minor) || minor is < 0 or > 9) continue;
+            var match = Regex.Match(tag, @"^portal-desktop-v(\d+\.\d+\.\d+)$");
+            if (!match.Success) continue;
 
-            int build;
-            try { build = checked(major * 10 + minor); }
-            catch (OverflowException) { continue; }
-            var version = $"{major}.{minor}.0";
+            var version = match.Groups[1].Value;
             var expectedName = "portal-desktop-update.json";
             if (!release.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array) continue;
 
@@ -821,7 +817,7 @@ public partial class MainWindow : Window
                 var manifest = await JsonSerializer.DeserializeAsync<DesktopUpdateManifest>(
                     await manifestResponse.Content.ReadAsStreamAsync(),
                     new JsonSerializerOptions { PropertyNameCaseInsensitive = true, PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower });
-                if (manifest is not null && manifest.Build == build && manifest.Version == version &&
+                if (manifest is not null && manifest.Version == version &&
                     ValidUpdateManifest(manifest, out _)) return manifest;
             }
         }

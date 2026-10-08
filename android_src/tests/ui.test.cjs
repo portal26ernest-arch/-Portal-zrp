@@ -20,6 +20,14 @@ async function screenshot(page,name){if(process.env.PORTAL_UI_SCREENSHOTS){fs.mk
 test('all shipped JavaScript parses',()=>{
   for(const file of ['core.js','app.js','screens.js','production.js','production_part1.js','production_part2.js','production_part3.js','preview.js','documents_excel.js'])new vm.Script(fs.readFileSync(path.join(assets,file),'utf8'),{filename:file});
 });
+test('legacy work form reuses an idempotency key after an ambiguous network failure',()=>{
+  const screens=fs.readFileSync(path.join(assets,'screens.js'),'utf8');
+  assert.match(screens,/forms\.workForm=async form=>/);
+  assert.match(screens,/requestFingerprint/);
+  assert.match(screens,/body\.request_id=form\.dataset\.requestId/);
+  assert.match(screens,/crypto\.randomUUID\(\)/);
+  assert.match(screens,/if\(!error\?\.network\)/);
+});
 test('production delivery shards exactly match canonical source and remain small',()=>{
   const canonical=fs.readFileSync(path.join(assets,'production.js'));
   const parts=[1,2,3].map(i=>fs.readFileSync(path.join(assets,`production_part${i}.js`)));
