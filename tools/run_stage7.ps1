@@ -4,7 +4,7 @@ param(
     [int]$Port = 22,
     [string]$HostKeyAlias = '',
     [string]$UserName = $(if ($env:PORTAL_STAGE7_SSH_USER) { $env:PORTAL_STAGE7_SSH_USER } else { 'root' }),
-    [string]$Branch = 'portal-next-b003',
+    [string]$Branch = 'main',
     [string]$Domain = $(if ($env:PORTAL_STAGE7_DOMAIN) { $env:PORTAL_STAGE7_DOMAIN } else { '' }),
     [bool]$UseBannerRelay = $true,
     [switch]$UseCloudflareTunnel,
