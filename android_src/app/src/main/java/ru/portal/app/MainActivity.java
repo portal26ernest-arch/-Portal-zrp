@@ -339,6 +339,21 @@ public class MainActivity extends Activity {
             });
         }
 
+        @JavascriptInterface
+        public void requestFreshAsync(String id, String method, String path, String body, String token, String company) {
+            String verb = method == null ? "GET" : method.toUpperCase(Locale.ROOT);
+            String localCompany = cacheCompany;
+            executor.execute(() -> {
+                String base = resolveServerForRequest(getServerUrl());
+                boolean cacheable = cacheableGet(verb, path, token, localCompany);
+                String result = requestAt(base, verb, path, body, token, company);
+                if (cacheable && responseOk(result)) localCache.write(base, localCompany, path, result);
+                if ("POST".equals(verb) && responseOk(result) && !localCompany.isEmpty())
+                    invalidateCacheForMutation(base, localCompany, path);
+                deliver(id, result);
+            });
+        }
+
         private boolean isAutomaticPortalServer(String value) {
             if (value == null) return false;
             String base = value.trim();
@@ -441,6 +456,7 @@ public class MainActivity extends Activity {
                         System.currentTimeMillis() - savedAt > CACHE_MAX_AGE_MS) return null;
                 JSONObject copy = new JSONObject(data.toString());
                 copy.put("cached", true);
+                copy.put("cached_at_ms", savedAt);
                 return copy.toString();
             } catch (Exception ignored) { return null; }
         }
