@@ -157,6 +157,9 @@ assert.doesNotMatch(code,/Add\(preferred\);\s*var mayUsePortalFallback/,'saved a
 assert.match(code,/uri\.Scheme\.Equals\(Uri\.UriSchemeHttps/);
 assert.match(code,/uri\.IsLoopback/);
 assert.match(code,/ConnectFirstAvailablePortalServerAsync/);
+assert.match(code,/Task\.WhenAny\(probes\.Values\)/,'trusted startup endpoints must be probed concurrently');
+assert.match(code,/probeCancellation\.Cancel\(\)/,'unused startup probes must be cancelled after a healthy endpoint wins');
+assert.match(code,/CancellationTokenSource\.CreateLinkedTokenSource\(cancellationToken\)/);
 assert.match(code,/ProbePortalServerAsync/);
 assert.match(code,/server-discovery-revision\.txt/);
 assert.match(cache,/MigrateOutboxOrigin\(string settingsDir, string oldOrigin, string newOrigin\)/);

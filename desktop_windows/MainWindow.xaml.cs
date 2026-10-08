@@ -104,12 +104,19 @@ public partial class MainWindow : Window
             Add(preferred);
         }
 
-        foreach (var candidate in candidates)
+        StatusText.Text = candidates.Count > 1 ? "Проверяем каналы PORTAL…" : "Проверяем сервер…";
+        using var probeCancellation = new CancellationTokenSource();
+        var probes = candidates.ToDictionary(
+            candidate => candidate,
+            candidate => ProbePortalServerAsync(candidate, probeCancellation.Token),
+            StringComparer.OrdinalIgnoreCase);
+
+        while (probes.Count > 0)
         {
-            StatusText.Text = candidate.Equals(TrustedFallbackServerOrigin, StringComparison.OrdinalIgnoreCase)
-                ? "Подключаем резервный канал…"
-                : "Проверяем сервер…";
-            if (!await ProbePortalServerAsync(candidate)) continue;
+            var completed = await Task.WhenAny(probes.Values);
+            var candidate = probes.First(pair => ReferenceEquals(pair.Value, completed)).Key;
+            probes.Remove(candidate);
+            if (!await completed) continue;
 
             var previous = LoadStoredOrigin();
             var changed = !string.Equals(previous, candidate, StringComparison.OrdinalIgnoreCase);
@@ -117,6 +124,7 @@ public partial class MainWindow : Window
                 !DesktopCacheBridge.MigrateOutboxOrigin(_settingsDir, previous, candidate))
                 continue;
 
+            probeCancellation.Cancel();
             ServerUrlBox.Text = candidate;
             await ConnectAsync(candidate, persist: changed || string.IsNullOrWhiteSpace(previous));
             return true;
@@ -124,11 +132,12 @@ public partial class MainWindow : Window
         return false;
     }
 
-    private static async Task<bool> ProbePortalServerAsync(string origin)
+    private static async Task<bool> ProbePortalServerAsync(string origin, CancellationToken cancellationToken = default)
     {
         try
         {
-            using var timeout = new CancellationTokenSource(ServerProbeTimeout);
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(ServerProbeTimeout);
             using var pingRequest = new HttpRequestMessage(HttpMethod.Get, origin + "/api/ping");
             pingRequest.Headers.Accept.ParseAdd("application/json");
             using var ping = await Http.SendAsync(pingRequest, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
