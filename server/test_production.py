@@ -1200,6 +1200,21 @@ class ProductionTest(unittest.TestCase):
             title='Чужая компания',due_at=due),self.other_admin)['data']
         self.assertNotIn(other['id'],{t['id'] for t in self.get('organizer?scope=company',director)['data']})
 
+    def test_organizer_bootstrap_returns_task_first_screen_payload(self):
+        director=self.role_token('director')
+        director_id=self.request('/api/me',director)['user']['id']
+        due=(datetime.now()+timedelta(days=2)).replace(second=0,microsecond=0).isoformat(timespec='minutes')
+        task=self.post('organizer',dict(mode='create',assignee_user_id=self.admin_id,
+            title='Bootstrap задача',due_at=due,priority='important'),director)['data']
+        payload=self.get('organizer-bootstrap',director)['data']
+        self.assertIn(task['id'],{row['id'] for row in payload['tasks']})
+        self.assertTrue(any(row['id']==director_id for row in payload['users']))
+        self.assertTrue(payload['directors'])
+        self.assertTrue(payload['responsibles'])
+        self.assertIn('mine_requests',payload);self.assertIn('incoming_requests',payload)
+        self.assertTrue(payload['synced_at'])
+        self.get('organizer-bootstrap',self.worker,status=403)
+
     def test_organizer_director_requests_workflow_security_and_task_link(self):
         director=self.role_token('director');manager=self.role_token('manager')
         director_id=self.request('/api/me',director)['user']['id']

@@ -1226,6 +1226,28 @@ class Production:
             if not self.u.get('technical_owner'):rows=[row for row in rows if row.get('director_user_id')==self.u['id']]
         return [self.organizer_request_public(row) for row in sorted(rows,key=lambda row:(row.get('status') in {'done','rejected'},row.get('created_at') or ''),reverse=True)]
 
+    def organizer_bootstrap(self):
+        self.need('organizer.read')
+        scope='company' if 'organizer.manage' in self.permissions else 'mine'
+        data=dict(
+            synced_at=self.clock(),
+            tasks=self.organizer_rows({'scope':[scope]}),
+            users=self.organizer_users(),
+            directors=[],
+            responsibles=[],
+            mine_requests=[],
+            incoming_requests=[],
+        )
+        if {'organizer.request.create','organizer.request.decide'} & self.permissions:
+            data['directors']=self.organizer_directors()
+        if 'organizer.assign' in self.permissions and (self.u.get('technical_owner') or self.u.get('role') in {'director','admin'}):
+            data['responsibles']=self.organizer_request_responsibles()
+        if 'organizer.request.create' in self.permissions and (self.u.get('technical_owner') or self.u.get('role') in {'manager','admin'}):
+            data['mine_requests']=self.organizer_request_rows({'scope':['mine']})
+        if 'organizer.request.decide' in self.permissions:
+            data['incoming_requests']=self.organizer_request_rows({'scope':['incoming']})
+        return data
+
     def organizer_request_events(self,params):
         self.need('organizer.read');identity=str(params.get('organizer_request_id',[''])[0] or '')
         request=self.r.get('organizer_requests',identity)
@@ -1817,6 +1839,7 @@ class Production:
         if action=='messenger':return self.messenger_rows()
         if action=='messenger-relay-ticket':return self.messenger_relay_ticket()
         if action=='organizer':return self.organizer_rows(params)
+        if action=='organizer-bootstrap':return self.organizer_bootstrap()
         if action=='organizer-users':return self.organizer_users()
         if action=='organizer-events':return self.organizer_events(params)
         if action=='organizer-directors':return self.organizer_directors()

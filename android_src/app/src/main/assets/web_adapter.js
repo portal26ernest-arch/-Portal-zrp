@@ -25,7 +25,7 @@
     /^\/api\/clients\/\d+(?:\/operations)?(?:\?.*)?$/,
     /^\/api\/admin\/clients\/\d+\/operations(?:\?.*)?$/,
     /^\/api\/(?:users|materials|jobs)(?:\?.*)?$/,
-    /^\/api\/v3\/(?:catalog|products|client-requisites|client-name-history|tariff-history|today|tasks|timers|batches|works|shipments|returns|invoices|receivables|finance|analytics|expenses|economy|activity|payroll-periods|payroll-settlements|documents|settings|permissions|chat-users|notification-centers|presence|organizer|organizer-directors|organizer-events|organizer-requests|organizer-request-events|organizer-request-responsibles|organizer-users)(?:\?.*)?$/
+    /^\/api\/v3\/(?:catalog|products|client-requisites|client-name-history|tariff-history|today|tasks|timers|batches|works|shipments|returns|invoices|receivables|finance|analytics|expenses|economy|activity|payroll-periods|payroll-settlements|documents|settings|permissions|chat-users|notification-centers|presence|organizer|organizer-bootstrap|organizer-directors|organizer-events|organizer-requests|organizer-request-events|organizer-request-responsibles|organizer-users)(?:\?.*)?$/
   ];
   const OUTBOX_PATHS = new Set(['/api/v3/work','/api/v3/links','/api/v3/batches','/api/v3/tasks','/api/v3/shipments','/api/v3/returns']);
   let cacheCompany = '';
@@ -81,7 +81,7 @@
     } else if (/\/api\/v3\/payroll-settlements(?:\/|\?|$)/i.test(target)) {
       add('/api/dashboard','/api/payroll/mine','/api/v3/payroll-periods','/api/v3/payroll-settlements','/api/v3/finance','/api/v3/today');
     } else if (/\/api\/v3\/(?:organizer|organizer-requests|organizer-request-events)(?:\/|\?|$)/i.test(target)) {
-      add('/api/v3/organizer','/api/v3/organizer?scope=company','/api/v3/organizer?scope=mine','/api/v3/organizer?scope=incoming','/api/v3/organizer-requests','/api/v3/organizer-requests?scope=mine','/api/v3/organizer-requests?scope=incoming','/api/v3/organizer-request-events','/api/v3/tasks','/api/v3/today');
+      add('/api/v3/organizer-bootstrap','/api/v3/organizer','/api/v3/organizer?scope=company','/api/v3/organizer?scope=mine','/api/v3/organizer?scope=incoming','/api/v3/organizer-requests','/api/v3/organizer-requests?scope=mine','/api/v3/organizer-requests?scope=incoming','/api/v3/organizer-request-events','/api/v3/tasks','/api/v3/today');
     } else if (/\/api\/v3\/documents?(?:\/|\?|$)/i.test(target)) {
       add('/api/v3/documents');
     } else if (/\/api\/jobs(?:\/|\?|$)/i.test(target)) {

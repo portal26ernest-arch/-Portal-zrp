@@ -556,7 +556,7 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
             keys = ["/api/v3/invoices","/api/v3/receivables","/api/v3/finance","/api/v3/today"]
         } else if mutationPath.range(of: #"/(?:organizer|organizer-requests|organizer-request-events)(?:/|\?|$)"#, options: .regularExpression) != nil {
             keys = [
-                "/api/v3/organizer","/api/v3/organizer?scope=company","/api/v3/organizer?scope=mine","/api/v3/organizer?scope=incoming",
+                "/api/v3/organizer-bootstrap","/api/v3/organizer","/api/v3/organizer?scope=company","/api/v3/organizer?scope=mine","/api/v3/organizer?scope=incoming",
                 "/api/v3/organizer-requests","/api/v3/organizer-requests?scope=mine","/api/v3/organizer-requests?scope=incoming",
                 "/api/v3/organizer-request-events","/api/v3/today"
             ]
@@ -577,7 +577,7 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
             #"^/api/clients/[0-9]+(?:/operations)?(?:\?.*)?$"#,
             #"^/api/admin/clients/[0-9]+/operations(?:\?.*)?$"#,
             #"^/api/(?:users|materials|jobs)(?:\?.*)?$"#,
-            #"^/api/v3/(?:catalog|products|client-requisites|client-name-history|tariff-history|today|tasks|timers|batches|invoices|receivables|finance|analytics|payroll-periods|documents|settings|permissions|chat-users|organizer|organizer-directors|organizer-events|organizer-requests|organizer-request-events|organizer-request-responsibles|organizer-users)(?:\?.*)?$"#
+            #"^/api/v3/(?:catalog|products|client-requisites|client-name-history|tariff-history|today|tasks|timers|batches|invoices|receivables|finance|analytics|payroll-periods|documents|settings|permissions|chat-users|organizer|organizer-bootstrap|organizer-directors|organizer-events|organizer-requests|organizer-request-events|organizer-request-responsibles|organizer-users)(?:\?.*)?$"#
         ]
         return patterns.contains { path.range(of: $0, options: .regularExpression) != nil }
     }
