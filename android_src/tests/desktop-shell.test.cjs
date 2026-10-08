@@ -183,6 +183,8 @@ assert.match(fs.readFileSync(path.join(repo,'desktop_windows/Portal.Desktop.cspr
 assert.match(windowsWorkflow,/PORTAL_DESKTOP_UPDATE_SIGNING_PRIVATE_KEY/);
 assert.match(windowsWorkflow,/openssl dgst -sha256 -sign/);
 assert.match(windowsWorkflow,/portal-desktop-update\.json/);
+assert.ok(windowsWorkflow.includes('-p:PortalBuildNumber=${{ steps.meta.outputs.build }}'),'Published Desktop metadata build must match the signed updater build');
+assert.doesNotMatch(windowsWorkflow,/PortalBuildNumber=\$env:GITHUB_RUN_NUMBER/);
 assert.match(windowsWorkflow,/test -n "\$PORTAL_DESKTOP_UPDATE_SIGNING_PRIVATE_KEY"/);
 assert.match(code,/githubManifest\.Build > serverManifest\.Build/);
 assert.match(code,/portal-desktop-43-style/);
