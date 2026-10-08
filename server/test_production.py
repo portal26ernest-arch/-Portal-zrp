@@ -1171,8 +1171,19 @@ class ProductionTest(unittest.TestCase):
 
         incoming=self.get('organizer?scope=incoming',self.admin)['data']
         task=next(t for t in incoming if t['id']==to_admin['id'])
-        self.assertTrue(task['can_change_status']);self.assertFalse(task['can_edit'])
-        self.post('organizer',dict(mode='status',task_id=task['id'],status='done'),self.admin)
+        self.assertTrue(task['can_change_status']);self.assertFalse(task['can_edit']);self.assertTrue(task['can_comment'])
+        creator_view=next(t for t in self.get('organizer?scope=assigned_by_me',director)['data'] if t['id']==task['id'])
+        self.assertFalse(creator_view['can_comment'])
+        self.post('organizer',dict(mode='comment',task_id=task['id'],comment='Начал выполнение, ожидаю подтверждение'),self.admin)
+        self.post('organizer',dict(mode='comment',task_id=task['id'],comment='Комментарий не исполнителя'),director,status=403)
+        self.post('organizer',dict(mode='comment',task_id=task['id'],comment=''),self.admin,status=400)
+        self.post('organizer',dict(mode='status',task_id=task['id'],status='done',comment='Выполнено, результат проверен'),self.admin)
+        events=self.get('organizer-events?task_id='+task['id'],self.admin)['data']
+        comments=[e['detail'] for e in events if e['event']=='comment']
+        self.assertIn('Начал выполнение, ожидаю подтверждение',comments)
+        self.assertIn('Выполнено, результат проверен',comments)
+        completed=next(t for t in self.get('organizer?scope=incoming',self.admin)['data'] if t['id']==task['id'])
+        self.assertEqual(completed['status'],'done');self.assertTrue(completed['completed_at'])
         repeated=[t for t in self.get('organizer?scope=incoming',self.admin)['data'] if t.get('recurrence_of')==task['id']]
         self.assertEqual(len(repeated),1);self.assertEqual(repeated[0]['created_by'],director_id)
 
