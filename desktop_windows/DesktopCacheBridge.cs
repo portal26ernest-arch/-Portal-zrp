@@ -239,6 +239,24 @@ public sealed class DesktopCacheBridge
         }
     }
 
+    public int LegacyPendingMutationCount(string companyId)
+    {
+        try
+        {
+            if (!long.TryParse(companyId, out var company) || company < 1) return 0;
+            var companyDir = Path.Combine(_outboxRoot, company.ToString());
+            if (!Directory.Exists(companyDir)) return 0;
+            // 5.12.9 and older stored durable mutations directly in the company directory.
+            // Keep them quarantined because the legacy row has no trustworthy user identity.
+            RecoverOutboxTemps(companyDir);
+            return Directory.GetFiles(companyDir, "*.bin", SearchOption.TopDirectoryOnly).Length;
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
     public static bool MigrateOutboxOrigin(string settingsDir, string oldOrigin, string newOrigin)
         => MigrateOutboxOrigin(settingsDir, oldOrigin, newOrigin, null);
 

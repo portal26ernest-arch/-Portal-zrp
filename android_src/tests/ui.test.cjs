@@ -20,6 +20,22 @@ async function screenshot(page,name){if(process.env.PORTAL_UI_SCREENSHOTS){fs.mk
 test('all shipped JavaScript parses',()=>{
   for(const file of ['core.js','app.js','screens.js','production.js','production_part1.js','production_part2.js','production_part3.js','preview.js','documents_excel.js'])new vm.Script(fs.readFileSync(path.join(assets,file),'utf8'),{filename:file});
 });
+test('work form keeps user-facing Russian text intact',()=>{
+  const screens=fs.readFileSync(path.join(assets,'screens.js'),'utf8');
+  assert.match(screens,/Выберите работу и укажите целое количество от 1 до 1 000 000/);
+  assert.match(screens,/Записано ·/);
+  assert.match(screens,/Низкий остаток:/);
+  assert.match(screens,/Работа сохранена\. Можно записать следующую\./);
+  assert.doesNotMatch(screens,/\?{4,}/);
+});
+test('legacy Desktop outbox is visibly quarantined instead of silently reassigned',()=>{
+  const app=fs.readFileSync(path.join(assets,'app.js'),'utf8');
+  const adapter=fs.readFileSync(path.join(assets,'web_adapter.js'),'utf8');
+  assert.match(adapter,/legacyPendingMutationCount/);
+  assert.match(app,/Найдены старые локальные операции/);
+  assert.match(app,/не отправляются автоматически/);
+  assert.match(app,/не смешать данные разных пользователей/);
+});
 test('legacy work form reuses an idempotency key after an ambiguous network failure',()=>{
   const screens=fs.readFileSync(path.join(assets,'screens.js'),'utf8');
   assert.match(screens,/forms\.workForm=async form=>/);

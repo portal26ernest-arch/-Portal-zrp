@@ -17,6 +17,7 @@ class Stage7DeploySafetyTests(unittest.TestCase):
         self.assertIn('production_database_touched=no', DEPLOY)
 
     def test_deploy_requires_exact_pinned_commit_in_verified_branch(self):
+        self.assertIn('BRANCH="${PORTAL_STAGE7_BRANCH:-main}"', DEPLOY)
         self.assertIn('PORTAL_STAGE7_EXPECTED_COMMIT', DEPLOY)
         self.assertIn('git -C "$REPO" fetch --prune origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"', DEPLOY)
         self.assertIn('git -C "$REPO" merge-base --is-ancestor "$EXPECTED_COMMIT" "origin/$BRANCH"', DEPLOY)
