@@ -36,7 +36,9 @@ final class PortalLocalCache {
               Date().timeIntervalSince1970 - envelope.savedAt <= maxAge,
               let object = try? JSONSerialization.jsonObject(with: envelope.data) as? [String: Any],
               object["ok"] as? Bool == true else { return nil }
-        return object
+        var result = object
+        result["cached_at_ms"] = Int(envelope.savedAt * 1000)
+        return result
     }
 
     @discardableResult

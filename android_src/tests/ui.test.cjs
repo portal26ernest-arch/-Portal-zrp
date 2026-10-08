@@ -103,12 +103,20 @@ test('shared mobile Organizer exposes director requests and native reminders',()
   assert.match(production,/function organizerTodayRows\(rows,now=new Date\(\)\)[\s\S]*organizerActive\(t\)&&organizerDay\(t\.due_at\)<=today/);
   assert.match(production,/organizerOverdueLabel\(t\.due_at,now\)/);
   assert.match(production,/mod100>=11&&mod100<=14/);
-  assert.match(production,/actions\.organizerView=button=>\{S\.organizerView=button\.dataset\.view;refreshOrganizerViewButtons\(\);renderOrganizerBody\(\);\}/);
+  assert.match(production,/actions\.organizerView=button=>\{S\.organizerView=button\.dataset\.view;renderOrganizerTabs\(\);renderOrganizerBody\(\);\}/);
+  assert.match(production,/Promise\.allSettled\(specs\.map/);
+  assert.match(production,/organizerFreshReload\(view,epoch\)/);
+  assert.match(production,/id="organizerTabs" class="organizer-tabs"/);
+  assert.match(production,/id="organizerRequestsPanel"/);
+  assert.match(production,/organizerEnsureUsers\(\)/);
+  assert.match(production,/organizerEnsureDirectors\(\)/);
+  assert.match(production,/organizerEnsureRequestUsers\(\)/);
+  assert.doesNotMatch(production,/actions\.organizerView[\s\S]{0,180}screens\.organizer/);
   assert.doesNotMatch(production,/actions\.organizerView=async[\s\S]{0,180}screens\.organizer\(\)/);
-  assert.match(production,/Promise\.allSettled\(\[refreshOrganizer\(\),refreshOrganizerRequests\(\),loadUsers,loadDirectors,loadResponsibles\]\)/);
   const organizerScreen=production.slice(production.indexOf('screens.organizer=async()=>'),production.indexOf('actions.organizerRequestNew='));
-  assert.match(organizerScreen,/id="organizerBody"[\s\S]*requestSections\);/,'tasks must render before director request cards');
-  assert.match(production,/organizerIncomingSection[\s\S]{0,400}classList\.toggle\('hidden',incoming\.length===0\)/);
+  assert.match(organizerScreen,/id="organizerBody"[\s\S]*id="organizerRequestsPanel"/,'tasks must render before director request panel');
+  assert.match(production,/details class="organizer-requests card"/);
+  assert.match(production,/const users=await organizerEnsureUsers\(\),tomorrow=/);
   assert.match(production,/✓ Выполнена/);
 });
 

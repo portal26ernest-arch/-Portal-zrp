@@ -142,6 +142,8 @@ assert.doesNotMatch(main,/api\.telegram\.org|BOT_TOKEN|OWNER_TELEGRAM_ID/);
 assert.doesNotMatch(main,/Uri\.fromFile|"file:\/\/"/);
 assert.match(main,/CACHE_MAX_AGE_MS = 30L \* 24 \* 60 \* 60 \* 1000/);
 assert.match(main,/setCacheCompany/);
+assert.match(main,/requestFreshAsync\(String id, String method, String path/);
+assert.match(main,/cached_at_ms/);
 assert.match(main,/queueMutation/);
 for(const safePath of ['/api/v3/work','/api/v3/links','/api/v3/batches','/api/v3/tasks','/api/v3/shipments','/api/v3/returns']) assert.ok(main.includes(`"${safePath}"`),safePath);
 const queuePolicy=main.slice(main.indexOf('private boolean queueableMutationPath'),main.indexOf('@JavascriptInterface\n        public boolean queueMutation'));
