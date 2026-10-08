@@ -475,14 +475,15 @@ function organizerDay(value){const d=new Date(value);return Number.isFinite(d.ge
 function organizerActive(t){return !['done','cancelled'].includes(t.status);}
 function organizerTaskCard(t){
   const now=new Date(),due=new Date(t.due_at),late=organizerActive(t)&&Number.isFinite(due.getTime())&&due<now;
-  const badge=late?'Просрочена':organizerStatus[t.status]||'Задача';
+  const completed=t.status==='done',badge=completed?'✓ Выполнена':late?'Просрочена':organizerStatus[t.status]||'Задача';
   const link=t.linked_type?'<p class="meta">'+esc(organizerLink[t.linked_type]||'Связь')+' · '+esc(t.linked_id)+'</p>':'';
   let buttons=btn('История','organizerHistory','data-id="'+esc(t.id)+'"','text');
   if(t.can_change_status&&t.status==='new')buttons+=btn('В работу','organizerStatus','data-id="'+esc(t.id)+'" data-status="in_progress"','secondary');
-  if(t.can_change_status&&t.status==='in_progress')buttons+=btn('Выполнено','organizerStatus','data-id="'+esc(t.id)+'" data-status="done"');
+  if(t.can_comment&&t.status!=='cancelled')buttons+=btn('Комментарий','organizerComment','data-id="'+esc(t.id)+'"','secondary');
+  if(t.can_change_status&&t.status==='in_progress')buttons+=btn('✓ Выполнить','organizerComplete','data-id="'+esc(t.id)+'"');
   if(t.can_edit&&organizerActive(t))buttons+=btn('Перенести','organizerReschedule','data-id="'+esc(t.id)+'"','secondary');
   if(t.can_edit&&organizerActive(t))buttons+=btn('Отменить','organizerStatus','data-id="'+esc(t.id)+'" data-status="cancelled"','text');
-  return '<article class="item"><div class="row between"><div><span class="eyebrow">'+esc(organizerPriority[t.priority]||'Обычная')+'</span><h3>'+esc(t.title)+'</h3></div><span class="badge '+(late?'warning':'')+'">'+esc(badge)+'</span></div>'+
+  return '<article class="item"><div class="row between"><div><span class="eyebrow">'+esc(organizerPriority[t.priority]||'Обычная')+'</span><h3>'+esc(t.title)+'</h3></div><span class="badge '+(completed?'green':late?'warning':'')+'">'+esc(badge)+'</span></div>'+
     (t.description?'<p>'+esc(t.description)+'</p>':'')+
     '<p><b>Срок:</b> '+esc(organizerMoment(t.due_at))+(t.remind_at?' · <b>Напомнить:</b> '+esc(organizerMoment(t.remind_at)):'')+'</p>'+
     '<p class="meta">Исполнитель: '+esc(t.assignee_name)+' · '+esc(t.assignee_role_label||'Сотрудник')+'<br>Поставил: '+esc(t.created_by_name)+(t.repeat_rule&&t.repeat_rule!=='none'?' · '+esc(organizerRepeat[t.repeat_rule]):'')+'</p>'+link+
@@ -674,6 +675,26 @@ forms.organizerForm=async form=>{
   closeSheet();toast('Задача поставлена');await refreshOrganizer();
 };
 actions.organizerStatus=async button=>{await productionPost('organizer',{mode:'status',task_id:button.dataset.id,status:button.dataset.status});toast(button.dataset.status==='done'?'Задача выполнена':button.dataset.status==='in_progress'?'Задача взята в работу':'Задача отменена');await refreshOrganizer();};
+actions.organizerComplete=button=>{
+  const t=(S.organizerRows||[]).find(x=>x.id===button.dataset.id);if(!t)throw new Error('Задача не найдена');
+  openSheet('Завершить задачу','<form id="organizerCompleteForm" data-task="'+esc(t.id)+'"><p><b>'+esc(t.title)+'</b></p>'+
+    '<label class="field"><span>Комментарий о результате — необязательно</span><textarea id="organizerCompleteComment" maxlength="2000" rows="4" placeholder="Что сделано, результат или важное пояснение"></textarea></label>'+
+    '<button class="btn block" type="submit">✓ Отметить выполненной</button></form>');
+};
+forms.organizerCompleteForm=async form=>{
+  await productionPost('organizer',{mode:'status',task_id:form.dataset.task,status:'done',comment:$('organizerCompleteComment').value.trim()},form);
+  closeSheet();toast('✓ Задача выполнена');await refreshOrganizer();
+};
+actions.organizerComment=button=>{
+  const t=(S.organizerRows||[]).find(x=>x.id===button.dataset.id);if(!t)throw new Error('Задача не найдена');
+  openSheet('Комментарий к задаче','<form id="organizerCommentForm" data-task="'+esc(t.id)+'"><p><b>'+esc(t.title)+'</b></p>'+
+    '<label class="field"><span>Комментарий исполнителя</span><textarea id="organizerCommentText" maxlength="2000" rows="4" required placeholder="Например: что уже сделано, что мешает или почему задача пока не выполнена"></textarea></label>'+
+    '<button class="btn block" type="submit">Добавить комментарий</button></form>');
+};
+forms.organizerCommentForm=async form=>{
+  await productionPost('organizer',{mode:'comment',task_id:form.dataset.task,comment:$('organizerCommentText').value.trim()},form);
+  closeSheet();toast('Комментарий добавлен');await refreshOrganizer();
+};
 actions.organizerReschedule=button=>{
   const t=(S.organizerRows||[]).find(x=>x.id===button.dataset.id);if(!t)throw new Error('Задача не найдена');
   openSheet('Перенести задачу','<form id="organizerRescheduleForm" data-task="'+esc(t.id)+'">'+field('organizerNewDue','Новый срок',String(t.due_at||'').slice(0,16),'datetime-local','required')+field('organizerNewReminder','Напомнить в',String(t.remind_at||'').slice(0,16),'datetime-local')+'<button class="btn block" type="submit">Сохранить новый срок</button></form>');
@@ -682,8 +703,8 @@ forms.organizerRescheduleForm=async form=>{await productionPost('organizer',{mod
 actions.organizerHistory=async button=>{
   const t=(S.organizerRows||[]).find(x=>x.id===button.dataset.id);if(!t)throw new Error('Задача не найдена');
   const events=await productionGet('organizer-events?task_id='+encodeURIComponent(t.id));
-  const eventNames={created:'Создана задача',status:'Изменён статус',rescheduled:'Изменён срок',edited:'Изменена задача'};
-  openSheet(t.title,'<p><b>Исполнитель:</b> '+esc(t.assignee_name)+'</p><p><b>Срок:</b> '+esc(organizerMoment(t.due_at))+'</p><h3>История</h3><div class="list">'+events.slice().reverse().map(e=>'<div class="item"><b>'+esc(eventNames[e.event]||'Изменение')+'</b><p class="meta">'+esc(e.actor_name)+' · '+esc(organizerMoment(e.occurred_at))+'</p>'+(e.event==='rescheduled'&&e.detail?'<p>'+esc(e.detail)+'</p>':'')+'</div>').join('')+'</div>');
+  const eventNames={created:'Создана задача',status:'Изменён статус',comment:'Комментарий исполнителя',rescheduled:'Изменён срок',edited:'Изменена задача'};
+  openSheet(t.title,'<p><b>Исполнитель:</b> '+esc(t.assignee_name)+'</p><p><b>Срок:</b> '+esc(organizerMoment(t.due_at))+'</p><h3>История</h3><div class="list">'+events.slice().reverse().map(e=>'<div class="item"><b>'+esc(eventNames[e.event]||'Изменение')+'</b><p class="meta">'+esc(e.actor_name)+' · '+esc(organizerMoment(e.occurred_at))+'</p>'+(e.detail?'<p>'+esc(e.detail)+'</p>':'')+'</div>').join('')+'</div>');
 };
 async function organizerReminderCheck(){
   if(!S.token||!can('organizer'))return;
