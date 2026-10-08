@@ -1169,7 +1169,13 @@ class ProductionTest(unittest.TestCase):
         self.post('organizer',dict(mode='create',assignee_user_id=self.admin_id,title='Наверх нельзя',due_at=due),manager,status=403)
         self.post('organizer',dict(mode='create',assignee_user_id=director_id,title='Наверх нельзя',due_at=due),self.admin,status=403)
 
+        overdue_due=(datetime.now()-timedelta(days=2)).replace(second=0,microsecond=0).isoformat(timespec='minutes')
+        overdue=self.post('organizer',dict(mode='create',assignee_user_id=self.admin_id,title='Просроченная задача',
+            due_at=overdue_due,priority='urgent'),director)['data']
         incoming=self.get('organizer?scope=incoming',self.admin)['data']
+        overdue_visible=next(t for t in incoming if t['id']==overdue['id'])
+        self.assertEqual(overdue_visible['status'],'new')
+        self.assertEqual(overdue_visible['due_at'],overdue_due)
         task=next(t for t in incoming if t['id']==to_admin['id'])
         self.assertTrue(task['can_change_status']);self.assertFalse(task['can_edit']);self.assertTrue(task['can_comment'])
         creator_view=next(t for t in self.get('organizer?scope=assigned_by_me',director)['data'] if t['id']==task['id'])

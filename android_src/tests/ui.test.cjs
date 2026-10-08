@@ -76,6 +76,9 @@ test('shared mobile Organizer exposes director requests and native reminders',()
   assert.match(production,/organizerCommentForm/);
   assert.match(production,/mode:'comment',task_id:/);
   assert.match(production,/completed\?'green'/);
+  assert.match(production,/function organizerTodayRows\(rows,now=new Date\(\)\)[\s\S]*organizerActive\(t\)&&organizerDay\(t\.due_at\)<=today/);
+  assert.match(production,/organizerOverdueLabel\(t\.due_at,now\)/);
+  assert.match(production,/mod100>=11&&mod100<=14/);
   assert.match(production,/✓ Выполнена/);
 });
 
