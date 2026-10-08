@@ -46,16 +46,27 @@ for expected in [
 
 prom = (ROOT / "prometheus" / "prometheus.yml").read_text(encoding="utf-8")
 for endpoint in [
+    "https://178.209.127.247:8443/api/ping",
+    "https://178.209.127.247:8443/api/ready",
+    "https://178.209.127.247/web/",
+]:
+    if endpoint not in prom:
+        errors.append(f"missing origin endpoint: {endpoint}")
+
+for logical_endpoint in [
     "https://api.vart-portal.ru/api/ping",
     "https://api.vart-portal.ru/api/ready",
     "https://vart-portal.ru/web/",
-    "https://reserve-api.vart-portal.ru/api/ping",
 ]:
-    if endpoint not in prom:
-        errors.append(f"missing endpoint: {endpoint}")
+    if logical_endpoint not in prom:
+        errors.append(f"missing logical endpoint label: {logical_endpoint}")
 
-if "api.vart-portal.ru:22" not in prom or "module: [ssh_banner]" not in prom:
-    errors.append("missing SSH banner probe")
+if "178.209.127.247:22" not in prom or "module: [ssh_banner]" not in prom:
+    errors.append("missing direct SSH banner probe")
+if "api.vart-portal.ru:22" in prom:
+    errors.append("Cloudflare-proxied hostname must not be used for the SSH banner probe")
+if "http_api_origin_2xx" not in prom or "http_site_origin_2xx" not in prom:
+    errors.append("missing direct-origin blackbox modules")
 
 dashboard = json.loads(
     (ROOT / "grafana" / "dashboards" / "portal-overview.json").read_text(encoding="utf-8")

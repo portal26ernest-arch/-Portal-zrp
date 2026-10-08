@@ -6,7 +6,7 @@
       "type": "stat",
       "title": "Endpoints UP",
       "datasource": {"type": "prometheus", "uid": "portal-prometheus"},
-      "targets": [{"expr": "sum(probe_success{job=\"portal-http\"})", "refId": "A"}],
+      "targets": [{"expr": "sum(probe_success{job=~\"portal-origin-(api|site)\"})", "refId": "A"}],
       "gridPos": {"h": 7, "w": 6, "x": 0, "y": 0}
     },
     {
@@ -29,7 +29,7 @@
       "type": "timeseries",
       "title": "Endpoint latency",
       "datasource": {"type": "prometheus", "uid": "portal-prometheus"},
-      "targets": [{"expr": "probe_duration_seconds{job=\"portal-http\"}", "legendFormat": "{{instance}}", "refId": "A"}],
+      "targets": [{"expr": "probe_duration_seconds{job=~\"portal-origin-(api|site)\"}", "legendFormat": "{{instance}}", "refId": "A"}],
       "gridPos": {"h": 8, "w": 18, "x": 0, "y": 7}
     }
   ],

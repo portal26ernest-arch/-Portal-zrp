@@ -7,7 +7,7 @@ This directory contains the PORTAL-owned monitoring stack.
 - Uptime Kuma 2.5.5 — operator-friendly uptime/status view.
 - Prometheus 3.15.0 — metrics and alert-rule evaluation.
 - node_exporter 1.12.1 — host CPU/RAM/disk/load metrics.
-- blackbox_exporter 0.28.0 — HTTP/TLS probes for PORTAL public endpoints.
+- blackbox_exporter 0.28.0 — HTTP/TLS probes for the PORTAL origin plus SSH banner checks.
 - Alertmanager 0.34.1 — alert grouping/routing.
 - Grafana 13.2.3 — private dashboard.
 
@@ -15,14 +15,15 @@ All management UIs bind to loopback only by default. Do not expose ports 3002, 3
 
 ## Monitored endpoints
 
-The declarative Prometheus probes cover:
-- https://api.vart-portal.ru/api/ping
-- https://api.vart-portal.ru/api/ready
-- https://vart-portal.ru/web/
-- https://reserve-api.vart-portal.ru/api/ping
-- SSH banner on api.vart-portal.ru:22 (must actually return SSH-2.0-, not merely accept TCP)
+The self-hosted Prometheus probes cover the production origin without hairpinning through Cloudflare:
+- API ping through Nginx on `https://178.209.127.247:8443/api/ping` with SNI/Host `api.vart-portal.ru`;
+- API readiness through the same Nginx origin;
+- Web route through Nginx on `https://178.209.127.247/web/` with SNI/Host `vart-portal.ru`;
+- SSH banner on `178.209.127.247:22` (must actually return `SSH-2.0-`, not merely accept TCP).
 
-Uptime Kuma should mirror these checks plus certificate-expiry checks. Prometheus remains the canonical declarative probe/rule source because Uptime Kuma monitor management uses an internal API whose compatibility is not guaranteed.
+The public Cloudflare paths are checked independently by `.github/workflows/public-health.yml` from GitHub-hosted runners every five minutes and on manual dispatch. That workflow covers the primary API, reserve API, and public Web route. This separation avoids false self-hairpin outages while retaining an external public-reachability check.
+
+Uptime Kuma should mirror the origin checks plus certificate-expiry checks. Prometheus remains the canonical self-hosted probe/rule source because Uptime Kuma monitor management uses an internal API whose compatibility is not guaranteed.
 
 ## Secrets
 
