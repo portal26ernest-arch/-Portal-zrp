@@ -1,5 +1,6 @@
 from pathlib import Path
 import re
+import subprocess
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,6 +34,13 @@ class OffsiteInstallTests(unittest.TestCase):
     def test_acl_install_is_explicit(self):
         self.assertIn("--install-acl", INSTALL)
         self.assertIn("apt-get install -y --no-install-recommends acl", INSTALL)
+
+    def test_installer_is_committed_executable(self):
+        mode = subprocess.check_output(
+            ["git", "-C", str(ROOT), "ls-files", "-s", "ops/install_offsite_backup_ubuntu.sh"],
+            text=True,
+        ).split()[0]
+        self.assertEqual(mode, "100755")
 
 if __name__ == "__main__":
     unittest.main()
