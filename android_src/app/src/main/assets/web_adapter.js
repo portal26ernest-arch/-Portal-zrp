@@ -30,6 +30,7 @@
   const OUTBOX_PATHS = new Set(['/api/v3/work','/api/v3/links','/api/v3/batches','/api/v3/tasks','/api/v3/shipments','/api/v3/returns']);
   let cacheCompany = '';
   let cacheIdentity = '';
+  let cacheUser = '';
   const cacheScope = () => cacheCompany && cacheIdentity ? cacheCompany + '|' + cacheIdentity : '';
   const desktopCache = () => {
     try { return window.chrome?.webview?.hostObjects?.sync?.portalDesktopCache || null; }
@@ -189,23 +190,26 @@
       let permissions=[];
       try{const raw=JSON.parse(String(permissionsJson||'[]'));if(Array.isArray(raw))permissions=[...new Set(raw.map(String).filter(value=>/^[a-z0-9._-]{1,80}$/i.test(value)))].sort();}catch{}
       const signature=permissions.join(',');
-      cacheIdentity = /^[1-9]\d{0,9}$/.test(user) && /^[a-z_]{2,40}$/.test(safeRole) && signature.length<=1500 ? user + '|' + safeRole + '|' + signature : '';
+      const validUser=/^[1-9]\d{0,9}$/.test(user);
+      cacheUser = validUser ? user : '';
+      cacheIdentity = validUser && /^[a-z_]{2,40}$/.test(safeRole) && signature.length<=1500 ? user + '|' + safeRole + '|' + signature : '';
+      if(!cacheIdentity)cacheUser='';
       return !!cacheIdentity;
     },
     clearCompanyCache: () => cacheScope() ? cacheClearScope(cacheScope()) : true,
     queueMutation: json => {
       try {
-        if (!cacheCompany || typeof json !== 'string' || json.length > 512 * 1024) return false;
+        if (!cacheCompany || !cacheUser || typeof json !== 'string' || json.length > 512 * 1024) return false;
         const row = JSON.parse(json);
         if (!row || row.method !== 'POST' || !OUTBOX_PATHS.has(row.path) || !/^[0-9a-f-]{36}$/i.test(String(row.request_id || ''))
             || !row.body || row.body.request_id !== row.request_id) return false;
-        return !!desktopCache()?.EnqueueMutation(String(cacheCompany), String(row.request_id), JSON.stringify(row));
+        return !!desktopCache()?.EnqueueMutation(String(cacheCompany), String(cacheUser), String(row.request_id), JSON.stringify(row));
       } catch { return false; }
     },
     pendingMutations: () => {
       try {
-        if (!cacheCompany) return '[]';
-        const raw = desktopCache()?.PendingMutations(String(cacheCompany));
+        if (!cacheCompany || !cacheUser) return '[]';
+        const raw = desktopCache()?.PendingMutations(String(cacheCompany), String(cacheUser));
         if (!raw) return '[]';
         const rows = JSON.parse(String(raw));
         if (!Array.isArray(rows)) return '[]';
@@ -217,12 +221,16 @@
     },
     removeMutation: requestId => {
       try {
-        return !!cacheCompany && /^[0-9a-f-]{36}$/i.test(String(requestId || ''))
-          && !!desktopCache()?.RemoveMutation(String(cacheCompany), String(requestId));
+        return !!cacheCompany && !!cacheUser && /^[0-9a-f-]{36}$/i.test(String(requestId || ''))
+          && !!desktopCache()?.RemoveMutation(String(cacheCompany), String(cacheUser), String(requestId));
       } catch { return false; }
     },
     pendingMutationCount: () => {
-      try { return cacheCompany ? Number(desktopCache()?.PendingMutationCount(String(cacheCompany)) || 0) : 0; }
+      try { return cacheCompany && cacheUser ? Number(desktopCache()?.PendingMutationCount(String(cacheCompany), String(cacheUser)) || 0) : 0; }
+      catch { return 0; }
+    },
+    legacyPendingMutationCount: () => {
+      try { return cacheCompany ? Number(desktopCache()?.LegacyPendingMutationCount(String(cacheCompany)) || 0) : 0; }
       catch { return 0; }
     },
     openMessengerWindow: (provider,relayJson='') => { if(!window.__PORTAL_DESKTOP__)return false; try { const p=String(provider||'telegram').toLowerCase()==='max'?'max':'telegram'; if(window.chrome?.webview?.postMessage){ window.chrome.webview.postMessage(JSON.stringify({type:'openMessenger',provider:p,relay:relayJson||''})); return true; } if(p==='telegram')return false; window.open('portal-messenger://open?provider=max','_blank'); return true; } catch { return false; } },

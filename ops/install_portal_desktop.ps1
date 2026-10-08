@@ -29,6 +29,8 @@ try {
     $archive = [System.IO.Compression.ZipFile]::OpenRead($package)
     try {
         $root = [IO.Path]::GetFullPath($staging).TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+        if ($archive.Entries.Count -gt 10000) { throw 'Package contains too many files.' }
+        [long]$expandedBytes = 0
         foreach ($entry in $archive.Entries) {
             if ([string]::IsNullOrWhiteSpace($entry.FullName) -or $entry.FullName.Contains('\')) {
                 throw 'Unsafe package path.'
@@ -41,6 +43,9 @@ try {
                 New-Item -ItemType Directory -Path $destination -Force | Out-Null
                 continue
             }
+            if ($entry.Length -lt 0) { throw 'Package contains an invalid file length.' }
+            $expandedBytes += [long]$entry.Length
+            if ($expandedBytes -gt 1GB) { throw 'Package expands beyond the allowed size.' }
             New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
             $inputStream = $entry.Open()
             try {

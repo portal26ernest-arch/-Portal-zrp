@@ -36,8 +36,9 @@ must(releaseWorkflow.includes('PORTAL_BUILD_NUMBER=') && releaseWorkflow.include
      stagingWorkflow.includes('PORTAL_BUILD_NUMBER=') && stagingWorkflow.includes('PORTAL_BUILD_DATE=') &&
      gradle.includes("environmentVariable('PORTAL_BUILD_NUMBER')") && gradle.includes("environmentVariable('PORTAL_BUILD_DATE')"),
   'Android CI builds must generate build number/date automatically');
-must(desktopReleaseWorkflow.includes('PortalBuildNumber=$env:GITHUB_RUN_NUMBER') && desktopReleaseWorkflow.includes('PortalBuildDate=$buildDate'),
-  'Desktop CI builds must generate build number/date automatically');
+must(desktopReleaseWorkflow.includes('PortalBuildNumber=${{ steps.meta.outputs.build }}') && desktopReleaseWorkflow.includes('PortalBuildDate=$buildDate') &&
+     !desktopReleaseWorkflow.includes('PortalBuildNumber=$env:GITHUB_RUN_NUMBER'),
+  'Desktop CI must use the authoritative FileVersion build and generate build date automatically');
 must(releaseWorkflow.includes('PORTAL_ANDROID_KEYSTORE_TYPE: PKCS12'),
   'Signed release must use PKCS12 keystore format');
 must(releaseWorkflow.includes('portal-release.p12'),

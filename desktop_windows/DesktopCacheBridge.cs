@@ -18,7 +18,7 @@ public sealed class DesktopCacheBridge
 
     public DesktopCacheBridge(string settingsDir, string serverOrigin)
     {
-        var originKey = Hash(serverOrigin);
+        var originKey = OriginKey(serverOrigin);
         _root = Path.Combine(settingsDir, "company-cache", originKey);
         _outboxRoot = Path.Combine(settingsDir, "company-outbox", originKey);
         Directory.CreateDirectory(_root);
@@ -154,13 +154,14 @@ public sealed class DesktopCacheBridge
         }
     }
 
-    public bool EnqueueMutation(string companyId, string requestId, string json)
+    public bool EnqueueMutation(string companyId, string userId, string requestId, string json)
     {
         try
         {
-            var dir = OutboxDirectory(companyId);
+            var dir = OutboxDirectory(companyId, userId);
             if (dir is null || !Guid.TryParse(requestId, out _) || string.IsNullOrWhiteSpace(json)) return false;
             Directory.CreateDirectory(dir);
+            RecoverOutboxTemps(dir);
             if (Directory.GetFiles(dir, "*.bin").Length >= MaxOutboxItems) return false;
             var plain = Encoding.UTF8.GetBytes(json);
             if (plain.Length == 0 || plain.Length > MaxOutboxItemBytes) return false;
@@ -177,12 +178,13 @@ public sealed class DesktopCacheBridge
         }
     }
 
-    public string PendingMutations(string companyId)
+    public string PendingMutations(string companyId, string userId)
     {
         try
         {
-            var dir = OutboxDirectory(companyId);
+            var dir = OutboxDirectory(companyId, userId);
             if (dir is null || !Directory.Exists(dir)) return "[]";
+            RecoverOutboxTemps(dir);
             var rows = new List<string>();
             foreach (var path in Directory.GetFiles(dir, "*.bin").OrderBy(File.GetCreationTimeUtc))
             {
@@ -204,14 +206,16 @@ public sealed class DesktopCacheBridge
         }
     }
 
-    public bool RemoveMutation(string companyId, string requestId)
+    public bool RemoveMutation(string companyId, string userId, string requestId)
     {
         try
         {
-            var dir = OutboxDirectory(companyId);
+            var dir = OutboxDirectory(companyId, userId);
             if (dir is null || !Guid.TryParse(requestId, out _)) return false;
             var path = Path.Combine(dir, Hash(requestId) + ".bin");
+            var temp = path + ".tmp";
             if (File.Exists(path)) File.Delete(path);
+            if (File.Exists(temp)) File.Delete(temp);
             return true;
         }
         catch
@@ -220,12 +224,32 @@ public sealed class DesktopCacheBridge
         }
     }
 
-    public int PendingMutationCount(string companyId)
+    public int PendingMutationCount(string companyId, string userId)
     {
         try
         {
-            var dir = OutboxDirectory(companyId);
-            return dir is null || !Directory.Exists(dir) ? 0 : Directory.GetFiles(dir, "*.bin").Length;
+            var dir = OutboxDirectory(companyId, userId);
+            if (dir is null || !Directory.Exists(dir)) return 0;
+            RecoverOutboxTemps(dir);
+            return Directory.GetFiles(dir, "*.bin").Length;
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    public int LegacyPendingMutationCount(string companyId)
+    {
+        try
+        {
+            if (!long.TryParse(companyId, out var company) || company < 1) return 0;
+            var companyDir = Path.Combine(_outboxRoot, company.ToString());
+            if (!Directory.Exists(companyDir)) return 0;
+            // 5.12.9 and older stored durable mutations directly in the company directory.
+            // Keep them quarantined because the legacy row has no trustworthy user identity.
+            RecoverOutboxTemps(companyDir);
+            return Directory.GetFiles(companyDir, "*.bin", SearchOption.TopDirectoryOnly).Length;
         }
         catch
         {
@@ -243,48 +267,52 @@ public sealed class DesktopCacheBridge
             if (string.IsNullOrWhiteSpace(oldOrigin) || string.IsNullOrWhiteSpace(newOrigin) ||
                 oldOrigin.Equals(newOrigin, StringComparison.OrdinalIgnoreCase)) return true;
             var baseDir = Path.Combine(settingsDir, "company-outbox");
-            var source = Path.Combine(baseDir, Hash(oldOrigin.ToLowerInvariant()));
+            var source = Path.Combine(baseDir, OriginKey(oldOrigin));
             if (!Directory.Exists(source)) return true;
-            var target = Path.Combine(baseDir, Hash(newOrigin.ToLowerInvariant()));
+            var target = Path.Combine(baseDir, OriginKey(newOrigin));
             Directory.CreateDirectory(target);
+
+            foreach (var directory in Directory.GetDirectories(source, "*", SearchOption.AllDirectories))
+                RecoverOutboxTemps(directory);
+
             var copied = 0;
-            foreach (var company in Directory.GetDirectories(source))
+            foreach (var row in Directory.GetFiles(source, "*.bin", SearchOption.AllDirectories))
             {
-                var name = Path.GetFileName(company);
-                if (!long.TryParse(name, out var companyId) || companyId < 1) return false;
-                var targetCompany = Path.Combine(target, name);
-                Directory.CreateDirectory(targetCompany);
-                foreach (var row in Directory.GetFiles(company, "*.bin"))
+                var relative = Path.GetRelativePath(source, row);
+                var parts = relative.Split(
+                    new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar },
+                    StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length is < 2 or > 3 ||
+                    !long.TryParse(parts[0], out var companyId) || companyId < 1 ||
+                    (parts.Length == 3 && (!long.TryParse(parts[1], out var userId) || userId < 1)))
+                    return false;
+
+                var destination = Path.Combine(target, relative);
+                Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                if (File.Exists(destination))
                 {
-                    var destination = Path.Combine(targetCompany, Path.GetFileName(row));
-                    if (File.Exists(destination)) continue;
-                    var temp = destination + ".migrating";
-                    if (File.Exists(temp)) File.Delete(temp);
-                    File.Copy(row, temp, overwrite: false);
-                    File.Move(temp, destination);
-                    copied++;
-                    afterCopy?.Invoke(copied);
+                    if (!File.ReadAllBytes(row).SequenceEqual(File.ReadAllBytes(destination))) return false;
+                    continue;
                 }
+
+                var temp = destination + ".migrating";
+                if (File.Exists(temp)) File.Delete(temp);
+                File.Copy(row, temp, overwrite: false);
+                File.Move(temp, destination);
+                copied++;
+                afterCopy?.Invoke(copied);
             }
-            // Complete the target copy before callers switch the stored origin.
-            // Source cleanup is best effort so retries remain safe and idempotent.
-            foreach (var company in Directory.GetDirectories(source))
+
+            // Complete and verify the target copy before callers switch the stored origin.
+            foreach (var row in Directory.GetFiles(source, "*.bin", SearchOption.AllDirectories))
             {
-                foreach (var row in Directory.GetFiles(company, "*.bin"))
-                {
-                    try { File.Delete(row); } catch { }
-                }
-                try
-                {
-                    if (Directory.GetFileSystemEntries(company).Length == 0) Directory.Delete(company);
-                }
-                catch { }
+                var destination = Path.Combine(target, Path.GetRelativePath(source, row));
+                if (!File.Exists(destination) ||
+                    !File.ReadAllBytes(row).SequenceEqual(File.ReadAllBytes(destination))) return false;
             }
-            try
-            {
-                if (Directory.GetFileSystemEntries(source).Length == 0) Directory.Delete(source);
-            }
-            catch { }
+
+            // Source cleanup is best effort; a retry remains safe because every target row was verified.
+            try { Directory.Delete(source, recursive: true); } catch { }
             return true;
         }
         catch
@@ -293,11 +321,43 @@ public sealed class DesktopCacheBridge
         }
     }
 
-    private string? OutboxDirectory(string companyId)
+    private string? OutboxDirectory(string companyId, string userId)
     {
-        if (!long.TryParse(companyId, out var id) || id < 1) return null;
-        return Path.Combine(_outboxRoot, id.ToString());
+        if (!long.TryParse(companyId, out var company) || company < 1 ||
+            !long.TryParse(userId, out var user) || user < 1) return null;
+        return Path.Combine(_outboxRoot, company.ToString(), user.ToString());
     }
+
+    private static void RecoverOutboxTemps(string dir)
+    {
+        if (!Directory.Exists(dir)) return;
+        foreach (var temp in Directory.GetFiles(dir, "*.bin.tmp"))
+        {
+            try
+            {
+                var target = temp[..^4];
+                if (File.Exists(target))
+                {
+                    File.Delete(temp);
+                    continue;
+                }
+                var encrypted = File.ReadAllBytes(temp);
+                if (encrypted.Length == 0 || encrypted.Length > MaxOutboxItemBytes * 2) continue;
+                var plain = ProtectedData.Unprotect(encrypted, optionalEntropy: null, scope: DataProtectionScope.CurrentUser);
+                if (plain.Length == 0 || plain.Length > MaxOutboxItemBytes) continue;
+                using var document = JsonDocument.Parse(plain);
+                if (!document.RootElement.TryGetProperty("request_id", out var requestNode) ||
+                    !Guid.TryParse(requestNode.GetString(), out var requestId)) continue;
+                var expected = Path.Combine(dir, Hash(requestId.ToString()) + ".bin");
+                if (!target.Equals(expected, StringComparison.OrdinalIgnoreCase)) continue;
+                File.Move(temp, target);
+            }
+            catch { }
+        }
+    }
+
+    private static string OriginKey(string serverOrigin)
+        => Hash((serverOrigin ?? string.Empty).Trim().TrimEnd('/').ToLowerInvariant());
 
     private string? CachePath(string cacheScope, string cacheKey)
     {

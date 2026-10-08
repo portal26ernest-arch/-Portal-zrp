@@ -29,8 +29,15 @@ function canUseLocalOutbox(){return !isOwner()&&S.company&&typeof window.PortalN
 function canQueueLocalMutation(path){return LOCAL_OUTBOX_PATHS.has(path);}
 async function nativeOutboxCall(name,...args){try{return await Promise.resolve(PortalNative[name](...args));}catch{return null;}}
 async function refreshLocalPendingCount(){
-  if(!canUseLocalOutbox()){S.localPendingCount=0;return 0;}
-  const value=Number(await nativeOutboxCall('pendingMutationCount')||0);S.localPendingCount=Number.isFinite(value)?value:0;return S.localPendingCount;
+  if(!canUseLocalOutbox()){S.localPendingCount=0;S.localLegacyPendingCount=0;return 0;}
+  const [value,legacy]=await Promise.all([
+    nativeOutboxCall('pendingMutationCount'),
+    typeof window.PortalNative?.legacyPendingMutationCount==='function'?nativeOutboxCall('legacyPendingMutationCount'):Promise.resolve(0)
+  ]);
+  const current=Number(value||0),legacyCount=Number(legacy||0);
+  S.localPendingCount=Number.isFinite(current)?current:0;
+  S.localLegacyPendingCount=Number.isFinite(legacyCount)?legacyCount:0;
+  return S.localPendingCount;
 }
 async function queueLocalMutation(path,body,requestId){
   if(!canUseLocalOutbox()||!canQueueLocalMutation(path))return false;

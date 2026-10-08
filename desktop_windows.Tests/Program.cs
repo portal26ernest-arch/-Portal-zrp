@@ -59,3 +59,37 @@ finally
     if (Directory.Exists(migrationRoot)) Directory.Delete(migrationRoot, recursive: true);
 }
 Console.WriteLine("Desktop outbox migration rollback and retry: OK");
+
+var legacyRoot = Path.Combine(Path.GetTempPath(), "portal-legacy-outbox-test-" + Guid.NewGuid().ToString("N"));
+try
+{
+    const string origin = "https://reserve-api.vart-portal.ru";
+    var bridge = new DesktopCacheBridge(legacyRoot, origin);
+    var originKey = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(origin.ToLowerInvariant()))).ToLowerInvariant();
+    var legacyCompany = Path.Combine(legacyRoot, "company-outbox", originKey, "17");
+    Directory.CreateDirectory(legacyCompany);
+    var requestId = Guid.NewGuid();
+    var legacyJson = System.Text.Json.JsonSerializer.Serialize(new
+    {
+        v = 1,
+        method = "POST",
+        path = "/api/v3/work",
+        request_id = requestId.ToString(),
+        queued_at = DateTimeOffset.UtcNow.ToString("O"),
+        body = new { request_id = requestId.ToString(), client_id = 1, operation_id = 2, quantity = 3 }
+    });
+    var legacyEncrypted = ProtectedData.Protect(Encoding.UTF8.GetBytes(legacyJson), null, DataProtectionScope.CurrentUser);
+    File.WriteAllBytes(Path.Combine(legacyCompany, "legacy.bin"), legacyEncrypted);
+
+    if (bridge.LegacyPendingMutationCount("17") != 1)
+        throw new Exception("Legacy company-only outbox row was not detected.");
+    if (bridge.PendingMutationCount("17", "42") != 0 || bridge.PendingMutations("17", "42") != "[]")
+        throw new Exception("Legacy company-only outbox row leaked into a user-scoped queue.");
+    if (!File.Exists(Path.Combine(legacyCompany, "legacy.bin")))
+        throw new Exception("Legacy company-only outbox row was modified while quarantined.");
+}
+finally
+{
+    if (Directory.Exists(legacyRoot)) Directory.Delete(legacyRoot, recursive: true);
+}
+Console.WriteLine("Desktop legacy outbox quarantine: OK");

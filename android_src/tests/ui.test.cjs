@@ -20,6 +20,30 @@ async function screenshot(page,name){if(process.env.PORTAL_UI_SCREENSHOTS){fs.mk
 test('all shipped JavaScript parses',()=>{
   for(const file of ['core.js','app.js','screens.js','production.js','production_part1.js','production_part2.js','production_part3.js','preview.js','documents_excel.js'])new vm.Script(fs.readFileSync(path.join(assets,file),'utf8'),{filename:file});
 });
+test('work form keeps user-facing Russian text intact',()=>{
+  const screens=fs.readFileSync(path.join(assets,'screens.js'),'utf8');
+  assert.match(screens,/Выберите работу и укажите целое количество от 1 до 1 000 000/);
+  assert.match(screens,/Записано ·/);
+  assert.match(screens,/Низкий остаток:/);
+  assert.match(screens,/Работа сохранена\. Можно записать следующую\./);
+  assert.doesNotMatch(screens,/\?{4,}/);
+});
+test('legacy Desktop outbox is visibly quarantined instead of silently reassigned',()=>{
+  const app=fs.readFileSync(path.join(assets,'app.js'),'utf8');
+  const adapter=fs.readFileSync(path.join(assets,'web_adapter.js'),'utf8');
+  assert.match(adapter,/legacyPendingMutationCount/);
+  assert.match(app,/Найдены старые локальные операции/);
+  assert.match(app,/не отправляются автоматически/);
+  assert.match(app,/не смешать данные разных пользователей/);
+});
+test('legacy work form reuses an idempotency key after an ambiguous network failure',()=>{
+  const screens=fs.readFileSync(path.join(assets,'screens.js'),'utf8');
+  assert.match(screens,/forms\.workForm=async form=>/);
+  assert.match(screens,/requestFingerprint/);
+  assert.match(screens,/body\.request_id=form\.dataset\.requestId/);
+  assert.match(screens,/crypto\.randomUUID\(\)/);
+  assert.match(screens,/if\(!error\?\.network\)/);
+});
 test('production delivery shards exactly match canonical source and remain small',()=>{
   const canonical=fs.readFileSync(path.join(assets,'production.js'));
   const parts=[1,2,3].map(i=>fs.readFileSync(path.join(assets,`production_part${i}.js`)));
@@ -630,7 +654,7 @@ test('browser UI regression',async t=>{
       await page.locator('#wOp').selectOption('1');await page.locator('#wQty').fill('4');await page.locator('#workSubmit').click();
       await page.waitForFunction(()=>document.querySelector('#wQty').value==='');
       const calls=await page.evaluate(()=>mock.calls.filter(c=>c.url==='/api/work'));
-      assert.equal(calls.length,1);assert.deepEqual(calls[0].body,{client_id:1,operation_id:1,quantity:4});
+      assert.equal(calls.length,1);assert.equal(calls[0].body.client_id,1);assert.equal(calls[0].body.operation_id,1);assert.equal(calls[0].body.quantity,4);assert.match(calls[0].body.request_id,/^[0-9a-f-]{36}$/i);
       await page.evaluate(()=>mock.rejectWrite=true);await page.locator('#wQty').fill('4');await page.locator('#workSubmit').click();await page.waitForSelector('#auth:not(.hidden)');
       assert.equal(await page.evaluate(()=>localStorage.getItem('portalSession')),null);assert.deepEqual(errors,[]);await page.close();
     });

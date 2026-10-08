@@ -14,7 +14,7 @@ namespace Portal.Desktop;
 
 public partial class MainWindow : Window
 {
-    private const int CurrentBuild = 71;
+    private const int CurrentBuild = 72;
     private const long MaxInstallerBytes = 250L * 1024 * 1024;
     private const string GithubRepository = "portal26ernest-arch/-Portal-zrp";
     private const string ServerDiscoveryUrl = "https://raw.githubusercontent.com/portal26ernest-arch/-Portal-zrp/main/portal-server.json";
@@ -104,12 +104,19 @@ public partial class MainWindow : Window
             Add(preferred);
         }
 
-        foreach (var candidate in candidates)
+        StatusText.Text = candidates.Count > 1 ? "Проверяем каналы PORTAL…" : "Проверяем сервер…";
+        using var probeCancellation = new CancellationTokenSource();
+        var probes = candidates.ToDictionary(
+            candidate => candidate,
+            candidate => ProbePortalServerAsync(candidate, probeCancellation.Token),
+            StringComparer.OrdinalIgnoreCase);
+
+        while (probes.Count > 0)
         {
-            StatusText.Text = candidate.Equals(TrustedFallbackServerOrigin, StringComparison.OrdinalIgnoreCase)
-                ? "Подключаем резервный канал…"
-                : "Проверяем сервер…";
-            if (!await ProbePortalServerAsync(candidate)) continue;
+            var completed = await Task.WhenAny(probes.Values);
+            var candidate = probes.First(pair => ReferenceEquals(pair.Value, completed)).Key;
+            probes.Remove(candidate);
+            if (!await completed) continue;
 
             var previous = LoadStoredOrigin();
             var changed = !string.Equals(previous, candidate, StringComparison.OrdinalIgnoreCase);
@@ -117,6 +124,7 @@ public partial class MainWindow : Window
                 !DesktopCacheBridge.MigrateOutboxOrigin(_settingsDir, previous, candidate))
                 continue;
 
+            probeCancellation.Cancel();
             ServerUrlBox.Text = candidate;
             await ConnectAsync(candidate, persist: changed || string.IsNullOrWhiteSpace(previous));
             return true;
@@ -124,11 +132,12 @@ public partial class MainWindow : Window
         return false;
     }
 
-    private static async Task<bool> ProbePortalServerAsync(string origin)
+    private static async Task<bool> ProbePortalServerAsync(string origin, CancellationToken cancellationToken = default)
     {
         try
         {
-            using var timeout = new CancellationTokenSource(ServerProbeTimeout);
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(ServerProbeTimeout);
             using var pingRequest = new HttpRequestMessage(HttpMethod.Get, origin + "/api/ping");
             pingRequest.Headers.Accept.ParseAdd("application/json");
             using var ping = await Http.SendAsync(pingRequest, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
@@ -661,7 +670,7 @@ public partial class MainWindow : Window
                 return new ServerRefreshResult(false, false, _serverOrigin);
 
             using var request = new HttpRequestMessage(HttpMethod.Get, ServerDiscoveryUrl);
-            request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.12.9");
+            request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.12.10");
             request.Headers.Accept.ParseAdd("application/json");
             using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
             response.EnsureSuccessStatusCode();
@@ -785,7 +794,7 @@ public partial class MainWindow : Window
     {
         using var request = new HttpRequestMessage(HttpMethod.Get,
             $"https://api.github.com/repos/{GithubRepository}/releases?per_page=50");
-        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.12.9");
+        request.Headers.UserAgent.ParseAdd("PORTAL-Desktop/5.12.10");
         request.Headers.Accept.ParseAdd("application/vnd.github+json");
         using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
         response.EnsureSuccessStatusCode();
@@ -798,14 +807,10 @@ public partial class MainWindow : Window
             if (release.TryGetProperty("prerelease", out var prerelease) && prerelease.GetBoolean()) continue;
             if (!release.TryGetProperty("tag_name", out var tagNode)) continue;
             var tag = tagNode.GetString() ?? string.Empty;
-            var match = Regex.Match(tag, @"^portal-desktop-v(\d+)\.(\d+)\.0$");
-            if (!match.Success || !int.TryParse(match.Groups[1].Value, out var major) ||
-                !int.TryParse(match.Groups[2].Value, out var minor) || minor is < 0 or > 9) continue;
+            var match = Regex.Match(tag, @"^portal-desktop-v(\d+\.\d+\.\d+)$");
+            if (!match.Success) continue;
 
-            int build;
-            try { build = checked(major * 10 + minor); }
-            catch (OverflowException) { continue; }
-            var version = $"{major}.{minor}.0";
+            var version = match.Groups[1].Value;
             var expectedName = "portal-desktop-update.json";
             if (!release.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array) continue;
 
@@ -821,7 +826,7 @@ public partial class MainWindow : Window
                 var manifest = await JsonSerializer.DeserializeAsync<DesktopUpdateManifest>(
                     await manifestResponse.Content.ReadAsStreamAsync(),
                     new JsonSerializerOptions { PropertyNameCaseInsensitive = true, PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower });
-                if (manifest is not null && manifest.Build == build && manifest.Version == version &&
+                if (manifest is not null && manifest.Version == version &&
                     ValidUpdateManifest(manifest, out _)) return manifest;
             }
         }
