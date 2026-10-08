@@ -71,6 +71,12 @@ test('shared mobile Organizer exposes director requests and native reminders',()
   assert.doesNotMatch(production,/screens\.organizer=async\(\)=>\{\s*if\(!globalThis\.__PORTAL_DESKTOP__/);
   assert.match(production,/globalThis\.__PORTAL_ANDROID__\|\|globalThis\.__PORTAL_IOS__/);
   assert.match(production,/scheduleOrganizerReminders/);
+  assert.match(production,/t\.can_comment&&t\.status!=='cancelled'/);
+  assert.match(production,/organizerCompleteForm/);
+  assert.match(production,/organizerCommentForm/);
+  assert.match(production,/mode:'comment',task_id:/);
+  assert.match(production,/completed\?'green'/);
+  assert.match(production,/✓ Выполнена/);
 });
 
 test('marketplace news is live/empty, escaped and links only to official HTTPS hosts',()=>{

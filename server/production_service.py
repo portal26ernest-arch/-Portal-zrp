@@ -922,6 +922,7 @@ class Production:
             assignee_role_label=ORGANIZER_ROLE_LABELS.get(assignee.get('role') or task.get('assignee_role'),'Сотрудник'))
         item['can_edit']=self.organizer_can_edit(task)
         item['can_change_status']=item['can_edit'] or task.get('assignee_user_id')==self.u['id']
+        item['can_comment']=task.get('assignee_user_id')==self.u['id']
         return item
 
     def organizer_event(self,task,event,detail=''):
@@ -966,14 +967,28 @@ class Production:
         self.need('organizer.read');task=self.r.get('organizer_tasks',str(b.get('task_id') or ''))
         if not self.organizer_visible(task):raise PermissionError('Задача недоступна')
         can_edit=self.organizer_can_edit(task)
-        can_status=can_edit or task.get('assignee_user_id')==self.u['id']
+        is_assignee=task.get('assignee_user_id')==self.u['id']
+        can_status=can_edit or is_assignee
+        if mode=='comment':
+            if not is_assignee:raise PermissionError('Комментарий к задаче может добавить только исполнитель')
+            comment=b.get('comment','')
+            if not isinstance(comment,str) or not comment.strip():raise ValueError('Комментарий не может быть пустым')
+            comment=comment.strip()
+            if len(comment)>2000:raise ValueError('Комментарий: до 2000 символов')
+            self.organizer_event(task,'comment',comment);return task
         if mode=='status':
             if not can_status:raise PermissionError('Нельзя изменить статус этой задачи')
             status=b.get('status')
             if status not in ORGANIZER_STATUSES:raise ValueError('Неизвестный статус задачи')
             if status=='cancelled' and not can_edit:raise PermissionError('Отменить задачу может постановщик или руководитель')
+            comment=b.get('comment','') if status=='done' else ''
+            if comment:
+                if not is_assignee:raise PermissionError('Комментарий о выполнении может добавить только исполнитель')
+                if not isinstance(comment,str) or len(comment.strip())>2000:raise ValueError('Комментарий: до 2000 символов')
+                comment=comment.strip()
             previous=task.get('status','new');task['status']=status;task['completed_at']=self.clock() if status=='done' else None
             self.r.update('organizer_tasks',task);self.organizer_event(task,'status',previous+' → '+status)
+            if comment:self.organizer_event(task,'comment',comment)
             if status=='done' and task.get('repeat_rule') in ORGANIZER_REPEATS-{'none'} and not task.get('next_task_id'):
                 next_due=self.organizer_next_due(task['due_at'],task['repeat_rule'])
                 follow=dict(title=task['title'],description=task.get('description',''),assignee_user_id=task['assignee_user_id'],
