@@ -81,7 +81,7 @@
     } else if (/\/api\/v3\/payroll-settlements(?:\/|\?|$)/i.test(target)) {
       add('/api/dashboard','/api/payroll/mine','/api/v3/payroll-periods','/api/v3/payroll-settlements','/api/v3/finance','/api/v3/today');
     } else if (/\/api\/v3\/(?:organizer|organizer-requests|organizer-request-events)(?:\/|\?|$)/i.test(target)) {
-      add('/api/v3/organizer','/api/v3/organizer-requests','/api/v3/organizer-request-events','/api/v3/tasks','/api/v3/today');
+      add('/api/v3/organizer','/api/v3/organizer?scope=company','/api/v3/organizer?scope=mine','/api/v3/organizer?scope=incoming','/api/v3/organizer-requests','/api/v3/organizer-requests?scope=mine','/api/v3/organizer-requests?scope=incoming','/api/v3/organizer-request-events','/api/v3/tasks','/api/v3/today');
     } else if (/\/api\/v3\/documents?(?:\/|\?|$)/i.test(target)) {
       add('/api/v3/documents');
     } else if (/\/api\/jobs(?:\/|\?|$)/i.test(target)) {
