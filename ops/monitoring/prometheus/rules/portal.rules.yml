@@ -2,7 +2,7 @@ groups:
   - name: portal-availability
     rules:
       - alert: PortalEndpointDown
-        expr: probe_success{job="portal-http"} == 0
+        expr: probe_success{job=~"portal-origin-(api|site)"} == 0
         for: 2m
         labels:
           severity: critical
@@ -11,7 +11,7 @@ groups:
           description: "{{ $labels.instance }} has failed probes for more than 2 minutes."
 
       - alert: PortalTlsExpiresSoon
-        expr: (probe_ssl_earliest_cert_expiry{job="portal-http"} - time()) < 14 * 24 * 60 * 60
+        expr: (probe_ssl_earliest_cert_expiry{job=~"portal-origin-(api|site)"} - time()) < 14 * 24 * 60 * 60
         for: 15m
         labels:
           severity: warning

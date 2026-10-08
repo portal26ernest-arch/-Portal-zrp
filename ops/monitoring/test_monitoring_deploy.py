@@ -8,6 +8,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 COMPOSE = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
 DEPLOY = (ROOT / "deploy_ubuntu.sh").read_text(encoding="utf-8")
+PROM = (ROOT / "prometheus" / "prometheus.yml").read_text(encoding="utf-8")
+BLACKBOX = (ROOT / "blackbox" / "blackbox.yml").read_text(encoding="utf-8")
+PUBLIC_HEALTH = (ROOT.parents[1] / ".github" / "workflows" / "public-health.yml").read_text(encoding="utf-8")
 
 
 class MonitoringDeploymentGuards(unittest.TestCase):
@@ -55,6 +58,33 @@ class MonitoringDeploymentGuards(unittest.TestCase):
         self.assertIn("--config.check", DEPLOY)
         self.assertIn("download.docker.com/linux/ubuntu", DEPLOY)
         self.assertNotIn("get.docker.com", DEPLOY)
+
+    def test_self_monitoring_uses_direct_origin_not_cloudflare_hairpin(self) -> None:
+        self.assertIn("https://178.209.127.247:8443/api/ping", PROM)
+        self.assertIn("https://178.209.127.247:8443/api/ready", PROM)
+        self.assertIn("https://178.209.127.247/web/", PROM)
+        self.assertIn("178.209.127.247:22", PROM)
+        self.assertNotIn("api.vart-portal.ru:22", PROM)
+        self.assertIn("server_name: api.vart-portal.ru", BLACKBOX)
+        self.assertIn("server_name: vart-portal.ru", BLACKBOX)
+        self.assertNotIn("insecure_skip_verify: true", BLACKBOX)
+
+    def test_public_health_runs_from_independent_github_runner(self) -> None:
+        self.assertIn('cron: "*/5 * * * *"', PUBLIC_HEALTH)
+        for endpoint in (
+            "https://api.vart-portal.ru/api/ping",
+            "https://api.vart-portal.ru/api/ready",
+            "https://reserve-api.vart-portal.ru/api/ping",
+            "https://reserve-api.vart-portal.ru/api/ready",
+            "https://vart-portal.ru/web/",
+        ):
+            self.assertIn(endpoint, PUBLIC_HEALTH)
+
+    def test_deploy_smoke_uses_direct_origin_with_tls_verification(self) -> None:
+        self.assertIn("--resolve api.vart-portal.ru:8443:178.209.127.247", DEPLOY)
+        self.assertIn("--resolve vart-portal.ru:443:178.209.127.247", DEPLOY)
+        self.assertNotIn("insecure", DEPLOY.lower())
+        self.assertNotIn("curl -k", DEPLOY)
 
     def test_static_monitoring_validator_runs(self) -> None:
         result = subprocess.run(["python", str(ROOT / "validate_monitoring.py")], capture_output=True, text=True)
