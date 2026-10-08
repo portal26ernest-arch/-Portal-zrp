@@ -81,7 +81,7 @@
     } else if (/\/api\/v3\/payroll-settlements(?:\/|\?|$)/i.test(target)) {
       add('/api/dashboard','/api/payroll/mine','/api/v3/payroll-periods','/api/v3/payroll-settlements','/api/v3/finance','/api/v3/today');
     } else if (/\/api\/v3\/(?:organizer|organizer-requests|organizer-request-events)(?:\/|\?|$)/i.test(target)) {
-      add('/api/v3/organizer','/api/v3/organizer?scope=company','/api/v3/organizer?scope=mine','/api/v3/organizer?scope=incoming','/api/v3/organizer-requests','/api/v3/organizer-requests?scope=mine','/api/v3/organizer-requests?scope=incoming','/api/v3/organizer-request-events','/api/v3/tasks','/api/v3/today');
+      add('/api/v3/organizer','/api/v3/organizer-requests','/api/v3/organizer-request-events','/api/v3/tasks','/api/v3/today');
     } else if (/\/api\/v3\/documents?(?:\/|\?|$)/i.test(target)) {
       add('/api/v3/documents');
     } else if (/\/api\/jobs(?:\/|\?|$)/i.test(target)) {
@@ -236,6 +236,24 @@
     openMessengerWindow: (provider,relayJson='') => { if(!window.__PORTAL_DESKTOP__)return false; try { const p=String(provider||'telegram').toLowerCase()==='max'?'max':'telegram'; if(window.chrome?.webview?.postMessage){ window.chrome.webview.postMessage(JSON.stringify({type:'openMessenger',provider:p,relay:relayJson||''})); return true; } if(p==='telegram')return false; window.open('portal-messenger://open?provider=max','_blank'); return true; } catch { return false; } },
     clearMessengerSession: () => { try { window.open('portal-messenger://clear','_blank'); } catch {} },
     checkUpdates: id => result(id, {ok:true, configured:false, web:true}),
+    requestFreshAsync: async (id, method, path, body, token, company) => {
+      const verb = String(method || 'GET').toUpperCase();
+      const target = apiTarget(path);
+      if (!target || !['GET','POST'].includes(verb)) return fail(id, 'Недопустимый API-запрос');
+      if (company && !/^[1-9]\d{0,9}$/.test(String(company))) return fail(id, 'Недопустимый контекст компании');
+      if (token && (typeof token !== 'string' || token.length > 8192 || /[\r\n]/.test(token))) return fail(id, 'Недопустимая сессия');
+      if (body && (typeof body !== 'string' || body.length > 24 * 1024 * 1024 || verb !== 'POST')) return fail(id, 'Недопустимые данные запроса');
+      const scope = cacheScope();
+      const cacheEligible = canCache(verb, target, token);
+      try {
+        const data = await fetchJson(verb, target, body, token, company);
+        if (cacheEligible && data.ok) cacheWrite(scope, target, data);
+        if (verb === 'POST' && data.ok && scope && invalidationKeys(target).length) invalidateCache(scope, target);
+        result(id, data);
+      } catch {
+        fail(id, 'Нет соединения с сервером', true);
+      }
+    },
     requestAsync: async (id, method, path, body, token, company) => {
       const verb = String(method || 'GET').toUpperCase();
       const target = apiTarget(path);

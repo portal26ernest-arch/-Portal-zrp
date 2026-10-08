@@ -316,21 +316,34 @@ public class MainActivity extends Activity {
             String verb = method == null ? "GET" : method.toUpperCase(Locale.ROOT);
             String localCompany = cacheCompany;
             executor.execute(() -> {
-                String requestedBase = getServerUrl();
+                // Resolve a healthy PORTAL endpoint before any authenticated request is sent.
+                String base = resolveServerForRequest(getServerUrl());
                 boolean cacheable = cacheableGet(verb, path, token, localCompany);
                 if (cacheable) {
-                    String cached = localCache.read(requestedBase, localCompany, path);
+                    String cached = localCache.read(base, localCompany, path);
                     String ready = cachedResponse(cached);
                     if (ready != null) {
-                        // Local-first: render immediately, then refresh in the background.
                         deliver(id, ready);
-                        String freshBase = resolveServerForRequest(requestedBase);
-                        String fresh = requestAt(freshBase, verb, path, body, token, company);
-                        if (responseOk(fresh)) localCache.write(freshBase, localCompany, path, fresh);
+                        String fresh = requestAt(base, verb, path, body, token, company);
+                        if (responseOk(fresh)) localCache.write(base, localCompany, path, fresh);
                         return;
                     }
                 }
-                String base = resolveServerForRequest(requestedBase);
+                String result = requestAt(base, verb, path, body, token, company);
+                if (cacheable && responseOk(result)) localCache.write(base, localCompany, path, result);
+                if ("POST".equals(verb) && responseOk(result) && !localCompany.isEmpty())
+                    invalidateCacheForMutation(base, localCompany, path);
+                deliver(id, result);
+            });
+        }
+
+        @JavascriptInterface
+        public void requestFreshAsync(String id, String method, String path, String body, String token, String company) {
+            String verb = method == null ? "GET" : method.toUpperCase(Locale.ROOT);
+            String localCompany = cacheCompany;
+            executor.execute(() -> {
+                String base = resolveServerForRequest(getServerUrl());
+                boolean cacheable = cacheableGet(verb, path, token, localCompany);
                 String result = requestAt(base, verb, path, body, token, company);
                 if (cacheable && responseOk(result)) localCache.write(base, localCompany, path, result);
                 if ("POST".equals(verb) && responseOk(result) && !localCompany.isEmpty())
@@ -417,12 +430,8 @@ public class MainActivity extends Activity {
                 keys = new String[]{"/api/users","/api/v3/permissions","/api/v3/chat-users"};
             } else if (path.matches(".*/(?:invoices?|payments?)(?:/|\\?|$).*")) {
                 keys = new String[]{"/api/v3/invoices","/api/v3/receivables","/api/v3/finance","/api/v3/today"};
-            } else if (path.matches(".*/(?:organizer|organizer-requests|organizer-request-events)(?:/|\\?|$).*")) {
-                keys = new String[]{
-                        "/api/v3/organizer","/api/v3/organizer?scope=company","/api/v3/organizer?scope=mine","/api/v3/organizer?scope=incoming",
-                        "/api/v3/organizer-requests","/api/v3/organizer-requests?scope=mine","/api/v3/organizer-requests?scope=incoming",
-                        "/api/v3/organizer-request-events","/api/v3/today"
-                };
+            } else if (path.matches("/api/v3/(?:organizer|organizer-requests)(?:\\?.*)?")) {
+                keys = new String[]{"/api/v3/organizer?scope=mine","/api/v3/organizer?scope=company","/api/v3/organizer?scope=incoming","/api/v3/organizer?scope=assigned_by_me","/api/v3/organizer-requests?scope=mine","/api/v3/organizer-requests?scope=incoming","/api/v3/today","/api/v3/tasks"};
             } else if (path.matches(".*/settings(?:/|\\?|$).*")) {
                 keys = new String[]{"/api/company","/api/v3/settings","/api/v3/today"};
             } else {
@@ -441,6 +450,7 @@ public class MainActivity extends Activity {
                         System.currentTimeMillis() - savedAt > CACHE_MAX_AGE_MS) return null;
                 JSONObject copy = new JSONObject(data.toString());
                 copy.put("cached", true);
+                copy.put("cached_at_ms", savedAt);
                 return copy.toString();
             } catch (Exception ignored) { return null; }
         }
