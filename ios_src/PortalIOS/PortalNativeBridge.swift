@@ -142,6 +142,8 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
             pendingMutationCount: () => ask('pendingMutationCount', {}),
             requestAsync: (id, method, path, body, token, company) =>
               send('requestAsync', {id:String(id), method:String(method||'GET'), path:String(path||''), body:String(body||''), token:String(token||''), company:String(company||'')}),
+            requestFreshAsync: (id, method, path, body, token, company) =>
+              send('requestFreshAsync', {id:String(id), method:String(method||'GET'), path:String(path||''), body:String(body||''), token:String(token||''), company:String(company||'')}),
             request: () => JSON.stringify({ok:false,httpStatus:0,error:'Используйте requestAsync'}),
             requestForCompany: () => JSON.stringify({ok:false,httpStatus:0,error:'Используйте requestAsync'}),
             checkUpdates: id => send('checkUpdates', {id:String(id)}),
@@ -232,6 +234,10 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
             scheduleOrganizerReminders(payload["json"] as? String ?? "[]")
         case "requestAsync":
             request(payload)
+        case "requestFreshAsync":
+            var freshPayload = payload
+            freshPayload["fresh"] = true
+            request(freshPayload)
         case "checkUpdates":
             let id = payload["id"] as? String
             refreshOfficialServer { [weak self] serverResult in
@@ -486,8 +492,9 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
         let cacheOrigin = serverURL
         let cacheScope = cacheCompany
         let cacheEligible = method == "GET" && !token.isEmpty && !cacheScope.isEmpty && isCacheable(path)
+        let forceFresh = payload["fresh"] as? Bool == true
         var cacheDelivered = false
-        if cacheEligible, var cached = localCache.read(serverOrigin: cacheOrigin, companyID: cacheScope, cacheKey: path) {
+        if cacheEligible && !forceFresh, var cached = localCache.read(serverOrigin: cacheOrigin, companyID: cacheScope, cacheKey: path) {
             cached["cached"] = true
             deliver(id: id, object: cached)
             cacheDelivered = true
@@ -571,7 +578,7 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
             #"^/api/clients/[0-9]+(?:/operations)?(?:\?.*)?$"#,
             #"^/api/admin/clients/[0-9]+/operations(?:\?.*)?$"#,
             #"^/api/(?:users|materials|jobs)(?:\?.*)?$"#,
-            #"^/api/v3/(?:catalog|products|client-requisites|client-name-history|tariff-history|today|tasks|timers|batches|invoices|receivables|finance|analytics|payroll-periods|documents|settings|permissions|chat-users)(?:\?.*)?$"#
+            #"^/api/v3/(?:catalog|products|client-requisites|client-name-history|tariff-history|today|tasks|timers|batches|invoices|receivables|finance|analytics|payroll-periods|documents|settings|permissions|chat-users|organizer|organizer-directors|organizer-events|organizer-requests|organizer-request-events|organizer-request-responsibles|organizer-users)(?:\?.*)?$"#
         ]
         return patterns.contains { path.range(of: $0, options: .regularExpression) != nil }
     }

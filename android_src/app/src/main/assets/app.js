@@ -38,13 +38,13 @@ let toastTimer;
 function toast(text,error=false){clearTimeout(toastTimer);$('toast').textContent=text;$('toast').className='toast'+(error?' err':'');toastTimer=setTimeout(()=>$('toast').classList.add('hidden'),4500);}
 function handleError(error){if(error?.stale||error?.cancelled)return;toast(error?.message||'Не удалось выполнить действие',true);}
 function markLocalData(result,view){if(result?.cached)S.localDataView=view;}
-function showLocalDataNotice(view){if(S.localDataView!==view)return;const content=$('content');if(!content||content.querySelector('.local-data-notice'))return;content.insertAdjacentHTML('afterbegin','<div class="notice warning local-data-notice" role="status"><b>Локальные данные</b> · Обновим при восстановлении связи.</div>');}
+function showLocalDataNotice(view){if(S.localDataView!==view||S.page==='organizer')return;const content=$('content');if(!content||content.querySelector('.local-data-notice'))return;content.insertAdjacentHTML('afterbegin','<div class="notice warning local-data-notice" role="status"><b>Локальные данные</b> · Обновим при восстановлении связи.</div>');}
 function isTransientNetworkError(error){return !!error?.network||!!error?.timeout||/Время ожидания истекло|Нет соединения с сервером|Failed to fetch|Load failed/i.test(String(error?.message||''));}
 function can(page){return PortalCore.can(page,S.me,S.company);}
 function isOwner(){return S.me?.role==='platform_owner';}
 const employeeId=user=>user?.employee_id??null;
 function canLeave(){if(S.writes){toast('Дождитесь завершения записи');return false;}return true;}
-function clearCompanyData(){clearInterval(S.heartbeatTimer);S.heartbeatTimer=null;clearInterval(S.organizerReminderTimer);S.organizerReminderTimer=null;try{window.PortalNative?.scheduleOrganizerReminders?.('[]');}catch{}clearInterval(S.localSyncTimer);S.localSyncTimer=null;S.stage3=false;S.productionCatalog=null;S.permissionCatalog=[];if(S.me)delete S.me.permissions;S.clients=[];S.operations=[];S.localPendingCount=0;S.localLegacyPendingCount=0;S.userData=null;S.operationData=null;S.workSelection=null;S.history=[];if(typeof window.PortalNative?.setCacheCompany==='function')PortalNative.setCacheCompany('');S.epoch++;}
+function clearCompanyData(){clearInterval(S.heartbeatTimer);S.heartbeatTimer=null;clearInterval(S.organizerReminderTimer);S.organizerReminderTimer=null;try{window.PortalNative?.scheduleOrganizerReminders?.('[]');}catch{}clearInterval(S.localSyncTimer);S.localSyncTimer=null;S.stage3=false;S.productionCatalog=null;S.permissionCatalog=[];S.organizerRows=[];S.organizerMineRequests=[];S.organizerIncomingRequests=[];S.organizerRequestRows=[];S.organizerUsers=null;S.organizerDirectors=null;S.organizerRequestUsers=null;S.organizerSync=null;S.organizerLoaded=false;S.organizerCompanyKey='';if(S.me)delete S.me.permissions;S.clients=[];S.operations=[];S.localPendingCount=0;S.localLegacyPendingCount=0;S.userData=null;S.operationData=null;S.workSelection=null;S.history=[];if(typeof window.PortalNative?.setCacheCompany==='function')PortalNative.setCacheCompany('');S.epoch++;}
 
 const pending=new Map();let requestSequence=0;
 window.PortalBridgeResult=(id,raw)=>{const item=pending.get(id);if(!item)return;clearTimeout(item.timer);pending.delete(id);try{item.resolve(JSON.parse(raw));}catch{item.reject(new Error('Сервер вернул некорректный ответ'));}};
@@ -62,7 +62,8 @@ async function api(method,path,body,options={}){
     if(!window.PortalNative)throw new Error('Откройте PORTAL в мобильном приложении');
     const payload=body===undefined?'':JSON.stringify(body);
     let result;
-    if(typeof PortalNative.requestAsync==='function')result=await nativePromise(id=>PortalNative.requestAsync(id,method,path,payload,options.anonymous?'':S.token,company));
+    if(options.fresh&&typeof PortalNative.requestFreshAsync==='function')result=await nativePromise(id=>PortalNative.requestFreshAsync(id,method,path,payload,options.anonymous?'':S.token,company));
+    else if(typeof PortalNative.requestAsync==='function')result=await nativePromise(id=>PortalNative.requestAsync(id,method,path,payload,options.anonymous?'':S.token,company));
     else if(company){
       if(typeof PortalNative.requestForCompany!=='function')throw new Error('Для технического доступа обновите приложение PORTAL');
       result=JSON.parse(PortalNative.requestForCompany(method,path,payload,S.token,company));

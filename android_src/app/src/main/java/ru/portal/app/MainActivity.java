@@ -337,6 +337,21 @@ public class MainActivity extends Activity {
             });
         }
 
+        @JavascriptInterface
+        public void requestFreshAsync(String id, String method, String path, String body, String token, String company) {
+            String verb = method == null ? "GET" : method.toUpperCase(Locale.ROOT);
+            String localCompany = cacheCompany;
+            executor.execute(() -> {
+                String base = resolveServerForRequest(getServerUrl());
+                boolean cacheable = cacheableGet(verb, path, token, localCompany);
+                String result = requestAt(base, verb, path, body, token, company);
+                if (cacheable && responseOk(result)) localCache.write(base, localCompany, path, result);
+                if ("POST".equals(verb) && responseOk(result) && !localCompany.isEmpty())
+                    invalidateCacheForMutation(base, localCompany, path);
+                deliver(id, result);
+            });
+        }
+
         private boolean isAutomaticPortalServer(String value) {
             if (value == null) return false;
             String base = value.trim();
@@ -391,7 +406,7 @@ public class MainActivity extends Activity {
                     || path.matches("/api/clients/[0-9]+(?:/operations)?(?:\\?.*)?")
                     || path.matches("/api/admin/clients/[0-9]+/operations(?:\\?.*)?")
                     || path.matches("/api/(?:users|materials|jobs)(?:\\?.*)?")
-                    || path.matches("/api/v3/(?:catalog|products|client-requisites|client-name-history|tariff-history|today|tasks|timers|batches|invoices|receivables|finance|analytics|payroll-periods|documents|settings|permissions|chat-users)(?:\\?.*)?");
+                    || path.matches("/api/v3/(?:catalog|products|client-requisites|client-name-history|tariff-history|today|tasks|timers|batches|invoices|receivables|finance|analytics|payroll-periods|documents|settings|permissions|chat-users|organizer|organizer-directors|organizer-events|organizer-requests|organizer-request-events|organizer-request-responsibles|organizer-users)(?:\\?.*)?");
         }
 
         private void invalidateCacheForMutation(String base, String company, String path) {
@@ -415,6 +430,8 @@ public class MainActivity extends Activity {
                 keys = new String[]{"/api/users","/api/v3/permissions","/api/v3/chat-users"};
             } else if (path.matches(".*/(?:invoices?|payments?)(?:/|\\?|$).*")) {
                 keys = new String[]{"/api/v3/invoices","/api/v3/receivables","/api/v3/finance","/api/v3/today"};
+            } else if (path.matches("/api/v3/(?:organizer|organizer-requests)(?:\\?.*)?")) {
+                keys = new String[]{"/api/v3/organizer?scope=mine","/api/v3/organizer?scope=company","/api/v3/organizer?scope=incoming","/api/v3/organizer?scope=assigned_by_me","/api/v3/organizer-requests?scope=mine","/api/v3/organizer-requests?scope=incoming","/api/v3/today","/api/v3/tasks"};
             } else if (path.matches(".*/settings(?:/|\\?|$).*")) {
                 keys = new String[]{"/api/company","/api/v3/settings","/api/v3/today"};
             } else {
@@ -433,6 +450,7 @@ public class MainActivity extends Activity {
                         System.currentTimeMillis() - savedAt > CACHE_MAX_AGE_MS) return null;
                 JSONObject copy = new JSONObject(data.toString());
                 copy.put("cached", true);
+                copy.put("cached_at_ms", savedAt);
                 return copy.toString();
             } catch (Exception ignored) { return null; }
         }

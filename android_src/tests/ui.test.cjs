@@ -104,6 +104,14 @@ test('shared mobile Organizer exposes director requests and native reminders',()
   assert.match(production,/organizerOverdueLabel\(t\.due_at,now\)/);
   assert.match(production,/mod100>=11&&mod100<=14/);
   assert.match(production,/✓ Выполнена/);
+  assert.match(production,/Promise\.allSettled\(specs\.map/);
+  assert.match(production,/organizerFreshReload\(view,epoch\)/);
+  assert.match(production,/actions\.organizerView=button=>\{S\.organizerView=button\.dataset\.view;organizerRenderTabs\(\);organizerRenderBody\(\);\}/);
+  assert.doesNotMatch(production,/actions\.organizerView[\s\S]{0,180}screens\.organizer/);
+  assert.match(production,/class="organizer-tabs"/);
+  assert.match(production,/id="organizerRequestsPanel"/);
+  assert.match(production,/organizerEnsureUsers\(\)/);
+  assert.match(production,/organizerEnsureDirectors\(\)/);
 });
 
 test('marketplace news is live/empty, escaped and links only to official HTTPS hosts',()=>{
