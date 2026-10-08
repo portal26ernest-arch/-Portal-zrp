@@ -161,7 +161,9 @@ test('update install action is available only for verified available state and r
   assert.match(app,/u\.state==='available'\?btn\('Скачать и установить','installUpdate'/);
   assert.match(app,/state:'downloading',title:'Загружаем и проверяем…'/);
   assert.match(app,/state:'ready',title:'Готово к установке'/);
-  assert.match(app,/void autoCheckUpdates\(\);await checkServer\(\)/);
+  assert.match(app,/await checkServer\(\);void autoCheckUpdates\(\)/);
+  assert.match(app,/async function autoCheckUpdates\(\)[\s\S]*result\?\.serverChanged\)await checkServer\(\)/);
+  assert.match(app,/actions\.checkUpdates=[\s\S]*result\?\.serverChanged\)await checkServer\(\)/);
   assert.match(app,/S\.update\?\.state!=='available'\|\|!S\.update\.release/);
 });
 test('desktop web branding uses the PORTAL blue shell',()=>{
