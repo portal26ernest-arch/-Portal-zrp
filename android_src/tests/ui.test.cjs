@@ -629,7 +629,7 @@ test('browser UI regression',async t=>{
       await page.locator('#wOp').selectOption('1');await page.locator('#wQty').fill('4');await page.locator('#workSubmit').click();
       await page.waitForFunction(()=>document.querySelector('#wQty').value==='');
       const calls=await page.evaluate(()=>mock.calls.filter(c=>c.url==='/api/work'));
-      assert.equal(calls.length,1);assert.deepEqual(calls[0].body,{client_id:1,operation_id:1,quantity:4});
+      assert.equal(calls.length,1);assert.equal(calls[0].body.client_id,1);assert.equal(calls[0].body.operation_id,1);assert.equal(calls[0].body.quantity,4);assert.match(calls[0].body.request_id,/^[0-9a-f-]{36}$/i);
       await page.evaluate(()=>mock.rejectWrite=true);await page.locator('#wQty').fill('4');await page.locator('#workSubmit').click();await page.waitForSelector('#auth:not(.hidden)');
       assert.equal(await page.evaluate(()=>localStorage.getItem('portalSession')),null);assert.deepEqual(errors,[]);await page.close();
     });
