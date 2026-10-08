@@ -473,9 +473,22 @@ const organizerLink={client:'Клиент',invoice:'Счёт',document:'Доку
 function organizerMoment(value){if(!value)return '—';const d=new Date(value);return Number.isFinite(d.getTime())?d.toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—';}
 function organizerDay(value){const d=new Date(value);return Number.isFinite(d.getTime())?d.toLocaleDateString('sv-SE'):'0000-00-00';}
 function organizerActive(t){return !['done','cancelled'].includes(t.status);}
+function organizerCalendarDayNumber(value){const d=value instanceof Date?value:new Date(value);return Number.isFinite(d.getTime())?Math.floor(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())/86400000):null;}
+function organizerOverdueDays(value,now=new Date()){const dueDay=organizerCalendarDayNumber(value),nowDay=organizerCalendarDayNumber(now);return dueDay==null||nowDay==null?0:Math.max(0,nowDay-dueDay);}
+function organizerDayWord(days){const mod100=days%100,mod10=days%10;if(mod100>=11&&mod100<=14)return 'дней';if(mod10===1)return 'день';if(mod10>=2&&mod10<=4)return 'дня';return 'дней';}
+function organizerOverdueLabel(value,now=new Date()){const days=organizerOverdueDays(value,now);return days>0?'Просрочено '+days+' '+organizerDayWord(days):'Просрочено';}
+function organizerTodayRows(rows,now=new Date()){
+  const today=organizerDay(now),nowTime=now.getTime();
+  return rows.filter(t=>organizerActive(t)&&organizerDay(t.due_at)<=today).sort((a,b)=>{
+    const aTime=new Date(a.due_at).getTime(),bTime=new Date(b.due_at).getTime();
+    const aLate=Number.isFinite(aTime)&&aTime<nowTime,bLate=Number.isFinite(bTime)&&bTime<nowTime;
+    if(aLate!==bLate)return aLate?-1:1;
+    return (Number.isFinite(aTime)?aTime:Number.MAX_SAFE_INTEGER)-(Number.isFinite(bTime)?bTime:Number.MAX_SAFE_INTEGER);
+  });
+}
 function organizerTaskCard(t){
   const now=new Date(),due=new Date(t.due_at),late=organizerActive(t)&&Number.isFinite(due.getTime())&&due<now;
-  const completed=t.status==='done',badge=completed?'✓ Выполнена':late?'Просрочена':organizerStatus[t.status]||'Задача';
+  const completed=t.status==='done',badge=completed?'✓ Выполнена':late?'🔴 '+organizerOverdueLabel(t.due_at,now):organizerStatus[t.status]||'Задача';
   const link=t.linked_type?'<p class="meta">'+esc(organizerLink[t.linked_type]||'Связь')+' · '+esc(t.linked_id)+'</p>':'';
   let buttons=btn('История','organizerHistory','data-id="'+esc(t.id)+'"','text');
   if(t.can_change_status&&t.status==='new')buttons+=btn('В работу','organizerStatus','data-id="'+esc(t.id)+'" data-status="in_progress"','secondary');
@@ -503,7 +516,7 @@ function organizerCalendar(rows,month){
 }
 function organizerFiltered(rows,view){
   const now=new Date(),today=organizerDay(now);
-  if(view==='today')return rows.filter(t=>organizerActive(t)&&organizerDay(t.due_at)===today);
+  if(view==='today')return organizerTodayRows(rows,now);
   if(view==='upcoming')return rows.filter(t=>organizerActive(t)&&new Date(t.due_at)>=now&&organizerDay(t.due_at)!==today);
   if(view==='overdue')return rows.filter(t=>organizerActive(t)&&new Date(t.due_at)<now);
   if(view==='incoming')return rows.filter(t=>t.assignee_user_id===S.me.id);
