@@ -1,0 +1,52 @@
+name: PORTAL public health
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/5 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: portal-public-health
+  cancel-in-progress: true
+
+jobs:
+  public-health:
+    name: External public endpoint health
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Check public PORTAL endpoints
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          urls=(
+            "https://api.vart-portal.ru/api/ping"
+            "https://api.vart-portal.ru/api/ready"
+            "https://reserve-api.vart-portal.ru/api/ping"
+            "https://reserve-api.vart-portal.ru/api/ready"
+            "https://vart-portal.ru/web/"
+          )
+          for url in "${urls[@]}"; do
+            echo "Checking ${url}"
+            code=$(curl \
+              --fail \
+              --silent \
+              --show-error \
+              --location \
+              --connect-timeout 5 \
+              --max-time 15 \
+              --retry 2 \
+              --retry-all-errors \
+              --retry-delay 2 \
+              --output /dev/null \
+              --write-out '%{http_code}' \
+              "$url")
+            if [[ "$code" != "200" ]]; then
+              echo "::error title=PORTAL public endpoint unhealthy::${url} returned HTTP ${code}"
+              exit 1
+            fi
+          done
+          echo "All PORTAL public endpoints returned HTTP 200."

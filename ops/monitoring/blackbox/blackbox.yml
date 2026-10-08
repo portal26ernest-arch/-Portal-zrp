@@ -1,5 +1,5 @@
 modules:
-  http_2xx:
+  http_api_origin_2xx:
     prober: http
     timeout: 10s
     http:
@@ -7,7 +7,24 @@ modules:
       preferred_ip_protocol: ip4
       follow_redirects: true
       fail_if_ssl: false
+      headers:
+        Host: api.vart-portal.ru
       tls_config:
+        server_name: api.vart-portal.ru
+        insecure_skip_verify: false
+
+  http_site_origin_2xx:
+    prober: http
+    timeout: 10s
+    http:
+      method: GET
+      preferred_ip_protocol: ip4
+      follow_redirects: true
+      fail_if_ssl: false
+      headers:
+        Host: vart-portal.ru
+      tls_config:
+        server_name: vart-portal.ru
         insecure_skip_verify: false
 
   ssh_banner:

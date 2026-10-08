@@ -149,9 +149,15 @@ check_local http://127.0.0.1:3001/ || fail "Uptime Kuma loopback check failed"
 check_local http://127.0.0.1:9090/-/ready || fail "Prometheus loopback readiness failed"
 check_local http://127.0.0.1:9093/-/ready || fail "Alertmanager loopback readiness failed"
 check_local 'http://127.0.0.1:9090/api/v1/query?query=up' || fail "Prometheus query probe failed"
-for url in https://api.vart-portal.ru/api/ping https://api.vart-portal.ru/api/ready https://vart-portal.ru/web/ https://reserve-api.vart-portal.ru/api/ping; do
-  curl --fail --silent --show-error --max-time 15 "$url" >/dev/null || fail "public probe failed: $url"
-done
+curl --fail --silent --show-error --max-time 10 \
+  --resolve api.vart-portal.ru:8443:178.209.127.247 \
+  https://api.vart-portal.ru:8443/api/ping >/dev/null || fail "API origin ping probe failed"
+curl --fail --silent --show-error --max-time 10 \
+  --resolve api.vart-portal.ru:8443:178.209.127.247 \
+  https://api.vart-portal.ru:8443/api/ready >/dev/null || fail "API origin readiness probe failed"
+curl --fail --silent --show-error --max-time 10 \
+  --resolve vart-portal.ru:443:178.209.127.247 \
+  https://vart-portal.ru/web/ >/dev/null || fail "Web origin probe failed"
 ACTIVE_SWITCH=0
 echo "Monitoring stack started from $SHA. Management services remain loopback-only."
 if [[ -n "$PREVIOUS_TARGET" ]]; then
@@ -159,4 +165,4 @@ if [[ -n "$PREVIOUS_TARGET" ]]; then
 else
   echo "First-install rollback: cd $DEST/current && PORTAL_MONITORING_SECRETS_DIR=$SECRETS docker compose down. This preserves named volumes."
 fi
-echo "Independent-host gate remains open: this host cannot detect its own total failure."
+echo "Public Cloudflare reachability is checked by .github/workflows/public-health.yml from GitHub-hosted runners; a dedicated second monitoring host remains optional for tighter SLA."
