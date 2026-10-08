@@ -2,6 +2,11 @@ name: Infra readiness
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - "ops/**"
+      - "deploy/systemd/**"
+      - ".github/workflows/infra-readiness.yml"
   push:
     branches:
       - assistant-part12-infra-readiness
@@ -33,6 +38,8 @@ jobs:
           python -m unittest \
             ops.test_infra_readiness \
             ops.test_offsite_backup \
+            ops.test_portal_offsite_restic \
+            ops.test_offsite_install \
             ops.test_release_audits \
             ops.test_release_gate \
             ops.test_legacy_money_reconcile \
@@ -48,6 +55,7 @@ jobs:
             ops/postgres_backup.py \
             ops/postgres_restore_rehearsal.py \
             ops/offsite_backup.py \
+            ops/portal_offsite_restic.py \
             ops/legacy_runtime_audit.py \
             ops/money_field_inventory.py \
             ops/cutover_dry_run.py \
