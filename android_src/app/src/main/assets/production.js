@@ -523,34 +523,101 @@ function organizerFiltered(rows,view){
   if(view==='assigned')return rows.filter(t=>t.created_by===S.me.id);
   return rows;
 }
-function renderOrganizerBody(){
-  if(!$('organizerBody'))return;
+function organizerCachedAt(result){
+  const millis=Number(result?.cached_at_ms||0);if(Number.isFinite(millis)&&millis>0)return millis;
+  const parsed=Date.parse(result?.cached_at||'');return Number.isFinite(parsed)?parsed:0;
+}
+function organizerCounts(rows){
+  const now=new Date(),today=organizerDay(now);
+  return {
+    today:organizerTodayRows(rows,now).length,
+    upcoming:rows.filter(t=>organizerActive(t)&&new Date(t.due_at)>=now&&organizerDay(t.due_at)!==today).length,
+    overdue:rows.filter(t=>organizerActive(t)&&new Date(t.due_at)<now).length,
+    incoming:rows.filter(t=>t.assignee_user_id===S.me.id).length,
+    assigned:rows.filter(t=>t.created_by===S.me.id).length,
+    all:rows.length
+  };
+}
+function organizerRenderTabs(){
+  const box=$('organizerTabs');if(!box)return;
+  const counts=organizerCounts(S.organizerRows||[]);
+  const tabs=[['today','Сегодня'],['upcoming','Предстоящие'],['overdue','Просроченные'],['incoming','Назначенные мне'],['assigned','Поставленные мной'],['calendar','Календарь'],['all','Все задачи']];
+  box.innerHTML=tabs.map(([key,label])=>btn(label+(key==='calendar'?'':' <span class="organizer-tab-count">'+num(counts[key]||0)+'</span>'),'organizerView','data-view="'+key+'"',S.organizerView===key?'':'secondary')).join('');
+}
+function organizerRenderBody(){
+  const body=$('organizerBody');if(!body)return;
+  if(!S.organizerLoaded){body.innerHTML='<div class="loading organizer-loading"><span class="spinner"></span><p>Загружаем задачи…</p></div>';return;}
   const view=S.organizerView||'today';
-  const rows=S.organizerRows||[];
   if(view==='calendar'){
     S.organizerMonth=S.organizerMonth||new Date(new Date().getFullYear(),new Date().getMonth(),1);
-    $('organizerBody').innerHTML=organizerCalendar(rows,S.organizerMonth);return;
+    body.innerHTML=organizerCalendar(S.organizerRows||[],S.organizerMonth);return;
   }
-  const filtered=organizerFiltered(rows,view);
-  const empty=S.organizerLoadError&&!rows.length
-    ?'<div class="notice warning"><b>Не удалось обновить задачи</b><p>Показывать пока нечего. Проверьте связь и нажмите «Обновить».</p>'+btn('Обновить','organizerRetry','','secondary')+'</div>'
-    :'<p class="empty">Задач в этом разделе нет</p>';
-  $('organizerBody').innerHTML='<div class="list">'+(filtered.map(organizerTaskCard).join('')||empty)+'</div>';
+  const rows=organizerFiltered(S.organizerRows||[],view);
+  body.innerHTML='<div class="list">'+(rows.map(organizerTaskCard).join('')||'<p class="empty organizer-empty">Задач в этом разделе нет</p>')+'</div>';
 }
-function refreshOrganizerViewButtons(){
-  document.querySelectorAll('[data-action="organizerView"]').forEach(button=>button.classList.toggle('secondary',button.dataset.view!==S.organizerView));
+function organizerRenderSync(){
+  const box=$('organizerSync');if(!box)return;
+  const sync=S.organizerSync||{};
+  if(sync.loading&&!S.organizerLoaded){box.innerHTML='<div class="organizer-sync"><span class="spinner"></span><span>Получаем актуальные данные…</span></div>';return;}
+  if(!sync.loadedAt&&!sync.error){box.innerHTML='';return;}
+  let text='',klass='';
+  if(sync.cached){
+    klass=' cached';const at=sync.cachedAt?organizerMoment(new Date(sync.cachedAt).toISOString()):'ранее';
+    text='Локальные данные · синхронизация '+at;
+  }else if(sync.error){klass=' warning';text='Часть данных временно недоступна · показано последнее доступное состояние';}
+  else{text='Синхронизировано · '+organizerMoment(new Date(sync.loadedAt).toISOString());}
+  box.innerHTML='<div class="organizer-sync'+klass+'"><span>'+esc(text)+'</span>'+btn('Обновить','organizerRefresh','','text')+'</div>';
+}
+function organizerRenderRequests(){
+  const box=$('organizerRequestsPanel');if(!box)return;
+  const canMine=canCreateDirectorRequest(),canIncoming=allowed('organizer.request.decide');
+  if(!canMine&&!canIncoming){box.innerHTML='';return;}
+  const mine=S.organizerMineRequests||[],incoming=S.organizerIncomingRequests||[];
+  const total=mine.length+incoming.length,attention=incoming.filter(r=>['new','review'].includes(r.status)).length+mine.filter(r=>r.status==='needs_info').length;
+  let groups='';
+  if(mine.length)groups+='<div class="organizer-request-group"><h3>Мои запросы</h3><div class="list">'+mine.map(organizerRequestCard).join('')+'</div></div>';
+  if(incoming.length)groups+='<div class="organizer-request-group"><h3>Входящие запросы</h3><div class="list">'+incoming.map(organizerRequestCard).join('')+'</div></div>';
+  if(!total)groups+='<p class="meta organizer-request-empty">Активных запросов нет.</p>';
+  const create=canMine?btn(icon('plus')+' Новый запрос','organizerRequestNew','','secondary'):'';
+  box.innerHTML='<details class="organizer-requests card"'+(attention?' open':'')+'><summary><span><b>Запросы директору</b><small>'+(attention?attention+' требуют внимания':total?total+' всего':'нет активных')+'</small></span><span class="badge'+(attention?' amber':'')+'">'+num(total)+'</span></summary><div class="organizer-request-content">'+(create?'<div class="organizer-request-toolbar">'+create+'</div>':'')+groups+'</div></details>';
+}
+function organizerRenderWorkspace(){organizerRenderSync();organizerRenderTabs();organizerRenderBody();organizerRenderRequests();}
+async function organizerFetch(path,fresh=false){return api('GET','/api/v3/'+path,undefined,fresh?{fresh:true}:{});}
+async function organizerLoadWorkspace(fresh=false){
+  const scope=allowed('organizer.manage')?'company':'mine';
+  S.organizerSync={...(S.organizerSync||{}),loading:true};organizerRenderSync();
+  const specs=[['tasks','organizer?scope='+scope]];
+  if(canCreateDirectorRequest())specs.push(['mine','organizer-requests?scope=mine']);
+  if(allowed('organizer.request.decide'))specs.push(['incoming','organizer-requests?scope=incoming']);
+  const settled=await Promise.allSettled(specs.map(([,path])=>organizerFetch(path,fresh)));
+  let tasksOk=false,firstError=null;const successful=[];
+  settled.forEach((entry,index)=>{
+    const key=specs[index][0];
+    if(entry.status==='fulfilled'){
+      successful.push(entry.value);const rows=Array.isArray(entry.value.data)?entry.value.data:[];
+      if(key==='tasks'){S.organizerRows=rows;S.organizerLoaded=true;tasksOk=true;}
+      else if(key==='mine')S.organizerMineRequests=rows;
+      else if(key==='incoming')S.organizerIncomingRequests=rows;
+    }else if(!firstError)firstError=entry.reason;
+  });
+  S.organizerMineRequests=S.organizerMineRequests||[];S.organizerIncomingRequests=S.organizerIncomingRequests||[];
+  S.organizerRequestRows=[...S.organizerMineRequests,...S.organizerIncomingRequests.filter(x=>!S.organizerMineRequests.some(m=>m.id===x.id))];
+  if(!tasksOk&&!S.organizerLoaded)throw firstError||new Error('Не удалось загрузить задачи');
+  const cached=successful.some(result=>result?.cached);
+  const cachedTimes=successful.map(organizerCachedAt).filter(Boolean);
+  S.organizerSync={loading:false,cached,cachedAt:cachedTimes.length?Math.min(...cachedTimes):0,loadedAt:Date.now(),error:firstError?String(firstError.message||firstError):''};
+  organizerRenderWorkspace();return cached;
+}
+async function organizerFreshReload(view,epoch){
+  try{await organizerLoadWorkspace(true);}
+  catch(error){if(S.page==='organizer'&&S.view===view&&S.epoch===epoch){S.organizerSync={...(S.organizerSync||{}),loading:false,error:String(error.message||error)};organizerRenderSync();}}
 }
 async function refreshOrganizer(){
-  const scope=allowed('organizer.manage')?'company':'mine';
-  try{
-    S.organizerRows=await productionGet('organizer?scope='+scope);
-    S.organizerLoadError=null;
-  }catch(error){
-    S.organizerLoadError=error;
-    if(!Array.isArray(S.organizerRows))S.organizerRows=[];
-  }
-  renderOrganizerBody();
+  const scope=allowed('organizer.manage')?'company':'mine',result=await organizerFetch('organizer?scope='+scope,true);
+  S.organizerRows=Array.isArray(result.data)?result.data:[];S.organizerLoaded=true;
+  S.organizerSync={loading:false,cached:false,cachedAt:0,loadedAt:Date.now(),error:''};organizerRenderWorkspace();
 }
+
 const organizerRequestType={materials_purchase:'Закупка материалов',equipment_purchase:'Закупка оборудования',repair:'Ремонт',expense:'Расходы',tariff_change:'Изменение условий/тарифов',hr:'Кадровый вопрос',other:'Другое'};
 const organizerRequestStatus={new:'Новый',review:'На рассмотрении',approved:'Одобрен',rejected:'Отклонён',needs_info:'Нужна информация',done:'Выполнен'};
 const canCreateDirectorRequest=()=>can('organizer')&&allowed('organizer.request.create')&&['manager','admin'].includes(S.me?.role);
@@ -570,42 +637,45 @@ function organizerRequestCard(r){
   return '<article class="item"><div class="row between"><div><span class="eyebrow">'+esc(organizerRequestType[r.request_type]||'Запрос')+' · '+esc(organizerPriority[r.priority]||'Обычная')+'</span><h3>'+esc(r.title)+'</h3></div><span class="badge '+(r.status==='needs_info'?'warning':'')+'">'+esc(organizerRequestStatus[r.status]||r.status)+'</span></div>'+(r.description?'<p>'+esc(r.description)+'</p>':'')+details+(files?'<div class="item-actions">'+files+'</div>':'')+'<div class="item-actions">'+buttons+'</div></article>';
 }
 async function refreshOrganizerRequests(){
-  const minePromise=canCreateDirectorRequest()?productionGet('organizer-requests?scope=mine'):Promise.resolve([]);
-  const incomingPromise=allowed('organizer.request.decide')?productionGet('organizer-requests?scope=incoming'):Promise.resolve([]);
-  const [mineResult,incomingResult]=await Promise.allSettled([minePromise,incomingPromise]);
-  if(mineResult.status==='fulfilled')S.organizerMineRequests=mineResult.value;
-  else if(!Array.isArray(S.organizerMineRequests))S.organizerMineRequests=[];
-  if(incomingResult.status==='fulfilled')S.organizerIncomingRequests=incomingResult.value;
-  else if(!Array.isArray(S.organizerIncomingRequests))S.organizerIncomingRequests=[];
-  const mine=S.organizerMineRequests||[],incoming=S.organizerIncomingRequests||[];
-  S.organizerRequestRows=[...mine,...incoming.filter(x=>!mine.some(m=>m.id===x.id))];
-  if($('organizerMyRequests'))$('organizerMyRequests').innerHTML='<div class="list">'+(mine.map(organizerRequestCard).join('')||'<p class="meta">Активных запросов нет</p>')+'</div>';
-  if($('organizerIncomingRequests'))$('organizerIncomingRequests').innerHTML='<div class="list">'+incoming.map(organizerRequestCard).join('')+'</div>';
-  const incomingSection=$('organizerIncomingSection');
-  if(incomingSection)incomingSection.classList.toggle('hidden',incoming.length===0);
+  const specs=[];
+  if(canCreateDirectorRequest())specs.push(['mine','organizer-requests?scope=mine']);
+  if(allowed('organizer.request.decide'))specs.push(['incoming','organizer-requests?scope=incoming']);
+  const results=await Promise.all(specs.map(async([key,path])=>[key,await organizerFetch(path,true)]));
+  for(const [key,result] of results){const rows=Array.isArray(result.data)?result.data:[];if(key==='mine')S.organizerMineRequests=rows;else S.organizerIncomingRequests=rows;}
+  S.organizerMineRequests=S.organizerMineRequests||[];S.organizerIncomingRequests=S.organizerIncomingRequests||[];
+  S.organizerRequestRows=[...S.organizerMineRequests,...S.organizerIncomingRequests.filter(x=>!S.organizerMineRequests.some(m=>m.id===x.id))];
+  organizerRenderRequests();
+}
+async function organizerEnsureUsers(){
+  if(!Array.isArray(S.organizerUsers)||!S.organizerUsers.length){const result=await organizerFetch('organizer-users',true);S.organizerUsers=Array.isArray(result.data)?result.data:[];}
+  return S.organizerUsers;
+}
+async function organizerEnsureDirectors(){
+  if(!Array.isArray(S.organizerDirectors)||!S.organizerDirectors.length){const result=await organizerFetch('organizer-directors',true);S.organizerDirectors=Array.isArray(result.data)?result.data:[];}
+  return S.organizerDirectors;
+}
+async function organizerEnsureRequestUsers(){
+  if(!Array.isArray(S.organizerRequestUsers)||!S.organizerRequestUsers.length){const result=await organizerFetch('organizer-request-responsibles',true);S.organizerRequestUsers=Array.isArray(result.data)?result.data:[];}
+  return S.organizerRequestUsers;
 }
 screens.organizer=async()=>{
-  if(!can('organizer'))throw new Error('Нет доступа к Органайзеру');
+  if(!can('organizer'))throw new Error('Нет доступа к органайзеру');
+  const companyKey=String(S.company?.id||'');
+  if(S.organizerCompanyKey!==companyKey){
+    S.organizerCompanyKey=companyKey;S.organizerRows=[];S.organizerMineRequests=[];S.organizerIncomingRequests=[];S.organizerRequestRows=[];
+    S.organizerUsers=null;S.organizerDirectors=null;S.organizerRequestUsers=null;S.organizerLoaded=false;S.organizerSync=null;
+  }
   S.organizerView=S.organizerView||'today';
-  const tabs=[['today','Сегодня'],['upcoming','Предстоящие'],['overdue','Просроченные'],['incoming','Назначенные мне'],['assigned','Поставленные мной'],['calendar','Календарь'],['all','Все задачи']];
-  const requestSections=(canCreateDirectorRequest()?'<section id="organizerMineSection" class="card"><div class="row between"><div><span class="eyebrow">Запросы директору</span><h2>Мои запросы</h2></div>'+btn(icon('plus')+' Новый запрос директору','organizerRequestNew','','secondary')+'</div><div id="organizerMyRequests"><p class="meta">Загружаем…</p></div></section>':'')+
-    (allowed('organizer.request.decide')?'<section id="organizerIncomingSection" class="card hidden"><span class="eyebrow">Запросы директору</span><h2>Входящие запросы</h2><div id="organizerIncomingRequests"></div></section>':'');
-  paint(heading('Органайзер','Рабочие задачи, календарь, напоминания и запросы директору',allowed('organizer.assign')?btn(icon('plus')+' Новая задача','organizerNew'):'')+
-    '<div class="mini-actions">'+tabs.map(([key,label])=>btn(label,'organizerView','data-view="'+key+'"',S.organizerView===key?'':'secondary')).join('')+'</div>'+
-    '<div id="organizerBody">'+((S.organizerRows||[]).length?'<div class="list">'+organizerFiltered(S.organizerRows,S.organizerView).map(organizerTaskCard).join('')+'</div>':'<div class="loading compact"><span class="spinner"></span><p>Загружаем задачи…</p></div>')+'</div>'+
-    requestSections);
-  renderOrganizerBody();
-  const loadUsers=productionGet('organizer-users').then(rows=>{S.organizerUsers=rows;}).catch(()=>{if(!Array.isArray(S.organizerUsers))S.organizerUsers=[];});
-  const loadDirectors=canCreateDirectorRequest()?productionGet('organizer-directors').then(rows=>{S.organizerDirectors=rows;}).catch(()=>{if(!Array.isArray(S.organizerDirectors))S.organizerDirectors=[];}):Promise.resolve();
-  const loadResponsibles=allowed('organizer.assign')&&(isOwner()||['director','admin'].includes(S.me.role))
-    ?productionGet('organizer-request-responsibles').then(rows=>{S.organizerRequestUsers=rows;}).catch(()=>{if(!Array.isArray(S.organizerRequestUsers))S.organizerRequestUsers=[];})
-    :Promise.resolve();
-  await Promise.allSettled([refreshOrganizer(),refreshOrganizerRequests(),loadUsers,loadDirectors,loadResponsibles]);
-  refreshOrganizerViewButtons();
+  paint(heading('Органайзер','Задачи и сроки',allowed('organizer.assign')?btn(icon('plus')+' Новая','organizerNew','','secondary'):'')+
+    '<div id="organizerSync"></div><div id="organizerTabs" class="organizer-tabs"></div><div id="organizerBody"></div><div id="organizerRequestsPanel"></div>');
+  organizerRenderWorkspace();
+  const view=S.view,epoch=S.epoch,cached=await organizerLoadWorkspace(false);
+  if(cached&&S.page==='organizer'&&S.view===view&&S.epoch===epoch)void organizerFreshReload(view,epoch);
 };
-actions.organizerRequestNew=()=>{
+
+actions.organizerRequestNew=async()=>{
   if(!canCreateDirectorRequest())throw new Error('Создавать запросы директору может управляющий или менеджер');
-  const directors=S.organizerDirectors||[];if(!directors.length)throw new Error('В компании нет активного директора');
+  const directors=await organizerEnsureDirectors();if(!directors.length)throw new Error('В компании нет активного директора');
   const types=Object.entries(organizerRequestType).map(([key,label])=>'<option value="'+key+'">'+esc(label)+'</option>').join('');
   const directorOptions=directors.map(u=>'<option value="'+u.id+'">'+esc(u.display_name)+'</option>').join('');
   openSheet('Новый запрос директору','<form id="organizerRequestForm">'+
@@ -637,9 +707,9 @@ actions.organizerRequestQuickStatus=async button=>{
   await productionPost('organizer-requests',{mode:'decide',organizer_request_id:button.dataset.id,status:button.dataset.status});
   toast('Статус запроса изменён');await refreshOrganizerRequests();
 };
-actions.organizerRequestDecision=button=>{
+actions.organizerRequestDecision=async button=>{
   const r=(S.organizerRequestRows||[]).find(x=>x.id===button.dataset.id);if(!r)throw new Error('Запрос не найден');
-  const responsible=(S.organizerRequestUsers||[]).map(u=>'<option value="'+u.id+'" '+(r.responsible_user_id===u.id?'selected':'')+'>'+esc(u.display_name)+' · '+esc(u.role_label)+'</option>').join('');
+  const responsible=(await organizerEnsureRequestUsers()).map(u=>'<option value="'+u.id+'" '+(r.responsible_user_id===u.id?'selected':'')+'>'+esc(u.display_name)+' · '+esc(u.role_label)+'</option>').join('');
   openSheet(organizerRequestStatus[button.dataset.status]||'Решение по запросу','<form id="organizerRequestDecisionForm" data-id="'+esc(r.id)+'" data-status="'+esc(button.dataset.status)+'">'+
     selectField('organizerRequestResponsible','Ответственный — необязательно','<option value="">Не назначать</option>'+responsible)+
     '<label class="field"><span>Комментарий — необязательно</span><textarea id="organizerRequestDecisionComment" maxlength="2000" rows="3"></textarea></label>'+
@@ -673,9 +743,9 @@ actions.organizerRequestHistory=async button=>{
     (events.slice().reverse().map(e=>'<div class="item"><b>'+esc(names[e.event]||'Изменение')+'</b><p class="meta">'+esc(e.actor_name)+' · '+esc(organizerMoment(e.occurred_at))+'</p>'+
     (e.detail?'<p>'+esc(organizerRequestEventDetail(e.detail))+'</p>':'')+(e.comment?'<p>'+esc(e.comment)+'</p>':'')+'</div>').join('')||'<p class="empty">История пока пуста</p>')+'</div>');
 };
-actions.organizerRequestCreateTask=button=>{
+actions.organizerRequestCreateTask=async button=>{
   const r=(S.organizerRequestRows||[]).find(x=>x.id===button.dataset.id);if(!r)throw new Error('Запрос не найден');
-  const users=S.organizerRequestUsers||[];const opts=users.map(u=>'<option value="'+u.id+'" '+(r.responsible_user_id===u.id?'selected':'')+'>'+esc(u.display_name)+' · '+esc(u.role_label)+'</option>').join('');
+  const users=await organizerEnsureRequestUsers();const opts=users.map(u=>'<option value="'+u.id+'" '+(r.responsible_user_id===u.id?'selected':'')+'>'+esc(u.display_name)+' · '+esc(u.role_label)+'</option>').join('');
   openSheet('Создать задачу из запроса','<form id="organizerRequestTaskForm" data-id="'+esc(r.id)+'">'+selectField('organizerRequestTaskAssignee','Ответственный',opts)+
     '<button class="btn block" type="submit">Создать связанную задачу</button><p class="meta">Повторное нажатие не создаст дубль.</p></form>');
 };
@@ -689,12 +759,12 @@ actions.organizerRequestFile=async button=>{
   const url=URL.createObjectURL(new Blob([bytes],{type:f.mime_type||'application/octet-stream'})),a=document.createElement('a');
   a.href=url;a.download=f.original_name||f.filename||'PORTAL-request-file';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
 };
-actions.organizerView=button=>{S.organizerView=button.dataset.view;refreshOrganizerViewButtons();renderOrganizerBody();};
-actions.organizerMonth=button=>{const m=S.organizerMonth||new Date();S.organizerMonth=new Date(m.getFullYear(),m.getMonth()+Number(button.dataset.shift),1);renderOrganizerBody();};
-actions.organizerRetry=async()=>{await Promise.allSettled([refreshOrganizer(),refreshOrganizerRequests()]);};
-actions.organizerNew=()=>{
+actions.organizerView=button=>{S.organizerView=button.dataset.view;organizerRenderTabs();organizerRenderBody();};
+actions.organizerMonth=button=>{const m=S.organizerMonth||new Date();S.organizerMonth=new Date(m.getFullYear(),m.getMonth()+Number(button.dataset.shift),1);organizerRenderBody();};
+actions.organizerRefresh=async button=>{button.disabled=true;try{await organizerLoadWorkspace(true);}finally{button.disabled=false;}};
+actions.organizerNew=async()=>{
   if(!allowed('organizer.assign'))throw new Error('Нет права ставить задачи');
-  const users=S.organizerUsers||[],tomorrow=new Date(Date.now()+86400000);tomorrow.setHours(10,0,0,0);
+  const users=await organizerEnsureUsers(),tomorrow=new Date(Date.now()+86400000);tomorrow.setHours(10,0,0,0);
   const local=tomorrow.getFullYear()+'-'+String(tomorrow.getMonth()+1).padStart(2,'0')+'-'+String(tomorrow.getDate()).padStart(2,'0')+'T'+String(tomorrow.getHours()).padStart(2,'0')+':00';
   openSheet('Новая задача','<form id="organizerForm">'+
     selectField('organizerAssignee','Исполнитель',users.map(u=>'<option value="'+u.id+'">'+esc(u.display_name)+' · '+esc(u.role_label)+(u.self?' · Я':'')+'</option>').join(''))+
