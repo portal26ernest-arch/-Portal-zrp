@@ -102,6 +102,10 @@ test('shared mobile Organizer exposes director requests and native reminders',()
   assert.match(production,/completed\?'green'/);
   assert.match(production,/function organizerTodayRows\(rows,now=new Date\(\)\)[\s\S]*organizerActive\(t\)&&organizerDay\(t\.due_at\)<=today/);
   assert.match(production,/organizerOverdueLabel\(t\.due_at,now\)/);
+  assert.match(production,/productionGet\('organizer-bootstrap'\)/);
+  assert.match(production,/organizerSyncState/);
+  assert.match(production,/organizer-tabs/);
+  assert.match(production,/organizer-requests-compact/);
   assert.match(production,/mod100>=11&&mod100<=14/);
   assert.match(production,/actions\.organizerView=button=>\{S\.organizerView=button\.dataset\.view;refreshOrganizerViewButtons\(\);renderOrganizerBody\(\);\}/);
   assert.doesNotMatch(production,/actions\.organizerView=async[\s\S]{0,180}screens\.organizer\(\)/);

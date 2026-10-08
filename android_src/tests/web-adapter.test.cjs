@@ -51,7 +51,7 @@ test('Desktop cache is company + user + permission scoped, encrypted and fail-sa
   assert.ok(adapter.includes('FETCH_TIMEOUT_MS = 20 * 1000'));
   assert.ok(adapter.includes('new AbortController()'));
   assert.ok(adapter.includes('signal:controller.signal'));
-  for(const endpoint of ['dashboard','payroll\\/mine','work\\/mine','notification-centers','organizer-requests','payroll-settlements','expenses','presence']) assert.ok(adapter.includes(endpoint),endpoint);
+  for(const endpoint of ['dashboard','payroll\\/mine','work\\/mine','notification-centers','organizer-bootstrap','organizer-requests','payroll-settlements','expenses','presence']) assert.ok(adapter.includes(endpoint),endpoint);
   for(const forbidden of ['/api/login','/api/me','/api/platform','messenger-relay-ticket','code-interpreter']) assert.equal(adapter.includes("CACHEABLE = ['"+forbidden),false,forbidden);
   assert.ok(adapter.includes("invalidationKeys(target).length"));
   assert.ok(app.includes("setCacheIdentity?.('','','[]')"));

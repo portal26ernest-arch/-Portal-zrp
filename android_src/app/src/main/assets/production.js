@@ -569,6 +569,14 @@ function organizerRequestCard(r){
   const files=(r.attachments||[]).map(a=>btn('Файл: '+esc(a.original_name),'organizerRequestFile','data-id="'+esc(a.id)+'"','text')).join('');
   return '<article class="item"><div class="row between"><div><span class="eyebrow">'+esc(organizerRequestType[r.request_type]||'Запрос')+' · '+esc(organizerPriority[r.priority]||'Обычная')+'</span><h3>'+esc(r.title)+'</h3></div><span class="badge '+(r.status==='needs_info'?'warning':'')+'">'+esc(organizerRequestStatus[r.status]||r.status)+'</span></div>'+(r.description?'<p>'+esc(r.description)+'</p>':'')+details+(files?'<div class="item-actions">'+files+'</div>':'')+'<div class="item-actions">'+buttons+'</div></article>';
 }
+function renderOrganizerRequests(){
+  const mine=S.organizerMineRequests||[],incoming=S.organizerIncomingRequests||[];
+  S.organizerRequestRows=[...mine,...incoming.filter(x=>!mine.some(m=>m.id===x.id))];
+  if($('organizerMyRequests'))$('organizerMyRequests').innerHTML=mine.length?'<div class="list">'+mine.map(organizerRequestCard).join('')+'</div>':'<p class="meta">Нет активных запросов</p>';
+  if($('organizerIncomingRequests'))$('organizerIncomingRequests').innerHTML='<div class="list">'+incoming.map(organizerRequestCard).join('')+'</div>';
+  const incomingSection=$('organizerIncomingSection');
+  if(incomingSection)incomingSection.classList.toggle('hidden',incoming.length===0);
+}
 async function refreshOrganizerRequests(){
   const minePromise=canCreateDirectorRequest()?productionGet('organizer-requests?scope=mine'):Promise.resolve([]);
   const incomingPromise=allowed('organizer.request.decide')?productionGet('organizer-requests?scope=incoming'):Promise.resolve([]);
@@ -577,34 +585,56 @@ async function refreshOrganizerRequests(){
   else if(!Array.isArray(S.organizerMineRequests))S.organizerMineRequests=[];
   if(incomingResult.status==='fulfilled')S.organizerIncomingRequests=incomingResult.value;
   else if(!Array.isArray(S.organizerIncomingRequests))S.organizerIncomingRequests=[];
-  const mine=S.organizerMineRequests||[],incoming=S.organizerIncomingRequests||[];
-  S.organizerRequestRows=[...mine,...incoming.filter(x=>!mine.some(m=>m.id===x.id))];
-  if($('organizerMyRequests'))$('organizerMyRequests').innerHTML='<div class="list">'+(mine.map(organizerRequestCard).join('')||'<p class="meta">Активных запросов нет</p>')+'</div>';
-  if($('organizerIncomingRequests'))$('organizerIncomingRequests').innerHTML='<div class="list">'+incoming.map(organizerRequestCard).join('')+'</div>';
-  const incomingSection=$('organizerIncomingSection');
-  if(incomingSection)incomingSection.classList.toggle('hidden',incoming.length===0);
+  renderOrganizerRequests();
 }
-screens.organizer=async()=>{
-  if(!can('organizer'))throw new Error('Нет доступа к Органайзеру');
-  S.organizerView=S.organizerView||'today';
-  const tabs=[['today','Сегодня'],['upcoming','Предстоящие'],['overdue','Просроченные'],['incoming','Назначенные мне'],['assigned','Поставленные мной'],['calendar','Календарь'],['all','Все задачи']];
-  const requestSections=(canCreateDirectorRequest()?'<section id="organizerMineSection" class="card"><div class="row between"><div><span class="eyebrow">Запросы директору</span><h2>Мои запросы</h2></div>'+btn(icon('plus')+' Новый запрос директору','organizerRequestNew','','secondary')+'</div><div id="organizerMyRequests"><p class="meta">Загружаем…</p></div></section>':'')+
-    (allowed('organizer.request.decide')?'<section id="organizerIncomingSection" class="card hidden"><span class="eyebrow">Запросы директору</span><h2>Входящие запросы</h2><div id="organizerIncomingRequests"></div></section>':'');
-  paint(heading('Органайзер','Рабочие задачи, календарь, напоминания и запросы директору',allowed('organizer.assign')?btn(icon('plus')+' Новая задача','organizerNew'):'')+
-    '<div class="mini-actions">'+tabs.map(([key,label])=>btn(label,'organizerView','data-view="'+key+'"',S.organizerView===key?'':'secondary')).join('')+'</div>'+
-    '<div id="organizerBody">'+((S.organizerRows||[]).length?'<div class="list">'+organizerFiltered(S.organizerRows,S.organizerView).map(organizerTaskCard).join('')+'</div>':'<div class="loading compact"><span class="spinner"></span><p>Загружаем задачи…</p></div>')+'</div>'+
-    requestSections);
-  renderOrganizerBody();
+function applyOrganizerBootstrap(data){
+  S.organizerRows=Array.isArray(data?.tasks)?data.tasks:[];
+  S.organizerUsers=Array.isArray(data?.users)?data.users:[];
+  S.organizerDirectors=Array.isArray(data?.directors)?data.directors:[];
+  S.organizerRequestUsers=Array.isArray(data?.responsibles)?data.responsibles:[];
+  S.organizerMineRequests=Array.isArray(data?.mine_requests)?data.mine_requests:[];
+  S.organizerIncomingRequests=Array.isArray(data?.incoming_requests)?data.incoming_requests:[];
+  S.organizerLoadError=null;
+  renderOrganizerBody();renderOrganizerRequests();
+  const state=$('organizerSyncState');
+  if(state)state.textContent=S.localDataView===S.view?'Локальные данные':'Обновлено сейчас';
+}
+async function organizerLegacyInitialLoad(){
   const loadUsers=productionGet('organizer-users').then(rows=>{S.organizerUsers=rows;}).catch(()=>{if(!Array.isArray(S.organizerUsers))S.organizerUsers=[];});
   const loadDirectors=canCreateDirectorRequest()?productionGet('organizer-directors').then(rows=>{S.organizerDirectors=rows;}).catch(()=>{if(!Array.isArray(S.organizerDirectors))S.organizerDirectors=[];}):Promise.resolve();
   const loadResponsibles=allowed('organizer.assign')&&(isOwner()||['director','admin'].includes(S.me.role))
     ?productionGet('organizer-request-responsibles').then(rows=>{S.organizerRequestUsers=rows;}).catch(()=>{if(!Array.isArray(S.organizerRequestUsers))S.organizerRequestUsers=[];})
     :Promise.resolve();
   await Promise.allSettled([refreshOrganizer(),refreshOrganizerRequests(),loadUsers,loadDirectors,loadResponsibles]);
+}
+screens.organizer=async()=>{
+  if(!can('organizer'))throw new Error('Нет доступа к Органайзеру');
+  S.organizerView=S.organizerView||'today';
+  const tabs=[['today','Сегодня'],['upcoming','Предстоящие'],['overdue','Просроченные'],['incoming','Назначенные мне'],['assigned','Поставленные мной'],['calendar','Календарь'],['all','Все задачи']];
+  const requestSections=(canCreateDirectorRequest()?'<section id="organizerMineSection" class="card organizer-requests-compact"><div class="row between"><div><span class="eyebrow">Запросы директору</span><h2>Мои запросы</h2></div>'+btn(icon('plus')+' Новый запрос директору','organizerRequestNew','','secondary')+'</div><div id="organizerMyRequests"><p class="meta">Загружаем…</p></div></section>':'')+
+    (allowed('organizer.request.decide')?'<section id="organizerIncomingSection" class="card organizer-requests-compact hidden"><span class="eyebrow">Запросы директору</span><h2>Входящие запросы</h2><div id="organizerIncomingRequests"></div></section>':'');
+  paint(heading('Органайзер','Рабочие задачи, календарь, напоминания и запросы директору',allowed('organizer.assign')?btn(icon('plus')+' Новая задача','organizerNew'):'')+
+    '<div id="organizerSyncState" class="meta organizer-sync">Синхронизация…</div>'+
+    '<div class="mini-actions organizer-tabs">'+tabs.map(([key,label])=>btn(label,'organizerView','data-view="'+key+'"',S.organizerView===key?'':'secondary')).join('')+'</div>'+
+    '<div id="organizerBody">'+((S.organizerRows||[]).length?'<div class="list">'+organizerFiltered(S.organizerRows,S.organizerView).map(organizerTaskCard).join('')+'</div>':'<div class="loading compact"><span class="spinner"></span><p>Загружаем задачи…</p></div>')+'</div>'+
+    requestSections);
+  renderOrganizerBody();
+  try{
+    applyOrganizerBootstrap(await productionGet('organizer-bootstrap'));
+  }catch(error){
+    if(error?.status===404)await organizerLegacyInitialLoad();
+    else{
+      S.organizerLoadError=error;
+      if(!Array.isArray(S.organizerRows))S.organizerRows=[];
+      renderOrganizerBody();renderOrganizerRequests();
+      const state=$('organizerSyncState');if(state)state.innerHTML='<span class="error">Нет связи</span> · показаны последние данные';
+    }
+  }
   refreshOrganizerViewButtons();
 };
-actions.organizerRequestNew=()=>{
+actions.organizerRequestNew=async()=>{
   if(!canCreateDirectorRequest())throw new Error('Создавать запросы директору может управляющий или менеджер');
+  if(!Array.isArray(S.organizerDirectors)||!S.organizerDirectors.length)S.organizerDirectors=await productionGet('organizer-directors');
   const directors=S.organizerDirectors||[];if(!directors.length)throw new Error('В компании нет активного директора');
   const types=Object.entries(organizerRequestType).map(([key,label])=>'<option value="'+key+'">'+esc(label)+'</option>').join('');
   const directorOptions=directors.map(u=>'<option value="'+u.id+'">'+esc(u.display_name)+'</option>').join('');
@@ -691,9 +721,14 @@ actions.organizerRequestFile=async button=>{
 };
 actions.organizerView=button=>{S.organizerView=button.dataset.view;refreshOrganizerViewButtons();renderOrganizerBody();};
 actions.organizerMonth=button=>{const m=S.organizerMonth||new Date();S.organizerMonth=new Date(m.getFullYear(),m.getMonth()+Number(button.dataset.shift),1);renderOrganizerBody();};
-actions.organizerRetry=async()=>{await Promise.allSettled([refreshOrganizer(),refreshOrganizerRequests()]);};
-actions.organizerNew=()=>{
+actions.organizerRetry=async()=>{
+  const state=$('organizerSyncState');if(state)state.textContent='Синхронизация…';
+  try{applyOrganizerBootstrap(await productionGet('organizer-bootstrap'));}
+  catch(error){if(error?.status===404)await organizerLegacyInitialLoad();else{S.organizerLoadError=error;renderOrganizerBody();if(state)state.innerHTML='<span class="error">Нет связи</span> · показаны последние данные';}}
+};
+actions.organizerNew=async()=>{
   if(!allowed('organizer.assign'))throw new Error('Нет права ставить задачи');
+  if(!Array.isArray(S.organizerUsers)||!S.organizerUsers.length)S.organizerUsers=await productionGet('organizer-users');
   const users=S.organizerUsers||[],tomorrow=new Date(Date.now()+86400000);tomorrow.setHours(10,0,0,0);
   const local=tomorrow.getFullYear()+'-'+String(tomorrow.getMonth()+1).padStart(2,'0')+'-'+String(tomorrow.getDate()).padStart(2,'0')+'T'+String(tomorrow.getHours()).padStart(2,'0')+':00';
   openSheet('Новая задача','<form id="organizerForm">'+
