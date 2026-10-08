@@ -316,19 +316,21 @@ public class MainActivity extends Activity {
             String verb = method == null ? "GET" : method.toUpperCase(Locale.ROOT);
             String localCompany = cacheCompany;
             executor.execute(() -> {
-                // Resolve a healthy PORTAL endpoint before any authenticated request is sent.
-                String base = resolveServerForRequest(getServerUrl());
+                String requestedBase = getServerUrl();
                 boolean cacheable = cacheableGet(verb, path, token, localCompany);
                 if (cacheable) {
-                    String cached = localCache.read(base, localCompany, path);
+                    String cached = localCache.read(requestedBase, localCompany, path);
                     String ready = cachedResponse(cached);
                     if (ready != null) {
+                        // Local-first: render immediately, then refresh in the background.
                         deliver(id, ready);
-                        String fresh = requestAt(base, verb, path, body, token, company);
-                        if (responseOk(fresh)) localCache.write(base, localCompany, path, fresh);
+                        String freshBase = resolveServerForRequest(requestedBase);
+                        String fresh = requestAt(freshBase, verb, path, body, token, company);
+                        if (responseOk(fresh)) localCache.write(freshBase, localCompany, path, fresh);
                         return;
                     }
                 }
+                String base = resolveServerForRequest(requestedBase);
                 String result = requestAt(base, verb, path, body, token, company);
                 if (cacheable && responseOk(result)) localCache.write(base, localCompany, path, result);
                 if ("POST".equals(verb) && responseOk(result) && !localCompany.isEmpty())
@@ -391,7 +393,7 @@ public class MainActivity extends Activity {
                     || path.matches("/api/clients/[0-9]+(?:/operations)?(?:\\?.*)?")
                     || path.matches("/api/admin/clients/[0-9]+/operations(?:\\?.*)?")
                     || path.matches("/api/(?:users|materials|jobs)(?:\\?.*)?")
-                    || path.matches("/api/v3/(?:catalog|products|client-requisites|client-name-history|tariff-history|today|tasks|timers|batches|invoices|receivables|finance|analytics|payroll-periods|documents|settings|permissions|chat-users)(?:\\?.*)?");
+                    || path.matches("/api/v3/(?:catalog|products|client-requisites|client-name-history|tariff-history|today|tasks|timers|batches|invoices|receivables|finance|analytics|payroll-periods|documents|settings|permissions|chat-users|organizer|organizer-directors|organizer-events|organizer-requests|organizer-request-events|organizer-request-responsibles|organizer-users)(?:\\?.*)?");
         }
 
         private void invalidateCacheForMutation(String base, String company, String path) {
@@ -415,6 +417,12 @@ public class MainActivity extends Activity {
                 keys = new String[]{"/api/users","/api/v3/permissions","/api/v3/chat-users"};
             } else if (path.matches(".*/(?:invoices?|payments?)(?:/|\\?|$).*")) {
                 keys = new String[]{"/api/v3/invoices","/api/v3/receivables","/api/v3/finance","/api/v3/today"};
+            } else if (path.matches(".*/(?:organizer|organizer-requests|organizer-request-events)(?:/|\\?|$).*")) {
+                keys = new String[]{
+                        "/api/v3/organizer","/api/v3/organizer?scope=company","/api/v3/organizer?scope=mine","/api/v3/organizer?scope=incoming",
+                        "/api/v3/organizer-requests","/api/v3/organizer-requests?scope=mine","/api/v3/organizer-requests?scope=incoming",
+                        "/api/v3/organizer-request-events","/api/v3/today"
+                };
             } else if (path.matches(".*/settings(?:/|\\?|$).*")) {
                 keys = new String[]{"/api/company","/api/v3/settings","/api/v3/today"};
             } else {
