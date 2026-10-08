@@ -1,4 +1,4 @@
-# PORTAL MASTER ROADMAP
+﻿# PORTAL MASTER ROADMAP
 
 > **ЕДИНСТВЕННЫЙ ИСТОЧНИК ИСТИНЫ ДЛЯ ПРОЕКТА PORTAL.**
 >
