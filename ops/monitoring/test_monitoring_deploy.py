@@ -86,6 +86,14 @@ class MonitoringDeploymentGuards(unittest.TestCase):
         self.assertNotIn("insecure", DEPLOY.lower())
         self.assertNotIn("curl -k", DEPLOY)
 
+    def test_deploy_script_is_committed_executable(self) -> None:
+        repo_root = ROOT.parents[1]
+        mode = subprocess.check_output(
+            ["git", "-C", str(repo_root), "ls-files", "-s", "ops/monitoring/deploy_ubuntu.sh"],
+            text=True,
+        ).split()[0]
+        self.assertEqual(mode, "100755")
+
     def test_static_monitoring_validator_runs(self) -> None:
         result = subprocess.run(["python", str(ROOT / "validate_monitoring.py")], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
