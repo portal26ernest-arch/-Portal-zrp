@@ -36,6 +36,14 @@ test('legacy Desktop outbox is visibly quarantined instead of silently reassigne
   assert.match(app,/не отправляются автоматически/);
   assert.match(app,/не смешать данные разных пользователей/);
 });
+test('login retries one ambiguous network response without retrying business writes',()=>{
+  const app=fs.readFileSync(path.join(assets,'app.js'),'utf8');
+  assert.match(app,/async function loginRequest\(body\)/);
+  assert.match(app,/if\(!error\?\.network\)throw error/);
+  assert.match(app,/setTimeout\(resolve,350\)/);
+  assert.match(app,/Не удалось завершить вход\. Соединение прервалось/);
+  assert.match(app,/const r=await loginRequest\(body\)/);
+});
 test('legacy work form reuses an idempotency key after an ambiguous network failure',()=>{
   const screens=fs.readFileSync(path.join(assets,'screens.js'),'utf8');
   assert.match(screens,/forms\.workForm=async form=>/);
@@ -248,11 +256,12 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
     if(web)window.__PORTAL_WEB__=true;
     const user={id:1,username:role,display_name:'Тестовый пользователь',role,company_id:1,employee_id:role==='platform_owner'?null:101};
     const client={id:1,name:'Клиент',active:1};
-    window.mock={calls:[],offline:false,rejectWrite:false,failUrls:[],forbiddenUrls:[],cachedUrls:[],hold:false,held:[],update:{ok:true,configured:false},timer:null,stage3Today:null,stage3Batches:null,stage3Shipments:null,stage3Tasks:null,stage3Economy:null,stage3Finance:null,stage3Permissions:null,stage3Invoices:null,stage3Users:null,clientNameHistory:[],clientAliases:[],clientRequisites:{legal_name:'ООО Тест',inn:'TEST-INN-001'},tariffHistory:[],presenceOnline:true,saved:null,previewMode:'ok',applyMode:'ok',payrollPaid:2000,invites:[],products:[]};
+    window.mock={calls:[],offline:false,loginNetworkFailures:0,rejectWrite:false,failUrls:[],forbiddenUrls:[],cachedUrls:[],hold:false,held:[],update:{ok:true,configured:false},timer:null,stage3Today:null,stage3Batches:null,stage3Shipments:null,stage3Tasks:null,stage3Economy:null,stage3Finance:null,stage3Permissions:null,stage3Invoices:null,stage3Users:null,clientNameHistory:[],clientAliases:[],clientRequisites:{legal_name:'ООО Тест',inn:'TEST-INN-001'},tariffHistory:[],presenceOnline:true,saved:null,previewMode:'ok',applyMode:'ok',payrollPaid:2000,invites:[],products:[]};
     const respond=(id,data)=>setTimeout(()=>window.PortalBridgeResult(id,JSON.stringify(data)),0);
     window.PortalNative={getServerUrl:()=> 'http://127.0.0.1:8765',getAppMetadata:()=>JSON.stringify(metadata),checkUpdates:id=>respond(id,mock.update),saveBase64FileAsync(id,filename,mime,file_b64){mock.saved={filename,mime,file_b64};respond(id,{ok:true,location:'Downloads/PORTAL/'+filename});},requestAsync(id,method,url,payload,token,company){
       mock.calls.push({method,url,body:payload?JSON.parse(payload):null,token,company});
       if(mock.offline)return respond(id,{ok:false,network:true,error:'Нет соединения'});
+      if(url==='/api/login'&&mock.loginNetworkFailures>0){mock.loginNetworkFailures--;return respond(id,{ok:false,network:true,error:'Нет соединения'});}
       if(mock.rejectWrite&&method==='POST')return respond(id,{ok:false,httpStatus:401});
       if(mock.forbiddenUrls.includes(url))return respond(id,{ok:false,httpStatus:403,error:'Недостаточно прав'});
       if(mock.failUrls.includes(url))return respond(id,{ok:false,httpStatus:503,error:'Синтетическая ошибка источника'});
@@ -336,6 +345,15 @@ test('browser UI regression',async t=>{
   if(!chromium){t.skip('Playwright is not installed in this environment');return;}
   const browser=await chromium.launch({headless:true,...(process.env.PORTAL_BROWSER_PATH?{executablePath:process.env.PORTAL_BROWSER_PATH}:{})});
   try{
+    await t.test('login retries one network-ambiguous response and succeeds',async()=>{
+      const {page,errors}=await fixture(browser,'manager',{width:390,height:844});
+      await page.evaluate(()=>{mock.loginNetworkFailures=1;});
+      await login(page);
+      const logins=await page.evaluate(()=>mock.calls.filter(c=>c.url==='/api/login'));
+      assert.equal(logins.length,2);
+      assert.equal(await page.locator('#app').isVisible(),true);
+      assert.deepEqual(errors,[]);await page.close();
+    });
     await t.test('login at phone/tablet sizes, themes, metadata and update failures',async()=>{
       for(const width of [320,390,768]){
         const {page,errors}=await fixture(browser,'manager',{width,height:844});
