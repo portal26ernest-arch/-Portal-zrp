@@ -92,7 +92,19 @@ function updateLogin(){$('loginCompany').innerHTML=`<span>Компания · ${
 actions.loginOptions=()=>openSheet('Вход в рабочее пространство',`<form id="companyLoginForm">${field('companyId','Номер компании',S.loginCompany,'number','min="1" step="1" required')}<p class="meta">PORTAL — компания № 1. Номер другой компании уточните у администратора.</p><button class="btn block" type="submit">Продолжить</button></form>`);
 forms.companyLoginForm=()=>{const id=Number($('companyId').value);if(!Number.isSafeInteger(id)||id<1)throw new Error('Введите номер компании');S.loginCompany=id;$('loginPin').value='';updateLogin();closeSheet();};
 actions.togglePassword=button=>{const visible=$('loginPin').type==='password';$('loginPin').type=visible?'text':'password';button.setAttribute('aria-label',visible?'Скрыть код доступа':'Показать код доступа');};
-forms.loginForm=async()=>{if(S.authBusy)return;S.authBusy=true;$('loginSubmit').disabled=true;$('loginError').classList.add('hidden');try{const body={username:$('loginUser').value.trim(),pin:$('loginPin').value,company_id:S.loginCompany};const r=await api('POST','/api/login',body,{anonymous:true,global:true});$('loginPin').value='';await acceptLogin(r);}catch(e){if(!e.stale){$('loginError').textContent=e.message||'Не удалось войти';$('loginError').classList.remove('hidden');}}finally{S.authBusy=false;$('loginSubmit').disabled=false;}};
+async function loginRequest(body){
+  try{return await api('POST','/api/login',body,{anonymous:true,global:true});}
+  catch(error){
+    if(!error?.network)throw error;
+    await new Promise(resolve=>setTimeout(resolve,350));
+    try{return await api('POST','/api/login',body,{anonymous:true,global:true});}
+    catch(retryError){
+      if(retryError?.network)retryError.message='Не удалось завершить вход. Соединение прервалось — попробуйте ещё раз.';
+      throw retryError;
+    }
+  }
+}
+forms.loginForm=async()=>{if(S.authBusy)return;S.authBusy=true;$('loginSubmit').disabled=true;$('loginError').classList.add('hidden');try{const body={username:$('loginUser').value.trim(),pin:$('loginPin').value,company_id:S.loginCompany};const r=await loginRequest(body);$('loginPin').value='';await acceptLogin(r);}catch(e){if(!e.stale){$('loginError').textContent=e.message||'Не удалось войти';$('loginError').classList.remove('hidden');}}finally{S.authBusy=false;$('loginSubmit').disabled=false;}};
 actions.acceptInvite=()=>openSheet('Принять приглашение в PORTAL',`<p class="meta">Введите одноразовый код от администратора компании и задайте личный PIN. Не передавайте PIN отправителю.</p><form id="acceptInviteForm">${field('acceptInviteToken','Одноразовый код','','text','required maxlength="160" autocapitalize="none"')}${field('acceptInvitePin','Новый PIN','','password','required minlength="4" maxlength="128" autocomplete="new-password"')}<button class="btn block" type="submit">Отправить запрос на подтверждение</button><p id="acceptInviteError" class="signin-error hidden" role="alert"></p></form>`);
 forms.acceptInviteForm=async form=>{const token=$('acceptInviteToken').value.trim(),pin=$('acceptInvitePin').value;try{const result=await api('POST','/api/access-invites/accept',{token,pin},{anonymous:true,global:true});$('acceptInvitePin').value='';closeSheet();toast(result.data.status==='pending_approval'?'Запрос отправлен. Доступ включит администратор компании.':'Приглашение истекло');}catch(error){const node=$('acceptInviteError');if(node){node.textContent=error.message||'Приглашение не принято';node.classList.remove('hidden');}}};
 async function acceptLogin(result){try{window.PortalNative?.clearMessengerSession?.();}catch{}clearCompanyData();try{window.PortalNative?.setCacheIdentity?.('','','[]');}catch{}S.token=result.token;S.me=result.user;S.company=null;storage.set('portalSession',JSON.stringify({server:PortalNative.getServerUrl(),token:S.token}));storage.remove('portalToken');if(!S.me.company_id){S.me=(await api('GET','/api/me',undefined,{global:true})).user;}await enterApp();}
