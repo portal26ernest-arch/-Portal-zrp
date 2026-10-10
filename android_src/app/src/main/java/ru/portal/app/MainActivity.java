@@ -178,6 +178,7 @@ public class MainActivity extends Activity {
         private final ExecutorService executor = Executors.newFixedThreadPool(3);
         private volatile boolean closed;
         private volatile String cacheCompany = "";
+        private volatile String cacheUser = "";
         private volatile String healthyServerBase = "";
         private volatile long healthyServerUntilMs;
         private static final long CACHE_MAX_AGE_MS = 30L * 24 * 60 * 60 * 1000;
@@ -187,6 +188,10 @@ public class MainActivity extends Activity {
         private static final String PRIMARY_API_URL = "https://api.vart-portal.ru";
         private static final String TRUSTED_FALLBACK_API_URL = "https://reserve-api.vart-portal.ru";
         private static final String LEGACY_API_URL = "https://2a03-6f00-a--1-f426.sslip.io";
+        private static final int PROBE_CONNECT_TIMEOUT_MS = 2500;
+        private static final int PROBE_READ_TIMEOUT_MS = 3000;
+        private static final int REQUEST_CONNECT_TIMEOUT_MS = 5000;
+        private static final int REQUEST_READ_TIMEOUT_MS = 10000;
 
         PortalBridge(Context context, WebView webView) {
             this.context = context;
@@ -200,6 +205,13 @@ public class MainActivity extends Activity {
             if (!"release".equals(BuildConfig.RELEASE_CHANNEL)) return;
             int currentVersion = BuildConfig.VERSION_CODE;
             if (prefs.getInt("server_config_version_code", 0) == currentVersion) return;
+
+            // api/reserve are one PORTAL cluster. Keep one durable outbox namespace
+            // so a transport failover never hides pending mobile work.
+            localCache.migrateCacheOrigin(TRUSTED_FALLBACK_API_URL, PRIMARY_API_URL);
+            localCache.migrateCacheOrigin(LEGACY_API_URL, PRIMARY_API_URL);
+            localCache.migrateOutboxOrigin(TRUSTED_FALLBACK_API_URL, PRIMARY_API_URL);
+            localCache.migrateOutboxOrigin(LEGACY_API_URL, PRIMARY_API_URL);
 
             String saved = prefs.getString("server_url", "");
             String previous = saved == null ? "" : saved.trim();
@@ -311,30 +323,51 @@ public class MainActivity extends Activity {
             });
         }
 
+        private void notifyCacheUpdated(String path) {
+            ((Activity) context).runOnUiThread(() -> {
+                if (!closed) webView.evaluateJavascript("window.portalCacheUpdated&&window.portalCacheUpdated(" + JSONObject.quote(path) + ")", null);
+            });
+        }
+
+        private void notifySessionInvalidated() {
+            ((Activity) context).runOnUiThread(() -> {
+                if (!closed) webView.evaluateJavascript("window.portalSessionInvalidated&&window.portalSessionInvalidated()", null);
+            });
+        }
+
         @JavascriptInterface
         public void requestAsync(String id, String method, String path, String body, String token, String company) {
             String verb = method == null ? "GET" : method.toUpperCase(Locale.ROOT);
             String localCompany = cacheCompany;
+            String localScope = cacheScope();
             executor.execute(() -> {
                 String requestedBase = getServerUrl();
-                boolean cacheable = cacheableGet(verb, path, token, localCompany);
+                String cacheBase = cacheOriginFor(requestedBase);
+                boolean cacheable = cacheableGet(verb, path, token, localScope);
                 if (cacheable) {
-                    String cached = localCache.read(requestedBase, localCompany, path);
+                    String cached = localCache.read(cacheBase, localScope, path);
                     String ready = cachedResponse(cached);
                     if (ready != null) {
                         // Local-first: render immediately, then refresh in the background.
                         deliver(id, ready);
                         String freshBase = resolveServerForRequest(requestedBase);
                         String fresh = requestAt(freshBase, verb, path, body, token, company);
-                        if (responseOk(fresh)) localCache.write(freshBase, localCompany, path, fresh);
+                        if (responseOk(fresh)) {
+                            localCache.write(cacheBase, localScope, path, fresh);
+                            notifyCacheUpdated(path);
+                        } else {
+                            int status = responseStatus(fresh);
+                            if (status == 401 || status == 403) localCache.clearCompany(cacheBase, localScope);
+                            if (status == 401) notifySessionInvalidated();
+                        }
                         return;
                     }
                 }
                 String base = resolveServerForRequest(requestedBase);
                 String result = requestAt(base, verb, path, body, token, company);
-                if (cacheable && responseOk(result)) localCache.write(base, localCompany, path, result);
-                if ("POST".equals(verb) && responseOk(result) && !localCompany.isEmpty())
-                    invalidateCacheForMutation(base, localCompany, path);
+                if (cacheable && responseOk(result)) localCache.write(cacheBase, localScope, path, result);
+                if ("POST".equals(verb) && responseOk(result) && !localScope.isEmpty())
+                    invalidateCacheForMutation(cacheBase, localScope, path);
                 deliver(id, result);
             });
         }
@@ -352,12 +385,12 @@ public class MainActivity extends Activity {
             healthyServerUntilMs = System.currentTimeMillis() + SERVER_HEALTH_TTL_MS;
         }
 
-        private synchronized String activateTrustedFallback(String previous) {
-            if (!isAutomaticPortalServer(previous) || TRUSTED_FALLBACK_API_URL.equalsIgnoreCase(previous)) return previous;
-            if (!probeOfficialServer(TRUSTED_FALLBACK_API_URL)) return previous;
-            if (!localCache.migrateOutboxOrigin(previous, TRUSTED_FALLBACK_API_URL)) return previous;
-            prefs.edit().putString("server_url", TRUSTED_FALLBACK_API_URL).apply();
-            markHealthyServer(TRUSTED_FALLBACK_API_URL);
+        private String cacheOriginFor(String base) {
+            return isAutomaticPortalServer(base) ? PRIMARY_API_URL : base;
+        }
+
+        private String automaticPeer(String base) {
+            if (TRUSTED_FALLBACK_API_URL.equalsIgnoreCase(base)) return PRIMARY_API_URL;
             return TRUSTED_FALLBACK_API_URL;
         }
 
@@ -365,12 +398,17 @@ public class MainActivity extends Activity {
             String base = requestedBase == null ? "" : requestedBase.trim();
             if (!isAutomaticPortalServer(base)) return base;
             long now = System.currentTimeMillis();
-            if (base.equalsIgnoreCase(healthyServerBase) && now < healthyServerUntilMs) return base;
+            if (isAutomaticPortalServer(healthyServerBase) && now < healthyServerUntilMs) return healthyServerBase;
             if (probeOfficialServer(base)) {
                 markHealthyServer(base);
                 return base;
             }
-            return activateTrustedFallback(base);
+            String peer = automaticPeer(base);
+            if (probeOfficialServer(peer)) {
+                markHealthyServer(peer);
+                return peer;
+            }
+            return base;
         }
 
         @JavascriptInterface
@@ -381,9 +419,22 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public boolean clearCompanyCache() {
+        public boolean setCacheIdentity(String userId, String role, String permissionsJson) {
+            String next = userId == null ? "" : userId.trim();
+            cacheUser = next.matches("[1-9][0-9]{0,9}") ? next : "";
+            return !cacheUser.isEmpty();
+        }
+
+        private String cacheScope() {
             String company = cacheCompany;
-            return company.isEmpty() || localCache.clearCompany(getServerUrl(), company);
+            String user = cacheUser;
+            return company.isEmpty() || user.isEmpty() ? "" : company + "_" + user;
+        }
+
+        @JavascriptInterface
+        public boolean clearCompanyCache() {
+            String scope = cacheScope();
+            return scope.isEmpty() || localCache.clearCompany(cacheOriginFor(getServerUrl()), scope);
         }
 
         private boolean cacheableGet(String method, String path, String token, String company) {
@@ -393,7 +444,7 @@ public class MainActivity extends Activity {
                     || path.matches("/api/clients/[0-9]+(?:/operations)?(?:\\?.*)?")
                     || path.matches("/api/admin/clients/[0-9]+/operations(?:\\?.*)?")
                     || path.matches("/api/(?:users|materials|jobs)(?:\\?.*)?")
-                    || path.matches("/api/v3/(?:catalog|products|client-requisites|client-name-history|tariff-history|today|tasks|timers|batches|invoices|receivables|finance|analytics|payroll-periods|documents|settings|permissions|chat-users|organizer|organizer-bootstrap|organizer-directors|organizer-events|organizer-requests|organizer-request-events|organizer-request-responsibles|organizer-users)(?:\\?.*)?");
+                    || path.matches("/api/v3/(?:catalog|products|client-requisites|client-name-history|tariff-history|today|tasks|timers|batches|invoices|receivables|finance|analytics|payroll-periods|documents|settings|permissions|chat-users|organizer|organizer-bootstrap|organizer-directors|organizer-events|organizer-requests|organizer-request-events|organizer-request-responsibles|organizer-users|meta)(?:\\?.*)?");
         }
 
         private void invalidateCacheForMutation(String base, String company, String path) {
@@ -414,7 +465,7 @@ public class MainActivity extends Activity {
             } else if (path.matches(".*/materials?(?:/|\\?|$).*")) {
                 keys = new String[]{"/api/materials","/api/v3/today","/api/v3/finance","/api/v3/analytics"};
             } else if (path.matches(".*/(?:users?|invitations?|company-access|permissions)(?:/|\\?|$).*")) {
-                keys = new String[]{"/api/users","/api/v3/permissions","/api/v3/chat-users"};
+                keys = new String[]{"/api/users","/api/v3/permissions","/api/v3/chat-users","/api/v3/meta"};
             } else if (path.matches(".*/(?:invoices?|payments?)(?:/|\\?|$).*")) {
                 keys = new String[]{"/api/v3/invoices","/api/v3/receivables","/api/v3/finance","/api/v3/today"};
             } else if (path.matches(".*/(?:organizer|organizer-requests|organizer-request-events)(?:/|\\?|$).*")) {
@@ -424,7 +475,7 @@ public class MainActivity extends Activity {
                         "/api/v3/organizer-request-events","/api/v3/today"
                 };
             } else if (path.matches(".*/settings(?:/|\\?|$).*")) {
-                keys = new String[]{"/api/company","/api/v3/settings","/api/v3/today"};
+                keys = new String[]{"/api/company","/api/v3/settings","/api/v3/today","/api/v3/meta"};
             } else {
                 return;
             }
@@ -450,6 +501,11 @@ public class MainActivity extends Activity {
             catch (Exception ignored) { return false; }
         }
 
+        private int responseStatus(String json) {
+            try { return new JSONObject(json).optInt("httpStatus", 0); }
+            catch (Exception ignored) { return 0; }
+        }
+
 
         private boolean queueableMutationPath(String path) {
             return "/api/v3/work".equals(path) || "/api/v3/links".equals(path) || "/api/v3/batches".equals(path)
@@ -459,8 +515,8 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public boolean queueMutation(String json) {
             try {
-                String company = cacheCompany;
-                if (company.isEmpty() || json == null || json.length() > 512 * 1024) return false;
+                String scope = cacheScope();
+                if (scope.isEmpty() || json == null || json.length() > 512 * 1024) return false;
                 JSONObject row = new JSONObject(json);
                 String requestId = row.optString("request_id", "");
                 String method = row.optString("method", "");
@@ -468,7 +524,7 @@ public class MainActivity extends Activity {
                 JSONObject body = row.optJSONObject("body");
                 if (!"POST".equals(method) || !queueableMutationPath(path) || body == null ||
                         !requestId.matches("[0-9a-fA-F-]{36}") || !requestId.equals(body.optString("request_id", ""))) return false;
-                return localCache.enqueueMutation(getServerUrl(), company, requestId, row.toString());
+                return localCache.enqueueMutation(cacheOriginFor(getServerUrl()), scope, requestId, row.toString());
             } catch (Exception ignored) {
                 return false;
             }
@@ -476,20 +532,26 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public String pendingMutations() {
-            String company = cacheCompany;
-            return company.isEmpty() ? "[]" : localCache.pendingMutations(getServerUrl(), company);
+            String scope = cacheScope();
+            return scope.isEmpty() ? "[]" : localCache.pendingMutations(cacheOriginFor(getServerUrl()), scope);
         }
 
         @JavascriptInterface
         public boolean removeMutation(String requestId) {
-            String company = cacheCompany;
-            return !company.isEmpty() && localCache.removeMutation(getServerUrl(), company, requestId);
+            String scope = cacheScope();
+            return !scope.isEmpty() && localCache.removeMutation(cacheOriginFor(getServerUrl()), scope, requestId);
         }
 
         @JavascriptInterface
         public int pendingMutationCount() {
+            String scope = cacheScope();
+            return scope.isEmpty() ? 0 : localCache.pendingMutationCount(cacheOriginFor(getServerUrl()), scope);
+        }
+
+        @JavascriptInterface
+        public int legacyPendingMutationCount() {
             String company = cacheCompany;
-            return company.isEmpty() ? 0 : localCache.pendingMutationCount(getServerUrl(), company);
+            return company.isEmpty() ? 0 : localCache.pendingMutationCount(cacheOriginFor(getServerUrl()), company);
         }
 
         @JavascriptInterface
@@ -661,20 +723,11 @@ public class MainActivity extends Activity {
                 String next = normalizeOfficialApiUrl(document.optString("apiUrl", ""));
                 if (next == null) throw new Exception("discovery_api_url");
                 if (!probeOfficialServer(next)) {
-                    String previous = getServerUrl();
-                    if (TRUSTED_FALLBACK_API_URL.equalsIgnoreCase(previous)) {
-                        if (!probeOfficialServer(previous)) throw new Exception("discovery_server_unreachable");
-                        markHealthyServer(previous);
-                        result.put("checked", false).put("changed", false).put("serverUrl", previous).remove("error");
-                        return result;
-                    }
-                    String fallback = activateTrustedFallback(previous);
-                    if (TRUSTED_FALLBACK_API_URL.equalsIgnoreCase(fallback)) {
-                        boolean changed = !fallback.equalsIgnoreCase(previous);
-                        result.put("checked", false).put("changed", changed).put("serverUrl", fallback).remove("error");
-                        return result;
-                    }
-                    throw new Exception("discovery_server_unreachable");
+                    String peer = automaticPeer(next);
+                    if (!probeOfficialServer(peer)) throw new Exception("discovery_server_unreachable");
+                    markHealthyServer(peer);
+                    result.put("checked", false).put("changed", false).put("serverUrl", getServerUrl()).remove("error");
+                    return result;
                 }
 
                 String previous = getServerUrl();
@@ -729,8 +782,8 @@ public class MainActivity extends Activity {
                 URL url = new URL(base + "/api/ping");
                 conn = (HttpURLConnection) url.openConnection();
                 conn.setInstanceFollowRedirects(false);
-                conn.setConnectTimeout(4500);
-                conn.setReadTimeout(5000);
+                conn.setConnectTimeout(PROBE_CONNECT_TIMEOUT_MS);
+                conn.setReadTimeout(PROBE_READ_TIMEOUT_MS);
                 conn.setRequestMethod("GET");
                 conn.setRequestProperty("Accept", "application/json");
                 if (conn.getResponseCode() != 200) return false;
@@ -1010,8 +1063,8 @@ public class MainActivity extends Activity {
                 if (!isSafeServerTransport(url)) throw new Exception("Небезопасный адрес сервера");
                 conn = (HttpURLConnection) url.openConnection();
                 conn.setInstanceFollowRedirects(false);
-                conn.setConnectTimeout(8000);
-                conn.setReadTimeout(15000);
+                conn.setConnectTimeout(REQUEST_CONNECT_TIMEOUT_MS);
+                conn.setReadTimeout(REQUEST_READ_TIMEOUT_MS);
                 conn.setRequestMethod(method == null ? "GET" : method.toUpperCase());
                 conn.setRequestProperty("Accept", "application/json");
                 conn.setRequestProperty("X-Portal-Client", "Android");
@@ -1040,7 +1093,17 @@ public class MainActivity extends Activity {
                 result.put("httpStatus", code);
                 return result.toString();
             } catch (Exception e) {
-                return "{\"ok\":false,\"network\":true,\"error\":\"Не удалось связаться с сервером. Проверьте подключение.\"}";
+                try {
+                    String kind = "network";
+                    if (e instanceof java.net.SocketTimeoutException) kind = "timeout";
+                    else if (e instanceof java.net.UnknownHostException) kind = "dns";
+                    else if (e instanceof javax.net.ssl.SSLException) kind = "tls";
+                    else if (e instanceof java.net.ConnectException) kind = "connect";
+                    return new JSONObject().put("ok", false).put("network", true).put("networkKind", kind)
+                            .put("error", "Не удалось связаться с сервером. Проверьте подключение.").toString();
+                } catch (Exception ignored) {
+                    return "{\"ok\":false,\"network\":true,\"networkKind\":\"network\",\"error\":\"Не удалось связаться с сервером. Проверьте подключение.\"}";
+                }
             } finally {
                 if (conn != null) conn.disconnect();
             }

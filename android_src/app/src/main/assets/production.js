@@ -15,8 +15,8 @@ function applyProductionMeta(r){
     if(typeof buildNav==='function')buildNav();
   }
 }
-async function configureProduction(){
-  const r=await api('GET','/api/v3/meta',undefined,{global:true});
+async function configureProduction(prefetched=null){
+  const r=prefetched||await api('GET','/api/v3/meta',undefined,{global:true});
   applyProductionMeta(r);
   if(S.stage3){clearInterval(S.heartbeatTimer);S.heartbeatTimer=setInterval(()=>{if(S.token&&!document.hidden)api('POST','/api/v3/heartbeat',{}, {global:true}).catch(()=>{});},S.heartbeatSeconds*1000);startOrganizerReminderWatch();startLocalSyncWatch();}
 }

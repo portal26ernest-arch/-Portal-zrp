@@ -36,13 +36,20 @@ test('legacy Desktop outbox is visibly quarantined instead of silently reassigne
   assert.match(app,/не отправляются автоматически/);
   assert.match(app,/не смешать данные разных пользователей/);
 });
-test('login retries one ambiguous network response without retrying business writes',()=>{
+test('login never auto-retries an ambiguous POST and transport keeps a longer API budget',()=>{
   const app=fs.readFileSync(path.join(assets,'app.js'),'utf8');
   assert.match(app,/async function loginRequest\(body\)/);
-  assert.match(app,/if\(!error\?\.network\)throw error/);
-  assert.match(app,/setTimeout\(resolve,350\)/);
-  assert.match(app,/Не удалось завершить вход\. Соединение прервалось/);
-  assert.match(app,/const r=await loginRequest\(body\)/);
+  const loginBlock=app.slice(app.indexOf('async function loginRequest'),app.indexOf('forms.loginForm='));
+  assert.equal((loginBlock.match(/api\('POST','\/api\/login'/g)||[]).length,1);
+  assert.doesNotMatch(loginBlock,/setTimeout\(resolve,350\)/);
+  assert.match(app,/function nativePromise\(start,timeoutMs=35000\)/);
+  assert.match(app,/sessionServerMatches[\s\S]*PORTAL_AUTOMATIC_SERVERS\.has\(a\)&&PORTAL_AUTOMATIC_SERVERS\.has\(b\)/);
+  assert.match(app,/savePortalSession\(\)[\s\S]*user:S\.me/);
+  assert.match(app,/setCacheIdentity\?\.\(String\(S\.me\?\.id\|\|''\),String\(S\.me\?\.role\|\|''\)/);
+  assert.match(app,/PortalNative\.setCacheIdentity\?\.\(String\(S\.me\?\.id\|\|''\),String\(S\.me\?\.role\|\|''\),JSON\.stringify\(S\.me\?\.permissions\|\|\[\]\)\)/);
+  assert.match(app,/\/api\/v3\/organizer-bootstrap/);
+  assert.match(app,/portalCacheUpdated=path=>/);
+  assert.match(app,/dashboard:\['\/api\/v3\/today','\/api\/v3\/timers','\/api\/v3\/payroll-periods'\]/);
 });
 test('legacy work form reuses an idempotency key after an ambiguous network failure',()=>{
   const screens=fs.readFileSync(path.join(assets,'screens.js'),'utf8');
@@ -86,6 +93,14 @@ test('system sticker catalog, rendering and absence notice use structured safe f
   vm.runInContext(body+';globalThis.renderChatSystem=chatSystemHtml;',renderContext);
   assert.match(renderContext.renderChatSystem({message_type:'sticker',sticker_key:'accepted'}),/stickers\/accepted\.svg/);
   assert.match(renderContext.renderChatSystem({message_type:'sticker',sticker_key:'../evil'}),/недоступен/i);
+});
+test('startup is local-first and management dashboard loads independent data in parallel',()=>{
+  const app=fs.readFileSync(path.join(assets,'app.js'),'utf8');
+  const preview=fs.readFileSync(path.join(assets,'preview.js'),'utf8');
+  assert.match(app,/const serverCheck=checkServer\(\)/);
+  assert.match(app,/Promise\.all\(\[\s*api\('GET','\/api\/company'[\s\S]*api\('GET','\/api\/v3\/meta'/);
+  assert.match(app,/setTimeout\(\(\)=>\{if\(S\.me&&S\.company&&!document\.hidden\)void prewarmLocalData\(\);\},8000\)/);
+  assert.match(preview,/const \[d,timers,payroll\]=await Promise\.all\(\[/);
 });
 test('shared mobile Organizer exposes director requests and native reminders',()=>{
   const production=fs.readFileSync(path.join(assets,'production.js'),'utf8');
@@ -212,7 +227,8 @@ test('update install action is available only for verified available state and r
   assert.match(app,/u\.state==='available'\?btn\('Скачать и установить','installUpdate'/);
   assert.match(app,/state:'downloading',title:'Загружаем и проверяем…'/);
   assert.match(app,/state:'ready',title:'Готово к установке'/);
-  assert.match(app,/await checkServer\(\);void autoCheckUpdates\(\)/);
+  assert.match(app,/PortalNative\.checkUpdates\(id\),60000/);
+  assert.match(app,/downloadAndInstallUpdate[\s\S]*180000/);
   assert.match(app,/async function autoCheckUpdates\(\)[\s\S]*result\?\.serverChanged\)await checkServer\(\)/);
   assert.match(app,/actions\.checkUpdates=[\s\S]*result\?\.serverChanged\)await checkServer\(\)/);
   assert.match(app,/S\.update\?\.state!=='available'\|\|!S\.update\.release/);
@@ -345,13 +361,18 @@ test('browser UI regression',async t=>{
   if(!chromium){t.skip('Playwright is not installed in this environment');return;}
   const browser=await chromium.launch({headless:true,...(process.env.PORTAL_BROWSER_PATH?{executablePath:process.env.PORTAL_BROWSER_PATH}:{})});
   try{
-    await t.test('login retries one network-ambiguous response and succeeds',async()=>{
+    await t.test('login ambiguous response is not duplicated automatically and manual retry succeeds',async()=>{
       const {page,errors}=await fixture(browser,'manager',{width:390,height:844});
       await page.evaluate(()=>{mock.loginNetworkFailures=1;});
-      await login(page);
-      const logins=await page.evaluate(()=>mock.calls.filter(c=>c.url==='/api/login'));
+      await page.locator('#loginUser').fill('tester');await page.locator('#loginPin').fill('1234');await page.locator('#loginSubmit').click();
+      await page.waitForFunction(()=>!document.querySelector('#loginError').classList.contains('hidden'));
+      let logins=await page.evaluate(()=>mock.calls.filter(c=>c.url==='/api/login'));
+      assert.equal(logins.length,1);
+      assert.equal(await page.locator('#app').isVisible(),false);
+      await page.locator('#loginSubmit').click();
+      await page.waitForFunction(()=>!document.querySelector('#app').classList.contains('hidden')&&!document.querySelector('.loading'));
+      logins=await page.evaluate(()=>mock.calls.filter(c=>c.url==='/api/login'));
       assert.equal(logins.length,2);
-      assert.equal(await page.locator('#app').isVisible(),true);
       assert.deepEqual(errors,[]);await page.close();
     });
     await t.test('login at phone/tablet sizes, themes, metadata and update failures',async()=>{

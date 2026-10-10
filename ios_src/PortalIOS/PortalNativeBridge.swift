@@ -1,4 +1,4 @@
-import Foundation
+﻿import Foundation
 import UIKit
 import WebKit
 import UserNotifications
@@ -14,6 +14,7 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
     private let defaults = UserDefaults.standard
     private let localCache = PortalLocalCache()
     private var cacheCompany = ""
+    private var cacheUser = ""
     private var messengerClearInProgress = false
     private var pendingMessengerProvider: String?
     private var userContentController: WKUserContentController?
@@ -99,7 +100,7 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
         let metadataJSON = Self.jsonObjectString(metadata)
         let metadataLiteral = Self.jsonString(metadataJSON)
         let serverLiteral = Self.jsonString(serverURL)
-        let buildLiteral = Self.jsonString("PORTAL iOS · Build \(metadata["versionName"] ?? "0")")
+        let buildLiteral = Self.jsonString("PORTAL iOS В· Build \(metadata["versionName"] ?? "0")")
 
         return """
         (function(){
@@ -108,6 +109,7 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
           if (!native) return;
           let server = \(serverLiteral);
           let cacheCompany = '';
+          let cacheUser = '';
           const metadata = \(metadataLiteral);
           const send = (action, payload) => native.postMessage(Object.assign({action:action}, payload || {}));
           const ask = (action, payload) => nativeReply ? nativeReply.postMessage(Object.assign({action:action}, payload || {})) : Promise.resolve(null);
@@ -133,6 +135,12 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
               cacheCompany = /^[1-9][0-9]{0,9}$/.test(next) ? next : '';
               send('setCacheCompany', {value:cacheCompany}); return !!cacheCompany;
             },
+            setCacheIdentity: (userId, role, permissionsJson='[]') => {
+              const next = String(userId || '');
+              cacheUser = /^[1-9][0-9]{0,9}$/.test(next) ? next : '';
+              send('setCacheIdentity', {userId:cacheUser, role:String(role||''), permissionsJson:String(permissionsJson||'[]')});
+              return !!cacheUser;
+            },
             clearCompanyCache: () => { send('clearCompanyCache', {}); return true; },
             openMessengerWindow: (provider, relayJson) => { const p=String(provider||'telegram').toLowerCase()==='max'?'max':'telegram'; send('openMessengerWindow', {provider:p, relay: p==='telegram' ? String(relayJson||'') : ''}); return true; },
             clearMessengerSession: () => { send('clearMessengerSession',{}); return true; },
@@ -140,10 +148,11 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
             pendingMutations: () => ask('pendingMutations', {}).then(rows => JSON.stringify(Array.isArray(rows)?rows:[])),
             removeMutation: requestId => ask('removeMutation', {requestId:String(requestId||'')}),
             pendingMutationCount: () => ask('pendingMutationCount', {}),
+            legacyPendingMutationCount: () => ask('legacyPendingMutationCount', {}),
             requestAsync: (id, method, path, body, token, company) =>
               send('requestAsync', {id:String(id), method:String(method||'GET'), path:String(path||''), body:String(body||''), token:String(token||''), company:String(company||'')}),
-            request: () => JSON.stringify({ok:false,httpStatus:0,error:'Используйте requestAsync'}),
-            requestForCompany: () => JSON.stringify({ok:false,httpStatus:0,error:'Используйте requestAsync'}),
+            request: () => JSON.stringify({ok:false,httpStatus:0,error:'РСЃРїРѕР»СЊР·СѓР№С‚Рµ requestAsync'}),
+            requestForCompany: () => JSON.stringify({ok:false,httpStatus:0,error:'РСЃРїРѕР»СЊР·СѓР№С‚Рµ requestAsync'}),
             checkUpdates: id => send('checkUpdates', {id:String(id)}),
             downloadAndInstallUpdate: (id, manifest) => send('installUpdate', {id:String(id), manifest:String(manifest||'')}),
             saveBase64FileAsync: (id, name, mime, b64) =>
@@ -189,8 +198,12 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
         case "setCacheCompany":
             let value = payload["value"] as? String ?? ""
             cacheCompany = value.range(of: #"^[1-9][0-9]{0,9}$"#, options: .regularExpression) != nil ? value : ""
+        case "setCacheIdentity":
+            let value = payload["userId"] as? String ?? ""
+            cacheUser = value.range(of: #"^[1-9][0-9]{0,9}$"#, options: .regularExpression) != nil ? value : ""
         case "clearCompanyCache":
-            if !cacheCompany.isEmpty { _ = localCache.clearCompany(serverOrigin: serverURL, companyID: cacheCompany) }
+            let scope = cacheScope
+            if !scope.isEmpty { _ = localCache.clearCompany(serverOrigin: serverURL, companyID: scope) }
         case "openMessengerWindow":
             let provider = (payload["provider"] as? String)?.lowercased() == "max" ? "max" : "telegram"
             let relay = provider == "telegram" ? (payload["relay"] as? String ?? "") : ""
@@ -244,7 +257,7 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
         case "installUpdate":
             deliver(id: payload["id"] as? String, object: [
                 "ok": false, "errorCode": "app_store_managed",
-                "error": "Обновления iPhone устанавливаются через App Store по ссылке PORTAL."
+                "error": "РћР±РЅРѕРІР»РµРЅРёСЏ iPhone СѓСЃС‚Р°РЅР°РІР»РёРІР°СЋС‚СЃСЏ С‡РµСЂРµР· App Store РїРѕ СЃСЃС‹Р»РєРµ PORTAL."
             ])
         case "saveFile":
             saveFile(payload)
@@ -253,6 +266,11 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
         default:
             break
         }
+    }
+
+    private var cacheScope: String {
+        guard !cacheCompany.isEmpty, !cacheUser.isEmpty else { return "" }
+        return cacheCompany + "_" + cacheUser
     }
 
     private func presentMessenger(_ provider: String, relay: String = "") {
@@ -279,8 +297,8 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
                 let date = Self.organizerDate(from: value)
                 guard let date, date > now, date < upperBound else { return nil }
                 let content = UNMutableNotificationContent()
-                content.title = "Напоминание PORTAL"
-                content.body = String((row["title"] as? String ?? "Задача").prefix(160))
+                content.title = "РќР°РїРѕРјРёРЅР°РЅРёРµ PORTAL"
+                content.body = String((row["title"] as? String ?? "Р—Р°РґР°С‡Р°").prefix(160))
                 content.sound = .default
                 let trigger = UNCalendarNotificationTrigger(dateMatching: Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: date), repeats: false)
                 return UNNotificationRequest(identifier: prefix + id, content: content, trigger: trigger)
@@ -321,7 +339,8 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
         switch action {
         case "queueMutation":
             let raw = payload["json"] as? String ?? ""
-            guard !cacheCompany.isEmpty, raw.utf8.count <= 512 * 1024,
+            let scope = cacheScope
+            guard !scope.isEmpty, raw.utf8.count <= 512 * 1024,
                   let data = raw.data(using: .utf8),
                   let row = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
                   row["method"] as? String == "POST",
@@ -334,18 +353,24 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
                 return
             }
             replyHandler(localCache.enqueueMutation(
-                serverOrigin: serverURL, companyID: cacheCompany, requestID: requestID, json: raw
+                serverOrigin: serverURL, companyID: scope, requestID: requestID, json: raw
             ), nil)
         case "pendingMutations":
-            guard !cacheCompany.isEmpty else { replyHandler([], nil); return }
-            replyHandler(localCache.pendingMutations(serverOrigin: serverURL, companyID: cacheCompany), nil)
+            let scope = cacheScope
+            guard !scope.isEmpty else { replyHandler([], nil); return }
+            replyHandler(localCache.pendingMutations(serverOrigin: serverURL, companyID: scope), nil)
         case "removeMutation":
             let requestID = payload["requestId"] as? String ?? ""
-            guard !cacheCompany.isEmpty else { replyHandler(false, nil); return }
+            let scope = cacheScope
+            guard !scope.isEmpty else { replyHandler(false, nil); return }
             replyHandler(localCache.removeMutation(
-                serverOrigin: serverURL, companyID: cacheCompany, requestID: requestID
+                serverOrigin: serverURL, companyID: scope, requestID: requestID
             ), nil)
         case "pendingMutationCount":
+            let scope = cacheScope
+            guard !scope.isEmpty else { replyHandler(0, nil); return }
+            replyHandler(localCache.pendingMutationCount(serverOrigin: serverURL, companyID: scope), nil)
+        case "legacyPendingMutationCount":
             guard !cacheCompany.isEmpty else { replyHandler(0, nil); return }
             replyHandler(localCache.pendingMutationCount(serverOrigin: serverURL, companyID: cacheCompany), nil)
         default:
@@ -359,6 +384,21 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
         let script = "window.PortalBridgeResult(\(Self.jsonString(id)),\(Self.jsonString(raw)))"
         DispatchQueue.main.async {
             webView.evaluateJavaScript(script)
+        }
+    }
+
+    private func notifyCacheUpdated(path: String) {
+        guard let webView else { return }
+        let script = "window.portalCacheUpdated&&window.portalCacheUpdated(\(Self.jsonString(path)))"
+        DispatchQueue.main.async {
+            webView.evaluateJavaScript(script)
+        }
+    }
+
+    private func notifySessionInvalidated() {
+        guard let webView else { return }
+        DispatchQueue.main.async {
+            webView.evaluateJavaScript("window.portalSessionInvalidated&&window.portalSessionInvalidated()")
         }
     }
 
@@ -442,7 +482,7 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
               let path = payload["path"] as? String,
               path.hasPrefix("/api/"), !path.hasPrefix("//"),
               !path.contains("\\"), !path.contains("#") else {
-            deliver(id: payload["id"] as? String, object: ["ok": false, "httpStatus": 0, "error": "Недопустимый API-запрос"])
+            deliver(id: payload["id"] as? String, object: ["ok": false, "httpStatus": 0, "error": "РќРµРґРѕРїСѓСЃС‚РёРјС‹Р№ API-Р·Р°РїСЂРѕСЃ"])
             return
         }
 
@@ -450,7 +490,7 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
         guard ["GET", "POST"].contains(method),
               Self.isValidServerURL(serverURL),
               let url = URL(string: serverURL + path), url.scheme?.lowercased() == "https" || isLoopbackURL(url) else {
-            deliver(id: id, object: ["ok": false, "httpStatus": 0, "error": "Недопустимый API-запрос"])
+            deliver(id: id, object: ["ok": false, "httpStatus": 0, "error": "РќРµРґРѕРїСѓСЃС‚РёРјС‹Р№ API-Р·Р°РїСЂРѕСЃ"])
             return
         }
 
@@ -467,7 +507,7 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
         let company = payload["company"] as? String ?? ""
         if !company.isEmpty {
             guard let companyID = Int(company), companyID > 0 else {
-                deliver(id: id, object: ["ok": false, "httpStatus": 0, "error": "Недопустимый контекст компании"])
+                deliver(id: id, object: ["ok": false, "httpStatus": 0, "error": "РќРµРґРѕРїСѓСЃС‚РёРјС‹Р№ РєРѕРЅС‚РµРєСЃС‚ РєРѕРјРїР°РЅРёРё"])
                 return
             }
             request.setValue(String(companyID), forHTTPHeaderField: "X-Portal-Company")
@@ -476,7 +516,7 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
         let body = payload["body"] as? String ?? ""
         if method == "POST", !body.isEmpty {
             guard body.utf8.count <= 24 * 1024 * 1024 else {
-                deliver(id: id, object: ["ok": false, "httpStatus": 0, "error": "Недопустимые данные запроса"])
+                deliver(id: id, object: ["ok": false, "httpStatus": 0, "error": "РќРµРґРѕРїСѓСЃС‚РёРјС‹Рµ РґР°РЅРЅС‹Рµ Р·Р°РїСЂРѕСЃР°"])
                 return
             }
             request.httpBody = Data(body.utf8)
@@ -484,10 +524,10 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
         }
 
         let cacheOrigin = serverURL
-        let cacheScope = cacheCompany
-        let cacheEligible = method == "GET" && !token.isEmpty && !cacheScope.isEmpty && isCacheable(path)
+        let requestCacheScope = cacheScope
+        let cacheEligible = method == "GET" && !token.isEmpty && !requestCacheScope.isEmpty && isCacheable(path)
         var cacheDelivered = false
-        if cacheEligible, var cached = localCache.read(serverOrigin: cacheOrigin, companyID: cacheScope, cacheKey: path) {
+        if cacheEligible, var cached = localCache.read(serverOrigin: cacheOrigin, companyID: requestCacheScope, cacheKey: path) {
             cached["cached"] = true
             deliver(id: id, object: cached)
             cacheDelivered = true
@@ -498,7 +538,7 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
             guard let self else { return }
             if error != nil {
                 if !didDeliverCached {
-                    self.deliver(id: id, object: ["ok": false, "httpStatus": 0, "network": true, "error": "Не удалось связаться с сервером. Проверьте подключение."])
+                    self.deliver(id: id, object: ["ok": false, "httpStatus": 0, "network": true, "error": "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРІСЏР·Р°С‚СЊСЃСЏ СЃ СЃРµСЂРІРµСЂРѕРј. РџСЂРѕРІРµСЂСЊС‚Рµ РїРѕРґРєР»СЋС‡РµРЅРёРµ."])
                 }
                 return
             }
@@ -509,20 +549,22 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
             guard let data, data.count <= limit,
                   var object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
                 if !didDeliverCached {
-                    self.deliver(id: id, object: ["ok": false, "httpStatus": status, "error": "Сервер вернул некорректный ответ"])
+                    self.deliver(id: id, object: ["ok": false, "httpStatus": status, "error": "РЎРµСЂРІРµСЂ РІРµСЂРЅСѓР» РЅРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ РѕС‚РІРµС‚"])
                 }
                 return
             }
             object["httpStatus"] = status
             if cacheEligible {
                 if (200..<300).contains(status), object["ok"] as? Bool != false {
-                    _ = self.localCache.write(serverOrigin: cacheOrigin, companyID: cacheScope, cacheKey: path, object: object)
+                    _ = self.localCache.write(serverOrigin: cacheOrigin, companyID: requestCacheScope, cacheKey: path, object: object)
+                    if didDeliverCached { self.notifyCacheUpdated(path: path) }
                 } else if status == 401 || status == 403 {
-                    _ = self.localCache.clearCompany(serverOrigin: cacheOrigin, companyID: cacheScope)
+                    _ = self.localCache.clearCompany(serverOrigin: cacheOrigin, companyID: requestCacheScope)
+                    if status == 401, didDeliverCached { self.notifySessionInvalidated() }
                 }
             }
-            if method == "POST", (200..<300).contains(status), object["ok"] as? Bool != false, !cacheScope.isEmpty {
-                self.invalidateCache(serverOrigin: cacheOrigin, companyID: cacheScope, mutationPath: path)
+            if method == "POST", (200..<300).contains(status), object["ok"] as? Bool != false, !requestCacheScope.isEmpty {
+                self.invalidateCache(serverOrigin: cacheOrigin, companyID: requestCacheScope, mutationPath: path)
             }
             if !didDeliverCached { self.deliver(id: id, object: object) }
         }.resume()
@@ -551,7 +593,7 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
         } else if mutationPath.range(of: #"/materials?(?:/|\?|$)"#, options: .regularExpression) != nil {
             keys = ["/api/materials","/api/v3/today","/api/v3/finance","/api/v3/analytics"]
         } else if mutationPath.range(of: #"/(?:users?|invitations?|company-access|permissions)(?:/|\?|$)"#, options: .regularExpression) != nil {
-            keys = ["/api/users","/api/v3/permissions","/api/v3/chat-users"]
+            keys = ["/api/users","/api/v3/permissions","/api/v3/chat-users","/api/v3/meta"]
         } else if mutationPath.range(of: #"/(?:invoices?|payments?)(?:/|\?|$)"#, options: .regularExpression) != nil {
             keys = ["/api/v3/invoices","/api/v3/receivables","/api/v3/finance","/api/v3/today"]
         } else if mutationPath.range(of: #"/(?:organizer|organizer-requests|organizer-request-events)(?:/|\?|$)"#, options: .regularExpression) != nil {
@@ -561,7 +603,7 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
                 "/api/v3/organizer-request-events","/api/v3/today"
             ]
         } else if mutationPath.range(of: #"/settings(?:/|\?|$)"#, options: .regularExpression) != nil {
-            keys = ["/api/company","/api/v3/settings","/api/v3/today"]
+            keys = ["/api/company","/api/v3/settings","/api/v3/today","/api/v3/meta"]
         } else {
             return
         }
@@ -577,7 +619,7 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
             #"^/api/clients/[0-9]+(?:/operations)?(?:\?.*)?$"#,
             #"^/api/admin/clients/[0-9]+/operations(?:\?.*)?$"#,
             #"^/api/(?:users|materials|jobs)(?:\?.*)?$"#,
-            #"^/api/v3/(?:catalog|products|client-requisites|client-name-history|tariff-history|today|tasks|timers|batches|invoices|receivables|finance|analytics|payroll-periods|documents|settings|permissions|chat-users|organizer|organizer-bootstrap|organizer-directors|organizer-events|organizer-requests|organizer-request-events|organizer-request-responsibles|organizer-users)(?:\?.*)?$"#
+            #"^/api/v3/(?:catalog|products|client-requisites|client-name-history|tariff-history|today|tasks|timers|batches|invoices|receivables|finance|analytics|payroll-periods|documents|settings|permissions|chat-users|organizer|organizer-bootstrap|organizer-directors|organizer-events|organizer-requests|organizer-request-events|organizer-request-responsibles|organizer-users|meta)(?:\?.*)?$"#
         ]
         return patterns.contains { path.range(of: $0, options: .regularExpression) != nil }
     }
@@ -619,9 +661,9 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
             try manager.createDirectory(at: directory, withIntermediateDirectories: true)
             let target = directory.appendingPathComponent(file.name)
             try file.data.write(to: target, options: .atomic)
-            deliver(id: file.id, object: ["ok": true, "location": "Файлы/PORTAL/\(file.name)"])
+            deliver(id: file.id, object: ["ok": true, "location": "Р¤Р°Р№Р»С‹/PORTAL/\(file.name)"])
         } catch {
-            deliver(id: payload["id"] as? String, object: ["ok": false, "error": "Не удалось сохранить документ."])
+            deliver(id: payload["id"] as? String, object: ["ok": false, "error": "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ РґРѕРєСѓРјРµРЅС‚."])
         }
     }
     private func shareFile(_ payload: [String: Any]) {
@@ -635,7 +677,7 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
 
             DispatchQueue.main.async { [weak self] in
                 guard let self, let presenter = self.topViewController() else {
-                    self?.deliver(id: file.id, object: ["ok": false, "error": "Не удалось открыть системное меню отправки."])
+                    self?.deliver(id: file.id, object: ["ok": false, "error": "РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РєСЂС‹С‚СЊ СЃРёСЃС‚РµРјРЅРѕРµ РјРµРЅСЋ РѕС‚РїСЂР°РІРєРё."])
                     return
                 }
                 var items: [Any] = [target]
@@ -648,12 +690,12 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
                     try? manager.removeItem(at: target)
                     self.deliver(id: file.id, object: completed
                         ? ["ok": true, "shared": true]
-                        : ["ok": false, "cancelled": true, "error": "Отправка отменена"])
+                        : ["ok": false, "cancelled": true, "error": "РћС‚РїСЂР°РІРєР° РѕС‚РјРµРЅРµРЅР°"])
                 }
                 presenter.present(controller, animated: true)
             }
         } catch {
-            deliver(id: payload["id"] as? String, object: ["ok": false, "error": "Не удалось подготовить документ."])
+            deliver(id: payload["id"] as? String, object: ["ok": false, "error": "РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕРґРіРѕС‚РѕРІРёС‚СЊ РґРѕРєСѓРјРµРЅС‚."])
         }
     }
 

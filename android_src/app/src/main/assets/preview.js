@@ -21,14 +21,16 @@
   }
   screens.dashboard=async()=>{
     if(!S.stage3||!managementRoles.has(S.me?.role))return liveDashboard();
-    const d=await productionGet('today');
+    let payrollBounds=null;
+    if(allowed('payroll.all'))payrollBounds=currentPayrollBounds();
+    const [d,timers,payroll]=await Promise.all([
+      productionGet('today'),
+      allowed('work.write')||allowed('tasks.read')?productionGet('timers'):Promise.resolve([]),
+      payrollBounds?productionGet(`payroll-periods?period_start=${encodeURIComponent(payrollBounds[0])}&period_end=${encodeURIComponent(payrollBounds[1])}`).catch(()=>null):Promise.resolve(null)
+    ]);
     S.productionTasks=d.tasks||[];
-    S.activeTimers=allowed('work.write')||allowed('tasks.read')?await productionGet('timers'):[];
+    S.activeTimers=timers;
     const inWorkTasks=new Set([...S.productionTasks.filter(t=>t.status==='in_progress').map(t=>t.id),...S.activeTimers.map(t=>t.task_id)]);
-    let payroll=null,payrollBounds=null;
-    if(allowed('payroll.all')){
-      try{payrollBounds=currentPayrollBounds();payroll=await productionGet(`payroll-periods?period_start=${encodeURIComponent(payrollBounds[0])}&period_end=${encodeURIComponent(payrollBounds[1])}`);}catch{}
-    }
     const finance=d.finance||null;
     const financeOther=finance?Number(finance.other||0)+Number(finance.company_overhead||0):0;
     const margin=finance&&Number(finance.revenue)?Number(finance.profit||0)/Number(finance.revenue)*100:null;

@@ -22,7 +22,7 @@ test('browser uses shared shell, same-origin API and session scoped token storag
   assert.ok(!/[?&]token=/i.test(adapter));
   assert.ok(app.includes('sessionScopedStorage=browserClient&&!window.__PORTAL_DESKTOP__'));
   assert.ok(app.includes('sessionScopedStorage?sessionStorage:localStorage'));
-  assert.ok(app.includes("return !!window.__PORTAL_DESKTOP__&&PORTAL_AUTOMATIC_SERVERS.has(a)&&PORTAL_AUTOMATIC_SERVERS.has(b)"));
+  assert.ok(app.includes("return PORTAL_AUTOMATIC_SERVERS.has(a)&&PORTAL_AUTOMATIC_SERVERS.has(b)"));
   assert.ok(app.includes('sessionStorage.clear()'));
 });
 
@@ -56,6 +56,12 @@ test('Desktop cache is company + user + permission scoped, encrypted and fail-sa
   assert.ok(adapter.includes("invalidationKeys(target).length"));
   assert.ok(app.includes("setCacheIdentity?.('','','[]')"));
   assert.ok(app.includes("setCacheIdentity?.('','')"));
+});
+
+test('meta and Organizer stay in the local-first cache contract',()=>{
+  assert.match(adapter,/organizer-users\|meta/);
+  assert.ok(adapter.includes('/api/v3/organizer-bootstrap'));
+  assert.ok(adapter.includes('/api/v3/meta'));
 });
 
 test('local-first performance contract uses long cache, 10-minute sync, bulk tariffs and parallel dashboard',()=>{

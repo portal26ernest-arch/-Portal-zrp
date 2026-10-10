@@ -45,6 +45,10 @@ jobs:
           node-version: "24"
       - name: Enforce release security policy
         run: node android_src/tests/build-security.test.cjs
+      - name: Run critical Android client regression gates
+        run: node --test android_src/tests/native-shell.test.cjs android_src/tests/web-adapter.test.cjs android_src/tests/ui.test.cjs
+      - name: Verify Android/iOS mobile parity
+        run: python3 ios_src/tools/check_mobile_parity.py
       - name: Validate release inputs
         shell: bash
         env:
