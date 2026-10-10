@@ -102,6 +102,16 @@ test('startup is local-first and management dashboard loads independent data in 
   assert.match(app,/setTimeout\(\(\)=>\{if\(S\.me&&S\.company&&!document\.hidden\)void prewarmLocalData\(\);\},8000\)/);
   assert.match(preview,/const \[d,timers,payroll\]=await Promise\.all\(\[/);
 });
+test('top Organizer shortcut opens Organizer directly and shows outstanding work count',()=>{
+  const html=fs.readFileSync(path.join(assets,'index.html'),'utf8');
+  const app=fs.readFileSync(path.join(assets,'app.js'),'utf8');
+  assert.match(html,/id="organizerShortcut"[^>]*data-action="openOrganizer"[^>]*aria-label="Органайзер · открыть задачи"/);
+  assert.match(html,/data-action="openMessenger"[\s\S]{0,300}id="organizerShortcut"/);
+  assert.match(app,/actions\.openOrganizer=\(\)=>\{if\(!can\('organizer'\)\)return toast\([\s\S]*?go\('organizer'\);\}/);
+  assert.match(app,/center\.center==='ORGANIZER'\?\(center\.pending_count\?\?center\.unread_count\):center\.unread_count/);
+  assert.match(app,/organizerShortcut\.classList\.toggle\('hidden',!can\('organizer'\)\)/);
+});
+
 test('shared mobile Organizer exposes director requests and native reminders',()=>{
   const production=fs.readFileSync(path.join(assets,'production.js'),'utf8');
   const coreSource=fs.readFileSync(path.join(assets,'core.js'),'utf8');

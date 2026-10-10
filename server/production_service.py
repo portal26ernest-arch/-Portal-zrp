@@ -1740,12 +1740,21 @@ class Production:
 
     def notification_centers(self):
         sources={'TASKS':[],'MESSENGER':[],'ORGANIZER':[]}
+        pending_counts={'TASKS':0,'MESSENGER':0,'ORGANIZER':0}
         if 'tasks.read' in self.permissions:
             sources['TASKS']=[dict(id=str(row['id']),title=row.get('operation_name','Задание'),source='task')
                               for row in self.task_rows() if self.u['id'] in row.get('assignees',[])]
         if 'organizer.read' in self.permissions:
+            assigned=[row for row in self.organizer_rows({'scope':['incoming']})
+                      if row.get('status') not in {'done','cancelled'}]
             sources['ORGANIZER']=[dict(id=str(row['id']),title=row.get('title','Задача'),source='organizer')
-                                  for row in self.organizer_rows({'scope':['mine']}) if row.get('status') not in {'done','cancelled'}]
+                                  for row in assigned]
+            pending_counts['ORGANIZER']=len(assigned)
+            if 'organizer.request.decide' in self.permissions:
+                pending_counts['ORGANIZER']+=sum(
+                    1 for row in self.organizer_request_rows({'scope':['incoming']})
+                    if row.get('status') in {'new','review'}
+                )
         if self.u.get('role') not in {'director','manager'} or self.u.get('technical_owner'):
             owned={row['id'] for row in self.r.list('messenger_conversations') if row.get('owner_user_id')==self.u['id']}
             sources['MESSENGER']=[dict(id=str(row['id']),title=row.get('title','Беседа'),source='messenger')
@@ -1758,7 +1767,7 @@ class Production:
                 read=self.r.get('notification_reads',key,False)
                 item['read']=bool(read)
                 visible.append(item)
-            result.append({'center':center,'unread_count':sum(not item['read'] for item in visible),'items':visible})
+            result.append({'center':center,'unread_count':sum(not item['read'] for item in visible),'pending_count':pending_counts.get(center,0),'items':visible})
         return result
 
     def notification_read(self,body):
