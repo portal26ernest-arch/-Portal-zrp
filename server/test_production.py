@@ -1149,6 +1149,35 @@ class ProductionTest(unittest.TestCase):
             own=Repository(conn,1).get('notification_reads',f'{user_id}:TASKS:{task_item["id"]}')
         self.assertEqual(own['user_id'],user_id)
 
+    def test_organizer_pending_badge_survives_read_receipt_until_task_is_done(self):
+        manager=self.role_token('manager')
+        manager_id=self.request('/api/me',manager)['user']['id']
+        due=(datetime.now()+timedelta(days=1)).replace(second=0,microsecond=0).isoformat(timespec='minutes')
+        task=self.post('organizer',dict(mode='create',assignee_user_id=manager_id,title='Badge task',
+            due_at=due,priority='normal',repeat_rule='none'),manager)['data']
+        before=self.get('notification-centers',manager)['data']
+        center=next(row for row in before if row['center']=='ORGANIZER')
+        self.assertEqual(center['pending_count'],1)
+        self.assertEqual(center['unread_count'],1)
+        self.post('notification-read',dict(center='ORGANIZER',item_id=str(task['id'])),manager)
+        after_read=self.get('notification-centers',manager)['data']
+        center=next(row for row in after_read if row['center']=='ORGANIZER')
+        self.assertEqual(center['unread_count'],0)
+        self.assertEqual(center['pending_count'],1)
+        self.post('organizer',dict(mode='status',task_id=task['id'],status='done'),manager)
+        after_done=self.get('notification-centers',manager)['data']
+        self.assertEqual(next(row for row in after_done if row['center']=='ORGANIZER')['pending_count'],0)
+
+    def test_director_organizer_badge_counts_requests_waiting_for_decision(self):
+        manager=self.role_token('manager');director=self.role_token('director')
+        director_id=self.request('/api/me',director)['user']['id']
+        before=self.get('notification-centers',director)['data']
+        before_count=next(row for row in before if row['center']=='ORGANIZER')['pending_count']
+        self.post('organizer-requests',dict(mode='create',director_user_id=director_id,request_type='other',
+            title='Badge request',description='Needs director decision',priority='normal'),manager)
+        after=self.get('notification-centers',director)['data']
+        self.assertEqual(next(row for row in after if row['center']=='ORGANIZER')['pending_count'],before_count+1)
+
     def test_desktop_organizer_hierarchy_recurrence_and_company_isolation(self):
         director=self.role_token('director');manager=self.role_token('manager')
         with portal.tenants.company_scope(1):
