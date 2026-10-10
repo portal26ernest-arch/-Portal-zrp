@@ -176,6 +176,52 @@ final class PortalLocalCache {
         }
     }
 
+    boolean migrateCacheOrigin(String oldOrigin, String newOrigin) {
+        try {
+            if (oldOrigin == null || newOrigin == null || oldOrigin.trim().isEmpty() || newOrigin.trim().isEmpty()
+                    || oldOrigin.equalsIgnoreCase(newOrigin)) return true;
+            File base = new File(context.getFilesDir(), "company-cache");
+            File source = new File(base, hash(oldOrigin.toLowerCase(Locale.ROOT)));
+            if (!source.isDirectory()) return true;
+            File target = new File(base, hash(newOrigin.toLowerCase(Locale.ROOT)));
+            if (!target.isDirectory() && !target.mkdirs()) return false;
+            File[] companies = source.listFiles(File::isDirectory);
+            if (companies == null) return false;
+            for (File company : companies) {
+                if (!company.getName().matches("[1-9][0-9]{0,9}")) continue;
+                File targetCompany = new File(target, company.getName());
+                if (!targetCompany.isDirectory() && !targetCompany.mkdirs()) return false;
+                File[] rows = company.listFiles((d, name) -> name.endsWith(".bin"));
+                if (rows == null) continue;
+                for (File row : rows) {
+                    File destination = new File(targetCompany, row.getName());
+                    if (destination.exists() && destination.lastModified() >= row.lastModified()) continue;
+                    byte[] bytes = readLimited(row, MAX_PAYLOAD * 2);
+                    File temp = new File(targetCompany, row.getName() + ".migrating");
+                    try (FileOutputStream out = new FileOutputStream(temp)) {
+                        out.write(bytes);
+                        out.getFD().sync();
+                    }
+                    if (destination.exists() && !destination.delete()) { temp.delete(); return false; }
+                    if (!temp.renameTo(destination)) { temp.delete(); return false; }
+                    destination.setLastModified(row.lastModified());
+                }
+            }
+            // Cache is disposable. Cleanup old snapshots only after the copy completed.
+            for (File company : companies) {
+                File[] rows = company.listFiles((d, name) -> name.endsWith(".bin"));
+                if (rows != null) for (File row : rows) row.delete();
+                File[] remaining = company.listFiles();
+                if (remaining != null && remaining.length == 0) company.delete();
+            }
+            File[] remaining = source.listFiles();
+            if (remaining != null && remaining.length == 0) source.delete();
+            return true;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
     boolean migrateOutboxOrigin(String oldOrigin, String newOrigin) {
         return migrateOutboxOrigin(oldOrigin, newOrigin, -1);
     }
@@ -230,7 +276,7 @@ final class PortalLocalCache {
     }
 
     private File outboxDir(String serverOrigin, String companyId) throws Exception {
-        if (serverOrigin == null || serverOrigin.trim().isEmpty() || companyId == null || !companyId.matches("[1-9][0-9]{0,9}")) return null;
+        if (serverOrigin == null || serverOrigin.trim().isEmpty() || companyId == null || !validScope(companyId)) return null;
         return new File(new File(new File(context.getFilesDir(), "company-outbox"), hash(serverOrigin.toLowerCase(Locale.ROOT))), companyId);
     }
 
@@ -266,10 +312,14 @@ final class PortalLocalCache {
     }
 
     private File companyDir(String serverOrigin, String companyId) throws Exception {
-        if (serverOrigin == null || serverOrigin.trim().isEmpty() || companyId == null || !companyId.matches("[1-9][0-9]{0,9}")) return null;
+        if (serverOrigin == null || serverOrigin.trim().isEmpty() || companyId == null || !validScope(companyId)) return null;
         return new File(new File(new File(context.getFilesDir(), "company-cache"), hash(serverOrigin.toLowerCase(Locale.ROOT))), companyId);
     }
 
+
+    private static boolean validScope(String value) {
+        return value != null && value.matches("[1-9][0-9]{0,9}(?:_[1-9][0-9]{0,9})?");
+    }
 
     private static byte[] readLimited(File file, int limit) throws Exception {
         try (FileInputStream in = new FileInputStream(file); ByteArrayOutputStream out = new ByteArrayOutputStream()) {

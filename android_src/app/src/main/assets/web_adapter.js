@@ -25,7 +25,7 @@
     /^\/api\/clients\/\d+(?:\/operations)?(?:\?.*)?$/,
     /^\/api\/admin\/clients\/\d+\/operations(?:\?.*)?$/,
     /^\/api\/(?:users|materials|jobs)(?:\?.*)?$/,
-    /^\/api\/v3\/(?:catalog|products|client-requisites|client-name-history|tariff-history|today|tasks|timers|batches|works|shipments|returns|invoices|receivables|finance|analytics|expenses|economy|activity|payroll-periods|payroll-settlements|documents|settings|permissions|chat-users|notification-centers|presence|organizer|organizer-bootstrap|organizer-directors|organizer-events|organizer-requests|organizer-request-events|organizer-request-responsibles|organizer-users)(?:\?.*)?$/
+    /^\/api\/v3\/(?:catalog|products|client-requisites|client-name-history|tariff-history|today|tasks|timers|batches|works|shipments|returns|invoices|receivables|finance|analytics|expenses|economy|activity|payroll-periods|payroll-settlements|documents|settings|permissions|chat-users|notification-centers|presence|organizer|organizer-bootstrap|organizer-directors|organizer-events|organizer-requests|organizer-request-events|organizer-request-responsibles|organizer-users|meta)(?:\?.*)?$/
   ];
   const OUTBOX_PATHS = new Set(['/api/v3/work','/api/v3/links','/api/v3/batches','/api/v3/tasks','/api/v3/shipments','/api/v3/returns']);
   let cacheCompany = '';
@@ -73,7 +73,7 @@
     } else if (/\/(?:materials?)(?:\/|\?|$)/i.test(target)) {
       add('/api/materials','/api/v3/today','/api/v3/finance','/api/v3/analytics');
     } else if (/\/(?:users?|invitations?|company-access|permissions)(?:\/|\?|$)/i.test(target)) {
-      add('/api/users','/api/v3/permissions','/api/v3/chat-users');
+      add('/api/users','/api/v3/permissions','/api/v3/chat-users','/api/v3/meta');
     } else if (/\/(?:invoices?|payments?)(?:\/|\?|$)/i.test(target)) {
       add('/api/dashboard','/api/invoices','/api/v3/invoices','/api/v3/receivables','/api/v3/finance','/api/v3/today');
     } else if (/\/api\/v3\/expenses(?:\/|\?|$)/i.test(target)) {
@@ -87,7 +87,7 @@
     } else if (/\/api\/jobs(?:\/|\?|$)/i.test(target)) {
       add('/api/dashboard','/api/jobs','/api/v3/tasks','/api/v3/today');
     } else if (/\/(?:settings)(?:\/|\?|$)/i.test(target)) {
-      add('/api/company','/api/v3/settings','/api/v3/today');
+      add('/api/company','/api/v3/settings','/api/v3/today','/api/v3/meta');
     }
     return [...keys];
   };

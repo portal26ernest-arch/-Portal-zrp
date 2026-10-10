@@ -156,7 +156,7 @@ final class PortalLocalCache {
             try fileManager.createDirectory(at: target, withIntermediateDirectories: true)
             for company in try fileManager.contentsOfDirectory(at: source, includingPropertiesForKeys: [.isDirectoryKey]) {
                 let name = company.lastPathComponent
-                guard name.range(of: #"^[1-9][0-9]{0,9}$"#, options: .regularExpression) != nil else { return false }
+                guard validScope(name) else { return false }
                 let targetCompany = target.appendingPathComponent(name, isDirectory: true)
                 try fileManager.createDirectory(at: targetCompany, withIntermediateDirectories: true)
                 for row in try fileManager.contentsOfDirectory(at: company, includingPropertiesForKeys: nil) {
@@ -182,7 +182,7 @@ final class PortalLocalCache {
 
     private func outboxDirectory(serverOrigin: String, companyID: String) -> URL? {
         guard !serverOrigin.isEmpty,
-              companyID.range(of: #"^[1-9][0-9]{0,9}$"#, options: .regularExpression) != nil,
+              validScope(companyID),
               let outboxRoot else { return nil }
         return outboxRoot.appendingPathComponent(hash(serverOrigin.lowercased()), isDirectory: true)
             .appendingPathComponent(companyID, isDirectory: true)
@@ -196,10 +196,14 @@ final class PortalLocalCache {
 
     private func companyDirectory(serverOrigin: String, companyID: String) -> URL? {
         guard !serverOrigin.isEmpty,
-              companyID.range(of: #"^[1-9][0-9]{0,9}$"#, options: .regularExpression) != nil,
+              validScope(companyID),
               let root else { return nil }
         return root.appendingPathComponent(hash(serverOrigin.lowercased()), isDirectory: true)
             .appendingPathComponent(companyID, isDirectory: true)
+    }
+
+    private func validScope(_ value: String) -> Bool {
+        value.range(of: #"^[1-9][0-9]{0,9}(?:_[1-9][0-9]{0,9})?$"#, options: .regularExpression) != nil
     }
 
     private func hash(_ value: String) -> String {
