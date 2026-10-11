@@ -3,7 +3,8 @@
 ## Границы и состояние
 
 База: `main` / `c55ac9e66f19510c324d03e9f7f87dea62a2a229`.
-Рабочая ветка: `assistant/portal-audit-local-20261011`. После fetch локальный HEAD
+Рабочая ветка: `assistant/portal-audit-local-20261011`.
+Code/test/audit commit: `a38d0712957db495f85baf22ad2ebfa8ec899d00`; subsequent documentation-only evidence follows it. После fetch локальный HEAD
 совпадал с origin/main. Рабочая копия до задачи была чистой.
 Рассмотрены README, AGENTS, релевантные разделы master roadmap, правила release integrity,
 архитектура Server/API, общая Web UI, текущий WPF Desktop, авторизация,
