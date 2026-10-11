@@ -728,10 +728,16 @@ def parse_body(handler):
     raw = handler.raw_body if hasattr(handler, "raw_body") else read_body(handler)
     settlement=urlparse(getattr(handler,'path','')).path=='/api/v3/payroll-settlements'
     def invalid_constant(value):
-        raise ValueError('В расчёте недопустимы бесконечность и неопределённые числа')
+        raise ValueError('В JSON недопустимы бесконечность и неопределённые числа')
+    def finite_float(value):
+        number = float(value)
+        if not math.isfinite(number):
+            raise ValueError('Число JSON выходит за допустимый диапазон')
+        return number
     try:
         # Financial decimals retain their exact JSON spelling before Decimal parsing.
-        body = json.loads(raw.decode('utf-8'),parse_float=str,parse_constant=invalid_constant) if raw and settlement else (json.loads(raw.decode('utf-8')) if raw else {})
+        body = json.loads(raw.decode('utf-8'),parse_float=str if settlement else finite_float,
+                          parse_constant=invalid_constant) if raw else {}
     except (UnicodeError,json.JSONDecodeError):
         if settlement:raise ValueError('Некорректный JSON расчёта зарплаты') from None
         raise

@@ -31,6 +31,8 @@
   let cacheCompany = '';
   let cacheIdentity = '';
   let cacheUser = '';
+  let cacheGeneration = 0;
+  const inFlightReads = new Map();
   const cacheScope = () => cacheCompany && cacheIdentity ? cacheCompany + '|' + cacheIdentity : '';
   const desktopCache = () => {
     try { return window.chrome?.webview?.hostObjects?.sync?.portalDesktopCache || null; }
@@ -52,6 +54,7 @@
     } catch { return false; }
   };
   const cacheClearScope = scope => {
+    cacheGeneration++;
     try { return !!desktopCache()?.ClearCompany(String(scope)); }
     catch { return false; }
   };
@@ -176,16 +179,31 @@
 
   const appMetadata = () => JSON.stringify(window.__PORTAL_BUILD_METADATA__ || {platform:'Web'});
 
+  // Share only simultaneous cache-eligible reads with identical credentials.
+  // Never reuse reads across a successful mutation or a changed cache identity.
+  const fetchSharedRead = (verb, target, body, token, company, scope, generation, eligible) => {
+    if (!eligible) return fetchJson(verb, target, body, token, company);
+    const key = JSON.stringify([target, token, String(company || ''), scope, generation]);
+    if (!inFlightReads.has(key)) {
+      const pending = fetchJson(verb, target, body, token, company).finally(() => inFlightReads.delete(key));
+      inFlightReads.set(key, pending);
+    }
+    return inFlightReads.get(key);
+  };
+
   window.PortalNative = {
     getAppMetadata: appMetadata,
     getServerUrl: () => location.origin,
     setServerUrl: () => false,
     setCacheCompany: value => {
+      const previous = cacheCompany;
       const next = String(value || '');
       cacheCompany = /^[1-9]\d{0,9}$/.test(next) ? next : '';
+      if (previous !== cacheCompany) cacheGeneration++;
       return !!cacheCompany;
     },
     setCacheIdentity: (userId,role,permissionsJson='[]') => {
+      const previous = cacheIdentity;
       const user = String(userId || ''), safeRole = String(role || '').toLowerCase();
       let permissions=[];
       try{const raw=JSON.parse(String(permissionsJson||'[]'));if(Array.isArray(raw))permissions=[...new Set(raw.map(String).filter(value=>/^[a-z0-9._-]{1,80}$/i.test(value)))].sort();}catch{}
@@ -194,6 +212,7 @@
       cacheUser = validUser ? user : '';
       cacheIdentity = validUser && /^[a-z_]{2,40}$/.test(safeRole) && signature.length<=1500 ? user + '|' + safeRole + '|' + signature : '';
       if(!cacheIdentity)cacheUser='';
+      if (previous !== cacheIdentity) cacheGeneration++;
       return !!cacheIdentity;
     },
     clearCompanyCache: () => cacheScope() ? cacheClearScope(cacheScope()) : true,
@@ -244,19 +263,23 @@
       if (token && (typeof token !== 'string' || token.length > 8192 || /[\r\n]/.test(token))) return fail(id, 'Недопустимая сессия');
       if (body && (typeof body !== 'string' || body.length > 24 * 1024 * 1024 || verb !== 'POST')) return fail(id, 'Недопустимые данные запроса');
       const scope = cacheScope();
+      const generation = cacheGeneration;
       const cacheEligible = canCache(verb, target, token);
+      const current = () => generation === cacheGeneration && scope === cacheScope();
       const cached = cacheEligible ? cacheRead(scope, target) : null;
       if (cached) {
         result(id, {...cached.data,cached:true,stale:cached.stale,cached_at:new Date(cached.savedAt).toISOString()});
-        fetchJson(verb, target, body, token, company).then(fresh => {
+        fetchSharedRead(verb, target, body, token, company, scope, generation, cacheEligible).then(fresh => {
+          if (!current()) return;
           if (fresh.ok) cacheWrite(scope, target, fresh);
           else if (fresh.httpStatus === 401 || fresh.httpStatus === 403) cacheClearScope(scope);
         }).catch(() => {});
         return;
       }
       try {
-        const data = await fetchJson(verb, target, body, token, company);
-        if (cacheEligible && data.ok) cacheWrite(scope, target, data);
+        const data = await fetchSharedRead(verb, target, body, token, company, scope, generation, cacheEligible);
+        if (verb === 'POST' && data.ok) cacheGeneration++;
+        if (cacheEligible && data.ok && current()) cacheWrite(scope, target, data);
         if (verb === 'POST' && data.ok && scope && invalidationKeys(target).length) invalidateCache(scope, target);
         result(id, data);
       } catch {
