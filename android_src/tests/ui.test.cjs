@@ -1133,7 +1133,9 @@ test('Tariffs and Warehouse link scoped Excel import and show consumables with u
   const tariffScreen=production.slice(production.indexOf('screens.tariffs=async()=>'),production.indexOf('actions.newTariff='));
   const materialsScreen=legacyScreens.slice(legacyScreens.indexOf('screens.materials=async()=>'),legacyScreens.indexOf('screens.jobs=async()=>'));
   assert.match(tariffScreen,/can\('excelImport'\)/);
-  assert.match(tariffScreen,/Скачать \/ загрузить Excel с тарифами/);
+  assert.match(tariffScreen,/Скачать Excel тарифов всех клиентов/);
+  assert.match(tariffScreen,/downloadExcelTemplate/);
+  assert.match(tariffScreen,/Загрузить заполненный Excel/);
   for(const label of ['Операции_Тарифы','Материалы','Приход_материалов','Нормы_материалов'])assert.ok(tariffScreen.includes(label),label);
   assert.match(materialsScreen,/can\('excelImport'\)/);
   assert.match(materialsScreen,/Скачать \/ загрузить Excel расходников/);
