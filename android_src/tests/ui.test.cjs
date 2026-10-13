@@ -1138,7 +1138,9 @@ test('Tariffs and Warehouse link scoped Excel import and show consumables with u
   assert.match(tariffScreen,/Загрузить заполненный Excel/);
   for(const label of ['Операции_Тарифы','Материалы','Приход_материалов','Нормы_материалов'])assert.ok(tariffScreen.includes(label),label);
   assert.match(materialsScreen,/can\('excelImport'\)/);
-  assert.match(materialsScreen,/Скачать \/ загрузить Excel расходников/);
+  assert.match(materialsScreen,/Скачать Excel материалов/);
+  assert.match(materialsScreen,/downloadExcelTemplate/);
+  assert.match(materialsScreen,/Загрузить заполненный Excel/);
   for(const marker of ['stock_qty','unit_cost','Цена за 1','Стоимость запаса','Оценочная стоимость остатков'])assert.ok(materialsScreen.includes(marker),marker);
   assert.match(importUi,/будущую дату начала новой версии/);
   assert.match(importUi,/Не переносите сюда имеющийся остаток повторно/);
