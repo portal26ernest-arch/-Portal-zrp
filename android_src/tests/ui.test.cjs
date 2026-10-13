@@ -1124,3 +1124,21 @@ test('control center uses live server channels and native PORTAL update state',(
   assert.match(preview,/WMS \/ TalAnt/);
   assert.match(preview,/Preview/);
 });
+
+
+test('Tariffs and Warehouse link scoped Excel import and show consumables with unit prices and quantities',()=>{
+  const production=fs.readFileSync(path.join(assets,'production.js'),'utf8');
+  const legacyScreens=fs.readFileSync(path.join(assets,'screens.js'),'utf8');
+  const importUi=fs.readFileSync(path.join(assets,'documents_excel.js'),'utf8');
+  const tariffScreen=production.slice(production.indexOf('screens.tariffs=async()=>'),production.indexOf('actions.newTariff='));
+  const materialsScreen=legacyScreens.slice(legacyScreens.indexOf('screens.materials=async()=>'),legacyScreens.indexOf('screens.jobs=async()=>'));
+  assert.match(tariffScreen,/can\('excelImport'\)/);
+  assert.match(tariffScreen,/Скачать \/ загрузить Excel с тарифами/);
+  for(const label of ['Операции_Тарифы','Материалы','Приход_материалов','Нормы_материалов'])assert.ok(tariffScreen.includes(label),label);
+  assert.match(materialsScreen,/can\('excelImport'\)/);
+  assert.match(materialsScreen,/Скачать \/ загрузить Excel расходников/);
+  for(const marker of ['stock_qty','unit_cost','Цена за 1','Стоимость запаса','Оценочная стоимость остатков'])assert.ok(materialsScreen.includes(marker),marker);
+  assert.match(importUi,/будущую дату начала новой версии/);
+  assert.match(importUi,/Не переносите сюда имеющийся остаток повторно/);
+  assert.match(importUi,/При записи выработки материал списывается по норме/);
+});
