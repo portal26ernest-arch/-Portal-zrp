@@ -114,7 +114,7 @@ actions.togglePassword=button=>{const visible=$('loginPin').type==='password';$(
 async function loginRequest(body){
   try{return await api('POST','/api/login',body,{anonymous:true,global:true,timeoutMs:35000});}
   catch(error){
-    if(error?.network)error.message='Не удалось завершить вход. Соединение нестабильно — проверьте сеть и попробуйте ещё раз.';
+    if(error?.network){const detail={dns:'DNS',tls:'TLS',timeout:'тайм-аут',connect:'подключение'}[error.networkKind]||'сеть';error.message='Не удалось завершить вход ('+detail+'). Проверьте подключение.';}
     throw error;
   }
 }
