@@ -219,6 +219,13 @@ public class MainActivity extends Activity {
             String target = DEFAULT_URL == null ? "" : DEFAULT_URL.trim();
             while (target.endsWith("/")) target = target.substring(0, target.length() - 1);
 
+            // An explicitly selected official origin belongs to the user; keep it
+            // across APK updates instead of silently forcing the primary endpoint.
+            if (PRIMARY_API_URL.equalsIgnoreCase(previous)
+                    || TRUSTED_FALLBACK_API_URL.equalsIgnoreCase(previous)) {
+                prefs.edit().putInt("server_config_version_code", currentVersion).apply();
+                return;
+            }
             boolean managed = previous.isEmpty() || isAutomaticPortalServer(previous) || isLegacyLocalServer(previous);
             if (managed && target.startsWith("https://")) {
                 if (isAutomaticPortalServer(previous) && !previous.equalsIgnoreCase(target)
