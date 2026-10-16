@@ -1,5 +1,5 @@
 'use strict';
-try{if(window.PortalNative?.getAppMetadata?.().platform==='Android')globalThis.__PORTAL_ANDROID__=true;}catch{}
+try{if(JSON.parse(window.PortalNative?.getAppMetadata?.()||'{}').platform==='Android')globalThis.__PORTAL_ANDROID__=true;}catch{}
 const $ = id => document.getElementById(id);
 const esc = value => String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num = n => new Intl.NumberFormat('ru-RU',{maximumFractionDigits:2}).format(Number(n||0));
@@ -122,7 +122,7 @@ forms.loginForm=async()=>{if(S.authBusy)return;S.authBusy=true;$('loginSubmit').
 actions.acceptInvite=()=>openSheet('Принять приглашение в PORTAL',`<p class="meta">Введите одноразовый код от администратора компании и задайте личный PIN. Не передавайте PIN отправителю.</p><form id="acceptInviteForm">${field('acceptInviteToken','Одноразовый код','','text','required maxlength="160" autocapitalize="none"')}${field('acceptInvitePin','Новый PIN','','password','required minlength="4" maxlength="128" autocomplete="new-password"')}<button class="btn block" type="submit">Отправить запрос на подтверждение</button><p id="acceptInviteError" class="signin-error hidden" role="alert"></p></form>`);
 forms.acceptInviteForm=async form=>{const token=$('acceptInviteToken').value.trim(),pin=$('acceptInvitePin').value;try{const result=await api('POST','/api/access-invites/accept',{token,pin},{anonymous:true,global:true});$('acceptInvitePin').value='';closeSheet();toast(result.data.status==='pending_approval'?'Запрос отправлен. Доступ включит администратор компании.':'Приглашение истекло');}catch(error){const node=$('acceptInviteError');if(node){node.textContent=error.message||'Приглашение не принято';node.classList.remove('hidden');}}};
 function savePortalSession(){if(!S.token||!S.me||!window.PortalNative)return;storage.set('portalSession',JSON.stringify({server:PortalNative.getServerUrl(),token:S.token,user:S.me,savedAt:Date.now()}));storage.remove('portalToken');}
-async function acceptLogin(result){try{window.PortalNative?.clearMessengerSession?.();}catch{}clearCompanyData();try{window.PortalNative?.setCacheIdentity?.('','','[]');}catch{}S.token=result.token;S.me=result.user;S.company=null;try{window.PortalNative?.setCacheIdentity?.(String(S.me?.id||''),String(S.me?.role||''),'[]');}catch{}savePortalSession();if(!S.me.company_id){S.me=(await api('GET','/api/me',undefined,{global:true})).user;savePortalSession();}await enterApp();}
+async function acceptLogin(result){try{window.PortalNative?.clearMessengerSession?.();}catch{}clearCompanyData();try{window.PortalNative?.setCacheIdentity?.('','','[]');}catch{}S.token=result.token;try{window.PortalNative?.setActiveSessionToken?.(S.token);}catch{}S.me=result.user;S.company=null;try{window.PortalNative?.setCacheIdentity?.(String(S.me?.id||''),String(S.me?.role||''),'[]');}catch{}savePortalSession();if(!S.me.company_id){S.me=(await api('GET','/api/me',undefined,{global:true})).user;savePortalSession();}await enterApp();}
 const LOCAL_PREWARM=[{path:'/api/v3/today',pages:['dashboard']},{path:'/api/v3/organizer-bootstrap',pages:['organizer']},{path:'/api/v3/notification-centers',pages:['notifications']},{path:'/api/v3/tasks',pages:['jobs']},{path:'/api/v3/batches',pages:['batches']},{path:'/api/v3/catalog',pages:['catalogue','work']},{path:'/api/jobs',pages:['jobs']},{path:'/api/clients',pages:['clients']}];
 async function prewarmLocalData(){if(!S.me||!S.company||!S.token)return;const paths=['/api/v3/meta',...LOCAL_PREWARM.filter(item=>item.pages.some(page=>can(page))).map(item=>item.path)];for(let i=0;i<paths.length;i+=3){await Promise.allSettled(paths.slice(i,i+3).map(path=>api('GET',path,undefined,{global:true})));}}
 async function enterApp(){
@@ -148,8 +148,29 @@ async function enterApp(){
   if(S.company)setTimeout(()=>{if(S.me&&S.company&&!document.hidden)void prewarmLocalData();},8000);
   setTimeout(()=>{if(!document.hidden)void autoCheckUpdates();},12000);
 }
-function logout(refresh=true,force=false){if(!force&&!canLeave())return;try{window.PortalNative?.clearMessengerSession?.();}catch{}clearCompanyData();try{window.PortalNative?.setCacheIdentity?.('','');}catch{}S.token='';S.me=null;S.company=null;S.companies=[];S.view++;storage.remove('portalSession');storage.remove('portalToken');if(browserClient)try{sessionStorage.clear();}catch{}closeSheet();$('app').classList.add('hidden');$('auth').classList.remove('hidden');$('loginPin').value='';if(refresh)checkServer();}
-actions.logout=async()=>{if(await confirmSheet('Выйти из PORTAL?','Для продолжения работы потребуется снова войти.','Выйти')){if(S.token){try{await api('POST','/api/logout',{}, {global:true,sessionControl:true});}catch(e){if(!e.stale)toast('Не удалось подтвердить выход на сервере',true);}}logout();}};
+function logout(refresh=true,force=false){if(!force&&!canLeave())return;try{window.PortalNative?.setActiveSessionToken?.('');}catch{}try{window.PortalNative?.clearMessengerSession?.();}catch{}clearCompanyData();try{window.PortalNative?.setCacheIdentity?.('','','[]');}catch{}S.token='';S.me=null;S.company=null;S.companies=[];S.view++;storage.remove('portalSession');storage.remove('portalToken');if(browserClient)try{sessionStorage.clear();}catch{}closeSheet();$('app').classList.add('hidden');$('auth').classList.remove('hidden');$('loginPin').value='';if(refresh)checkServer();}
+// Server revocation is attempted once with the original token. Never keep the
+// UI waiting on DNS probes, and never replay a POST after an ambiguous failure.
+async function revokePortalSession(token){
+  if(!token)return true;
+  try{
+    if(typeof window.PortalNative?.requestAsync!=='function')return false;
+    const result=await nativePromise(id=>PortalNative.requestAsync(id,'POST','/api/logout','{}',token,''),20000);
+    return result?.ok===true||result?.httpStatus===401;
+  }catch{return false;}
+}
+actions.logout=async()=>{
+  if(!canLeave())return;
+  if(!await confirmSheet('Выйти из PORTAL?','Для продолжения работы потребуется снова войти.','Выйти'))return;
+  if(!canLeave())return; // A write could have started while confirmation was open.
+  const token=S.token,epoch=S.epoch;
+  const revocation=revokePortalSession(token);
+  logout(false,true); // Clear local credentials immediately; never block on the network.
+  void revocation.then(ok=>{
+    if(!ok&&!S.token&&S.epoch===epoch+1)
+      toast('Выход на устройстве выполнен. Сервер не подтвердил завершение сеанса.',true);
+  });
+};
 async function checkServer(){try{const r=await api('GET','/api/ping',undefined,{anonymous:true,global:true});S.setupRequired=r.setup_required;$('serverState').textContent='Подключение готово';}catch(e){$('serverState').textContent='Нет соединения · проверьте адрес сервера';S.setupRequired=false;}updateLogin();}
 actions.setup=()=>openSheet('Первый администратор',`<form id="setupForm">${field('setupUser','Логин','admin','text','required')}${field('setupName','Имя','','text','required')}${field('setupPin','PIN — от 4 символов','','password','required minlength="4" maxlength="128"')}<button class="btn block" type="submit">Создать доступ</button></form>`);
 forms.setupForm=async()=>{const r=await api('POST','/api/setup',{username:$('setupUser').value.trim(),display_name:$('setupName').value.trim(),pin:$('setupPin').value},{anonymous:true,global:true});closeSheet();await acceptLogin(r);};
@@ -225,6 +246,7 @@ document.addEventListener('DOMContentLoaded',async()=>{
   try{session=JSON.parse(storage.get('portalSession')||'null');if(!session&&storage.get('portalToken')&&window.PortalNative)session={server:PortalNative.getServerUrl(),token:storage.get('portalToken')};}catch{}
   if(session&&window.PortalNative&&sessionServerMatches(session.server,PortalNative.getServerUrl())){
     S.token=session.token;
+    try{window.PortalNative?.setActiveSessionToken?.(S.token);}catch{}
     if(session.user&&PortalCore.roles[session.user.role]){
       S.me=session.user;
       try{PortalNative.setCacheIdentity?.(String(S.me?.id||''),String(S.me?.role||''),JSON.stringify(S.me?.permissions||[]));}catch{}
@@ -235,11 +257,11 @@ document.addEventListener('DOMContentLoaded',async()=>{
         return;
       }catch(error){
         if(!isTransientNetworkError(error)){try{window.PortalNative?.clearMessengerSession?.();}catch{}storage.remove('portalSession');storage.remove('portalToken');}
-        S.token='';S.me=null;
+        S.token='';S.me=null;try{window.PortalNative?.setActiveSessionToken?.('');}catch{}
       }
     }else{
       try{S.me=(await api('GET','/api/me',undefined,{global:true})).user;try{PortalNative.setCacheIdentity?.(String(S.me?.id||''),String(S.me?.role||''),'[]');}catch{}savePortalSession();await enterApp();return;}
-      catch(error){if(!isTransientNetworkError(error)){try{window.PortalNative?.clearMessengerSession?.();}catch{}storage.remove('portalSession');storage.remove('portalToken');}S.token='';S.me=null;}
+      catch(error){if(!isTransientNetworkError(error)){try{window.PortalNative?.clearMessengerSession?.();}catch{}storage.remove('portalSession');storage.remove('portalToken');}S.token='';S.me=null;try{window.PortalNative?.setActiveSessionToken?.('');}catch{}}
     }
   }else if(session){try{window.PortalNative?.clearMessengerSession?.();}catch{}storage.remove('portalSession');storage.remove('portalToken');}
   await serverCheck;

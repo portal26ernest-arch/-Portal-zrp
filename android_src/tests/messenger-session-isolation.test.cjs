@@ -22,7 +22,7 @@ assert.match(app,/async function acceptLogin\(result\)\{try\{window\.PortalNativ
 assert.match(app,/function logout\([\s\S]*clearMessengerSession\?\.\(\)[\s\S]*S\.me=null/);
 assert.match(app,/httpStatus===401[^\n]*logout\(false,true\)/);
 assert.match(app,/DOMContentLoaded[\s\S]*await enterApp\(\)/);
-assert.match(app,/DOMContentLoaded[\s\S]*catch\{try\{window\.PortalNative\?\.clearMessengerSession\?\.\(\)/);
+assert.match(app,/if\(!isTransientNetworkError\(error\)\)\{try\{window\.PortalNative\?\.clearMessengerSession\?\.\(\)/);
 assert.match(app,/openMessengerWindow\?\.\(p,relay\)/);
 assert.match(app,/provider:'telegram',enabled:false,required:true/);
 assert.match(app,/const hasWss=ticket\?\.enabled===true/);

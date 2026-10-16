@@ -183,9 +183,12 @@ public class MainActivity extends Activity {
         private volatile boolean closed;
         private volatile String cacheCompany = "";
         private volatile String cacheUser = "";
+        private volatile String activeSessionToken = "";
         private volatile String healthyServerBase = "";
         private volatile String healthyServerPreference = "";
         private volatile long healthyServerUntilMs;
+        private volatile long retryServerProbeAtMs;
+        private final java.util.concurrent.atomic.AtomicBoolean serverProbeInProgress = new java.util.concurrent.atomic.AtomicBoolean();
         private static final long CACHE_MAX_AGE_MS = 30L * 24 * 60 * 60 * 1000;
         private static final long SERVER_HEALTH_TTL_MS = 2L * 60 * 1000;
         private static final String DEFAULT_URL = BuildConfig.DEFAULT_API_URL;
@@ -339,9 +342,12 @@ public class MainActivity extends Activity {
             });
         }
 
-        private void notifySessionInvalidated() {
+        private void notifySessionInvalidated(String requestToken) {
+            // A stale cached refresh must never log out a newer login.
+            if (requestToken == null || requestToken.isEmpty() || !requestToken.equals(activeSessionToken)) return;
             ((Activity) context).runOnUiThread(() -> {
-                if (!closed) webView.evaluateJavascript("window.portalSessionInvalidated&&window.portalSessionInvalidated()", null);
+                if (!closed && requestToken.equals(activeSessionToken))
+                    webView.evaluateJavascript("window.portalSessionInvalidated&&window.portalSessionInvalidated()", null);
             });
         }
 
@@ -362,13 +368,16 @@ public class MainActivity extends Activity {
                         deliver(id, ready);
                         String freshBase = resolveServerForRequest(requestedBase);
                         String fresh = requestWithFailover(freshBase, verb, path, body, token, company);
-                        if (responseOk(fresh)) {
-                            localCache.write(cacheBase, localScope, path, fresh);
-                            notifyCacheUpdated(path);
-                        } else {
-                            int status = responseStatus(fresh);
-                            if (status == 401 || status == 403) localCache.clearCompany(cacheBase, localScope);
-                            if (status == 401) notifySessionInvalidated();
+                        // Ignore any delayed refresh from a signed-out or replaced token.
+                        if (token != null && token.equals(activeSessionToken)) {
+                            if (responseOk(fresh)) {
+                                localCache.write(cacheBase, localScope, path, fresh);
+                                notifyCacheUpdated(path);
+                            } else {
+                                int status = responseStatus(fresh);
+                                if (status == 401 || status == 403) localCache.clearCompany(cacheBase, localScope);
+                                if (status == 401) notifySessionInvalidated(token);
+                            }
                         }
                         return;
                     }
@@ -426,22 +435,32 @@ public class MainActivity extends Activity {
             return requestAt(peer, method, path, body, token, company);
         }
 
-        private synchronized String resolveServerForRequest(String requestedBase) {
+        private String resolveServerForRequest(String requestedBase) {
             String base = requestedBase == null ? "" : requestedBase.trim();
             if (!isAutomaticPortalServer(base)) return base;
             long now = System.currentTimeMillis();
             if (base.equalsIgnoreCase(healthyServerPreference)
                     && isAutomaticPortalServer(healthyServerBase) && now < healthyServerUntilMs) return healthyServerBase;
-            if (probeOfficialServer(base)) {
-                markHealthyServer(base);
+            // Never hold a monitor during DNS/TLS network probing. The worker pool
+            // has three threads; serialized probes used to stall unrelated UI requests.
+            if (now < retryServerProbeAtMs || !serverProbeInProgress.compareAndSet(false, true))
                 return base;
+            try {
+                if (probeOfficialServer(base)) {
+                    markHealthyServer(base);
+                    return base;
+                }
+                String peer = automaticPeer(base);
+                if (probeOfficialServer(peer)) {
+                    markHealthyServer(peer);
+                    return peer;
+                }
+                // Avoid repeating two expensive failed probes for every queued GET.
+                retryServerProbeAtMs = System.currentTimeMillis() + 8_000L;
+                return base;
+            } finally {
+                serverProbeInProgress.set(false);
             }
-            String peer = automaticPeer(base);
-            if (probeOfficialServer(peer)) {
-                markHealthyServer(peer);
-                return peer;
-            }
-            return base;
         }
 
         @JavascriptInterface
@@ -449,6 +468,11 @@ public class MainActivity extends Activity {
             String next = value == null ? "" : value.trim();
             cacheCompany = next.matches("[1-9][0-9]{0,9}") ? next : "";
             return !cacheCompany.isEmpty();
+        }
+
+        @JavascriptInterface
+        public void setActiveSessionToken(String token) {
+            activeSessionToken = token == null ? "" : token;
         }
 
         @JavascriptInterface
@@ -1094,6 +1118,7 @@ public class MainActivity extends Activity {
                         healthyServerBase = "";
                         healthyServerPreference = "";
                         healthyServerUntilMs = 0L;
+                        retryServerProbeAtMs = 0L;
                     }
                     prefs.edit().putString("server_url", value).apply();
                 }
