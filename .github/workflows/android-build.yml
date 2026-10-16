@@ -9,7 +9,7 @@ on:
         default: ""
         type: string
   push:
-    branches: [ "main", "portal-next-b003", "codex-documents-excel-part4", "codex-communications-news-part5", "assistant-release-3.4-candidate", "assistant/**", "codex-finalization-megapack-part12" ]
+    branches: [ "main", "portal-next-b003", "codex-documents-excel-part4", "codex-communications-news-part5", "assistant-release-3.4-candidate", "assistant/**", "codex/**", "codex-finalization-megapack-part12" ]
     paths:
       - "android_src/**"
       - ".github/workflows/android-build.yml"
@@ -74,7 +74,7 @@ jobs:
         with:
           gradle-version: "8.9"
       - name: Build isolated staging APK
-        run: gradle -p android_src --stacktrace -PportalApiUrl="$PORTAL_STAGING_API_URL" assembleStaging
+        run: gradle -p android_src --stacktrace -PportalApiUrl="$PORTAL_STAGING_API_URL" testStagingUnitTest assembleStaging
       - name: Verify isolated staging APK
         shell: bash
         run: |
@@ -137,5 +137,13 @@ jobs:
             ${{ steps.artifact.outputs.name }}.version.properties
             ${{ steps.artifact.outputs.name }}.changelog.md
             ${{ steps.artifact.outputs.name }}.test-report.txt
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload Android transport unit test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-transport-unit-tests
+          path: android_src/app/build/test-results/testStagingUnitTest/TEST-*.xml
           if-no-files-found: error
           retention-days: 30

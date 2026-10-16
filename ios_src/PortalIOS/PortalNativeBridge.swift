@@ -9,6 +9,20 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
     static let allowedExternalHosts: Set<String> = ["seller.ozon.ru", "seller.wildberries.ru"]
     static let localOutboxPaths: Set<String> = ["/api/v3/work", "/api/v3/links", "/api/v3/batches", "/api/v3/tasks", "/api/v3/shipments", "/api/v3/returns"]
     static let serverDiscoveryURL = URL(string: "https://raw.githubusercontent.com/portal26ernest-arch/-Portal-zrp/main/portal-server.json")!
+
+    static func networkKind(_ error: Error?) -> String {
+        guard let error = error as NSError?, error.domain == NSURLErrorDomain else { return "network" }
+        switch error.code {
+        case NSURLErrorTimedOut: return "timeout"
+        case NSURLErrorCannotFindHost, NSURLErrorDNSLookupFailed: return "dns"
+        case NSURLErrorSecureConnectionFailed, NSURLErrorServerCertificateHasBadDate,
+             NSURLErrorServerCertificateUntrusted, NSURLErrorServerCertificateHasUnknownRoot,
+             NSURLErrorServerCertificateNotYetValid: return "tls"
+        case NSURLErrorCannotConnectToHost, NSURLErrorNetworkConnectionLost, NSURLErrorNotConnectedToInternet:
+            return "connect"
+        default: return "network"
+        }
+    }
     weak var webView: WKWebView?
 
     private let defaults = UserDefaults.standard
@@ -538,7 +552,7 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
             guard let self else { return }
             if error != nil {
                 if !didDeliverCached {
-                    self.deliver(id: id, object: ["ok": false, "httpStatus": 0, "network": true, "error": "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРІСЏР·Р°С‚СЊСЃСЏ СЃ СЃРµСЂРІРµСЂРѕРј. РџСЂРѕРІРµСЂСЊС‚Рµ РїРѕРґРєР»СЋС‡РµРЅРёРµ."])
+                    self.deliver(id: id, object: ["ok": false, "httpStatus": 0, "network": true, "networkKind": Self.networkKind(error), "error": "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРІСЏР·Р°С‚СЊСЃСЏ СЃ СЃРµСЂРІРµСЂРѕРј. РџСЂРѕРІРµСЂСЊС‚Рµ РїРѕРґРєР»СЋС‡РµРЅРёРµ."])
                 }
                 return
             }

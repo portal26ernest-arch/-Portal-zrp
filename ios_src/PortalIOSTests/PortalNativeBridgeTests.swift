@@ -2,6 +2,14 @@ import XCTest
 @testable import PortalIOS
 
 final class PortalNativeBridgeTests: XCTestCase {
+    func testNetworkErrorCategoriesMatchAndroid() {
+        XCTAssertEqual(PortalNativeBridge.networkKind(URLError(.timedOut)), "timeout")
+        XCTAssertEqual(PortalNativeBridge.networkKind(URLError(.cannotFindHost)), "dns")
+        XCTAssertEqual(PortalNativeBridge.networkKind(URLError(.dnsLookupFailed)), "dns")
+        XCTAssertEqual(PortalNativeBridge.networkKind(URLError(.serverCertificateUntrusted)), "tls")
+        XCTAssertEqual(PortalNativeBridge.networkKind(URLError(.cannotConnectToHost)), "connect")
+        XCTAssertEqual(PortalNativeBridge.networkKind(nil), "network")
+    }
     func testServerURLValidation() {
         XCTAssertTrue(PortalNativeBridge.isValidServerURL("https://portal.example"))
         XCTAssertTrue(PortalNativeBridge.isValidServerURL("http://127.0.0.1:8765"))

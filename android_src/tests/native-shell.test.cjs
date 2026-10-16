@@ -4,6 +4,7 @@ const assert=require('node:assert/strict');
 
 const main=fs.readFileSync(path.join(__dirname,'../app/src/main/java/ru/portal/app/MainActivity.java'),'utf8');
 const localCache=fs.readFileSync(path.join(__dirname,'../app/src/main/java/ru/portal/app/PortalLocalCache.java'),'utf8');
+const apiTransport=fs.readFileSync(path.join(__dirname,'../app/src/main/java/ru/portal/app/PortalApiTransport.java'),'utf8');
 const messenger=fs.readFileSync(path.join(__dirname,'../app/src/main/java/ru/portal/app/MessengerActivity.java'),'utf8');
 const messengerWss=fs.readFileSync(path.join(__dirname,'../app/src/main/java/ru/portal/app/TelegramWssLocalProxy.java'),'utf8');
 assert.match(messenger,/https:\/\/web\.telegram\.org\/a\//);
@@ -149,8 +150,11 @@ assert.match(main,/return requestWithFailover\(resolveServerForRequest\(getServe
 assert.match(main,/migrateOutboxOrigin\(TRUSTED_FALLBACK_API_URL, PRIMARY_API_URL\)/);
 assert.match(main,/PROBE_CONNECT_TIMEOUT_MS = 2500/);
 assert.match(main,/PROBE_READ_TIMEOUT_MS = 3000/);
-assert.match(main,/REQUEST_CONNECT_TIMEOUT_MS = 5000/);
-assert.match(main,/REQUEST_READ_TIMEOUT_MS = 10000/);
+assert.match(apiTransport,/connectTimeout\(5000, TimeUnit.MILLISECONDS\)/);
+assert.match(apiTransport,/readTimeout\(10000, TimeUnit.MILLISECONDS\)/);
+assert.match(main,/apiTransport.execute\(request.build\(\), responseLimit\)/);
+assert.match(main,/apiTransport.probe\(base/);
+assert.doesNotMatch(apiTransport,/\.hostnameVerifier\(|\.sslSocketFactory\(|TrustManager|settings put|private_dns_mode/);
 assert.match(main,/networkKind/);
 assert.match(main,/organizer-users\|meta/);
 assert.match(main,/private boolean isSafeServerTransport\(URL url\)/);
