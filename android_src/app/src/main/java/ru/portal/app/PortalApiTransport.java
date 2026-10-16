@@ -87,9 +87,12 @@ final class PortalApiTransport {
                 int b = bytes[1] & 255;
                 if (bytes.length == 4 && !address.isAnyLocalAddress() && !address.isLoopbackAddress()
                         && !address.isLinkLocalAddress() && !address.isSiteLocalAddress()
-                        && !address.isMulticastAddress() && a < 224
+                        && !address.isMulticastAddress() && a > 0 && a < 224
                         && !(a == 100 && b >= 64 && b <= 127)
-                        && !(a == 198 && (b == 18 || b == 19))) addresses.add(address);
+                        && !(a == 198 && (b == 18 || b == 19))
+                        && !(a == 192 && b == 0 && ((bytes[2] & 255) == 0 || (bytes[2] & 255) == 2))
+                        && !(a == 198 && b == 51 && (bytes[2] & 255) == 100)
+                        && !(a == 203 && b == 0 && (bytes[2] & 255) == 113)) addresses.add(address);
             }
             if (addresses.isEmpty()) throw new UnknownHostException("No public PORTAL addresses");
             return addresses;

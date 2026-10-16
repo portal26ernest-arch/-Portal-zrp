@@ -811,12 +811,15 @@ public class MainActivity extends Activity {
 
         private boolean probeOfficialServer(String base) {
             if (PortalApiTransport.officialHost(safeUrlHost(base))) {
-                return apiTransport.probe(base, raw -> {
+                boolean healthy = apiTransport.probe(base, raw -> {
                     try {
                         JSONObject ping = new JSONObject(raw);
                         return ping.optBoolean("ok", false) && ping.optString("build", "").startsWith("PORTAL Server");
                     } catch (Exception invalid) { return false; }
                 });
+                if (healthy && apiTransport.recoveryActive(okhttp3.HttpUrl.get(base)))
+                    android.util.Log.i("PortalNetwork", "official_dns_recovery_active");
+                return healthy;
             }
             HttpURLConnection conn = null;
             try {

@@ -135,7 +135,8 @@ public class PortalApiTransportTest {
         Dns dns = PortalApiTransport.officialDns(host -> {
             List<InetAddress> addresses = new ArrayList<>();
             for (String address : List.of("127.0.0.1", "0.0.0.0", "10.0.0.1", "192.168.1.1",
-                    "169.254.1.1", "100.64.0.1", "198.18.0.1", "224.0.0.1", "1.1.1.1")) {
+                    "169.254.1.1", "100.64.0.1", "198.18.0.1", "224.0.0.1", "0.1.2.3",
+                    "192.0.2.1", "198.51.100.1", "203.0.113.1", "1.1.1.1")) {
                 addresses.add(InetAddress.getByName(address));
             }
             return addresses;
