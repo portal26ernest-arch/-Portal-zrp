@@ -60,3 +60,23 @@ Android/iOS и появление отдельной копии shared assets в
 Для production-релизов версия PORTAL должна синхронно отражаться
 в Android и iOS metadata; номера платформенных build могут меняться только
 осознанно и должны оставаться трассируемыми в release notes.
+
+## Сетевое восстановление 5.14 — 16.10.2026
+
+Android сохраняет выбранный системный DNS и обычный сетевой путь. Если health probe
+неудачен, только `api.vart-portal.ru` и `reserve-api.vart-portal.ru` могут быть
+разрешены через app-scoped DNS-over-HTTPS. В DNS-запрос попадает только имя сервера,
+без токена, компании или тела API-запроса. Новый путь активируется на 120 секунд
+после анонимного `/api/ping` с проверкой PORTAL-ответа; HTTPS URL/Host/SNI и обычная
+проверка сертификата сохраняются. POST не повторяется автоматически.
+
+Объективное отличие iOS: используемый URLSession не предоставляет аналогичный
+per-request DNS override; app-level encrypted-DNS fallback Apple сохраняет
+приоритет системного encrypted DNS пользователя. Поэтому обходить его через
+подмену HTTPS hostname или отключение trust evaluation запрещено. iOS сохраняет
+системную сетевую политику; категории `dns/tls/timeout/connect/network` ошибок
+согласованы с Android и существующим общим экраном входа. Версии обеих оболочек —
+5.14/64; iOS compile/XCTest остаются обязательным gate Android-релиза.
+
+Основание ограничения: [Apple: requireEncryptedNameResolution](https://developer.apple.com/documentation/network/nwparameters/privacycontext/requireencryptednameresolution(_:fallbackresolver:))
+и [WWDC20: Enable encrypted DNS](https://developer.apple.com/videos/play/wwdc2020/10047/).

@@ -9,7 +9,7 @@ on:
         default: ""
         type: string
   push:
-    branches: [ "main", "portal-next-b003", "codex-documents-excel-part4", "codex-communications-news-part5", "assistant-release-3.4-candidate", "assistant/**", "codex-finalization-megapack-part12" ]
+    branches: [ "main", "portal-next-b003", "codex-documents-excel-part4", "codex-communications-news-part5", "assistant-release-3.4-candidate", "assistant/**", "codex/**", "codex-finalization-megapack-part12" ]
     paths:
       - "android_src/**"
       - ".github/workflows/android-build.yml"
@@ -74,7 +74,7 @@ jobs:
         with:
           gradle-version: "8.9"
       - name: Build isolated staging APK
-        run: gradle -p android_src --stacktrace -PportalApiUrl="$PORTAL_STAGING_API_URL" assembleStaging
+        run: gradle -p android_src --stacktrace -PportalApiUrl="$PORTAL_STAGING_API_URL" testStagingUnitTest assembleStaging
       - name: Verify isolated staging APK
         shell: bash
         run: |

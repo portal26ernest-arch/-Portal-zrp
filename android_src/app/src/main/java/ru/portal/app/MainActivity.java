@@ -52,6 +52,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.UUID;
 import org.json.JSONArray;
+import okhttp3.MediaType;
+import okhttp3.Request;
+import okhttp3.RequestBody;
 
 public class MainActivity extends Activity {
     private static final int FILE_CHOOSER_REQUEST = 42032;
@@ -175,6 +178,7 @@ public class MainActivity extends Activity {
         private final SharedPreferences prefs;
         private final WebView webView;
         private final PortalLocalCache localCache;
+        private final PortalApiTransport apiTransport = new PortalApiTransport();
         private final ExecutorService executor = Executors.newFixedThreadPool(3);
         private volatile boolean closed;
         private volatile String cacheCompany = "";
@@ -191,8 +195,6 @@ public class MainActivity extends Activity {
         private static final String LEGACY_API_URL = "https://2a03-6f00-a--1-f426.sslip.io";
         private static final int PROBE_CONNECT_TIMEOUT_MS = 2500;
         private static final int PROBE_READ_TIMEOUT_MS = 3000;
-        private static final int REQUEST_CONNECT_TIMEOUT_MS = 5000;
-        private static final int REQUEST_READ_TIMEOUT_MS = 10000;
 
         PortalBridge(Context context, WebView webView) {
             this.context = context;
@@ -808,6 +810,14 @@ public class MainActivity extends Activity {
         }
 
         private boolean probeOfficialServer(String base) {
+            if (PortalApiTransport.officialHost(safeUrlHost(base))) {
+                return apiTransport.probe(base, raw -> {
+                    try {
+                        JSONObject ping = new JSONObject(raw);
+                        return ping.optBoolean("ok", false) && ping.optString("build", "").startsWith("PORTAL Server");
+                    } catch (Exception invalid) { return false; }
+                });
+            }
             HttpURLConnection conn = null;
             try {
                 URL url = new URL(base + "/api/ping");
@@ -827,6 +837,11 @@ public class MainActivity extends Activity {
             } finally {
                 if (conn != null) conn.disconnect();
             }
+        }
+
+        private String safeUrlHost(String base) {
+            try { return new URL(base).getHost(); }
+            catch (Exception invalid) { return ""; }
         }
 
         private String fetchUpdateManifest() {
@@ -1093,46 +1108,38 @@ public class MainActivity extends Activity {
         }
 
         private String requestAt(String base, String method, String path, String body, String token, String company) {
-            HttpURLConnection conn = null;
             try {
                 if (path == null || !path.startsWith("/api/") || path.contains("\\") || path.contains("#")) throw new Exception("Некорректный API-путь");
                 URL url = new URL(base + path);
                 if (!isSafeServerTransport(url)) throw new Exception("Небезопасный адрес сервера");
-                conn = (HttpURLConnection) url.openConnection();
-                conn.setInstanceFollowRedirects(false);
-                conn.setConnectTimeout(REQUEST_CONNECT_TIMEOUT_MS);
-                conn.setReadTimeout(REQUEST_READ_TIMEOUT_MS);
-                conn.setRequestMethod(method == null ? "GET" : method.toUpperCase());
-                conn.setRequestProperty("Accept", "application/json");
-                conn.setRequestProperty("X-Portal-Client", "Android");
+                String verb = method == null ? "GET" : method.toUpperCase(Locale.ROOT);
+                Request.Builder request = new Request.Builder().url(url)
+                        .header("Accept", "application/json").header("X-Portal-Client", "Android");
                 if (token != null && !token.isEmpty()) {
-                    conn.setRequestProperty("Authorization", "Bearer " + token);
+                    request.header("Authorization", "Bearer " + token);
                 }
                 if (company != null && !company.isEmpty()) {
                     long companyId = Long.parseLong(company);
                     if (companyId < 1) throw new Exception("Некорректная компания");
-                    conn.setRequestProperty("X-Portal-Company", Long.toString(companyId));
+                    request.header("X-Portal-Company", Long.toString(companyId));
                 }
-                if (body != null && !body.isEmpty() && !"GET".equalsIgnoreCase(method)) {
-                    conn.setDoOutput(true);
-                    conn.setRequestProperty("Content-Type", "application/json; charset=utf-8");
-                    byte[] data = body.getBytes(StandardCharsets.UTF_8);
-                    conn.setFixedLengthStreamingMode(data.length);
-                    try (OutputStream out = conn.getOutputStream()) { out.write(data); }
-                }
-                int code = conn.getResponseCode();
-                InputStream stream = code >= 400 ? conn.getErrorStream() : conn.getInputStream();
-                if (stream == null) return "{\"ok\":false,\"error\":\"HTTP " + code + "\"}";
+                RequestBody requestBody = "GET".equals(verb) || "HEAD".equals(verb) ? null
+                        : RequestBody.create(body == null ? new byte[0] : body.getBytes(StandardCharsets.UTF_8),
+                                MediaType.get("application/json; charset=utf-8"));
+                request.method(verb, requestBody);
                 int responseLimit = path.startsWith("/api/v3/document-file") ? 30 * 1024 * 1024
                         : path.startsWith("/api/v3/chat-file") ? 4 * 1024 * 1024
                         : 2 * 1024 * 1024;
-                JSONObject result = new JSONObject(readLimited(stream, responseLimit));
-                result.put("httpStatus", code);
+                PortalApiTransport.Payload response = apiTransport.execute(request.build(), responseLimit);
+                JSONObject result = response.body.isEmpty()
+                        ? new JSONObject().put("ok", false).put("error", "HTTP " + response.status)
+                        : new JSONObject(response.body);
+                result.put("httpStatus", response.status);
                 return result.toString();
             } catch (Exception e) {
                 try {
                     String kind = "network";
-                    if (e instanceof java.net.SocketTimeoutException) kind = "timeout";
+                    if (e instanceof java.io.InterruptedIOException) kind = "timeout";
                     else if (e instanceof java.net.UnknownHostException) kind = "dns";
                     else if (e instanceof javax.net.ssl.SSLException) kind = "tls";
                     else if (e instanceof java.net.ConnectException) kind = "connect";
@@ -1141,8 +1148,6 @@ public class MainActivity extends Activity {
                 } catch (Exception ignored) {
                     return "{\"ok\":false,\"network\":true,\"networkKind\":\"network\",\"error\":\"Не удалось связаться с сервером. Проверьте подключение.\"}";
                 }
-            } finally {
-                if (conn != null) conn.disconnect();
             }
         }
     }

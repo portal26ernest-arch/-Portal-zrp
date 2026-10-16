@@ -105,7 +105,7 @@ jobs:
           PORTAL_ANDROID_STORE_PASSWORD: ${{ secrets.PORTAL_ANDROID_STORE_PASSWORD }}
           PORTAL_ANDROID_KEY_ALIAS: ${{ secrets.PORTAL_ANDROID_KEY_ALIAS }}
           PORTAL_ANDROID_KEY_PASSWORD: ${{ secrets.PORTAL_ANDROID_KEY_PASSWORD }}
-        run: gradle -p android_src --stacktrace -PportalApiUrl="$PORTAL_PUBLIC_API_URL" assembleRelease
+        run: gradle -p android_src --stacktrace -PportalApiUrl="$PORTAL_PUBLIC_API_URL" testReleaseUnitTest assembleRelease
       - name: Verify and name release
         id: artifact
         shell: bash

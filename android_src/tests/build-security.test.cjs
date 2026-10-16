@@ -112,4 +112,9 @@ must(releaseWorkflow.includes("https://api.vart-portal.ru") &&
      releaseWorkflow.includes('test "$API_HOST" = "api.vart-portal.ru"') &&
      !releaseWorkflow.includes('PORTAL_RELEASE_TEMPORARY_SSLIP_HOST'),
   'Production Android release must be pinned to the permanent api.vart-portal.ru host');
+must(stagingWorkflow.includes('testStagingUnitTest assembleStaging') &&
+     releaseWorkflow.includes('testReleaseUnitTest assembleRelease'),
+  'Network recovery unit tests must gate staging builds and signed releases');
+must(stagingWorkflow.includes('"codex/**"'),
+  'Codex branches must run Android compilation and transport unit tests');
 console.log('Android build security checks: OK');
