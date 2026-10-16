@@ -48,6 +48,8 @@ jobs:
         run: node android_src/tests/employee-create-mode.test.cjs
       - name: Verify native fullscreen shell
         run: node android_src/tests/native-shell.test.cjs
+      - name: Verify Android logout responsiveness and session isolation
+        run: node --test android_src/tests/logout-performance.test.cjs
       - name: Verify Desktop navigation and recovery contract
         run: node android_src/tests/desktop-shell.test.cjs
       - name: Verify retired runtime boundary

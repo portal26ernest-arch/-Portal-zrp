@@ -44,8 +44,44 @@ public partial class MainWindow : Window
         Closed += (_, _) => _portalProxy?.Dispose();
     }
 
+    private void RetireExternalProviderProfiles()
+    {
+        // Old standalone browser profiles: never delete the shared PORTAL WebView2
+        // profile, company cache, encrypted credentials or offline outbox.
+        foreach (var profileName in new[]
+        {
+            "MessengerWebView2-Telegram-5.12.6", "MessengerWebView2-Telegram",
+            "MessengerEdge-Telegram-5.12.7", "MessengerEdge-Telegram",
+            "MessengerWebView2-Max", "MessengerWebView2"
+        })
+        {
+            try
+            {
+                var profile = Path.Combine(_settingsDir, profileName);
+                if (Directory.Exists(profile)) DeleteProviderOnlyTree(profile);
+            }
+            catch { /* locked old profile: retry safely next launch */ }
+        }
+    }
+
+    private static void DeleteProviderOnlyTree(string profile)
+    {
+        if ((File.GetAttributes(profile) & FileAttributes.ReparsePoint) != 0)
+            throw new IOException("Provider profile is a symlink or junction");
+        foreach (var entry in Directory.EnumerateFileSystemEntries(profile))
+        {
+            var attr = File.GetAttributes(entry);
+            if ((attr & FileAttributes.ReparsePoint) != 0)
+                throw new IOException("Provider profile includes an external link");
+            if ((attr & FileAttributes.Directory) != 0) DeleteProviderOnlyTree(entry);
+            else File.Delete(entry);
+        }
+        Directory.Delete(profile);
+    }
+
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
+        _ = Task.Run(RetireExternalProviderProfiles);
         var configured = Environment.GetEnvironmentVariable("PORTAL_SERVER_URL");
         if (!string.IsNullOrWhiteSpace(configured))
         {

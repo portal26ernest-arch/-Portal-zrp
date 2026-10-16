@@ -55,7 +55,7 @@ test('Desktop cache is company + user + permission scoped, encrypted and fail-sa
   for(const forbidden of ['/api/login','/api/me','/api/platform','messenger-relay-ticket','code-interpreter']) assert.equal(adapter.includes("CACHEABLE = ['"+forbidden),false,forbidden);
   assert.ok(adapter.includes("invalidationKeys(target).length"));
   assert.ok(app.includes("setCacheIdentity?.('','','[]')"));
-  assert.ok(app.includes("setCacheIdentity?.('','')"));
+  assert.ok(app.includes("setCacheIdentity?.('','','[]')"));
 });
 
 test('meta and Organizer stay in the local-first cache contract',()=>{
