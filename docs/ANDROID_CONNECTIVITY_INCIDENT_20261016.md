@@ -44,8 +44,40 @@ main separately. The original APK is retained in the official GitHub release.
 
 - 5.13 incident: authenticated physical Android acceptance confirmed by owner.
 - Local 5.14 native-shell/security/parity/iOS-release-config/diff checks pass.
-- 5.14 Android compilation/native unit tests, full CI, signed publication and
-  install-over-current with original AdGuard private DNS are pending.
+- Implementation commits 0bf7526 and d009a5e were pushed and integrated by PR #84
+  into canonical main e11886110bcc373b4222d1c275e34a89bf3ba828.
+- Final implementation CI: Android 38948540481 SUCCESS; retained JUnit XML records
+  12 tests, zero failures/errors/skips. Android UI 38948586048 SUCCESS; iOS build,
+  parity, XCTest and privacy checks 38948585966 SUCCESS; Windows 38948585622 and
+  security 38948585778 SUCCESS. Master-control push/PR checks also passed.
+- On merged main, Android 38950327229, UI 38950327270, Windows 38950327277,
+  security 38950327425 and master-control 38950327253 passed. The automatic iOS
+  repeat on main was still running when the release record was prepared; the
+  final implementation's iOS gate above was already successful before merge.
+- Signed release workflow 38950413046 SUCCESS, including testReleaseUnitTest,
+  standard production signer verification and artifact/manifest validation.
+  Release portal-android-v5.14 was published 2026-10-16 18:51:14 UTC from exact
+  current main e11886110bcc373b4222d1c275e34a89bf3ba828. Android versionCode 64,
+  versionName 5.14, buildNumber 64.26. The latest updater release points to 5.14.
+- Downloaded production APK SHA-256 matches GitHub's asset digest, the .sha256
+  file and portal-update.json:
+  c7e01478324a58b6046ad8f64fe3f401351f981c95b697e71014640f08236be2.
+  Local artifact validation with the actual CI build metadata returns
+  RELEASE_ARTIFACT_OK. Release and previous 5.13 rollback APK remain available:
+  https://github.com/portal26ernest-arch/-Portal-zrp/releases/tag/portal-android-v5.14
+- VPS source sync explicitly confirmed main e118861; mirror was clean, timer and
+  production service active. Runtime remained c55ac9e-mobile512 because this fix
+  changes the native client only. Both official origins' /api/ping and /api/ready,
+  plus https://vart-portal.ru/web/, returned HTTP 200 after the implementation.
+- Physical 5.14 install-over-current and original AdGuard DNS smoke remain OPEN:
+  the phone disappeared from ADB before the signed artifact became available.
+  No 5.14 installation or physical recovery acceptance is claimed. The owner
+  was asked to reconnect the phone. Last verified device state is working 5.13
+  with automatic private DNS; the original AdGuard hostname is preserved.
+  Next: reconnect/authorize USB, install the signed 5.14 APK with adb install -r,
+  verify version/auth/data preservation, restore the original hostname DNS mode
+  and verify the working screen plus the fixed PortalNetwork recovery marker.
+  If connectivity fails, restore automatic DNS immediately.
 - Cause of the third-party edge's network unavailability is not established.
   Recovery does not promise availability when every trusted route is unreachable.
 
