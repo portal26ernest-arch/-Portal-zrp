@@ -780,7 +780,8 @@ test('browser UI regression',async t=>{
       const {page,errors}=await fixture(browser,'platform_owner');
       await login(page);
       await page.locator('[data-action=editPlatformCompany][data-id="2"]').click();
-      assert.equal(await page.locator('[data-platform-module]').count(),24);
+      assert.equal(await page.locator('[data-platform-module]').count(),23);
+      assert.equal(await page.locator('#module-toggle-messenger').count(),0);
       assert.equal(await page.locator('#module-toggle-organizer').count(),1);
       await page.locator('#module-toggle-work').uncheck();
       await page.locator('#platformCompanyForm [type=submit]').click();
