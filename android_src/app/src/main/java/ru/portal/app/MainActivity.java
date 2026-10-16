@@ -180,6 +180,7 @@ public class MainActivity extends Activity {
         private volatile String cacheCompany = "";
         private volatile String cacheUser = "";
         private volatile String healthyServerBase = "";
+        private volatile String healthyServerPreference = "";
         private volatile long healthyServerUntilMs;
         private static final long CACHE_MAX_AGE_MS = 30L * 24 * 60 * 60 * 1000;
         private static final long SERVER_HEALTH_TTL_MS = 2L * 60 * 1000;
@@ -351,7 +352,7 @@ public class MainActivity extends Activity {
                         // Local-first: render immediately, then refresh in the background.
                         deliver(id, ready);
                         String freshBase = resolveServerForRequest(requestedBase);
-                        String fresh = requestAt(freshBase, verb, path, body, token, company);
+                        String fresh = requestWithFailover(freshBase, verb, path, body, token, company);
                         if (responseOk(fresh)) {
                             localCache.write(cacheBase, localScope, path, fresh);
                             notifyCacheUpdated(path);
@@ -364,7 +365,7 @@ public class MainActivity extends Activity {
                     }
                 }
                 String base = resolveServerForRequest(requestedBase);
-                String result = requestAt(base, verb, path, body, token, company);
+                String result = requestWithFailover(base, verb, path, body, token, company);
                 if (cacheable && responseOk(result)) localCache.write(cacheBase, localScope, path, result);
                 if ("POST".equals(verb) && responseOk(result) && !localScope.isEmpty())
                     invalidateCacheForMutation(cacheBase, localScope, path);
@@ -381,6 +382,9 @@ public class MainActivity extends Activity {
         }
 
         private void markHealthyServer(String base) {
+            // Cache is scoped to the chosen origin, not just to a healthy peer.
+            // A manual server change must take effect immediately.
+            healthyServerPreference = getServerUrl();
             healthyServerBase = base;
             healthyServerUntilMs = System.currentTimeMillis() + SERVER_HEALTH_TTL_MS;
         }
@@ -394,11 +398,31 @@ public class MainActivity extends Activity {
             return TRUSTED_FALLBACK_API_URL;
         }
 
+        private String requestWithFailover(String base, String method, String path,
+                                           String body, String token, String company) {
+            String first = requestAt(base, method, path, body, token, company);
+            if (!isAutomaticPortalServer(base)) return first;
+            boolean connectionFailed;
+            try { connectionFailed = new JSONObject(first).optBoolean("network", false); }
+            catch (Exception ignored) { return first; }
+            if (!connectionFailed) return first;
+
+            String peer = automaticPeer(base);
+            if (!probeOfficialServer(peer)) return first;
+            markHealthyServer(peer);
+            // Do not automatically repeat any POST, including login: the server
+            // might have already committed its response before transport failed.
+            // The next explicit user request will use the healthy peer.
+            if (!"GET".equalsIgnoreCase(method)) return first;
+            return requestAt(peer, method, path, body, token, company);
+        }
+
         private synchronized String resolveServerForRequest(String requestedBase) {
             String base = requestedBase == null ? "" : requestedBase.trim();
             if (!isAutomaticPortalServer(base)) return base;
             long now = System.currentTimeMillis();
-            if (isAutomaticPortalServer(healthyServerBase) && now < healthyServerUntilMs) return healthyServerBase;
+            if (base.equalsIgnoreCase(healthyServerPreference)
+                    && isAutomaticPortalServer(healthyServerBase) && now < healthyServerUntilMs) return healthyServerBase;
             if (probeOfficialServer(base)) {
                 markHealthyServer(base);
                 return base;
@@ -1040,6 +1064,12 @@ public class MainActivity extends Activity {
                 URL url = new URL(value);
                 if (isSafeServerTransport(url) && url.getUserInfo() == null
                         && url.getQuery() == null && url.getRef() == null && (url.getPath().isEmpty() || "/".equals(url.getPath()))) {
+                    if (!value.equalsIgnoreCase(getServerUrl())) {
+                        // Discard a cached peer when the user explicitly selects another origin.
+                        healthyServerBase = "";
+                        healthyServerPreference = "";
+                        healthyServerUntilMs = 0L;
+                    }
                     prefs.edit().putString("server_url", value).apply();
                 }
             } catch (Exception ignored) { }
@@ -1047,12 +1077,12 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public String request(String method, String path, String body, String token) {
-            return requestAt(resolveServerForRequest(getServerUrl()), method, path, body, token, "");
+            return requestWithFailover(resolveServerForRequest(getServerUrl()), method, path, body, token, "");
         }
 
         @JavascriptInterface
         public String requestForCompany(String method, String path, String body, String token, String company) {
-            return requestAt(resolveServerForRequest(getServerUrl()), method, path, body, token, company);
+            return requestWithFailover(resolveServerForRequest(getServerUrl()), method, path, body, token, company);
         }
 
         private String requestAt(String base, String method, String path, String body, String token, String company) {
