@@ -106,7 +106,7 @@ test('top Organizer shortcut opens Organizer directly and shows outstanding work
   const html=fs.readFileSync(path.join(assets,'index.html'),'utf8');
   const app=fs.readFileSync(path.join(assets,'app.js'),'utf8');
   assert.match(html,/id="organizerShortcut"[^>]*data-action="openOrganizer"[^>]*aria-label="Органайзер · открыть задачи"/);
-  assert.match(html,/data-action="openMessenger"[\s\S]{0,300}id="organizerShortcut"/);
+  assert.doesNotMatch(html,/data-action="openMessenger"/);
   assert.match(app,/actions\.openOrganizer=\(\)=>\{if\(!can\('organizer'\)\)return toast\([\s\S]*?go\('organizer'\);\}/);
   assert.match(app,/center\.center==='ORGANIZER'\?\(center\.pending_count\?\?center\.unread_count\):center\.unread_count/);
   assert.match(app,/organizerShortcut\.classList\.toggle\('hidden',!can\('organizer'\)\)/);
@@ -168,7 +168,7 @@ test('time-based greeting uses local hour boundaries',()=>{
   assert.throws(()=>core.timeGreeting(24),/hour must be 0\.\.23/);
 });
 test('role capabilities and employee linkage',()=>{
-  const expected={admin:['work','payroll','messenger','clients','materials','invoices','users','jobs','reports','news','wms','notifications'],director:['work','payroll','clients','materials','invoices','users','jobs','reports','news','wms','notifications'],manager:['work','payroll','clients','materials','invoices','jobs','reports','news','wms','notifications'],packer:['work','payroll','messenger','materials','jobs','notifications'],shift:['messenger','notifications'],accountant:['messenger','notifications']};
+  const expected={admin:['work','payroll','clients','materials','invoices','users','jobs','reports','news','wms','notifications'],director:['work','payroll','clients','materials','invoices','users','jobs','reports','news','wms','notifications'],manager:['work','payroll','clients','materials','invoices','jobs','reports','news','wms','notifications'],packer:['work','payroll','messenger','materials','jobs','notifications'],shift:['messenger','notifications'],accountant:['messenger','notifications']};
   for(const [role,pages] of Object.entries(expected)){
     for(const m of core.modules)assert.equal(core.can(m.id,{role,employee_id:101},{id:1}),pages.includes(m.id),role+':'+m.id);
     assert.equal(core.can('work',{role}, {id:1}),false);
@@ -198,7 +198,7 @@ test('effective permissions enforce the current company role matrix',()=>{
   for(const page of ['teamChat','clients','invoices','reports','news','wms','organizer','radar','expenses','analytics','documents','users','permissions'])
     assert.equal(core.can(page,{role:'packer',employee_id:101,permissions:packer},company),false,'packer forbidden:'+page);
   for(const role of ['shift','accountant']){
-    for(const m of core.modules)assert.equal(core.can(m.id,{role,employee_id:101,permissions:[]},company),['messenger','notifications'].includes(m.id),role+':'+m.id);
+    for(const m of core.modules)assert.equal(core.can(m.id,{role,employee_id:101,permissions:[]},company),['notifications'].includes(m.id),role+':'+m.id);
   }
   context.__PORTAL_DESKTOP__=false;
   assert.equal(core.can('organizer',{role:'manager',employee_id:101,permissions:manager},company),true,'manager organizer on mobile');

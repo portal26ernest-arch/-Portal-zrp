@@ -1089,45 +1089,13 @@ class ProductionTest(unittest.TestCase):
         self.assertTrue(result['server_time'])
         self.request('/api/v3/work',self.owner,dict(request_id='owner-work',client_id=1,operation_id=1,quantity=1),status=400,extra_headers={'X-Portal-Company':'1'})
 
-    def test_personal_messenger_is_owner_only_secret_free_and_role_restricted(self):
-        account=self.post('messenger',dict(mode='create_account',platform='telegram',label='Рабочий Telegram'),self.worker)['data']
-        self.assertEqual((account['owner_user_id'],account['account_type'],account['connection_state']),
-                         (self.request('/api/me',self.worker)['user']['id'],'personal_work','adapter_unconfigured'))
-        self.assertEqual(self.get('messenger',self.worker)['data']['accounts'][0]['id'],account['id'])
-        self.post('messenger',dict(mode='create_conversation',account_id=account['id'],title='Рабочая беседа'),self.worker)
-        self.assertEqual(self.get('messenger',self.worker)['data']['conversations'][0]['title'],'Рабочая беседа')
-        self.get('messenger',self.role_token('manager'),status=403)
-        self.get('messenger',self.role_token('director'),status=403)
-        self.post('messenger',dict(mode='create_account',platform='max',label='bad',password='invented'),self.worker,status=400)
-        self.assertEqual(len(self.get('messenger',self.worker)['data']['accounts']),1)
-        self.assertEqual(self.get('messenger',self.other_admin)['data']['accounts'],[])
-
-    def test_messenger_relay_ticket_is_short_lived_secret_free_and_role_restricted(self):
-        env={'PORTAL_MESSENGER_RELAY_URL':'https://relay.vart-portal.ru:9443',
-             'PORTAL_MESSENGER_RELAY_SECRET':'test-secret-'+'x'*40,
-             'PORTAL_MESSENGER_RELAY_TTL_SECONDS':'600'}
-        with patch.dict('os.environ',env,clear=False):
-            ticket=self.get('messenger-relay-ticket',self.worker)['data']
-            self.assertTrue(ticket['enabled'])
-            self.assertEqual(ticket['proxy_url'],'https://relay.vart-portal.ru:9443')
-            self.assertEqual(ticket['realm'],'PORTAL Messenger Relay')
-            self.assertTrue(ticket['username'].startswith('v2.telegram.'))
-            self.assertEqual(ticket['provider'],'telegram')
-            self.assertFalse(ticket['required'])
-            self.assertGreater(len(ticket['password']),30)
-            self.assertNotIn('PORTAL_MESSENGER_RELAY_SECRET',ticket)
-            self.get('messenger-relay-ticket',self.role_token('manager'),status=403)
-            self.get('messenger-relay-ticket',self.role_token('director'),status=403)
-        with patch.dict('os.environ',{'PORTAL_TELEGRAM_RELAY_REQUIRED':'true'},clear=False):
-            os.environ.pop('PORTAL_MESSENGER_RELAY_URL',None)
-            os.environ.pop('PORTAL_MESSENGER_RELAY_SECRET',None)
-            unavailable=self.get('messenger-relay-ticket',self.worker)['data']
-            self.assertEqual(unavailable,{'provider':'telegram','enabled':False,'required':True})
-        with patch.dict('os.environ',{'PORTAL_TELEGRAM_RELAY_REQUIRED':'maybe'},clear=False):
-            os.environ.pop('PORTAL_MESSENGER_RELAY_URL',None)
-            os.environ.pop('PORTAL_MESSENGER_RELAY_SECRET',None)
-            unknown=self.get('messenger-relay-ticket',self.worker)['data']
-            self.assertEqual(unknown,{'provider':'telegram','enabled':False,'required':False})
+    def test_external_provider_api_removed(self):
+        # Old bookmarks and clients must not revive removed integrations.
+        self.get('messenger',self.worker,status=400)
+        self.get('messenger-relay-ticket',self.worker,status=400)
+        self.post('messenger',{'mode':'create_account'},self.worker,status=400)
+        centers=self.get('notification-centers',self.worker)['data']
+        self.assertEqual({item['center'] for item in centers},{'TASKS','ORGANIZER'})
 
     def test_notification_center_read_receipt_is_per_user_and_tenant(self):
         batch=self.batch();task=self.task(batch)

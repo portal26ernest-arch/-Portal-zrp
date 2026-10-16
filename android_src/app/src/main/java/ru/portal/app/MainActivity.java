@@ -250,26 +250,6 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public boolean openMessengerWindow(String provider, String relayJson) {
-            String selected = "max".equalsIgnoreCase(provider) ? "max" : "telegram";
-            try {
-                Intent intent = new Intent(context, MessengerActivity.class)
-                        .putExtra("provider", selected)
-                        .putExtra("relay", relayJson == null || relayJson.length() > 4096 ? "" : relayJson);
-                intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
-                context.startActivity(intent);
-                return true;
-            } catch (Exception ignored) { return false; }
-        }
-
-        @JavascriptInterface
-        public void clearMessengerSession() {
-            Intent intent = new Intent(context, MessengerActivity.class).setAction(MessengerActivity.ACTION_CLEAR_SESSION)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-            try { context.startActivity(intent); } catch (Exception ignored) { }
-        }
-
-        @JavascriptInterface
         public void scheduleOrganizerReminders(String json) {
             if (!(context instanceof Activity)) return;
             Activity activity = (Activity) context;

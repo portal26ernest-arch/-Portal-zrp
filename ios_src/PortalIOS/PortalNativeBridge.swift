@@ -1,4 +1,4 @@
-﻿import Foundation
+import Foundation
 import UIKit
 import WebKit
 import UserNotifications
@@ -29,8 +29,6 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
     private let localCache = PortalLocalCache()
     private var cacheCompany = ""
     private var cacheUser = ""
-    private var messengerClearInProgress = false
-    private var pendingMessengerProvider: String?
     private var userContentController: WKUserContentController?
     private var activeObserver: NSObjectProtocol?
 
@@ -156,8 +154,6 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
               return !!cacheUser;
             },
             clearCompanyCache: () => { send('clearCompanyCache', {}); return true; },
-            openMessengerWindow: (provider, relayJson) => { const p=String(provider||'telegram').toLowerCase()==='max'?'max':'telegram'; send('openMessengerWindow', {provider:p, relay: p==='telegram' ? String(relayJson||'') : ''}); return true; },
-            clearMessengerSession: () => { send('clearMessengerSession',{}); return true; },
             queueMutation: json => ask('queueMutation', {json:String(json||'')}),
             pendingMutations: () => ask('pendingMutations', {}).then(rows => JSON.stringify(Array.isArray(rows)?rows:[])),
             removeMutation: requestId => ask('removeMutation', {requestId:String(requestId||'')}),
@@ -218,43 +214,6 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
         case "clearCompanyCache":
             let scope = cacheScope
             if !scope.isEmpty { _ = localCache.clearCompany(serverOrigin: serverURL, companyID: scope) }
-        case "openMessengerWindow":
-            let provider = (payload["provider"] as? String)?.lowercased() == "max" ? "max" : "telegram"
-            let relay = provider == "telegram" ? (payload["relay"] as? String ?? "") : ""
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                if self.messengerClearInProgress {
-                    self.pendingMessengerProvider = provider
-                    return
-                }
-                self.presentMessenger(provider, relay: relay)
-            }
-        case "clearMessengerSession":
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                if self.messengerClearInProgress {
-                    self.pendingMessengerProvider = nil
-                    return
-                }
-                self.messengerClearInProgress = true
-                self.pendingMessengerProvider = nil
-                MessengerViewController.clear { [weak self] in
-                    DispatchQueue.main.async {
-                        guard let self else { return }
-                        let presenter = self.topViewController()
-                        let current = (presenter as? MessengerViewController) ?? (presenter?.presentedViewController as? MessengerViewController)
-                        let complete = {
-                            self.messengerClearInProgress = false
-                            if let pending = self.pendingMessengerProvider {
-                                self.pendingMessengerProvider = nil
-                                self.presentMessenger(pending)
-                            }
-                        }
-                        if let current { current.dismiss(animated: false, completion: complete) }
-                        else { complete() }
-                    }
-                }
-            }
         case "scheduleOrganizerReminders":
             scheduleOrganizerReminders(payload["json"] as? String ?? "[]")
         case "requestAsync":
@@ -285,15 +244,6 @@ final class PortalNativeBridge: NSObject, WKScriptMessageHandler, WKScriptMessag
     private var cacheScope: String {
         guard !cacheCompany.isEmpty, !cacheUser.isEmpty else { return "" }
         return cacheCompany + "_" + cacheUser
-    }
-
-    private func presentMessenger(_ provider: String, relay: String = "") {
-        guard let presenter = topViewController() else { return }
-        let current = (presenter as? MessengerViewController) ?? (presenter.presentedViewController as? MessengerViewController)
-        if let current { current.selectProvider(provider, relayJSON: relay); return }
-        let messenger = MessengerViewController(provider: provider, relayJSON: relay)
-        messenger.modalPresentationStyle = .fullScreen
-        presenter.present(messenger, animated: true)
     }
 
     private func scheduleOrganizerReminders(_ json: String) {

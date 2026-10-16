@@ -15,7 +15,7 @@ ALLOWED_ROUTE_PARTS = frozenset({
     "api", "v3", "platform", "companies", "audit", "me", "company",
     "dashboard", "clients", "admin", "operations", "work", "mine",
     "payroll", "materials", "jobs", "invoices", "users", "login",
-    "invitations", "code-interpreter", "messenger-relay-ticket",
+    "invitations", "code-interpreter",
 })
 SAFE_LABEL = re.compile(r"^[A-Za-z0-9._+-]{1,80}$")
 EVENTS = {"portal_server_started", "portal_server_error", "portal_server_slow_request"}
