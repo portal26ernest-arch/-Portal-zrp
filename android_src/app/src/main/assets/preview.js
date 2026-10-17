@@ -21,13 +21,29 @@
   }
   screens.dashboard=async()=>{
     if(!S.stage3||!managementRoles.has(S.me?.role))return liveDashboard();
+    // Director/admin preview is the last override and therefore the REAL dashboard.
+    // Never wait for HTTPS before showing the actual navigation.
+    const view=S.view,epoch=S.epoch,token=S.token,company=String(S.company?.id||'');
+    const loadId=S.managementDashboardSeq=(S.managementDashboardSeq||0)+1;
+    const live=()=>S.page==='dashboard'&&S.view===view&&S.epoch===epoch
+      &&S.token===token&&String(S.company?.id||'')===company
+      &&S.managementDashboardSeq===loadId;
+    const shortcuts=[
+      quick('clients','clients','Клиенты'),quick('users','users','Сотрудники'),
+      quick('materials','box','Склад'),quick('invoices','receipt','Счета'),
+      quick('payrollPeriods','wallet','Зарплата'),quick('documents','file','Документы'),
+      quick('reports','grid','Отчёты'),quick('notifications','bell','Контроль')
+    ].join('');
+    paint(heading('PORTAL Сегодня','Рабочий кабинет доступен',
+      btn('Все разделы','go','data-page="sections"','secondary'))+
+      '<section class="dashboard-section"><h2>Быстрые действия</h2><div class="quick-grid">'+shortcuts+'</div></section>'+
+      '<section class="card" data-management-loading role="status"><p>Загружаем показатели за сегодня.</p></section>');
     let payrollBounds=null;
     if(allowed('payroll.all'))payrollBounds=currentPayrollBounds();
-    const [d,timers,payroll]=await Promise.all([
-      productionGet('today'),
-      allowed('work.write')||allowed('tasks.read')?productionGet('timers'):Promise.resolve([]),
-      payrollBounds?productionGet(`payroll-periods?period_start=${encodeURIComponent(payrollBounds[0])}&period_end=${encodeURIComponent(payrollBounds[1])}`).catch(()=>null):Promise.resolve(null)
-    ]);
+    let latestToday=null,timers=[],payroll=null;
+    const renderSummary=()=>{
+      if(!live()||!latestToday)return;
+      const d=latestToday;
     S.productionTasks=d.tasks||[];
     S.activeTimers=timers;
     const inWorkTasks=new Set([...S.productionTasks.filter(t=>t.status==='in_progress').map(t=>t.id),...S.activeTimers.map(t=>t.task_id)]);
@@ -79,6 +95,31 @@
       `<section class="dashboard-section"><div class="section-label"><h2>Быстрые действия</h2><button class="text-link" data-action="go" data-page="sections">Все разделы</button></div><div class="quick-grid">${quickActions}</div></section>`
     );
     tickElapsed();
+    };
+    const showUnavailable=()=>{
+      if(!live())return;
+      const status=$('content')?.querySelector('[data-management-loading] p');
+      if(status)status.textContent='Показатели временно недоступны. Рабочие разделы доступны.';
+    };
+    // Read-only requests are independent. One slow or failed response cannot
+    // destroy the whole dashboard or delay first paint.
+    void productionGet('today').then(data=>{
+      if(!live())return;
+      latestToday=data;
+      renderSummary();
+    }).catch(showUnavailable);
+    if(allowed('work.write')||allowed('tasks.read'))
+      void productionGet('timers').then(rows=>{
+        if(!live())return;
+        timers=Array.isArray(rows)?rows:[];
+        if(latestToday)renderSummary();
+      }).catch(()=>{});
+    if(payrollBounds)
+      void productionGet(`payroll-periods?period_start=${encodeURIComponent(payrollBounds[0])}&period_end=${encodeURIComponent(payrollBounds[1])}`).then(data=>{
+        if(!live())return;
+        payroll=data;
+        if(latestToday)renderSummary();
+      }).catch(()=>{});
   };
 
   actions.previewFeature=button=>previewSheet(button.dataset.title||'Функция PORTAL',`<div class="preview-flow"><h3>${esc(button.dataset.title||'Будущий модуль')}</h3><p>${esc(button.dataset.text||'Функция включена в утверждённую структуру preview APK.')}</p><div class="notice">В preview-сборке можно оценить расположение, названия и сценарий переходов. Запись в production не выполняется.</div></div>`);
