@@ -70,7 +70,8 @@ test('local-first performance contract uses long cache, 10-minute sync, bulk tar
   assert.match(production,/LOCAL_SYNC_INTERVAL_MS=10\*60\*1000/);
   assert.match(production,/productionGet\('tariff-history'\)/);
   assert.doesNotMatch(production,/c\.operations\.map\(async o=>\[o\.id,await productionGet\('tariff-history\?operation_id='/);
-  assert.match(production,/const \[d,organizerRows,organizerRequestIncoming,organizerRequestMine,timers\]=await Promise\.all/);
+  assert.match(production,/const auxiliaryRequests=Promise\.allSettled\(\[/);
+  assert.match(production,/todayData=await productionGet\('today'\)/);
   assert.match(production,/queueLocalMutation\(path,payload,requestId\)/);
   assert.match(production,/api\('GET','\/api\/v3\/meta'/);
   assert.match(production,/applyProductionMeta\(meta\)/);

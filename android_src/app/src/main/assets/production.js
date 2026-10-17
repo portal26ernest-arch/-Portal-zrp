@@ -122,14 +122,25 @@ const statusLabel={received:'Принята',in_progress:'В работе',ready
 function taskStatusLabel(task){return task.status==='done'?'Завершено':task.status==='in_progress'?'В работе':'Ожидает начала';}
 screens.dashboard=async()=>{
   if(!S.stage3)return previous.dashboard();
-  const [d,organizerRows,organizerRequestIncoming,organizerRequestMine,timers]=await Promise.all([
-    productionGet('today'),
-    can('organizer')?productionGet('organizer?scope=incoming'):Promise.resolve([]),
-    can('organizer')&&allowed('organizer.request.decide')?productionGet('organizer-requests?scope=incoming'):Promise.resolve([]),
-    canCreateDirectorRequest()?productionGet('organizer-requests?scope=mine'):Promise.resolve([]),
-    allowed('work.write')||allowed('tasks.read')?productionGet('timers'):Promise.resolve([])
-  ]);
-  S.productionTasks=d.tasks||[];S.activeTimers=timers;
+  // Navigation is usable before server KPIs, Organizer and timers finish loading.
+  const view=S.view,epoch=S.epoch,token=S.token,company=String(S.company?.id||'');
+  const loadId=S.dashboardLoadSeq=(S.dashboardLoadSeq||0)+1;
+  const live=()=>S.page==='dashboard'&&S.view===view&&S.epoch===epoch
+    &&S.token===token&&String(S.company?.id||'')===company&&S.dashboardLoadSeq===loadId;
+  if(!$('content')?.querySelector('.page-heading'))paint(
+    heading('PORTAL · главная','Показатели обновляются в фоне',
+      btn('Все разделы','go','data-page="sections"','secondary'))+
+    '<div class="card" role="status"><h3>Рабочее место готово</h3>'+
+    '<p class="meta">Загружаем показатели за сегодня. Меню и другие разделы уже доступны.</p>'+
+    (can('work')?btn('Перейти к работе','go','data-page="work"','secondary block'):'')+
+    (can('organizer')?btn('Органайзер','go','data-page="organizer"','secondary block'):'')+
+    '</div>');
+  let todayData=null,auxiliary=null;
+  const render=()=>{
+    if(!todayData||!live())return;
+    const d=todayData;
+    const [organizerRows,organizerRequestIncoming,organizerRequestMine,timers]=auxiliary||[[],[],[],[]];
+    S.productionTasks=d.tasks||[];S.activeTimers=timers;
   const management=d.mode==='management';
   const inWorkTasks=new Set([...S.productionTasks.filter(t=>t.status==='in_progress').map(t=>t.id),...S.activeTimers.map(t=>t.task_id)]);
   const taskMetrics=allowed('tasks.read')?metric('Задания в работе',num(inWorkTasks.size)):'';
@@ -143,6 +154,20 @@ screens.dashboard=async()=>{
   if(organizerRows.length){const active=organizerRows.filter(t=>organizerActive(t)),late=active.filter(t=>new Date(t.due_at)<new Date());const box=document.createElement('section');box.className='card';box.innerHTML='<div class="row between"><div><span class="eyebrow">Органайзер</span><h2>Мои задачи</h2></div>'+btn('Открыть органайзер','go','data-page="organizer"','secondary')+'</div><p>'+active.length+' активных задач'+(late.length?' · <b>'+late.length+' просрочено</b>':'')+'</p>'+(active[0]?'<p class="meta">Ближайшая: '+esc(active[0].title)+' · '+esc(organizerMoment(active[0].due_at))+'</p>':'');$('content').querySelector('.page-heading')?.after(box);}
   if(organizerRequestIncoming.length||organizerRequestMine.length){const directorAttention=organizerRequestIncoming.filter(r=>['new','review'].includes(r.status)).length,authorAttention=organizerRequestMine.filter(r=>r.status==='needs_info').length;const box=document.createElement('section');box.className='card';box.innerHTML='<div class="row between"><div><span class="eyebrow">Органайзер</span><h2>Запросы директору</h2></div>'+btn('Открыть органайзер','go','data-page="organizer"','secondary')+'</div>'+(directorAttention?'<p><b>'+directorAttention+'</b> запросов требуют решения директора</p>':'')+(authorAttention?'<p><b>'+authorAttention+'</b> запросов ждут уточнения от вас</p>':'')+(!directorAttention&&!authorAttention?'<p class="meta">Активные запросы доступны в Органайзере</p>':'');$('content').querySelector('.page-heading')?.after(box);}
   tickElapsed();
+  };
+  // All supplementary reads are optional; their failure must not hide payroll KPIs.
+  const auxiliaryRequests=Promise.allSettled([
+    can('organizer')?productionGet('organizer?scope=incoming'):Promise.resolve([]),
+    can('organizer')&&allowed('organizer.request.decide')?productionGet('organizer-requests?scope=incoming'):Promise.resolve([]),
+    canCreateDirectorRequest()?productionGet('organizer-requests?scope=mine'):Promise.resolve([]),
+    allowed('work.write')||allowed('tasks.read')?productionGet('timers'):Promise.resolve([])
+  ]);
+  void auxiliaryRequests.then(results=>{
+    auxiliary=results.map(row=>row.status==='fulfilled'&&Array.isArray(row.value)?row.value:[]);
+    if(todayData&&auxiliary.some(rows=>rows.length))render();
+  });
+  todayData=await productionGet('today');
+  render();
 };
 screens.work=async()=>{
   if(!S.stage3)return previous.work();
