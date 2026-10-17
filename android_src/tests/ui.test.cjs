@@ -98,7 +98,8 @@ test('startup is local-first and management dashboard loads independent data in 
   const app=fs.readFileSync(path.join(assets,'app.js'),'utf8');
   const preview=fs.readFileSync(path.join(assets,'preview.js'),'utf8');
   assert.match(app,/const serverCheck=checkServer\(\)/);
-  assert.match(app,/Promise\.all\(\[\s*api\('GET','\/api\/company'[\s\S]*api\('GET','\/api\/v3\/meta'/);
+  assert.match(app,/const metaResult=await api\('GET','\/api\/v3\/meta'/);
+  assert.match(app,/void api\('GET','\/api\/company',undefined,\{global:true\}\)\.then\(/);
   assert.match(app,/S\.page==='dashboard'\)\s*void prewarmLocalData\(\);\},45000\)/);
   assert.match(preview,/const renderSummary=\(\)=>\{/);
   assert.match(preview,/void productionGet\('today'\)\.then\(data=>/);
@@ -267,7 +268,7 @@ test('modal sheets do not dismiss on backdrop, Escape or Back',()=>{
   const index=fs.readFileSync(path.join(assets,'index.html'),'utf8');
   const app=fs.readFileSync(path.join(assets,'app.js'),'utf8');
   assert.match(index,/id="sheetBackdrop"[\s\S]*data-action="closeSheet"[^>]*aria-label="Закрыть"/);
-  assert.match(app,/window\.portalBack=\(\)=>\{if\(!\$\('sheetBackdrop'\)\.classList\.contains\('hidden'\)\)return true;/);
+  assert.match(app,/window\.portalBack=\(\)=>\{if\(S\.bootstrapPending\)return true;if\(!\$\('sheetBackdrop'\)\.classList\.contains\('hidden'\)\)return true;/);
   assert.match(app,/function guardModalDismiss\(event\)/);
   assert.match(app,/document\.addEventListener\('pointerdown',guardModalDismiss,true\)/);
   assert.match(app,/document\.addEventListener\('click',guardModalDismiss,true\)/);
@@ -284,16 +285,18 @@ async function fixture(browser,role='manager',viewport={width:390,height:844},st
     if(web)window.__PORTAL_WEB__=true;
     const user={id:1,username:role,display_name:'Тестовый пользователь',role,company_id:1,employee_id:role==='platform_owner'?null:101};
     const client={id:1,name:'Клиент',active:1};
-    window.mock={calls:[],offline:false,loginNetworkFailures:0,rejectWrite:false,failUrls:[],forbiddenUrls:[],cachedUrls:[],hold:false,held:[],update:{ok:true,configured:false},timer:null,stage3Today:null,stage3Batches:null,stage3Shipments:null,stage3Tasks:null,stage3Economy:null,stage3Finance:null,stage3Permissions:null,stage3Invoices:null,stage3Users:null,clientNameHistory:[],clientAliases:[],clientRequisites:{legal_name:'ООО Тест',inn:'TEST-INN-001'},tariffHistory:[],presenceOnline:true,saved:null,previewMode:'ok',applyMode:'ok',payrollPaid:2000,invites:[],products:[]};
+    window.mock={calls:[],offline:false,loginNetworkFailures:0,metaNetworkFailures:0,rejectWrite:false,failUrls:[],forbiddenUrls:[],cachedUrls:[],hold:false,held:[],update:{ok:true,configured:false},timer:null,stage3Today:null,stage3Batches:null,stage3Shipments:null,stage3Tasks:null,stage3Economy:null,stage3Finance:null,stage3Permissions:null,stage3Invoices:null,stage3Users:null,clientNameHistory:[],clientAliases:[],clientRequisites:{legal_name:'ООО Тест',inn:'TEST-INN-001'},tariffHistory:[],presenceOnline:true,saved:null,previewMode:'ok',applyMode:'ok',payrollPaid:2000,invites:[],products:[]};
     const respond=(id,data)=>setTimeout(()=>window.PortalBridgeResult(id,JSON.stringify(data)),0);
     window.PortalNative={getServerUrl:()=> 'http://127.0.0.1:8765',getAppMetadata:()=>JSON.stringify(metadata),checkUpdates:id=>respond(id,mock.update),saveBase64FileAsync(id,filename,mime,file_b64){mock.saved={filename,mime,file_b64};respond(id,{ok:true,location:'Downloads/PORTAL/'+filename});},requestAsync(id,method,url,payload,token,company){
       mock.calls.push({method,url,body:payload?JSON.parse(payload):null,token,company});
       if(mock.offline)return respond(id,{ok:false,network:true,error:'Нет соединения'});
       if(url==='/api/login'&&mock.loginNetworkFailures>0){mock.loginNetworkFailures--;return respond(id,{ok:false,network:true,error:'Нет соединения'});}
+      if(url==='/api/v3/meta'&&mock.metaNetworkFailures>0){mock.metaNetworkFailures--;return respond(id,{ok:false,network:true,error:'Нет соединения'});}
       if(mock.rejectWrite&&method==='POST')return respond(id,{ok:false,httpStatus:401});
       if(mock.forbiddenUrls.includes(url))return respond(id,{ok:false,httpStatus:403,error:'Недостаточно прав'});
       if(mock.failUrls.includes(url))return respond(id,{ok:false,httpStatus:503,error:'Синтетическая ошибка источника'});
       let data={ok:true};
+      if(url==='/api/v3/meta')data.company={id:1,name:'PORTAL',status:'active',service_status:'active',module_toggles:{}};
       if(stage3&&url==='/api/v3/meta')Object.assign(data,{ready:true,heartbeat_seconds:60,permissions:mock.stage3Permissions||['work.write','tasks.read','tasks.manage','batches.receive','finance.read','invoices.read','invoices.create','users.manage','access.history.read','payroll.own'],catalog:[{code:'work.write',group:'Работа',label:'Вносить свою выработку',recommended:['Сборщик']},{code:'access.history.read',group:'Сотрудники',label:'Просматривать историю входов сотрудников',recommended:['Управляющий','Администратор']}]});
       else if(stage3&&url.startsWith('/api/v3/documents?'))data.data={items:[{id:'doc-ready',title:'Готовый документ',document_type:'report_xlsx',category:'report',document_date:'2026-09-29',created_at:'2026-09-29T00:00:00Z',client_id:1,size_bytes:2048,status:'ready',revision:1},{id:'doc-archived',title:'Архивный документ',document_type:'report_pdf',category:'report',document_date:'2026-09-28',created_at:'2026-09-28T00:00:00Z',size_bytes:1024,status:'archived',revision:1}],total:2,page:1,limit:50};
       else if(stage3&&url.startsWith('/api/v3/document-history?'))data.data=[{id:'doc-older',title:'Старая версия',created_at:'2026-09-28T00:00:00Z',status:'archived',revision:1},{id:'doc-ready',title:'Готовый документ',created_at:'2026-09-29T00:00:00Z',status:'ready',revision:2}];
@@ -386,6 +389,31 @@ test('browser UI regression',async t=>{
       logins=await page.evaluate(()=>mock.calls.filter(c=>c.url==='/api/login'));
       assert.equal(logins.length,2);
       assert.deepEqual(errors,[]);await page.close();
+    });
+    await t.test('authenticated login keeps session and retries only GET when meta fails',async()=>{
+      const {page,errors}=await fixture(browser,'admin',{width:390,height:844},true);
+      await page.evaluate(()=>{mock.metaNetworkFailures=1;});
+      await page.locator('#loginUser').fill('tester');
+      await page.locator('#loginPin').fill('1234');
+      await page.locator('#loginSubmit').click();
+      await page.locator('#content [data-action="retryBootstrap"]').waitFor();
+      const pending=await page.evaluate(()=>({
+        confirmed:!!S.token&&!!S.me,stage3:S.stage3,
+        permissions:S.me?.permissions||[],navHidden:document.querySelector('#nav').classList.contains('hidden'),
+        logins:mock.calls.filter(c=>c.url==='/api/login').length
+      }));
+      assert.equal(pending.confirmed,true);
+      assert.equal(pending.stage3,false);
+      assert.equal(pending.permissions.length,0);
+      assert.equal(pending.navHidden,true);
+      assert.equal(pending.logins,1);
+      await page.locator('#content [data-action="retryBootstrap"]').click();
+      await page.waitForFunction(()=>S.stage3&&!S.bootstrapPending&&S.company?.id===1);
+      assert.equal(await page.evaluate(()=>mock.calls.filter(c=>c.url==='/api/login').length),1);
+      assert.equal(await page.locator('#auth').isVisible(),false);
+      assert.equal(await page.locator('#nav').isVisible(),true);
+      assert.deepEqual(errors,[]);
+      await page.close();
     });
     await t.test('login at phone/tablet sizes, themes, metadata and update failures',async()=>{
       for(const width of [320,390,768]){

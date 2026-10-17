@@ -41,7 +41,7 @@ function showLocalDataNotice(view){if(S.localDataView!==view)return;const conten
 const cacheRefreshAt=new Map();let cacheRefreshTimer=null;
 globalThis.portalSessionInvalidated=()=>{if(!S.token)return;logout(false,true);toast('Сессия завершена на сервере. Войдите снова.',true);};
 globalThis.portalCacheUpdated=path=>{
-  if(!S.me||document.hidden||S.writes)return;
+  if(S.bootstrapPending||!S.me||document.hidden||S.writes)return;
   // Progressive dashboard already owns its refresh. Reopening it here after
   // every native cache update creates competing requests and a loading loop.
   if(S.page==='dashboard')return;
@@ -112,8 +112,8 @@ function openSheet(title,html,cancel=null){if(sheetCancel)sheetCancel(false);she
 function closeSheet(answer=false){clearInterval(S.timerTicker);S.timerTicker=null;$('sheetBackdrop').classList.add('hidden');$('sheetContent').innerHTML='';$('auth').inert=false;$('app').inert=false;const cb=sheetCancel;sheetCancel=null;if(cb)cb(answer);sheetFocus?.focus();}
 function confirmSheet(title,text,label='Подтвердить'){return new Promise(resolve=>openSheet(title,`<p class="muted">${esc(text)}</p><div class="stack">${btn(label,'confirmSheet')}${btn('Отмена','closeSheet','','secondary')}</div>`,resolve));}
 actions.closeSheet=()=>{if(canLeave())closeSheet();};actions.confirmSheet=()=>closeSheet(true);
-window.portalBack=()=>{if(!$('sheetBackdrop').classList.contains('hidden'))return true;if(!S.me)return false;if(!canNavigate())return true;const root=isOwner()&&!S.company?'companies':'dashboard';while(S.history.length){const previous=S.history.pop();if(previous&&previous!==S.page&&can(previous)){go(previous,{fromHistory:true});return true;}}if(S.page!==root){go(root,{fromHistory:true});return true;}return false;};
-window.portalHome=()=>{if(!S.me)return false;if(!canNavigate())return true;const root=isOwner()&&!S.company?'companies':'dashboard';S.history=[];if(S.page!==root)go(root,{fromHistory:true});else window.scrollTo(0,0);return true;};
+window.portalBack=()=>{if(S.bootstrapPending)return true;if(!$('sheetBackdrop').classList.contains('hidden'))return true;if(!S.me)return false;if(!canNavigate())return true;const root=isOwner()&&!S.company?'companies':'dashboard';while(S.history.length){const previous=S.history.pop();if(previous&&previous!==S.page&&can(previous)){go(previous,{fromHistory:true});return true;}}if(S.page!==root){go(root,{fromHistory:true});return true;}return false;};
+window.portalHome=()=>{if(S.bootstrapPending)return true;if(!S.me)return false;if(!canNavigate())return true;const root=isOwner()&&!S.company?'companies':'dashboard';S.history=[];if(S.page!==root)go(root,{fromHistory:true});else window.scrollTo(0,0);return true;};
 function theme(value){storage.set('portalTheme',value);document.documentElement.dataset.theme=value==='system'?(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):value;}
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{if((storage.get('portalTheme')||'system')==='system')theme('system');});
 actions.setTheme=button=>{theme(button.dataset.value);closeSheet();};
@@ -124,6 +124,55 @@ actions.loginOptions=()=>openSheet('Вход в рабочее простран�
 forms.companyLoginForm=()=>{const id=Number($('companyId').value);if(!Number.isSafeInteger(id)||id<1)throw new Error('Введите номер компании');S.loginCompany=id;$('loginPin').value='';updateLogin();closeSheet();};
 actions.togglePassword=button=>{const visible=$('loginPin').type==='password';$('loginPin').type=visible?'text':'password';button.setAttribute('aria-label',visible?'Скрыть код доступа':'Показать код доступа');};
 function reportStageTime(stage,started){try{window.PortalNative?.recordStageTime?.(stage,Date.now()-started);}catch{}}
+let bootstrapRetryTimer=null;
+function showBootstrapPending(error){
+  if(!S.token||!S.me)return false;
+  clearTimeout(bootstrapRetryTimer);
+  S.bootstrapPending=true;
+  S.bootstrapAttempts=(S.bootstrapAttempts||0)+1;
+  // Never expose cached permissions before server confirmation for this session.
+  S.stage3=false;
+  S.me.permissions=[];
+  S.company=null;
+  S.page='bootstrapPending';
+  S.view++;
+  $('auth').classList.add('hidden');
+  $('app').classList.remove('hidden');
+  $('nav').classList.add('hidden');
+  $('supportStrip').classList.add('hidden');
+  $('companyName').textContent='PORTAL · ожидаем подтверждение компании';
+  paint(heading('Вход подтверждён','Получаем данные компании')+
+    '<div class="card" role="status">'+
+    '<h3>Сервер временно не отвечает</h3>'+
+    '<p class="muted">Логин и PIN уже проверены. Получить права доступа пока не удалось. Повторно вводить PIN не нужно.</p>'+
+    '<p class="muted">До проверки прав зарплата, склад и другие рабочие разделы закрыты.</p>'+
+    '<div class="stack">'+btn('Повторить загрузку','retryBootstrap','','block')+
+    btn('Выйти','logout','','secondary block')+'</div></div>');
+  if(S.bootstrapAttempts<=3){
+    bootstrapRetryTimer=setTimeout(()=>{
+      if(S.bootstrapPending&&!S.bootstrapBusy&&!document.hidden)void retryBootstrap();
+    },1500+S.bootstrapAttempts*1800);
+  }
+  return true;
+}
+async function retryBootstrap(){
+  if(S.bootstrapBusy||!S.bootstrapPending||!S.me||!S.token)return;
+  S.bootstrapBusy=true;
+  const button=$('content')?.querySelector('[data-action="retryBootstrap"]');
+  if(button){button.disabled=true;button.textContent='Подключаем компанию…';}
+  try{
+    await enterApp();
+  }catch(error){
+    if(!S.token||!S.me)return;
+    if(isTransientNetworkError(error))showBootstrapPending(error);
+    else{
+      logout(false,true);
+      $('loginError').textContent='Не удалось подтвердить доступ. Войдите снова.';
+      $('loginError').classList.remove('hidden');
+    }
+  }finally{S.bootstrapBusy=false;}
+}
+actions.retryBootstrap=()=>{void retryBootstrap();};
 async function loginRequest(body){
   const authStart=Date.now();
   try{return await api('POST','/api/login',body,{anonymous:true,global:true,timeoutMs:35000});}
@@ -136,7 +185,10 @@ forms.loginForm=async()=>{if(S.authBusy)return;S.authBusy=true;$('loginSubmit').
 actions.acceptInvite=()=>openSheet('Принять приглашение в PORTAL',`<p class="meta">Введите одноразовый код от администратора компании и задайте личный PIN. Не передавайте PIN отправителю.</p><form id="acceptInviteForm">${field('acceptInviteToken','Одноразовый код','','text','required maxlength="160" autocapitalize="none"')}${field('acceptInvitePin','Новый PIN','','password','required minlength="4" maxlength="128" autocomplete="new-password"')}<button class="btn block" type="submit">Отправить запрос на подтверждение</button><p id="acceptInviteError" class="signin-error hidden" role="alert"></p></form>`);
 forms.acceptInviteForm=async form=>{const token=$('acceptInviteToken').value.trim(),pin=$('acceptInvitePin').value;try{const result=await api('POST','/api/access-invites/accept',{token,pin},{anonymous:true,global:true});$('acceptInvitePin').value='';closeSheet();toast(result.data.status==='pending_approval'?'Запрос отправлен. Доступ включит администратор компании.':'Приглашение истекло');}catch(error){const node=$('acceptInviteError');if(node){node.textContent=error.message||'Приглашение не принято';node.classList.remove('hidden');}}};
 function savePortalSession(){if(!S.token||!S.me||!window.PortalNative)return;storage.set('portalSession',JSON.stringify({server:PortalNative.getServerUrl(),token:S.token,user:S.me,savedAt:Date.now()}));storage.remove('portalToken');}
-async function acceptLogin(result){clearCompanyData();try{window.PortalNative?.setCacheIdentity?.('','','[]');}catch{}S.token=result.token;try{window.PortalNative?.setActiveSessionToken?.(S.token);}catch{}S.me=result.user;S.company=null;try{window.PortalNative?.setCacheIdentity?.(String(S.me?.id||''),String(S.me?.role||''),'[]');}catch{}savePortalSession();if(!S.me.company_id){S.me=(await api('GET','/api/me',undefined,{global:true})).user;savePortalSession();}await enterApp();}
+async function acceptLogin(result){clearCompanyData();try{window.PortalNative?.setCacheIdentity?.('','','[]');}catch{}S.token=result.token;try{window.PortalNative?.setActiveSessionToken?.(S.token);}catch{}S.me=result.user;S.company=null;try{window.PortalNative?.setCacheIdentity?.(String(S.me?.id||''),String(S.me?.role||''),'[]');}catch{}savePortalSession();if(!S.me.company_id){S.me=(await api('GET','/api/me',undefined,{global:true})).user;savePortalSession();}try{await enterApp();}catch(error){
+  if(!S.token||!S.me||!isTransientNetworkError(error))throw error;
+  showBootstrapPending(error);
+}}
 const LOCAL_PREWARM=[{path:'/api/v3/today',pages:['dashboard']},{path:'/api/v3/organizer-bootstrap',pages:['organizer']},{path:'/api/v3/notification-centers',pages:['notifications']},{path:'/api/v3/tasks',pages:['jobs']},{path:'/api/v3/batches',pages:['batches']},{path:'/api/v3/catalog',pages:['catalogue','work']},{path:'/api/jobs',pages:['jobs']},{path:'/api/clients',pages:['clients']}];
 async function prewarmLocalData(){if(!S.me||!S.company||!S.token)return;const paths=['/api/v3/meta',...LOCAL_PREWARM.filter(item=>item.pages.some(page=>can(page))).map(item=>item.path)];for(let i=0;i<paths.length;i+=3){await Promise.allSettled(paths.slice(i,i+3).map(path=>api('GET',path,undefined,{global:true})));}}
 async function enterApp(){
@@ -144,16 +196,37 @@ async function enterApp(){
   if(!isOwner()){
     const companyStart=Date.now();
     if(typeof window.PortalNative?.setCacheCompany==='function')PortalNative.setCacheCompany(String(S.me.company_id||''));
-    const [companyResult,metaResult]=await Promise.all([
-      api('GET','/api/company',undefined,{global:true}),
-      api('GET','/api/v3/meta',undefined,{global:true})
-    ]);
-    S.company=companyResult.company;
-    if(typeof window.PortalNative?.setCacheCompany==='function')PortalNative.setCacheCompany(String(S.company?.id||S.me.company_id||''));
-    await configureProduction(metaResult);
-    reportStageTime('company',companyStart);
-    savePortalSession();
+    try{
+      // One authenticated source returns verified company identity AND effective
+      // permissions. A second GET must never keep a successful login on the PIN screen.
+      const metaResult=await api('GET','/api/v3/meta',undefined,{global:true});
+      const company=metaResult?.company;
+      if(!company||Number(company.id)!==Number(S.me.company_id))
+        throw new Error('Не удалось подтвердить компанию. Повторите загрузку.');
+      S.company=company;
+      if(typeof window.PortalNative?.setCacheCompany==='function')
+        PortalNative.setCacheCompany(String(S.company.id));
+      await configureProduction(metaResult);
+      savePortalSession();
+      const sessionToken=S.token,companyId=String(S.company.id),epoch=S.epoch;
+      // Full billing/company settings are optional bootstrap data. Fetch later,
+      // then merge only for the same authenticated tenant and same session.
+      setTimeout(()=>{
+        if(S.token!==sessionToken||S.epoch!==epoch||
+           String(S.company?.id||'')!==companyId||document.hidden)return;
+        void api('GET','/api/company',undefined,{global:true}).then(result=>{
+          if(S.token!==sessionToken||S.epoch!==epoch||
+             String(S.company?.id||'')!==companyId||
+             String(result?.company?.id||'')!==companyId)return;
+          S.company={...S.company,...result.company};
+          updateHeader();
+        }).catch(()=>{});
+      },6500);
+    }finally{reportStageTime('company',companyStart);}
   }else if(typeof window.PortalNative?.setCacheCompany==='function')PortalNative.setCacheCompany('');
+  S.bootstrapPending=false;S.bootstrapAttempts=0;
+  clearTimeout(bootstrapRetryTimer);
+  $('nav')?.classList.remove('hidden');
   updateHeader();$('auth').classList.add('hidden');$('app').classList.remove('hidden');
   const dashboardStart=Date.now();
   void go(isOwner()?(S.company?'dashboard':'companies'):'dashboard',{fromHistory:true})
@@ -164,7 +237,7 @@ async function enterApp(){
     void prewarmLocalData();},45000);
   setTimeout(()=>{if(!document.hidden)void autoCheckUpdates();},12000);
 }
-function logout(refresh=true,force=false){if(!force&&!canLeave())return;try{window.PortalNative?.setActiveSessionToken?.('');}catch{}clearCompanyData();try{window.PortalNative?.setCacheIdentity?.('','','[]');}catch{}S.token='';S.me=null;S.company=null;S.companies=[];S.view++;storage.remove('portalSession');storage.remove('portalToken');if(browserClient)try{sessionStorage.clear();}catch{}closeSheet();$('app').classList.add('hidden');$('auth').classList.remove('hidden');$('loginPin').value='';if(refresh)checkServer();}
+function logout(refresh=true,force=false){if(!force&&!canLeave())return;clearTimeout(bootstrapRetryTimer);S.bootstrapPending=false;S.bootstrapAttempts=0;S.bootstrapBusy=false;$('nav')?.classList.remove('hidden');try{window.PortalNative?.setActiveSessionToken?.('');}catch{}clearCompanyData();try{window.PortalNative?.setCacheIdentity?.('','','[]');}catch{}S.token='';S.me=null;S.company=null;S.companies=[];S.view++;storage.remove('portalSession');storage.remove('portalToken');if(browserClient)try{sessionStorage.clear();}catch{}closeSheet();$('app').classList.add('hidden');$('auth').classList.remove('hidden');$('loginPin').value='';if(refresh)checkServer();}
 // Server revocation is attempted once with the original token. Never keep the
 // UI waiting on DNS probes, and never replay a POST after an ambiguous failure.
 async function revokePortalSession(token){
@@ -193,7 +266,7 @@ forms.setupForm=async()=>{const r=await api('POST','/api/setup',{username:$('set
 actions.serverSettings=()=>{if(!canLeave())return;openSheet('Подключение',`<form id="serverForm">${field('serverUrl','Адрес сервера',window.PortalNative?.getServerUrl()||'','url','required placeholder="http://127.0.0.1:8765"')}<p class="meta">При смене сервера потребуется войти заново.</p><button type="submit" class="btn block">Сохранить и проверить</button></form>`);};
 forms.serverForm=()=>{const value=$('serverUrl').value.trim().replace(/\/+$/,'');let url;try{url=new URL(value);}catch{throw new Error('Укажите корректный адрес сервера');}const host=url.hostname.toLowerCase();const loopback=host==='localhost'||host.endsWith('.localhost')||/^127(?:\.\d{1,3}){3}$/.test(host)||host==='::1';if((url.protocol!=='https:'&&!(url.protocol==='http:'&&loopback))||url.username||url.password||url.search||url.hash||url.pathname!=='/')throw new Error('Нужен HTTPS адрес; HTTP разрешён только для локального сервера');if(!window.PortalNative)throw new Error('Подключение доступно в Android-приложении');if(!canLeave())return;const old=PortalNative.getServerUrl();PortalNative.setServerUrl(value);if(PortalNative.getServerUrl()!==value)throw new Error('Адрес не сохранён');closeSheet();if(old!==value)logout(false);checkServer();};
 function updateHeader(){$('companyName').textContent=isOwner()?(S.company?'God · '+S.company.name+' · #'+S.company.id:'God'):(S.company?.name||'Компания')+' · '+PortalCore.roles[S.me.role];$('initials').textContent=(S.me.display_name||S.me.username||'P').slice(0,1).toUpperCase();$('supportStrip').classList.toggle('hidden',!isOwner()||!S.company);if(isOwner()&&S.company)$('supportStrip').innerHTML=`<span>${icon('shield')} God · <strong>${esc(S.company.name)} · #${S.company.id}</strong></span><button data-action="exitSupport">Сменить</button>`;const organizerShortcut=$('organizerShortcut');if(organizerShortcut)organizerShortcut.classList.toggle('hidden',!can('organizer'));buildNav();setTimeout(()=>{if(S.me&&!document.hidden)void refreshNotificationBadges();},1800);}
-async function refreshNotificationBadges(){if(!S.me||isOwner()&&!S.company)return;try{const response=await api('GET','/api/v3/notification-centers');for(const center of response.data||[]){const badge=document.querySelector(`[data-center-count="${center.center}"]`);if(!badge)continue;const raw=center.center==='ORGANIZER'?(center.pending_count??center.unread_count):center.unread_count;const count=Math.max(0,Number(raw||0));badge.textContent=count>99?'99+':String(count);badge.classList.toggle('hidden',count===0);}}catch{}}
+async function refreshNotificationBadges(){if(S.bootstrapPending||!S.me||isOwner()&&!S.company)return;try{const response=await api('GET','/api/v3/notification-centers');for(const center of response.data||[]){const badge=document.querySelector(`[data-center-count="${center.center}"]`);if(!badge)continue;const raw=center.center==='ORGANIZER'?(center.pending_count??center.unread_count):center.unread_count;const count=Math.max(0,Number(raw||0));badge.textContent=count>99?'99+':String(count);badge.classList.toggle('hidden',count===0);}}catch{}}
 let lastForegroundRefresh=0;globalThis.portalForegroundRefresh=()=>{if(Date.now()-lastForegroundRefresh<60000)return;lastForegroundRefresh=Date.now();void refreshNotificationBadges();if(S.token&&S.stage3){startOrganizerReminderWatch();if(S.page==='dashboard')void screens.dashboard().catch(()=>{});}};document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')portalForegroundRefresh();});window.addEventListener('focus',portalForegroundRefresh);
 const desktopNavQuery=browserClient?matchMedia('(min-width:900px)'):null;
 function navButton(id,i,title){return `<button data-action="go" data-page="${id}" class="${S.page===id?'active':''}" ${S.page===id?'aria-current="page"':''}>${icon(i)}<span>${esc(title)}</span></button>`;}
@@ -210,7 +283,7 @@ function buildNav(){
   let items=isOwner()&&!S.company?[['companies','clients','Компании'],['settings','settings','Настройки']]:[['dashboard','home','Главная'],...(can('work')?[['work','plus','Работа']]:can('clients')?[['clients','clients','Клиенты']]:[]),['sections','grid','Ещё'],['settings','settings','Настройки']];nav.innerHTML=items.map(([id,i,title])=>navButton(id,i,title)).join('');
 }
 desktopNavQuery?.addEventListener('change',()=>{if(S.me)buildNav();});
-async function go(page,options={}){if(!canNavigate())return;if(!can(page))return toast('Раздел недоступен для вашего доступа',true);closeSheet();const previousPage=S.page,previousHtml=$('content')?.innerHTML||'',previousScroll=window.scrollY;let pushedHistory=false;if(!options.fromHistory&&S.me&&S.page&&S.page!==page){S.history.push(S.page);pushedHistory=true;if(S.history.length>50)S.history.shift();}S.page=page;S.view++;const view=S.view;S.localDataView=0;buildNav();paint('<div class="loading"><span class="spinner"></span><p>Загружаем…</p></div>');window.scrollTo(0,0);try{await (screens[page]||screens.dashboard)();showLocalDataNotice(view);}catch(e){if(e.stale||e.cancelled)return;if(isTransientNetworkError(e)&&previousHtml){if(pushedHistory&&S.history[S.history.length-1]===previousPage)S.history.pop();S.page=previousPage;S.view++;buildNav();paint(previousHtml);requestAnimationFrame(()=>window.scrollTo(0,previousScroll));toast('Связь с сервером временно недоступна. Работаем с локальными данными.');return;}paint(heading('Не удалось загрузить')+`<div class="card"><p class="muted">${esc(e.message)}</p>${btn('Повторить','go',`data-page="${esc(page)}"`)}</div>`);}}
+async function go(page,options={}){if(S.bootstrapPending)return;if(!canNavigate())return;if(!can(page))return toast('Раздел недоступен для вашего доступа',true);closeSheet();const previousPage=S.page,previousHtml=$('content')?.innerHTML||'',previousScroll=window.scrollY;let pushedHistory=false;if(!options.fromHistory&&S.me&&S.page&&S.page!==page){S.history.push(S.page);pushedHistory=true;if(S.history.length>50)S.history.shift();}S.page=page;S.view++;const view=S.view;S.localDataView=0;buildNav();paint('<div class="loading"><span class="spinner"></span><p>Загружаем…</p></div>');window.scrollTo(0,0);try{await (screens[page]||screens.dashboard)();showLocalDataNotice(view);}catch(e){if(e.stale||e.cancelled)return;if(isTransientNetworkError(e)&&previousHtml){if(pushedHistory&&S.history[S.history.length-1]===previousPage)S.history.pop();S.page=previousPage;S.view++;buildNav();paint(previousHtml);requestAnimationFrame(()=>window.scrollTo(0,previousScroll));toast('Связь с сервером временно недоступна. Работаем с локальными данными.');return;}paint(heading('Не удалось загрузить')+`<div class="card"><p class="muted">${esc(e.message)}</p>${btn('Повторить','go',`data-page="${esc(page)}"`)}</div>`);}}
 actions.go=button=>go(button.dataset.page);
 actions.notificationCenter=button=>{if(!can('notifications'))return toast('Центр уведомлений недоступен',true);S.notificationCenter=button.dataset.center;go('notifications');};
 actions.openOrganizer=()=>{if(!can('organizer'))return toast('Органайзер недоступен для вашего доступа',true);go('organizer');};
@@ -269,12 +342,17 @@ document.addEventListener('DOMContentLoaded',async()=>{
         void api('GET','/api/me',undefined,{global:true}).then(result=>{const permissions=Array.isArray(S.me?.permissions)?S.me.permissions:[];S.me={...S.me,...result.user,permissions};savePortalSession();updateHeader();}).catch(()=>{});
         return;
       }catch(error){
-        if(!isTransientNetworkError(error)){storage.remove('portalSession');storage.remove('portalToken');}
+        if(isTransientNetworkError(error)&&S.token&&S.me){showBootstrapPending(error);return;}
+        storage.remove('portalSession');storage.remove('portalToken');
         S.token='';S.me=null;try{window.PortalNative?.setActiveSessionToken?.('');}catch{}
       }
     }else{
       try{S.me=(await api('GET','/api/me',undefined,{global:true})).user;try{PortalNative.setCacheIdentity?.(String(S.me?.id||''),String(S.me?.role||''),'[]');}catch{}savePortalSession();await enterApp();return;}
-      catch(error){if(!isTransientNetworkError(error)){storage.remove('portalSession');storage.remove('portalToken');}S.token='';S.me=null;try{window.PortalNative?.setActiveSessionToken?.('');}catch{}}
+      catch(error){
+        if(isTransientNetworkError(error)&&S.token&&S.me){showBootstrapPending(error);return;}
+        storage.remove('portalSession');storage.remove('portalToken');
+        S.token='';S.me=null;try{window.PortalNative?.setActiveSessionToken?.('');}catch{}
+      }
     }
   }else if(session){storage.remove('portalSession');storage.remove('portalToken');}
   await serverCheck;

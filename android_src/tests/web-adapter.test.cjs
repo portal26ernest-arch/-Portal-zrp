@@ -43,7 +43,7 @@ test('Web Share cancellation is explicit and native-only controls are hidden',()
 
 test('Desktop cache is company + user + permission scoped, encrypted and fail-safe',()=>{
   for(const value of ['portalDesktopCache','setCacheCompany','setCacheIdentity','cacheCompany','cacheIdentity','cacheScope','CACHEABLE','cacheRead','cacheWrite','ClearCompany','MarkStale','invalidationKeys','30 * 24 * 60 * 60 * 1000','queueMutation','pendingMutations','removeMutation']) assert.ok(adapter.includes(value),value);
-  assert.ok(app.includes("PortalNative.setCacheCompany(String(S.company?.id||S.me.company_id||''))"));
+  assert.ok(app.includes("PortalNative.setCacheCompany(String(S.company.id))"));
   assert.ok(app.includes("PortalNative.setCacheCompany(String(c.id))"));
   assert.ok(adapter.includes("user + '|' + safeRole + '|' + signature"));
   assert.ok(adapter.includes("verb === 'GET' && !!token && !!cacheScope()"));

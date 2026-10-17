@@ -18,15 +18,16 @@ test('authenticated shell opens before slow dashboard loads',async()=>{
   const classes=[];
   const state={me:{role:'packer',company_id:1},token:'TEST_ONLY',company:null,stage3:false};
   const nativeBridge={setCacheCompany:()=>true};
-  const elements={auth:{classList:{add:()=>classes.push('auth-hidden'),remove:()=>classes.push('auth-visible')}},app:{classList:{add:()=>classes.push('app-hidden'),remove:()=>classes.push('app-visible')}}};
+  const elements={auth:{classList:{add:()=>classes.push('auth-hidden'),remove:()=>classes.push('auth-visible')}},app:{classList:{add:()=>classes.push('app-hidden'),remove:()=>classes.push('app-visible')}},nav:{classList:{remove:()=>{}}}};
   const scope={
     S:state,
     PortalCore:{roles:{packer:true}},
     PortalNative:nativeBridge,window:{PortalNative:nativeBridge},
     isOwner:()=>false,
-    api:async(method,p)=>{calls.push(p);return p==='/api/company'?{company:{id:1,name:'TEST'}}:{ready:false};},
+    api:async(method,p)=>{calls.push(p);return p==='/api/v3/meta'?{ready:false,company:{id:1,name:'TEST'}}:{company:{id:1,name:'TEST'}};},
     configureProduction:async()=>{},
     reportStageTime:(name)=>calls.push('stage:'+name),
+    bootstrapRetryTimer:null,clearTimeout:()=>{},
     savePortalSession:()=>{},
     updateHeader:()=>{},
     $:id=>elements[id],
@@ -38,6 +39,9 @@ test('authenticated shell opens before slow dashboard loads',async()=>{
   await scope.enterApp();
   assert.deepEqual(classes,['auth-hidden','app-visible']);
   assert.ok(calls.includes('dashboard-started'));
+  assert.equal(calls.filter(x=>x==='/api/v3/meta').length,1);
+  assert.ok(!calls.includes('/api/company'),'company details are not part of the critical path');
+  assert.equal(state.company.name,'TEST');
   assert.ok(calls.includes('stage:company'));
   assert.ok(!calls.includes('dashboard-resolved'));
   resolveDashboard();await Promise.resolve();await Promise.resolve();

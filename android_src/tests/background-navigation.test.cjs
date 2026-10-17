@@ -96,9 +96,9 @@ test('unapproved background write cannot bypass navigation protections',async()=
   assert.equal(h.state.writes,0);
 });
 test('all navigation entry points use the navigation guard, protected exits keep canLeave',()=>{
-  assert.match(app,/async function go\(page,options=\{\}\)\{if\(!canNavigate\(\)\)return;/);
-  assert.match(app,/window\.portalBack=\(\)=>\{[^;]*;[^;]*;if\(!canNavigate\(\)\)return true;/);
-  assert.match(app,/window\.portalHome=\(\)=>\{[^;]*;if\(!canNavigate\(\)\)return true;/);
+  assert.match(app,/async function go\(page,options=\{\}\)\{if\(S\.bootstrapPending\)return;if\(!canNavigate\(\)\)return;/);
+  assert.match(app,/window\.portalBack=\(\)=>\{if\(S\.bootstrapPending\)return true;[\s\S]*?if\(!canNavigate\(\)\)return true;/);
+  assert.match(app,/window\.portalHome=\(\)=>\{if\(S\.bootstrapPending\)return true;[\s\S]*?if\(!canNavigate\(\)\)return true;/);
   assert.match(app,/actions\.logout=async\(\)=>\{\s*if\(!canLeave\(\)\)return;/);
   assert.match(app,/actions\.selectCompany=async button=>\{if\(!canLeave\(\)\)return;/);
   assert.match(production,/api\('POST','\/api\/v3\/heartbeat',\{\}, \{global:true,passive:true\}\)/);
