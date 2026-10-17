@@ -47,4 +47,11 @@ test('PORTAL employee chat, staff pages, and safe legacy migration remain intact
   assert.match(runtime.notifications,/center==='TASKS'\|\|center\.center==='ORGANIZER'/);
   assert.match(runtime.api,/employee_id/);
   assert.ok(fs.existsSync(path.join(repo,'tools/ssh_banner_first_relay.py')),'keep independent SSH staging helper');
+  const cleanup=read('ios_src/PortalIOS/RetiredProviderDataCleanup.swift');
+  const app=read('ios_src/PortalIOS/PortalIOSApp.swift');
+  assert.match(app,/RetiredProviderDataCleanup\.performOnce\(\)/);
+  assert.match(cleanup,/WKWebsiteDataStore\(forIdentifier: identifier\)/);
+  assert.match(cleanup,/host\.hasSuffix\("\.telegram\.org"\)/);
+  assert.match(cleanup,/host\.hasSuffix\("\.max\.ru"\)/);
+  assert.doesNotMatch(cleanup,/WKWebsiteDataStore\.default\(\)\.removeData\(ofTypes: types, modifiedSince: \.distantPast\)/);
 });
