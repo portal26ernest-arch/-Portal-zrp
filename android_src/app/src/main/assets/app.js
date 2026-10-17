@@ -42,6 +42,9 @@ const cacheRefreshAt=new Map();let cacheRefreshTimer=null;
 globalThis.portalSessionInvalidated=()=>{if(!S.token)return;logout(false,true);toast('Сессия завершена на сервере. Войдите снова.',true);};
 globalThis.portalCacheUpdated=path=>{
   if(!S.me||document.hidden||S.writes)return;
+  // Progressive dashboard already owns its refresh. Reopening it here after
+  // every native cache update creates competing requests and a loading loop.
+  if(S.page==='dashboard')return;
   const relevant={
     dashboard:['/api/v3/today','/api/v3/timers','/api/v3/payroll-periods'],
     organizer:['/api/v3/organizer-bootstrap','/api/v3/organizer','/api/v3/organizer-requests'],

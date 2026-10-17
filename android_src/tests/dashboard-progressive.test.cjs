@@ -38,8 +38,10 @@ test('dashboard shows usable navigation without waiting for today or organizer r
   assert.match(h.paints[0],/Все разделы/);
   assert.ok(h.requests.includes('today'));
   assert.ok(h.requests.includes('organizer?scope=incoming'));
+  await pending; // Navigation must finish while all GETs are still unresolved.
+  assert.equal(h.paints.length,1);
   h.resolve('today',{date:'2026-10-17',mode:'worker',own_quantity:7,own_salary:250,tasks:[]});
-  await pending;
+  await Promise.resolve();
   assert.ok(h.paints.length>=2);
   assert.match(h.paints.at(-1),/Мой рабочий день/);
   assert.match(h.paints.at(-1),/7/);
@@ -69,11 +71,29 @@ test('optional organizer failure does not block today, work or navigation',async
   await Promise.resolve();
   assert.equal(h.paints.length,painted);
 });
+test('native cache refresh cannot restart dashboard network loads',()=>{
+  const source=fs.readFileSync(path.join(__dirname,'../app/src/main/assets/app.js'),'utf8');
+  const start=source.indexOf('globalThis.portalCacheUpdated=path=>{');
+  const end=source.indexOf('function isTransientNetworkError(',start);
+  assert.ok(start>=0&&end>start);
+  const scope={S:{me:{id:2},writes:0,page:'dashboard'},document:{hidden:false}};
+  vm.runInNewContext(source.slice(start,end),scope);
+  assert.doesNotThrow(()=>scope.portalCacheUpdated('/api/v3/today'));
+  assert.match(source.slice(start,end),/if\(S\.page==='dashboard'\)return/);
+});
+test('the dashboard resolves before the today request and retains the loading navigation',async()=>{
+  const h=harness();
+  const pending=h.scope.screens.dashboard();
+  await pending;
+  assert.equal(h.paints.length,1);
+  assert.ok(h.waits.has('today'));
+  assert.match(h.paints[0],/Все разделы/);
+});
 test('dashboard renderer has a one-way latest-request guard and independent optional reads',()=>{
   assert.match(actualDashboard,/S\.dashboardLoadSeq=\(S\.dashboardLoadSeq\|\|0\)\+1/);
   assert.match(actualDashboard,/const live=\(\)=>S\.page==='dashboard'&&S\.view===view&&S\.epoch===epoch/);
   assert.match(actualDashboard,/Promise\.allSettled\(\[/);
-  assert.match(actualDashboard,/todayData=await productionGet\('today'\)/);
+  assert.match(actualDashboard,/void productionGet\('today'\)\.then\(data=>/);
   assert.match(actualDashboard,/if\(!todayData\|\|!live\(\)\)return/);
   assert.match(actualDashboard,/if\(todayData&&auxiliary\.some\(rows=>rows\.length\)\)render\(\)/);
 });

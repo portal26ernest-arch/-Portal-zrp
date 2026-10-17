@@ -130,7 +130,7 @@ screens.dashboard=async()=>{
   if(!$('content')?.querySelector('.page-heading'))paint(
     heading('PORTAL · главная','Показатели обновляются в фоне',
       btn('Все разделы','go','data-page="sections"','secondary'))+
-    '<div class="card" role="status"><h3>Рабочее место готово</h3>'+
+    '<div class="card" role="status" data-dashboard-loading><h3>Рабочее место готово</h3>'+
     '<p class="meta">Загружаем показатели за сегодня. Меню и другие разделы уже доступны.</p>'+
     (can('work')?btn('Перейти к работе','go','data-page="work"','secondary block'):'')+
     (can('organizer')?btn('Органайзер','go','data-page="organizer"','secondary block'):'')+
@@ -166,8 +166,16 @@ screens.dashboard=async()=>{
     auxiliary=results.map(row=>row.status==='fulfilled'&&Array.isArray(row.value)?row.value:[]);
     if(todayData&&auxiliary.some(rows=>rows.length))render();
   });
-  todayData=await productionGet('today');
-  render();
+  // Never keep go() pending on dashboard network requests. This also prevents
+  // delayed failures from replacing the usable navigation with an error page.
+  void productionGet('today').then(data=>{
+    todayData=data;
+    render();
+  }).catch(error=>{
+    if(!live())return;
+    const status=$('content')?.querySelector('[data-dashboard-loading] p');
+    if(status)status.textContent='Показатели пока недоступны. Рабочие разделы остаются доступны.';
+  });
 };
 screens.work=async()=>{
   if(!S.stage3)return previous.work();
