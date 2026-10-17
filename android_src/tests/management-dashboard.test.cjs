@@ -18,7 +18,7 @@ function app(){
   const loader={textContent:'Загружаем показатели за сегодня.'};
   const state={stage3:true,me:{role:'admin',display_name:'TEST'},page:'dashboard',
     view:1,epoch:5,token:'TEST_ONLY',company:{id:1},productionTasks:[],activeTimers:[]};
-  const content={querySelector:()=>loader};
+  const content={querySelector:selector=>selector==='[data-management-loading]'?loader:null};
   const scope={
     screens:{},managementRoles:new Set(['admin','director','platform_owner']),S:state,
     liveDashboard:()=>calls.push('normal-dashboard'),
@@ -43,6 +43,13 @@ test('the actual last-loaded admin dashboard never waits for network to show nav
   assert.equal(a.paints.length,1);
   assert.match(a.paints[0],/PORTAL Сегодня/);
   assert.match(a.paints[0],/Все разделы/);
+  assert.match(a.paints[0],/director-hero/);
+  assert.match(a.paints[0],/today-grid/);
+  assert.match(a.paints[0],/attention-zone/);
+  assert.match(a.paints[0],/money-grid/);
+  assert.match(a.paints[0],/dashboard-two/);
+  assert.match(a.paints[0],/production-strip/);
+  assert.match(a.paints[0],/quick-grid/);
   assert.match(a.paints[0],/Клиенты/);
   assert.match(a.paints[0],/Склад/);
   assert.match(a.paints[0],/Зарплата/);
@@ -55,6 +62,8 @@ test('today GET failure keeps functional dashboard instead of a global error scr
   await new Promise(setImmediate);
   assert.equal(a.paints.length,1);
   assert.match(a.loader.textContent,/Показатели временно недоступны/);
+  assert.match(a.paints[0],/Финансовый радар/);
+  assert.match(a.paints[0],/Быстрые действия/);
   assert.doesNotMatch(a.paints[0],/Не удалось загрузить/);
 });
 test('successful today response renders the real director dashboard instead of a spinner',async()=>{
