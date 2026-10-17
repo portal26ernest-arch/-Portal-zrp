@@ -1,0 +1,16 @@
+name: Retired external integrations audit
+on:
+  push:
+    branches: [ "assistant/**" ]
+  pull_request:
+    branches: [ "main" ]
+permissions:
+  contents: read
+jobs:
+  audit-retired-integrations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inventory Telegram MAX external Messenger and VPN remnants (report-only)
+        run: python ops/audit_retired_integrations.py
