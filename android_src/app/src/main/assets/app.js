@@ -231,7 +231,7 @@ async function enterApp(){
   const dashboardStart=Date.now();
   void go(isOwner()?(S.company?'dashboard':'companies'):'dashboard',{fromHistory:true})
     .catch(handleError).finally(()=>reportStageTime('dashboard',dashboardStart));
-  // Avoid flooding a slow VPN/DNS route with optional cache warmups while the
+  // Avoid flooding a slow network route with optional cache warmups while the
   // authenticated dashboard is still loading. Warm later only if still idle.
   if(S.company)setTimeout(()=>{if(S.me&&S.company&&!document.hidden&&S.page==='dashboard')
     void prewarmLocalData();},45000);

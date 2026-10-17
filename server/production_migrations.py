@@ -28,7 +28,7 @@ def migrate(conn, company_id, dialect=None):
         migrate_employee_aliases(r)
         migrate_organizer_requests(r)
         migrate_session_storage(r)
-        migrate_notification_messenger(r)
+        migrate_notification_receipts(r)
         return
     # Current catalog baseline, not a reconstruction or recalculation of history.
     for operation in r.catalog('operations'):
@@ -53,10 +53,10 @@ def migrate(conn, company_id, dialect=None):
     migrate_employee_aliases(r)
     migrate_organizer_requests(r)
     migrate_session_storage(r)
-    migrate_notification_messenger(r)
+    migrate_notification_receipts(r)
 
-def migrate_notification_messenger(r):
-    """Version 16 enables user-owned read receipts and immutable Messenger records."""
+def migrate_notification_receipts(r):
+    """Version 16 enables user-owned notification read receipts while retaining immutable records."""
     if r.sql('SELECT 1 FROM portal_production_migrations WHERE company_id=? AND version=16',(r.company_id,)).fetchone(): return
     if r.dialect=='sqlite':
         r.sql('DROP TRIGGER IF EXISTS production_no_update')
@@ -64,7 +64,7 @@ def migrate_notification_messenger(r):
     else:
         row=r.sql("SELECT pg_get_functiondef('portal_production_immutable()'::regprocedure)").fetchone()
         if not row or "'notification_reads'" not in row[0]:
-            raise RuntimeError('Apply PostgreSQL notification/Messenger migration with the migration operator first')
+            raise RuntimeError('Apply PostgreSQL notification-read-receipt migration with the migration operator first')
     r.sql('INSERT INTO portal_production_migrations(company_id,version,applied_at) VALUES(?,16,?)',(r.company_id,utcnow()))
 
 def migrate_session_storage(r):

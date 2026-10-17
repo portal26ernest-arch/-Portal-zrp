@@ -194,7 +194,7 @@ public partial class MainWindow : Window
     private string WebViewArguments()
     {
         // Route only PORTAL WebView traffic through the app-local CONNECT bridge. This avoids
-        // machine-specific Chromium/HTTPS filtering failures without changing system proxy/VPN.
+        // machine-specific Chromium/HTTPS filtering failures without changing system network settings.
         var networkArguments = _portalProxy?.BrowserArguments ?? WebViewNetworkCompatibilityArguments;
 
         // Safe default after a real WebView2 154 incident where the DOM loaded and
