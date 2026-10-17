@@ -17,13 +17,15 @@ const runtime={
   desktop:read('desktop_windows/MainWindow.xaml.cs'),
   ios:read('ios_src/PortalIOS/PortalNativeBridge.swift'),
   api:read('server/portal_app_server.py'),
-  service:read('server/production_service.py')
+  service:read('server/production_service.py'),
+  repository:read('server/production_repository.py')
 };
 test('retired external providers have no active app/bridge/router entry points',()=>{
   const unwanted=/openMessengerWindow|clearMessengerSession|MessengerActivity|MessengerWindow|messenger-relay-ticket|portal-messenger:\/\/|web\.telegram\.org|web\.max\.ru|screens\.messenger\s*=|id:'messenger'|data-action="openMessenger"/i;
   for(const [name,code] of Object.entries(runtime))
     assert.doesNotMatch(code,unwanted,name);
   assert.doesNotMatch(runtime.service,/action\s*==\s*['"]messenger['"]/);
+  assert.doesNotMatch(runtime.repository,/['"]messenger_(accounts|conversations|messages)['"]/);
   assert.doesNotMatch(runtime.api,/action\s+in\s+\{'messenger'/);
   assert.doesNotMatch(runtime.notifications,/centerLabels[^;]*MESSENGER/);
 });
