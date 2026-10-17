@@ -159,6 +159,28 @@ public class PortalApiTransportTest {
         assertFalse(((OkHttpClient) fast.get(transport)).retryOnConnectionFailure());
     }
 
+    @Test public void officialDnsFailsOverInsideTheSameRequestWithoutRetryingPost() throws Exception {
+        AtomicInteger fallbackCalls = new AtomicInteger();
+        Dns brokenSystem = host -> { throw new UnknownHostException("device dns unavailable"); };
+        Dns safeRecovery = host -> {
+            fallbackCalls.incrementAndGet();
+            assertEquals("api.vart-portal.ru", host);
+            return List.of(InetAddress.getByName("1.1.1.1"));
+        };
+        Dns router = PortalApiTransport.systemWithOfficialFallback(brokenSystem, safeRecovery);
+        assertEquals(List.of(InetAddress.getByName("1.1.1.1")), router.lookup("api.vart-portal.ru"));
+        assertEquals(1, fallbackCalls.get());
+        assertThrows(UnknownHostException.class, () -> router.lookup("custom.example"));
+        assertThrows(UnknownHostException.class, () -> router.lookup("evil.api.vart-portal.ru"));
+        assertEquals(1, fallbackCalls.get());
+
+        Dns healthySystem = host -> List.of(InetAddress.getByName("8.8.8.8"));
+        assertEquals(List.of(InetAddress.getByName("8.8.8.8")),
+                PortalApiTransport.systemWithOfficialFallback(healthySystem, safeRecovery)
+                        .lookup("api.vart-portal.ru"));
+        assertEquals(1, fallbackCalls.get());
+    }
+
     @Test public void productionTransportKeepsDefaultHostnameVerificationAndNoAutomaticRetries() {
         OkHttpClient client = PortalApiTransport.apiClient();
         assertFalse(client.retryOnConnectionFailure());

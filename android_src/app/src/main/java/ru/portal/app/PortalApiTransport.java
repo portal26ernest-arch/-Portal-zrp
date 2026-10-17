@@ -34,8 +34,17 @@ final class PortalApiTransport {
     private final ConcurrentHashMap<String, Long> recoveredUntil = new ConcurrentHashMap<>();
 
     PortalApiTransport() {
-        OkHttpClient direct = apiClient();
-        OkHttpClient recovered = direct.newBuilder().dns(officialDns(encryptedDns())).build();
+        // DNS recovery happens within the same HTTPS request, before any POST bytes
+        // can be sent. No login or payroll POST is ever replayed.
+        Dns officialRecovery = officialDns(encryptedDns());
+        Dns loggedRecovery = host -> {
+            if (BuildConfig.APPLICATION_ID.endsWith(".staging"))
+                android.util.Log.i("PortalNetwork", "system_dns_fallback_started");
+            return officialRecovery.lookup(host);
+        };
+        OkHttpClient direct = apiClient().newBuilder()
+                .dns(systemWithOfficialFallback(Dns.SYSTEM, loggedRecovery)).build();
+        OkHttpClient recovered = direct.newBuilder().dns(officialRecovery).build();
         directRequests = direct;
         recoveryRequests = recovered;
         // Short, idempotent bootstrap reads must not wait the entire 15s POST timeout.
@@ -77,6 +86,18 @@ final class PortalApiTransport {
         } catch (UnknownHostException impossible) {
             throw new IllegalStateException(impossible);
         }
+    }
+
+    static Dns systemWithOfficialFallback(Dns system, Dns officialRecovery) {
+        return host -> {
+            try {
+                return system.lookup(host);
+            } catch (UnknownHostException systemFailure) {
+                // Never send private/custom/third-party hostnames to the fallback.
+                if (!officialHost(host)) throw systemFailure;
+                return officialRecovery.lookup(host);
+            }
+        };
     }
 
     static boolean officialHost(String host) {
