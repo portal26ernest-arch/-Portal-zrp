@@ -50,6 +50,9 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorCompletionService;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.UUID;
 import org.json.JSONArray;
 import okhttp3.MediaType;
@@ -209,6 +212,8 @@ public class MainActivity extends Activity {
         private final PortalLocalCache localCache;
         private final PortalApiTransport apiTransport = new PortalApiTransport();
         private final ExecutorService executor = Executors.newFixedThreadPool(3);
+        // Bounded workers only for three safe bootstrap GETs, never for writes.
+        private final ExecutorService bootstrapExecutor = Executors.newFixedThreadPool(6);
         private volatile boolean closed;
         private volatile String cacheCompany = "";
         private volatile String cacheUser = "";
@@ -375,7 +380,8 @@ public class MainActivity extends Activity {
                     if (ready != null) {
                         // Local-first: render immediately, then refresh in the background.
                         deliver(id, ready);
-                        String freshBase = resolveServerForRequest(requestedBase);
+                        String freshBase = fastBootstrapGet(verb, path, requestedBase)
+                                ? requestedBase : resolveServerForRequest(requestedBase);
                         String fresh = requestWithFailover(freshBase, verb, path, body, token, company);
                         // Ignore any delayed refresh from a signed-out or replaced token.
                         if (token != null && token.equals(activeSessionToken)) {
@@ -392,7 +398,8 @@ public class MainActivity extends Activity {
                     }
                 }
                 long probeStartMs = android.os.SystemClock.elapsedRealtime();
-                String base = resolveServerForRequest(requestedBase);
+                String base = fastBootstrapGet(verb, path, requestedBase)
+                        ? requestedBase : resolveServerForRequest(requestedBase);
                 long requestStartMs = android.os.SystemClock.elapsedRealtime();
                 String result = requestWithFailover(base, verb, path, body, token, company);
                 if (BuildConfig.APPLICATION_ID.endsWith(".staging")) {
@@ -436,8 +443,64 @@ public class MainActivity extends Activity {
             return TRUSTED_FALLBACK_API_URL;
         }
 
+        private boolean fastBootstrapGet(String method, String path, String origin) {
+            return "GET".equalsIgnoreCase(method)
+                    && (PRIMARY_API_URL.equalsIgnoreCase(origin)
+                        || TRUSTED_FALLBACK_API_URL.equalsIgnoreCase(origin))
+                    && ("/api/company".equals(path) || "/api/v3/meta".equals(path)
+                        || "/api/v3/today".equals(path));
+        }
+
+        private String fastestBootstrapGet(String firstOrigin, String path, String body,
+                                           String token, String company) {
+            ExecutorCompletionService<String[]> completion =
+                    new ExecutorCompletionService<>(bootstrapExecutor);
+            String secondOrigin = automaticPeer(firstOrigin);
+            Future<String[]> firstTask = completion.submit(() -> new String[]{
+                    firstOrigin, requestAt(firstOrigin, "GET", path, body, token, company)});
+            Future<String[]> secondTask = completion.submit(() -> new String[]{
+                    secondOrigin, requestAt(secondOrigin, "GET", path, body, token, company)});
+            String networkError = null;
+            try {
+                long deadline = android.os.SystemClock.elapsedRealtime() + 9000L;
+                for (int i = 0; i < 2; i++) {
+                    long remaining = deadline - android.os.SystemClock.elapsedRealtime();
+                    if (remaining <= 0) break;
+                    Future<String[]> ready = completion.poll(remaining, TimeUnit.MILLISECONDS);
+                    if (ready == null) break;
+                    String[] reply = ready.get();
+                    boolean failed;
+                    try { failed = new JSONObject(reply[1]).optBoolean("network", false); }
+                    catch (Exception ignored) { failed = true; }
+                    if (!failed) {
+                        // The first authenticated, TLS-validated, non-network reply wins.
+                        if (firstOrigin.equalsIgnoreCase(getServerUrl())
+                                || secondOrigin.equalsIgnoreCase(getServerUrl()))
+                            markHealthyServer(reply[0]);
+                        if (BuildConfig.APPLICATION_ID.endsWith(".staging"))
+                            android.util.Log.i("PortalNetwork", "bootstrap_get_fast_route_"
+                                    + (firstOrigin.equals(reply[0]) ? "first" : "peer"));
+                        return reply[1];
+                    }
+                    if (networkError == null) networkError = reply[1];
+                }
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            } catch (Exception ignored) {
+                // A failed route is not grounds to retry a non-idempotent request.
+            } finally {
+                firstTask.cancel(true);
+                secondTask.cancel(true);
+            }
+            return networkError == null
+                    ? "{\"ok\":false,\"network\":true,\"error\":\"PORTAL read timeout\"}"
+                    : networkError;
+        }
+
         private String requestWithFailover(String base, String method, String path,
                                            String body, String token, String company) {
+            if (fastBootstrapGet(method, path, base))
+                return fastestBootstrapGet(base, path, body, token, company);
             String first = requestAt(base, method, path, body, token, company);
             if (!isAutomaticPortalServer(base)) return first;
             boolean connectionFailed;
@@ -1133,7 +1196,7 @@ public class MainActivity extends Activity {
             }
         }
 
-        void close() { closed = true; executor.shutdownNow(); }
+        void close() { closed = true; executor.shutdownNow(); bootstrapExecutor.shutdownNow(); }
 
         private boolean isLegacyLocalServer(String value) {
             if (value == null || value.trim().isEmpty()) return true;

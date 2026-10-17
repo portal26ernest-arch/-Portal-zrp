@@ -111,6 +111,19 @@ assert.match(networkFailover,/if \(probeOfficialServer\(peer\)\) markHealthyServ
 assert.match(networkFailover,/return first;\s*\}/);
 assert.doesNotMatch(networkFailover,/if \(!probeOfficialServer\(peer\)\) return first/);
 assert.doesNotMatch(networkFailover,/\/api\/login/);
+const parallelBootstrap=main.slice(main.indexOf('private boolean fastBootstrapGet('),main.indexOf('private String requestWithFailover('));
+assert.match(parallelBootstrap,/"GET"\.equalsIgnoreCase\(method\)/);
+assert.match(parallelBootstrap,/PRIMARY_API_URL\.equalsIgnoreCase\(origin\)/);
+assert.match(parallelBootstrap,/TRUSTED_FALLBACK_API_URL\.equalsIgnoreCase\(origin\)/);
+for(const path of ['/api/company','/api/v3/meta','/api/v3/today'])
+  assert.ok(parallelBootstrap.includes('"'+path+'"'), 'Only safe startup read '+path);
+assert.match(parallelBootstrap,/new ExecutorCompletionService<>\(bootstrapExecutor\)/);
+assert.match(parallelBootstrap,/requestAt\(firstOrigin, "GET", path, body, token, company\)/);
+assert.match(parallelBootstrap,/requestAt\(secondOrigin, "GET", path, body, token, company\)/);
+assert.match(parallelBootstrap,/completion\.poll\(remaining, TimeUnit\.MILLISECONDS\)/);
+assert.match(main,/bootstrapExecutor\.shutdownNow\(\)/);
+assert.doesNotMatch(parallelBootstrap,/requestAt\((?:firstOrigin|secondOrigin), method,/);
+
 assert.match(asyncRequest,/requestWithFailover\(freshBase/);
 assert.match(asyncRequest,/requestWithFailover\(base/);
 assert.match(main,/return requestWithFailover\(resolveServerForRequest\(getServerUrl\(\)\)/);

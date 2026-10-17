@@ -93,13 +93,15 @@ final class PortalApiTransport {
         // briefly; each HTTPS connection still verifies the PORTAL hostname.
         final ConcurrentHashMap<String, List<InetAddress>> resolved = new ConcurrentHashMap<>();
         final ConcurrentHashMap<String, Long> expiresAt = new ConcurrentHashMap<>();
+        final ConcurrentHashMap<String, Object> hostLocks = new ConcurrentHashMap<>();
         return host -> {
             if (!officialHost(host)) return system.lookup(host);
             long now = System.currentTimeMillis();
             List<InetAddress> previous = resolved.get(host);
             if (previous != null && expiresAt.getOrDefault(host, 0L) > now)
                 return previous;
-            synchronized (resolved) {
+            // One slow DNS lookup must not serialize a different official hostname.
+            synchronized (hostLocks.computeIfAbsent(host, key -> new Object())) {
                 now = System.currentTimeMillis();
                 previous = resolved.get(host);
                 if (previous != null && expiresAt.getOrDefault(host, 0L) > now)
