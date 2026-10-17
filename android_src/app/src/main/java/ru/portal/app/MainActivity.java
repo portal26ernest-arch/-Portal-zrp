@@ -446,13 +446,33 @@ public class MainActivity extends Activity {
             if (!connectionFailed) return first;
 
             String peer = automaticPeer(base);
-            if (!probeOfficialServer(peer)) return first;
-            markHealthyServer(peer);
-            // Do not automatically repeat any POST, including login: the server
-            // might have already committed its response before transport failed.
-            // The next explicit user request will use the healthy peer.
-            if (!"GET".equalsIgnoreCase(method)) return first;
-            return requestAt(peer, method, path, body, token, company);
+            if ("GET".equalsIgnoreCase(method)) {
+                // Only two fixed, trusted PORTAL origins. A safe GET itself provides
+                // the authenticated HTTPS check; probing /api/ping first could add
+                // 5-13 seconds of latency after an already-timed-out request.
+                String second = requestAt(peer, method, path, body, token, company);
+                boolean peerFailed;
+                try { peerFailed = new JSONObject(second).optBoolean("network", false); }
+                catch (Exception ignored) { peerFailed = true; }
+                if (peerFailed && probeOfficialServer(peer)) {
+                    // Only after both direct official routes fail do we run an
+                    // anonymous TLS-validated probe to activate DNS recovery.
+                    second = requestAt(peer, method, path, body, token, company);
+                    try { peerFailed = new JSONObject(second).optBoolean("network", false); }
+                    catch (Exception ignored) { peerFailed = true; }
+                }
+                if (!peerFailed) {
+                    markHealthyServer(peer);
+                    if (BuildConfig.APPLICATION_ID.endsWith(".staging"))
+                        android.util.Log.i("PortalNetwork", "safe_get_peer_recovered");
+                    return second;
+                }
+                return first;
+            }
+            // A POST may have committed on the first origin even when its response
+            // was lost. Never replay it; an anonymous peer probe only guides later GETs.
+            if (probeOfficialServer(peer)) markHealthyServer(peer);
+            return first;
         }
 
         private String resolveServerForRequest(String requestedBase) {

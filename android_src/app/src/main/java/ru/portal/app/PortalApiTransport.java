@@ -26,6 +26,8 @@ final class PortalApiTransport {
     static final long RECOVERY_TTL_MS = 120_000L;
     private final Call.Factory directRequests;
     private final Call.Factory recoveryRequests;
+    private final Call.Factory fastDirectGets;
+    private final Call.Factory fastRecoveryGets;
     private final Call.Factory directProbes;
     private final Call.Factory recoveryProbes;
     private final LongSupplier clock;
@@ -36,6 +38,9 @@ final class PortalApiTransport {
         OkHttpClient recovered = direct.newBuilder().dns(officialDns(encryptedDns())).build();
         directRequests = direct;
         recoveryRequests = recovered;
+        // Short, idempotent bootstrap reads must not wait the entire 15s POST timeout.
+        fastDirectGets = direct.newBuilder().callTimeout(5500, TimeUnit.MILLISECONDS).build();
+        fastRecoveryGets = recovered.newBuilder().callTimeout(5500, TimeUnit.MILLISECONDS).build();
         directProbes = direct.newBuilder().callTimeout(5500, TimeUnit.MILLISECONDS).build();
         recoveryProbes = recovered.newBuilder().callTimeout(7500, TimeUnit.MILLISECONDS).build();
         clock = System::currentTimeMillis;
@@ -45,6 +50,8 @@ final class PortalApiTransport {
     PortalApiTransport(Call.Factory direct, Call.Factory recovered, LongSupplier clock) {
         directRequests = directProbes = direct;
         recoveryRequests = recoveryProbes = recovered;
+        fastDirectGets = direct;
+        fastRecoveryGets = recovered;
         this.clock = clock;
     }
 
@@ -132,7 +139,15 @@ final class PortalApiTransport {
 
     Payload execute(Request request, int limit) throws IOException {
         // Exactly one execution, also for POST. Failover belongs to the caller's safe-GET policy.
-        return read(recoveryActive(request.url()) ? recoveryRequests : directRequests, request, limit);
+        // Only bounded, small, idempotent bootstrap GETs use the short timeout.
+        // All POSTs retain their original, non-replayable 15s transport policy.
+        String path = request.url().encodedPath();
+        boolean bootGet = "GET".equals(request.method()) && eligible(request.url())
+                && ("/api/company".equals(path) || "/api/v3/meta".equals(path)
+                    || "/api/v3/today".equals(path));
+        boolean recovered = recoveryActive(request.url());
+        return read(recovered ? (bootGet ? fastRecoveryGets : recoveryRequests)
+                              : (bootGet ? fastDirectGets : directRequests), request, limit);
     }
 
     private static Payload read(Call.Factory factory, Request request, int limit) throws IOException {

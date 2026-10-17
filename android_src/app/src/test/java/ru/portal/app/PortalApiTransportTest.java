@@ -144,6 +144,21 @@ public class PortalApiTransportTest {
         assertEquals(List.of(InetAddress.getByName("1.1.1.1")), dns.lookup("api.vart-portal.ru"));
     }
 
+    @Test public void shortBootstrapReadsDoNotShortenPostTimeouts() throws Exception {
+        PortalApiTransport transport = new PortalApiTransport();
+        java.lang.reflect.Field direct = PortalApiTransport.class.getDeclaredField("directRequests");
+        java.lang.reflect.Field fast = PortalApiTransport.class.getDeclaredField("fastDirectGets");
+        java.lang.reflect.Field recovery = PortalApiTransport.class.getDeclaredField("recoveryRequests");
+        java.lang.reflect.Field fastRecovery = PortalApiTransport.class.getDeclaredField("fastRecoveryGets");
+        for (java.lang.reflect.Field field : List.of(direct, fast, recovery, fastRecovery)) field.setAccessible(true);
+        assertEquals(15000, ((OkHttpClient) direct.get(transport)).callTimeoutMillis());
+        assertEquals(5500, ((OkHttpClient) fast.get(transport)).callTimeoutMillis());
+        assertEquals(15000, ((OkHttpClient) recovery.get(transport)).callTimeoutMillis());
+        assertEquals(5500, ((OkHttpClient) fastRecovery.get(transport)).callTimeoutMillis());
+        assertFalse(((OkHttpClient) direct.get(transport)).retryOnConnectionFailure());
+        assertFalse(((OkHttpClient) fast.get(transport)).retryOnConnectionFailure());
+    }
+
     @Test public void productionTransportKeepsDefaultHostnameVerificationAndNoAutomaticRetries() {
         OkHttpClient client = PortalApiTransport.apiClient();
         assertFalse(client.retryOnConnectionFailure());
