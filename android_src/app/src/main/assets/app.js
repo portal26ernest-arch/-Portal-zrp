@@ -10,7 +10,7 @@ const PORTAL_AUTOMATIC_SERVERS=new Set(['https://api.vart-portal.ru','https://re
 function normalizeServerOrigin(value){try{return new URL(String(value||'')).origin.toLowerCase();}catch{return String(value||'').replace(/\/+$/,'').toLowerCase();}}
 function sessionServerMatches(saved,current){const a=normalizeServerOrigin(saved),b=normalizeServerOrigin(current);if(!a||!b)return false;if(a===b)return true;return PORTAL_AUTOMATIC_SERVERS.has(a)&&PORTAL_AUTOMATIC_SERVERS.has(b);}
 async function withTimeout(promise,ms,label){let timer;try{return await Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error(label)),ms);})]);}finally{if(timer)clearTimeout(timer);}}
-const S = {token:'',me:null,company:null,companies:[],page:'dashboard',history:[],epoch:0,view:0,writes:0,authBusy:false,loginCompany:1,ownerLogin:false,setupRequired:false,metadata:{},update:null,autoUpdateChecked:false,clients:[],operations:[],localDataView:0,localPendingCount:0,localLegacyPendingCount:0};
+const S = {token:'',me:null,company:null,companies:[],page:'dashboard',history:[],epoch:0,view:0,writes:0,backgroundWrites:0,authBusy:false,loginCompany:1,ownerLogin:false,setupRequired:false,metadata:{},update:null,autoUpdateChecked:false,clients:[],operations:[],localDataView:0,localPendingCount:0,localLegacyPendingCount:0};
 const PLATFORM_MODULES=[['work','Выработка'],['payroll','Зарплата'],['payrollPeriods','Расчётные периоды'],['teamChat','Команда'],['organizer','Органайзер'],['clients','Клиенты'],['materials','Материалы'],['invoices','Счета и оплаты'],['users','Сотрудники'],['jobs','Задания'],['batches','Партии'],['permissions','Права сотрудников'],['tariffs','Тарифы'],['radar','Финансовый радар'],['expenses','Расходы'],['analytics','Аналитика'],['control','Контроль PORTAL'],['documents','Документы'],['reports','Отчёты'],['news','Новости'],['excelImport','Импорт Excel'],['wms','WMS / ТСД'],['notifications','Уведомления']];
 const actions = Object.create(null), forms = Object.create(null), screens = Object.create(null);
 const paths = {
@@ -62,6 +62,9 @@ function can(page){return PortalCore.can(page,S.me,S.company);}
 function isOwner(){return S.me?.role==='platform_owner';}
 const employeeId=user=>user?.employee_id??null;
 function canLeave(){if(S.writes){toast('Дождитесь завершения записи');return false;}return true;}
+// Background outbox replay can continue while moving between pages, but never
+// while signing out or changing company. User-submitted writes remain blocking.
+function canNavigate(){if(S.writes>(S.backgroundWrites||0)){toast('Дождитесь завершения записи');return false;}return true;}
 function clearCompanyData(){clearInterval(S.heartbeatTimer);S.heartbeatTimer=null;clearInterval(S.organizerReminderTimer);S.organizerReminderTimer=null;try{window.PortalNative?.scheduleOrganizerReminders?.('[]');}catch{}clearInterval(S.localSyncTimer);S.localSyncTimer=null;S.stage3=false;S.productionCatalog=null;S.permissionCatalog=[];if(S.me)delete S.me.permissions;S.clients=[];S.operations=[];S.localPendingCount=0;S.localLegacyPendingCount=0;S.userData=null;S.operationData=null;S.workSelection=null;S.history=[];if(typeof window.PortalNative?.setCacheCompany==='function')PortalNative.setCacheCompany('');S.epoch++;}
 
 const pending=new Map();let requestSequence=0;
@@ -75,7 +78,14 @@ async function api(method,path,body,options={}){
     if(!yes)throw {cancelled:true};
     if(epoch!==S.epoch)throw {stale:true};
   }
-  if(method==='POST')S.writes++;
+  // Only the heartbeat is a non-mutating POST. Never exempt business writes.
+  const passiveHeartbeat=method==='POST'&&path==='/api/v3/heartbeat'&&options.passive===true;
+  const trackedWrite=method==='POST'&&!passiveHeartbeat;
+  // Only trusted outbox replay is allowed to run while navigating pages.
+  const backgroundWrite=trackedWrite&&options.backgroundWrite===true&&options.global===true
+    &&/^\/api\/v3\/(?:work|links|batches|tasks|shipments|returns)$/.test(path);
+  if(trackedWrite)S.writes++;
+  if(backgroundWrite)S.backgroundWrites++;
   try{
     if(!window.PortalNative)throw new Error('Откройте PORTAL в мобильном приложении');
     const payload=body===undefined?'':JSON.stringify(body);
@@ -92,15 +102,15 @@ async function api(method,path,body,options={}){
     }
     markLocalData(result,view);
     return result;
-  }finally{if(method==='POST')S.writes--;}
+  }finally{if(backgroundWrite)S.backgroundWrites--;if(trackedWrite)S.writes--;}
 }
 let sheetFocus=null,sheetCancel=null;
 function openSheet(title,html,cancel=null){if(sheetCancel)sheetCancel(false);sheetCancel=cancel;sheetFocus=document.activeElement;$('sheetTitle').textContent=title;$('sheetContent').innerHTML=html;$('sheetBackdrop').classList.remove('hidden');$('auth').inert=true;$('app').inert=true;setTimeout(()=>$('sheet').querySelector('input,select,button')?.focus(),0);}
 function closeSheet(answer=false){clearInterval(S.timerTicker);S.timerTicker=null;$('sheetBackdrop').classList.add('hidden');$('sheetContent').innerHTML='';$('auth').inert=false;$('app').inert=false;const cb=sheetCancel;sheetCancel=null;if(cb)cb(answer);sheetFocus?.focus();}
 function confirmSheet(title,text,label='Подтвердить'){return new Promise(resolve=>openSheet(title,`<p class="muted">${esc(text)}</p><div class="stack">${btn(label,'confirmSheet')}${btn('Отмена','closeSheet','','secondary')}</div>`,resolve));}
 actions.closeSheet=()=>{if(canLeave())closeSheet();};actions.confirmSheet=()=>closeSheet(true);
-window.portalBack=()=>{if(!$('sheetBackdrop').classList.contains('hidden'))return true;if(!S.me)return false;const root=isOwner()&&!S.company?'companies':'dashboard';while(S.history.length){const previous=S.history.pop();if(previous&&previous!==S.page&&can(previous)){go(previous,{fromHistory:true});return true;}}if(S.page!==root){go(root,{fromHistory:true});return true;}return false;};
-window.portalHome=()=>{if(!S.me)return false;const root=isOwner()&&!S.company?'companies':'dashboard';S.history=[];if(S.page!==root)go(root,{fromHistory:true});else window.scrollTo(0,0);return true;};
+window.portalBack=()=>{if(!$('sheetBackdrop').classList.contains('hidden'))return true;if(!S.me)return false;if(!canNavigate())return true;const root=isOwner()&&!S.company?'companies':'dashboard';while(S.history.length){const previous=S.history.pop();if(previous&&previous!==S.page&&can(previous)){go(previous,{fromHistory:true});return true;}}if(S.page!==root){go(root,{fromHistory:true});return true;}return false;};
+window.portalHome=()=>{if(!S.me)return false;if(!canNavigate())return true;const root=isOwner()&&!S.company?'companies':'dashboard';S.history=[];if(S.page!==root)go(root,{fromHistory:true});else window.scrollTo(0,0);return true;};
 function theme(value){storage.set('portalTheme',value);document.documentElement.dataset.theme=value==='system'?(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):value;}
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{if((storage.get('portalTheme')||'system')==='system')theme('system');});
 actions.setTheme=button=>{theme(button.dataset.value);closeSheet();};
@@ -188,7 +198,7 @@ function buildNav(){
   let items=isOwner()&&!S.company?[['companies','clients','Компании'],['settings','settings','Настройки']]:[['dashboard','home','Главная'],...(can('work')?[['work','plus','Работа']]:can('clients')?[['clients','clients','Клиенты']]:[]),['sections','grid','Ещё'],['settings','settings','Настройки']];nav.innerHTML=items.map(([id,i,title])=>navButton(id,i,title)).join('');
 }
 desktopNavQuery?.addEventListener('change',()=>{if(S.me)buildNav();});
-async function go(page,options={}){if(!canLeave())return;if(!can(page))return toast('Раздел недоступен для вашего доступа',true);closeSheet();const previousPage=S.page,previousHtml=$('content')?.innerHTML||'',previousScroll=window.scrollY;let pushedHistory=false;if(!options.fromHistory&&S.me&&S.page&&S.page!==page){S.history.push(S.page);pushedHistory=true;if(S.history.length>50)S.history.shift();}S.page=page;S.view++;const view=S.view;S.localDataView=0;buildNav();paint('<div class="loading"><span class="spinner"></span><p>Загружаем…</p></div>');window.scrollTo(0,0);try{await (screens[page]||screens.dashboard)();showLocalDataNotice(view);}catch(e){if(e.stale||e.cancelled)return;if(isTransientNetworkError(e)&&previousHtml){if(pushedHistory&&S.history[S.history.length-1]===previousPage)S.history.pop();S.page=previousPage;S.view++;buildNav();paint(previousHtml);requestAnimationFrame(()=>window.scrollTo(0,previousScroll));toast('Связь с сервером временно недоступна. Работаем с локальными данными.');return;}paint(heading('Не удалось загрузить')+`<div class="card"><p class="muted">${esc(e.message)}</p>${btn('Повторить','go',`data-page="${esc(page)}"`)}</div>`);}}
+async function go(page,options={}){if(!canNavigate())return;if(!can(page))return toast('Раздел недоступен для вашего доступа',true);closeSheet();const previousPage=S.page,previousHtml=$('content')?.innerHTML||'',previousScroll=window.scrollY;let pushedHistory=false;if(!options.fromHistory&&S.me&&S.page&&S.page!==page){S.history.push(S.page);pushedHistory=true;if(S.history.length>50)S.history.shift();}S.page=page;S.view++;const view=S.view;S.localDataView=0;buildNav();paint('<div class="loading"><span class="spinner"></span><p>Загружаем…</p></div>');window.scrollTo(0,0);try{await (screens[page]||screens.dashboard)();showLocalDataNotice(view);}catch(e){if(e.stale||e.cancelled)return;if(isTransientNetworkError(e)&&previousHtml){if(pushedHistory&&S.history[S.history.length-1]===previousPage)S.history.pop();S.page=previousPage;S.view++;buildNav();paint(previousHtml);requestAnimationFrame(()=>window.scrollTo(0,previousScroll));toast('Связь с сервером временно недоступна. Работаем с локальными данными.');return;}paint(heading('Не удалось загрузить')+`<div class="card"><p class="muted">${esc(e.message)}</p>${btn('Повторить','go',`data-page="${esc(page)}"`)}</div>`);}}
 actions.go=button=>go(button.dataset.page);
 actions.notificationCenter=button=>{if(!can('notifications'))return toast('Центр уведомлений недоступен',true);S.notificationCenter=button.dataset.center;go('notifications');};
 actions.openOrganizer=()=>{if(!can('organizer'))return toast('Органайзер недоступен для вашего доступа',true);go('organizer');};

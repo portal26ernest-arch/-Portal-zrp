@@ -18,7 +18,7 @@ function applyProductionMeta(r){
 async function configureProduction(prefetched=null){
   const r=prefetched||await api('GET','/api/v3/meta',undefined,{global:true});
   applyProductionMeta(r);
-  if(S.stage3){clearInterval(S.heartbeatTimer);S.heartbeatTimer=setInterval(()=>{if(S.token&&!document.hidden)api('POST','/api/v3/heartbeat',{}, {global:true}).catch(()=>{});},S.heartbeatSeconds*1000);startOrganizerReminderWatch();startLocalSyncWatch();}
+  if(S.stage3){clearInterval(S.heartbeatTimer);S.heartbeatTimer=setInterval(()=>{if(S.token&&!document.hidden)api('POST','/api/v3/heartbeat',{}, {global:true,passive:true}).catch(()=>{});},S.heartbeatSeconds*1000);startOrganizerReminderWatch();startLocalSyncWatch();}
 }
 const allowed=permission=>S.me?.permissions?.includes(permission);
 const rub=cents=>money(Number(cents||0)/100);
@@ -57,7 +57,7 @@ async function syncLocalOutbox(){
           const action=typeof row?.path==='string'&&row.path.startsWith('/api/v3/')?row.path.slice(8):'';
           if(!row||row.method!=='POST'||!canQueueLocalMutation(action)||!row.body||row.body.request_id!==row.request_id)continue;
           try{
-            await api('POST',row.path,row.body,{global:true});
+            await api('POST',row.path,row.body,{global:true,backgroundWrite:true});
             await nativeOutboxCall('removeMutation',String(row.request_id));
             await refreshLocalPendingCount();
           }catch(error){
