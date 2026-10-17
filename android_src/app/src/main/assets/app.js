@@ -120,12 +120,14 @@ function updateLogin(){$('loginCompany').innerHTML=`<span>Компания · ${
 actions.loginOptions=()=>openSheet('Вход в рабочее пространство',`<form id="companyLoginForm">${field('companyId','Номер компании',S.loginCompany,'number','min="1" step="1" required')}<p class="meta">PORTAL — компания № 1. Номер другой компании уточните у администратора.</p><button class="btn block" type="submit">Продолжить</button></form>`);
 forms.companyLoginForm=()=>{const id=Number($('companyId').value);if(!Number.isSafeInteger(id)||id<1)throw new Error('Введите номер компании');S.loginCompany=id;$('loginPin').value='';updateLogin();closeSheet();};
 actions.togglePassword=button=>{const visible=$('loginPin').type==='password';$('loginPin').type=visible?'text':'password';button.setAttribute('aria-label',visible?'Скрыть код доступа':'Показать код доступа');};
+function reportStageTime(stage,started){try{window.PortalNative?.recordStageTime?.(stage,Date.now()-started);}catch{}}
 async function loginRequest(body){
+  const authStart=Date.now();
   try{return await api('POST','/api/login',body,{anonymous:true,global:true,timeoutMs:35000});}
   catch(error){
     if(error?.network){const detail={dns:'DNS',tls:'TLS',timeout:'тайм-аут',connect:'подключение'}[error.networkKind]||'сеть';error.message='Не удалось завершить вход ('+detail+'). Проверьте подключение.';}
     throw error;
-  }
+  }finally{reportStageTime('auth',authStart);}
 }
 forms.loginForm=async()=>{if(S.authBusy)return;S.authBusy=true;$('loginSubmit').disabled=true;$('loginError').classList.add('hidden');try{const body={username:$('loginUser').value.trim(),pin:$('loginPin').value,company_id:S.loginCompany};const r=await loginRequest(body);$('loginPin').value='';await acceptLogin(r);}catch(e){if(!e.stale){$('loginError').textContent=e.message||'Не удалось войти';$('loginError').classList.remove('hidden');}}finally{S.authBusy=false;$('loginSubmit').disabled=false;}};
 actions.acceptInvite=()=>openSheet('Принять приглашение в PORTAL',`<p class="meta">Введите одноразовый код от администратора компании и задайте личный PIN. Не передавайте PIN отправителю.</p><form id="acceptInviteForm">${field('acceptInviteToken','Одноразовый код','','text','required maxlength="160" autocapitalize="none"')}${field('acceptInvitePin','Новый PIN','','password','required minlength="4" maxlength="128" autocomplete="new-password"')}<button class="btn block" type="submit">Отправить запрос на подтверждение</button><p id="acceptInviteError" class="signin-error hidden" role="alert"></p></form>`);
@@ -137,6 +139,7 @@ async function prewarmLocalData(){if(!S.me||!S.company||!S.token)return;const pa
 async function enterApp(){
   if(!PortalCore.roles[S.me?.role]){logout(false);throw new Error('Эта роль не поддерживается');}
   if(!isOwner()){
+    const companyStart=Date.now();
     if(typeof window.PortalNative?.setCacheCompany==='function')PortalNative.setCacheCompany(String(S.me.company_id||''));
     const [companyResult,metaResult]=await Promise.all([
       api('GET','/api/company',undefined,{global:true}),
@@ -145,10 +148,13 @@ async function enterApp(){
     S.company=companyResult.company;
     if(typeof window.PortalNative?.setCacheCompany==='function')PortalNative.setCacheCompany(String(S.company?.id||S.me.company_id||''));
     await configureProduction(metaResult);
+    reportStageTime('company',companyStart);
     savePortalSession();
   }else if(typeof window.PortalNative?.setCacheCompany==='function')PortalNative.setCacheCompany('');
   updateHeader();$('auth').classList.add('hidden');$('app').classList.remove('hidden');
-  await go(isOwner()?(S.company?'dashboard':'companies'):'dashboard',{fromHistory:true});
+  const dashboardStart=Date.now();
+  void go(isOwner()?(S.company?'dashboard':'companies'):'dashboard',{fromHistory:true})
+    .catch(handleError).finally(()=>reportStageTime('dashboard',dashboardStart));
   if(S.company)setTimeout(()=>{if(S.me&&S.company&&!document.hidden)void prewarmLocalData();},8000);
   setTimeout(()=>{if(!document.hidden)void autoCheckUpdates();},12000);
 }

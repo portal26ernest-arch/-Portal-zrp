@@ -49,7 +49,7 @@ jobs:
       - name: Verify native fullscreen shell
         run: node android_src/tests/native-shell.test.cjs
       - name: Verify Android logout, background sync and navigation safety
-        run: node --test android_src/tests/logout-performance.test.cjs android_src/tests/background-navigation.test.cjs
+        run: node --test android_src/tests/logout-performance.test.cjs android_src/tests/background-navigation.test.cjs android_src/tests/login-stage-performance.test.cjs
       - name: Verify removed Telegram and MAX entry points stay absent
         run: node --test android_src/tests/external-providers-removed.test.cjs
       - name: Verify Desktop navigation and recovery contract

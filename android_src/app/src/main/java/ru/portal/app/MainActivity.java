@@ -391,8 +391,19 @@ public class MainActivity extends Activity {
                         return;
                     }
                 }
+                long probeStartMs = android.os.SystemClock.elapsedRealtime();
                 String base = resolveServerForRequest(requestedBase);
+                long requestStartMs = android.os.SystemClock.elapsedRealtime();
                 String result = requestWithFailover(base, verb, path, body, token, company);
+                if (BuildConfig.APPLICATION_ID.endsWith(".staging")) {
+                    String marker = "/api/login".equals(path) ? "login_network"
+                            : "/api/company".equals(path) ? "company_network"
+                            : "/api/v3/meta".equals(path) ? "meta_network"
+                            : "/api/v3/today".equals(path) ? "today_network" : "";
+                    if (!marker.isEmpty()) android.util.Log.i("PortalTiming", marker
+                            + " preflight=" + (requestStartMs - probeStartMs) + "ms"
+                            + " request=" + (android.os.SystemClock.elapsedRealtime() - requestStartMs) + "ms");
+                }
                 if (cacheable && responseOk(result)) localCache.write(cacheBase, localScope, path, result);
                 if ("POST".equals(verb) && responseOk(result) && !localScope.isEmpty())
                     invalidateCacheForMutation(cacheBase, localScope, path);
@@ -477,6 +488,13 @@ public class MainActivity extends Activity {
             String next = value == null ? "" : value.trim();
             cacheCompany = next.matches("[1-9][0-9]{0,9}") ? next : "";
             return !cacheCompany.isEmpty();
+        }
+
+        @JavascriptInterface
+        public void recordStageTime(String stage, long millis) {
+            if (!BuildConfig.APPLICATION_ID.endsWith(".staging")) return;
+            if (!("auth".equals(stage) || "company".equals(stage) || "dashboard".equals(stage))) return;
+            android.util.Log.i("PortalTiming", stage + " " + Math.max(0, Math.min(millis, 120000)) + "ms");
         }
 
         @JavascriptInterface
