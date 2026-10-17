@@ -170,6 +170,9 @@ public class PortalApiTransportTest {
         Dns router = PortalApiTransport.systemWithOfficialFallback(brokenSystem, safeRecovery);
         assertEquals(List.of(InetAddress.getByName("1.1.1.1")), router.lookup("api.vart-portal.ru"));
         assertEquals(1, fallbackCalls.get());
+        // A burst of dashboard requests reuses one official DNS result.
+        assertEquals(List.of(InetAddress.getByName("1.1.1.1")), router.lookup("api.vart-portal.ru"));
+        assertEquals(1, fallbackCalls.get());
         assertThrows(UnknownHostException.class, () -> router.lookup("custom.example"));
         assertThrows(UnknownHostException.class, () -> router.lookup("evil.api.vart-portal.ru"));
         assertEquals(1, fallbackCalls.get());

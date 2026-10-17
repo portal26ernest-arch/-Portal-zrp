@@ -82,7 +82,10 @@ function startLocalSyncWatch(){
   clearInterval(S.localSyncTimer);
   if(isOwner()||!S.company)return;
   S.localSyncTimer=setInterval(()=>{if(!document.hidden)void syncLocalOutbox();},LOCAL_SYNC_INTERVAL_MS);
-  setTimeout(()=>{void refreshLocalPendingCount();void syncLocalOutbox();},1200);
+  // Login has already loaded meta. Only replay queued mutations at startup.
+  setTimeout(()=>{void refreshLocalPendingCount().then(count=>{
+    if(count>0)void syncLocalOutbox();
+  }).catch(()=>{});},1200);
   if(!globalThis.__portalLocalSyncOnline){globalThis.__portalLocalSyncOnline=true;addEventListener('online',()=>void syncLocalOutbox());}
 }
 async function productionPost(path,body,form){

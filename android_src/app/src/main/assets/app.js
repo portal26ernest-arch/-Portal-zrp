@@ -155,7 +155,10 @@ async function enterApp(){
   const dashboardStart=Date.now();
   void go(isOwner()?(S.company?'dashboard':'companies'):'dashboard',{fromHistory:true})
     .catch(handleError).finally(()=>reportStageTime('dashboard',dashboardStart));
-  if(S.company)setTimeout(()=>{if(S.me&&S.company&&!document.hidden)void prewarmLocalData();},8000);
+  // Avoid flooding a slow VPN/DNS route with optional cache warmups while the
+  // authenticated dashboard is still loading. Warm later only if still idle.
+  if(S.company)setTimeout(()=>{if(S.me&&S.company&&!document.hidden&&S.page==='dashboard')
+    void prewarmLocalData();},45000);
   setTimeout(()=>{if(!document.hidden)void autoCheckUpdates();},12000);
 }
 function logout(refresh=true,force=false){if(!force&&!canLeave())return;try{window.PortalNative?.setActiveSessionToken?.('');}catch{}clearCompanyData();try{window.PortalNative?.setCacheIdentity?.('','','[]');}catch{}S.token='';S.me=null;S.company=null;S.companies=[];S.view++;storage.remove('portalSession');storage.remove('portalToken');if(browserClient)try{sessionStorage.clear();}catch{}closeSheet();$('app').classList.add('hidden');$('auth').classList.remove('hidden');$('loginPin').value='';if(refresh)checkServer();}

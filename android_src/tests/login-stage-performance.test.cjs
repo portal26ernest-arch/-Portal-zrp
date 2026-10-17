@@ -42,6 +42,17 @@ test('authenticated shell opens before slow dashboard loads',async()=>{
   assert.ok(!calls.includes('dashboard-resolved'));
   resolveDashboard();await Promise.resolve();await Promise.resolve();
 });
+test('startup does not crowd dashboard with redundant meta refreshes',()=>{
+  const production=fs.readFileSync(path.join(__dirname,'../app/src/main/assets/production_part1.js'),'utf8');
+  const bundled=fs.readFileSync(path.join(__dirname,'../app/src/main/assets/production.js'),'utf8');
+  for(const code of [production,bundled]){
+    assert.match(code,/refreshLocalPendingCount\(\)\.then\(count=>\{/);
+    assert.match(code,/if\(count>0\)void syncLocalOutbox\(\)/);
+    assert.doesNotMatch(code,/void refreshLocalPendingCount\(\);void syncLocalOutbox\(\)/);
+  }
+  assert.match(source,/prewarmLocalData\(\);\},45000\)/);
+});
+
 test('performance markers are constrained to staging and fixed event names',()=>{
   assert.match(native,/if \(!BuildConfig\.APPLICATION_ID\.endsWith\("\.staging"\)\) return;/);
   assert.match(native,/"auth"\.equals\(stage\)/);

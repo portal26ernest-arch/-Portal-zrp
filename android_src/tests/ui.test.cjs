@@ -99,7 +99,7 @@ test('startup is local-first and management dashboard loads independent data in 
   const preview=fs.readFileSync(path.join(assets,'preview.js'),'utf8');
   assert.match(app,/const serverCheck=checkServer\(\)/);
   assert.match(app,/Promise\.all\(\[\s*api\('GET','\/api\/company'[\s\S]*api\('GET','\/api\/v3\/meta'/);
-  assert.match(app,/setTimeout\(\(\)=>\{if\(S\.me&&S\.company&&!document\.hidden\)void prewarmLocalData\(\);\},8000\)/);
+  assert.match(app,/S\.page==='dashboard'\)\s*void prewarmLocalData\(\);\},45000\)/);
   assert.match(preview,/const \[d,timers,payroll\]=await Promise\.all\(\[/);
 });
 test('top Organizer shortcut opens Organizer directly and shows outstanding work count',()=>{

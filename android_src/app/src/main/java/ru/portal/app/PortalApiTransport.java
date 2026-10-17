@@ -89,13 +89,33 @@ final class PortalApiTransport {
     }
 
     static Dns systemWithOfficialFallback(Dns system, Dns officialRecovery) {
+        // One positive DNS result can serve concurrent dashboard reads. Keep it
+        // briefly; each HTTPS connection still verifies the PORTAL hostname.
+        final ConcurrentHashMap<String, List<InetAddress>> resolved = new ConcurrentHashMap<>();
+        final ConcurrentHashMap<String, Long> expiresAt = new ConcurrentHashMap<>();
         return host -> {
-            try {
-                return system.lookup(host);
-            } catch (UnknownHostException systemFailure) {
-                // Never send private/custom/third-party hostnames to the fallback.
-                if (!officialHost(host)) throw systemFailure;
-                return officialRecovery.lookup(host);
+            if (!officialHost(host)) return system.lookup(host);
+            long now = System.currentTimeMillis();
+            List<InetAddress> previous = resolved.get(host);
+            if (previous != null && expiresAt.getOrDefault(host, 0L) > now)
+                return previous;
+            synchronized (resolved) {
+                now = System.currentTimeMillis();
+                previous = resolved.get(host);
+                if (previous != null && expiresAt.getOrDefault(host, 0L) > now)
+                    return previous;
+                List<InetAddress> addresses;
+                try {
+                    addresses = system.lookup(host);
+                } catch (UnknownHostException systemFailure) {
+                    // Restrict recovery to the two official names, never arbitrary URLs.
+                    addresses = officialRecovery.lookup(host);
+                }
+                if (!addresses.isEmpty()) {
+                    resolved.put(host, List.copyOf(addresses));
+                    expiresAt.put(host, now + 45_000L);
+                }
+                return addresses;
             }
         };
     }
