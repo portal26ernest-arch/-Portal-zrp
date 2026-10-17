@@ -36,8 +36,6 @@ public partial class MainWindow : Window
     private string? _pendingPersistOrigin;
     private DesktopCacheBridge? _cacheBridge;
     private PortalConnectProxy? _portalProxy;
-    private static MessengerWindow? _messengerWindow;
-    private Task _messengerClearTask = Task.CompletedTask;
 
     public MainWindow()
     {
@@ -46,8 +44,44 @@ public partial class MainWindow : Window
         Closed += (_, _) => _portalProxy?.Dispose();
     }
 
+    private void RetireExternalProviderProfiles()
+    {
+        // Old standalone browser profiles: never delete the shared PORTAL WebView2
+        // profile, company cache, encrypted credentials or offline outbox.
+        foreach (var profileName in new[]
+        {
+            "MessengerWebView2-Telegram-5.12.6", "MessengerWebView2-Telegram",
+            "MessengerEdge-Telegram-5.12.7", "MessengerEdge-Telegram",
+            "MessengerWebView2-Max", "MessengerWebView2"
+        })
+        {
+            try
+            {
+                var profile = Path.Combine(_settingsDir, profileName);
+                if (Directory.Exists(profile)) DeleteProviderOnlyTree(profile);
+            }
+            catch { /* locked old profile: retry safely next launch */ }
+        }
+    }
+
+    private static void DeleteProviderOnlyTree(string profile)
+    {
+        if ((File.GetAttributes(profile) & FileAttributes.ReparsePoint) != 0)
+            throw new IOException("Provider profile is a symlink or junction");
+        foreach (var entry in Directory.EnumerateFileSystemEntries(profile))
+        {
+            var attr = File.GetAttributes(entry);
+            if ((attr & FileAttributes.ReparsePoint) != 0)
+                throw new IOException("Provider profile includes an external link");
+            if ((attr & FileAttributes.Directory) != 0) DeleteProviderOnlyTree(entry);
+            else File.Delete(entry);
+        }
+        Directory.Delete(profile);
+    }
+
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
+        _ = Task.Run(RetireExternalProviderProfiles);
         var configured = Environment.GetEnvironmentVariable("PORTAL_SERVER_URL");
         if (!string.IsNullOrWhiteSpace(configured))
         {
@@ -160,7 +194,7 @@ public partial class MainWindow : Window
     private string WebViewArguments()
     {
         // Route only PORTAL WebView traffic through the app-local CONNECT bridge. This avoids
-        // machine-specific Chromium/HTTPS filtering failures without changing system proxy/VPN.
+        // machine-specific Chromium/HTTPS filtering failures without changing system network settings.
         var networkArguments = _portalProxy?.BrowserArguments ?? WebViewNetworkCompatibilityArguments;
 
         // Safe default after a real WebView2 154 incident where the DOM loaded and
@@ -324,43 +358,11 @@ public partial class MainWindow : Window
             }
             if (SameOrigin(target, _serverOrigin)) return;
             e.Cancel = true;
-            if (target.Scheme == "portal-messenger") return;
             OpenExternalHttps(target);
-        };
-        Browser.CoreWebView2.WebMessageReceived += (_, e) =>
-        {
-            try
-            {
-                var message = e.TryGetWebMessageAsString();
-                using var json = JsonDocument.Parse(message);
-                var root = json.RootElement;
-                if (!root.TryGetProperty("type", out var type) || type.GetString() != "openMessenger") return;
-                var provider = root.TryGetProperty("provider", out var providerNode) && providerNode.GetString()?.Equals("max", StringComparison.OrdinalIgnoreCase) == true ? "max" : "telegram";
-                var relay = root.TryGetProperty("relay", out var relayNode) && relayNode.ValueKind == JsonValueKind.String ? relayNode.GetString() : null;
-                _ = Dispatcher.InvokeAsync(async () => await OpenMessengerWindowAsync(provider, relay));
-            }
-            catch { }
         };
         Browser.CoreWebView2.NewWindowRequested += (_, e) =>
         {
             e.Handled = true;
-            if (Uri.TryCreate(e.Uri, UriKind.Absolute, out var custom) && custom.Scheme == "portal-messenger")
-            {
-                if (!string.IsNullOrEmpty(custom.UserInfo) || !custom.IsDefaultPort || !string.IsNullOrEmpty(custom.Fragment)) return;
-                if (custom.Host.Equals("clear", StringComparison.OrdinalIgnoreCase))
-                {
-                    if (!string.IsNullOrEmpty(custom.Query) || !string.IsNullOrEmpty(custom.AbsolutePath.Trim('/'))) return;
-                    _messengerClearTask = ClearMessengerSessionAsync();
-                }
-                else if (custom.Host.Equals("open", StringComparison.OrdinalIgnoreCase) && string.IsNullOrEmpty(custom.AbsolutePath.Trim('/')))
-                {
-                    var query = System.Web.HttpUtility.ParseQueryString(custom.Query);
-                    if (query.AllKeys.Length != 1 || !string.Equals(query.AllKeys[0], "provider", StringComparison.OrdinalIgnoreCase)) return;
-                    if (!string.Equals(query["provider"], "max", StringComparison.OrdinalIgnoreCase)) return;
-                    _ = OpenMessengerWindowAsync("max");
-                }
-                return;
-            }
             if (_serverOrigin is not null && Uri.TryCreate(e.Uri, UriKind.Absolute, out var target))
             {
                 if (SameOrigin(target, _serverOrigin)) Browser.Source = target;
@@ -428,47 +430,6 @@ public partial class MainWindow : Window
         _browserEventsAttached = true;
     }
 
-    private async Task OpenMessengerWindowAsync(string provider = "telegram", string? relayJson = null)
-    {
-        try
-        {
-            await _messengerClearTask;
-            var relay = MessengerRelayTicket.Parse(relayJson);
-            if (_messengerWindow is not null && !_messengerWindow.AcceptsRelay(relay))
-            {
-                _messengerWindow.DisposeForRecreate();
-                _messengerWindow = null;
-            }
-            if (_messengerWindow is null) _messengerWindow = new MessengerWindow(_settingsDir, relay);
-            // WebView2 WPF needs a realized/visible host window before controller initialization.
-            // Show first, then initialize the provider; otherwise failures are invisible to the user.
-            _messengerWindow.ShowSingleton();
-            await _messengerWindow.OpenProviderAsync(provider, relay);
-        }
-        catch { }
-    }
-
-    private async Task ClearMessengerSessionAsync()
-    {
-        if (_messengerWindow is not null)
-        {
-            await _messengerWindow.ClearAndCloseAsync();
-            _messengerWindow = null;
-        }
-        else
-        {
-            foreach (var profileName in new[] { "MessengerWebView2-Telegram-5.12.6", "MessengerWebView2-Telegram", "MessengerEdge-Telegram-5.12.7", "MessengerEdge-Telegram", "MessengerWebView2-Max", "MessengerWebView2" })
-            {
-                try
-                {
-                    var profile = Path.Combine(_settingsDir, profileName);
-                    if (Directory.Exists(profile)) Directory.Delete(profile, recursive: true);
-                }
-                catch { }
-            }
-        }
-    }
-
     private async Task ApplyDesktopExperienceAsync()
     {
         if (Browser.CoreWebView2 is null) return;
@@ -510,7 +471,7 @@ public partial class MainWindow : Window
     const nav=document.getElementById('nav'); if(!nav) return;
     if(typeof isOwner==='function' && isOwner() && !S.company){nav.innerHTML=navButton('companies','clients','Компании')+'<div class="nav-spacer"></div>'+navButton('settings','settings','Настройки');return;}
     const byId=Object.fromEntries(PortalCore.modules.map(m=>[m.id,m]));
-    const groups=[['Работа',['organizer','work','jobs','batches','teamChat','messenger','notifications']],['Управление',['clients','users','permissions','tariffs']],['Учёт и финансы',['payroll','payrollPeriods','materials','invoices','expenses','documents','excelImport']],['Аналитика',['radar','analytics','reports','news']],['Система',['control','wms']]];
+    const groups=[['Работа',['organizer','work','jobs','batches','teamChat','notifications']],['Управление',['clients','users','permissions','tariffs']],['Учёт и финансы',['payroll','payrollPeriods','materials','invoices','expenses','documents','excelImport']],['Аналитика',['radar','analytics','reports','news']],['Система',['control','wms']]];
     let html=navButton('dashboard','home','Главная');
     for(const [title,ids] of groups){const allowed=ids.map(id=>byId[id]).filter(m=>m&&can(m.id));if(!allowed.length)continue;html+='<div class="nav-group"><div class="nav-group-title">'+esc(title)+'</div>'+allowed.map(m=>navButton(m.id,m.icon,m.title)).join('')+'</div>';}
     nav.innerHTML=html+'<div class="nav-spacer"></div>'+navButton('settings','settings','Настройки');

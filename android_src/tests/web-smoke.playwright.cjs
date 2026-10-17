@@ -15,7 +15,7 @@ test('same shared Web UI supports role menus, owner company selection, and Docum
     if(url.pathname==='/api/ping')data={ok:true,setup_required:false};
     else if(url.pathname==='/api/login'||url.pathname==='/api/platform/login')data={ok:true,token:'test-token',user:{id:1,username:'tester',display_name:'Tester',role,company_id:1,employee_id:['packer','loader','driver'].includes(role)?1:undefined}};
     else if(url.pathname==='/api/company')data={ok:true,company:{id:1,name:'Test company'}};
-    else if(url.pathname==='/api/v3/meta')data={ok:true,ready:true,permissions:['packer','loader','driver'].includes(role)?['work.write','tasks.read']:['documents.read','documents.manage','users.manage','clients.manage','rates.employee','rates.client','company.settings','imports.manage','work.write','tasks.read'],catalog:[],heartbeat_seconds:600};
+    else if(url.pathname==='/api/v3/meta')data={ok:true,ready:true,permissions:['packer','loader','driver'].includes(role)?['work.write','tasks.read']:['documents.read','documents.manage','users.manage','clients.manage','rates.employee','rates.client','company.settings','imports.manage','work.write','tasks.read'],catalog:[],heartbeat_seconds:600,company:{id:1,name:'Test company',status:'active',service_status:'active',module_toggles:{}}};
     else if(url.pathname==='/api/platform/companies')data={ok:true,companies:[{id:1,name:'Test company',status:'active'}]};
     else if(url.pathname.endsWith('/document-template-info'))data={ok:true,data:{template_version:'v1.0',sheets:[]}};
     else if(url.pathname.includes('/documents'))data={ok:true,data:{items:[],page:1,limit:50,total:0}};

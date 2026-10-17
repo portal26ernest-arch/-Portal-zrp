@@ -43,7 +43,7 @@ test('Web Share cancellation is explicit and native-only controls are hidden',()
 
 test('Desktop cache is company + user + permission scoped, encrypted and fail-safe',()=>{
   for(const value of ['portalDesktopCache','setCacheCompany','setCacheIdentity','cacheCompany','cacheIdentity','cacheScope','CACHEABLE','cacheRead','cacheWrite','ClearCompany','MarkStale','invalidationKeys','30 * 24 * 60 * 60 * 1000','queueMutation','pendingMutations','removeMutation']) assert.ok(adapter.includes(value),value);
-  assert.ok(app.includes("PortalNative.setCacheCompany(String(S.company?.id||S.me.company_id||''))"));
+  assert.ok(app.includes("PortalNative.setCacheCompany(String(S.company.id))"));
   assert.ok(app.includes("PortalNative.setCacheCompany(String(c.id))"));
   assert.ok(adapter.includes("user + '|' + safeRole + '|' + signature"));
   assert.ok(adapter.includes("verb === 'GET' && !!token && !!cacheScope()"));
@@ -55,7 +55,7 @@ test('Desktop cache is company + user + permission scoped, encrypted and fail-sa
   for(const forbidden of ['/api/login','/api/me','/api/platform','messenger-relay-ticket','code-interpreter']) assert.equal(adapter.includes("CACHEABLE = ['"+forbidden),false,forbidden);
   assert.ok(adapter.includes("invalidationKeys(target).length"));
   assert.ok(app.includes("setCacheIdentity?.('','','[]')"));
-  assert.ok(app.includes("setCacheIdentity?.('','')"));
+  assert.ok(app.includes("setCacheIdentity?.('','','[]')"));
 });
 
 test('meta and Organizer stay in the local-first cache contract',()=>{
@@ -70,7 +70,8 @@ test('local-first performance contract uses long cache, 10-minute sync, bulk tar
   assert.match(production,/LOCAL_SYNC_INTERVAL_MS=10\*60\*1000/);
   assert.match(production,/productionGet\('tariff-history'\)/);
   assert.doesNotMatch(production,/c\.operations\.map\(async o=>\[o\.id,await productionGet\('tariff-history\?operation_id='/);
-  assert.match(production,/const \[d,organizerRows,organizerRequestIncoming,organizerRequestMine,timers\]=await Promise\.all/);
+  assert.match(production,/const auxiliaryRequests=Promise\.allSettled\(\[/);
+  assert.match(production,/void productionGet\('today'\)\.then\(data=>/);
   assert.match(production,/queueLocalMutation\(path,payload,requestId\)/);
   assert.match(production,/api\('GET','\/api\/v3\/meta'/);
   assert.match(production,/applyProductionMeta\(meta\)/);

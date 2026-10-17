@@ -26,16 +26,30 @@ final class PortalApiTransport {
     static final long RECOVERY_TTL_MS = 120_000L;
     private final Call.Factory directRequests;
     private final Call.Factory recoveryRequests;
+    private final Call.Factory fastDirectGets;
+    private final Call.Factory fastRecoveryGets;
     private final Call.Factory directProbes;
     private final Call.Factory recoveryProbes;
     private final LongSupplier clock;
     private final ConcurrentHashMap<String, Long> recoveredUntil = new ConcurrentHashMap<>();
 
     PortalApiTransport() {
-        OkHttpClient direct = apiClient();
-        OkHttpClient recovered = direct.newBuilder().dns(officialDns(encryptedDns())).build();
+        // DNS recovery happens within the same HTTPS request, before any POST bytes
+        // can be sent. No login or payroll POST is ever replayed.
+        Dns officialRecovery = officialDns(encryptedDns());
+        Dns loggedRecovery = host -> {
+            if (BuildConfig.APPLICATION_ID.endsWith(".staging"))
+                android.util.Log.i("PortalNetwork", "system_dns_fallback_started");
+            return officialRecovery.lookup(host);
+        };
+        OkHttpClient direct = apiClient().newBuilder()
+                .dns(systemWithOfficialFallback(Dns.SYSTEM, loggedRecovery)).build();
+        OkHttpClient recovered = direct.newBuilder().dns(officialRecovery).build();
         directRequests = direct;
         recoveryRequests = recovered;
+        // Short, idempotent bootstrap reads must not wait the entire 15s POST timeout.
+        fastDirectGets = direct.newBuilder().callTimeout(5500, TimeUnit.MILLISECONDS).build();
+        fastRecoveryGets = recovered.newBuilder().callTimeout(5500, TimeUnit.MILLISECONDS).build();
         directProbes = direct.newBuilder().callTimeout(5500, TimeUnit.MILLISECONDS).build();
         recoveryProbes = recovered.newBuilder().callTimeout(7500, TimeUnit.MILLISECONDS).build();
         clock = System::currentTimeMillis;
@@ -45,6 +59,8 @@ final class PortalApiTransport {
     PortalApiTransport(Call.Factory direct, Call.Factory recovered, LongSupplier clock) {
         directRequests = directProbes = direct;
         recoveryRequests = recoveryProbes = recovered;
+        fastDirectGets = direct;
+        fastRecoveryGets = recovered;
         this.clock = clock;
     }
 
@@ -70,6 +86,40 @@ final class PortalApiTransport {
         } catch (UnknownHostException impossible) {
             throw new IllegalStateException(impossible);
         }
+    }
+
+    static Dns systemWithOfficialFallback(Dns system, Dns officialRecovery) {
+        // One positive DNS result can serve concurrent dashboard reads. Keep it
+        // briefly; each HTTPS connection still verifies the PORTAL hostname.
+        final ConcurrentHashMap<String, List<InetAddress>> resolved = new ConcurrentHashMap<>();
+        final ConcurrentHashMap<String, Long> expiresAt = new ConcurrentHashMap<>();
+        final ConcurrentHashMap<String, Object> hostLocks = new ConcurrentHashMap<>();
+        return host -> {
+            if (!officialHost(host)) return system.lookup(host);
+            long now = System.currentTimeMillis();
+            List<InetAddress> previous = resolved.get(host);
+            if (previous != null && expiresAt.getOrDefault(host, 0L) > now)
+                return previous;
+            // One slow DNS lookup must not serialize a different official hostname.
+            synchronized (hostLocks.computeIfAbsent(host, key -> new Object())) {
+                now = System.currentTimeMillis();
+                previous = resolved.get(host);
+                if (previous != null && expiresAt.getOrDefault(host, 0L) > now)
+                    return previous;
+                List<InetAddress> addresses;
+                try {
+                    addresses = system.lookup(host);
+                } catch (UnknownHostException systemFailure) {
+                    // Restrict recovery to the two official names, never arbitrary URLs.
+                    addresses = officialRecovery.lookup(host);
+                }
+                if (!addresses.isEmpty()) {
+                    resolved.put(host, List.copyOf(addresses));
+                    expiresAt.put(host, now + 45_000L);
+                }
+                return addresses;
+            }
+        };
     }
 
     static boolean officialHost(String host) {
@@ -132,7 +182,15 @@ final class PortalApiTransport {
 
     Payload execute(Request request, int limit) throws IOException {
         // Exactly one execution, also for POST. Failover belongs to the caller's safe-GET policy.
-        return read(recoveryActive(request.url()) ? recoveryRequests : directRequests, request, limit);
+        // Only bounded, small, idempotent bootstrap GETs use the short timeout.
+        // All POSTs retain their original, non-replayable 15s transport policy.
+        String path = request.url().encodedPath();
+        boolean bootGet = "GET".equals(request.method()) && eligible(request.url())
+                && ("/api/company".equals(path) || "/api/v3/meta".equals(path)
+                    || "/api/v3/today".equals(path));
+        boolean recovered = recoveryActive(request.url());
+        return read(recovered ? (bootGet ? fastRecoveryGets : recoveryRequests)
+                              : (bootGet ? fastDirectGets : directRequests), request, limit);
     }
 
     private static Payload read(Call.Factory factory, Request request, int limit) throws IOException {

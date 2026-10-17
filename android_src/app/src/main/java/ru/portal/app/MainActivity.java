@@ -50,6 +50,9 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorCompletionService;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.UUID;
 import org.json.JSONArray;
 import okhttp3.MediaType;
@@ -68,6 +71,7 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         applyImmersiveMode();
+        retireExternalProviderWebViewProfile();
         webView = new WebView(this);
         setContentView(webView);
 
@@ -115,6 +119,34 @@ public class MainActivity extends Activity {
         bridge = new PortalBridge(this, webView);
         webView.addJavascriptInterface(bridge, "PortalNative");
         webView.loadUrl("file:///android_asset/index.html");
+    }
+
+    // Dedicated :messenger WebView used an isolated directory on Android 9+.
+    // Remove only that former provider profile; never clear the PORTAL WebView,
+    // payroll documents, company cache, credentials, or queued mutations.
+    private void retireExternalProviderWebViewProfile() {
+        final SharedPreferences settings = getSharedPreferences("portal_settings", Context.MODE_PRIVATE);
+        if (settings.getBoolean("provider_profile_retired_v1", false)) return;
+        new Thread(() -> {
+            try {
+                File appData = new File(getApplicationInfo().dataDir).getCanonicalFile();
+                File provider = new File(appData, "app_webview_portal_messenger").getCanonicalFile();
+                if (!provider.getParentFile().equals(appData)
+                        || !provider.getName().equals("app_webview_portal_messenger")) return;
+                if (provider.exists() && !eraseProviderOnlyTree(provider)) return;
+                settings.edit().putBoolean("provider_profile_retired_v1", true).apply();
+            } catch (Exception ignored) { /* retry on the next app launch */ }
+        }, "portal-provider-retirement").start();
+    }
+
+    private static boolean eraseProviderOnlyTree(File path) {
+        if (java.nio.file.Files.isSymbolicLink(path.toPath())) return false;
+        if (path.isDirectory()) {
+            File[] children = path.listFiles();
+            if (children == null) return false;
+            for (File child : children) if (!eraseProviderOnlyTree(child)) return false;
+        }
+        return !path.exists() || path.delete();
     }
 
     private void openOfficialSource(Uri uri) {
@@ -180,12 +212,17 @@ public class MainActivity extends Activity {
         private final PortalLocalCache localCache;
         private final PortalApiTransport apiTransport = new PortalApiTransport();
         private final ExecutorService executor = Executors.newFixedThreadPool(3);
+        // Bounded workers only for three safe bootstrap GETs, never for writes.
+        private final ExecutorService bootstrapExecutor = Executors.newFixedThreadPool(6);
         private volatile boolean closed;
         private volatile String cacheCompany = "";
         private volatile String cacheUser = "";
+        private volatile String activeSessionToken = "";
         private volatile String healthyServerBase = "";
         private volatile String healthyServerPreference = "";
         private volatile long healthyServerUntilMs;
+        private volatile long retryServerProbeAtMs;
+        private final java.util.concurrent.atomic.AtomicBoolean serverProbeInProgress = new java.util.concurrent.atomic.AtomicBoolean();
         private static final long CACHE_MAX_AGE_MS = 30L * 24 * 60 * 60 * 1000;
         private static final long SERVER_HEALTH_TTL_MS = 2L * 60 * 1000;
         private static final String DEFAULT_URL = BuildConfig.DEFAULT_API_URL;
@@ -247,26 +284,6 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public String getBuild() {
             return "PORTAL Android · Build " + BuildConfig.VERSION_NAME;
-        }
-
-        @JavascriptInterface
-        public boolean openMessengerWindow(String provider, String relayJson) {
-            String selected = "max".equalsIgnoreCase(provider) ? "max" : "telegram";
-            try {
-                Intent intent = new Intent(context, MessengerActivity.class)
-                        .putExtra("provider", selected)
-                        .putExtra("relay", relayJson == null || relayJson.length() > 4096 ? "" : relayJson);
-                intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
-                context.startActivity(intent);
-                return true;
-            } catch (Exception ignored) { return false; }
-        }
-
-        @JavascriptInterface
-        public void clearMessengerSession() {
-            Intent intent = new Intent(context, MessengerActivity.class).setAction(MessengerActivity.ACTION_CLEAR_SESSION)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-            try { context.startActivity(intent); } catch (Exception ignored) { }
         }
 
         @JavascriptInterface
@@ -339,9 +356,12 @@ public class MainActivity extends Activity {
             });
         }
 
-        private void notifySessionInvalidated() {
+        private void notifySessionInvalidated(String requestToken) {
+            // A stale cached refresh must never log out a newer login.
+            if (requestToken == null || requestToken.isEmpty() || !requestToken.equals(activeSessionToken)) return;
             ((Activity) context).runOnUiThread(() -> {
-                if (!closed) webView.evaluateJavascript("window.portalSessionInvalidated&&window.portalSessionInvalidated()", null);
+                if (!closed && requestToken.equals(activeSessionToken))
+                    webView.evaluateJavascript("window.portalSessionInvalidated&&window.portalSessionInvalidated()", null);
             });
         }
 
@@ -360,21 +380,37 @@ public class MainActivity extends Activity {
                     if (ready != null) {
                         // Local-first: render immediately, then refresh in the background.
                         deliver(id, ready);
-                        String freshBase = resolveServerForRequest(requestedBase);
+                        String freshBase = fastBootstrapGet(verb, path, requestedBase)
+                                ? requestedBase : resolveServerForRequest(requestedBase);
                         String fresh = requestWithFailover(freshBase, verb, path, body, token, company);
-                        if (responseOk(fresh)) {
-                            localCache.write(cacheBase, localScope, path, fresh);
-                            notifyCacheUpdated(path);
-                        } else {
-                            int status = responseStatus(fresh);
-                            if (status == 401 || status == 403) localCache.clearCompany(cacheBase, localScope);
-                            if (status == 401) notifySessionInvalidated();
+                        // Ignore any delayed refresh from a signed-out or replaced token.
+                        if (token != null && token.equals(activeSessionToken)) {
+                            if (responseOk(fresh)) {
+                                localCache.write(cacheBase, localScope, path, fresh);
+                                notifyCacheUpdated(path);
+                            } else {
+                                int status = responseStatus(fresh);
+                                if (status == 401 || status == 403) localCache.clearCompany(cacheBase, localScope);
+                                if (status == 401) notifySessionInvalidated(token);
+                            }
                         }
                         return;
                     }
                 }
-                String base = resolveServerForRequest(requestedBase);
+                long probeStartMs = android.os.SystemClock.elapsedRealtime();
+                String base = fastBootstrapGet(verb, path, requestedBase)
+                        ? requestedBase : resolveServerForRequest(requestedBase);
+                long requestStartMs = android.os.SystemClock.elapsedRealtime();
                 String result = requestWithFailover(base, verb, path, body, token, company);
+                if (BuildConfig.APPLICATION_ID.endsWith(".staging")) {
+                    String marker = "/api/login".equals(path) ? "login_network"
+                            : "/api/company".equals(path) ? "company_network"
+                            : "/api/v3/meta".equals(path) ? "meta_network"
+                            : "/api/v3/today".equals(path) ? "today_network" : "";
+                    if (!marker.isEmpty()) android.util.Log.i("PortalTiming", marker
+                            + " preflight=" + (requestStartMs - probeStartMs) + "ms"
+                            + " request=" + (android.os.SystemClock.elapsedRealtime() - requestStartMs) + "ms");
+                }
                 if (cacheable && responseOk(result)) localCache.write(cacheBase, localScope, path, result);
                 if ("POST".equals(verb) && responseOk(result) && !localScope.isEmpty())
                     invalidateCacheForMutation(cacheBase, localScope, path);
@@ -407,8 +443,64 @@ public class MainActivity extends Activity {
             return TRUSTED_FALLBACK_API_URL;
         }
 
+        private boolean fastBootstrapGet(String method, String path, String origin) {
+            return "GET".equalsIgnoreCase(method)
+                    && (PRIMARY_API_URL.equalsIgnoreCase(origin)
+                        || TRUSTED_FALLBACK_API_URL.equalsIgnoreCase(origin))
+                    && ("/api/company".equals(path) || "/api/v3/meta".equals(path)
+                        || "/api/v3/today".equals(path));
+        }
+
+        private String fastestBootstrapGet(String firstOrigin, String path, String body,
+                                           String token, String company) {
+            ExecutorCompletionService<String[]> completion =
+                    new ExecutorCompletionService<>(bootstrapExecutor);
+            String secondOrigin = automaticPeer(firstOrigin);
+            Future<String[]> firstTask = completion.submit(() -> new String[]{
+                    firstOrigin, requestAt(firstOrigin, "GET", path, body, token, company)});
+            Future<String[]> secondTask = completion.submit(() -> new String[]{
+                    secondOrigin, requestAt(secondOrigin, "GET", path, body, token, company)});
+            String networkError = null;
+            try {
+                long deadline = android.os.SystemClock.elapsedRealtime() + 9000L;
+                for (int i = 0; i < 2; i++) {
+                    long remaining = deadline - android.os.SystemClock.elapsedRealtime();
+                    if (remaining <= 0) break;
+                    Future<String[]> ready = completion.poll(remaining, TimeUnit.MILLISECONDS);
+                    if (ready == null) break;
+                    String[] reply = ready.get();
+                    boolean failed;
+                    try { failed = new JSONObject(reply[1]).optBoolean("network", false); }
+                    catch (Exception ignored) { failed = true; }
+                    if (!failed) {
+                        // The first authenticated, TLS-validated, non-network reply wins.
+                        if (firstOrigin.equalsIgnoreCase(getServerUrl())
+                                || secondOrigin.equalsIgnoreCase(getServerUrl()))
+                            markHealthyServer(reply[0]);
+                        if (BuildConfig.APPLICATION_ID.endsWith(".staging"))
+                            android.util.Log.i("PortalNetwork", "bootstrap_get_fast_route_"
+                                    + (firstOrigin.equals(reply[0]) ? "first" : "peer"));
+                        return reply[1];
+                    }
+                    if (networkError == null) networkError = reply[1];
+                }
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            } catch (Exception ignored) {
+                // A failed route is not grounds to retry a non-idempotent request.
+            } finally {
+                firstTask.cancel(true);
+                secondTask.cancel(true);
+            }
+            return networkError == null
+                    ? "{\"ok\":false,\"network\":true,\"error\":\"PORTAL read timeout\"}"
+                    : networkError;
+        }
+
         private String requestWithFailover(String base, String method, String path,
                                            String body, String token, String company) {
+            if (fastBootstrapGet(method, path, base))
+                return fastestBootstrapGet(base, path, body, token, company);
             String first = requestAt(base, method, path, body, token, company);
             if (!isAutomaticPortalServer(base)) return first;
             boolean connectionFailed;
@@ -417,31 +509,61 @@ public class MainActivity extends Activity {
             if (!connectionFailed) return first;
 
             String peer = automaticPeer(base);
-            if (!probeOfficialServer(peer)) return first;
-            markHealthyServer(peer);
-            // Do not automatically repeat any POST, including login: the server
-            // might have already committed its response before transport failed.
-            // The next explicit user request will use the healthy peer.
-            if (!"GET".equalsIgnoreCase(method)) return first;
-            return requestAt(peer, method, path, body, token, company);
+            if ("GET".equalsIgnoreCase(method)) {
+                // Only two fixed, trusted PORTAL origins. A safe GET itself provides
+                // the authenticated HTTPS check; probing /api/ping first could add
+                // 5-13 seconds of latency after an already-timed-out request.
+                String second = requestAt(peer, method, path, body, token, company);
+                boolean peerFailed;
+                try { peerFailed = new JSONObject(second).optBoolean("network", false); }
+                catch (Exception ignored) { peerFailed = true; }
+                if (peerFailed && probeOfficialServer(peer)) {
+                    // Only after both direct official routes fail do we run an
+                    // anonymous TLS-validated probe to activate DNS recovery.
+                    second = requestAt(peer, method, path, body, token, company);
+                    try { peerFailed = new JSONObject(second).optBoolean("network", false); }
+                    catch (Exception ignored) { peerFailed = true; }
+                }
+                if (!peerFailed) {
+                    markHealthyServer(peer);
+                    if (BuildConfig.APPLICATION_ID.endsWith(".staging"))
+                        android.util.Log.i("PortalNetwork", "safe_get_peer_recovered");
+                    return second;
+                }
+                return first;
+            }
+            // A POST may have committed on the first origin even when its response
+            // was lost. Never replay it; an anonymous peer probe only guides later GETs.
+            if (probeOfficialServer(peer)) markHealthyServer(peer);
+            return first;
         }
 
-        private synchronized String resolveServerForRequest(String requestedBase) {
+        private String resolveServerForRequest(String requestedBase) {
             String base = requestedBase == null ? "" : requestedBase.trim();
             if (!isAutomaticPortalServer(base)) return base;
             long now = System.currentTimeMillis();
             if (base.equalsIgnoreCase(healthyServerPreference)
                     && isAutomaticPortalServer(healthyServerBase) && now < healthyServerUntilMs) return healthyServerBase;
-            if (probeOfficialServer(base)) {
-                markHealthyServer(base);
+            // Never hold a monitor during DNS/TLS network probing. The worker pool
+            // has three threads; serialized probes used to stall unrelated UI requests.
+            if (now < retryServerProbeAtMs || !serverProbeInProgress.compareAndSet(false, true))
                 return base;
+            try {
+                if (probeOfficialServer(base)) {
+                    markHealthyServer(base);
+                    return base;
+                }
+                String peer = automaticPeer(base);
+                if (probeOfficialServer(peer)) {
+                    markHealthyServer(peer);
+                    return peer;
+                }
+                // Avoid repeating two expensive failed probes for every queued GET.
+                retryServerProbeAtMs = System.currentTimeMillis() + 8_000L;
+                return base;
+            } finally {
+                serverProbeInProgress.set(false);
             }
-            String peer = automaticPeer(base);
-            if (probeOfficialServer(peer)) {
-                markHealthyServer(peer);
-                return peer;
-            }
-            return base;
         }
 
         @JavascriptInterface
@@ -449,6 +571,18 @@ public class MainActivity extends Activity {
             String next = value == null ? "" : value.trim();
             cacheCompany = next.matches("[1-9][0-9]{0,9}") ? next : "";
             return !cacheCompany.isEmpty();
+        }
+
+        @JavascriptInterface
+        public void recordStageTime(String stage, long millis) {
+            if (!BuildConfig.APPLICATION_ID.endsWith(".staging")) return;
+            if (!("auth".equals(stage) || "company".equals(stage) || "dashboard".equals(stage))) return;
+            android.util.Log.i("PortalTiming", stage + " " + Math.max(0, Math.min(millis, 120000)) + "ms");
+        }
+
+        @JavascriptInterface
+        public void setActiveSessionToken(String token) {
+            activeSessionToken = token == null ? "" : token;
         }
 
         @JavascriptInterface
@@ -704,7 +838,12 @@ public class MainActivity extends Activity {
 
         private String checkUpdatesAndServer() {
             JSONObject server = refreshOfficialServer();
-            String updateRaw = fetchUpdateManifest();
+            // Staging uses a different applicationId and debug signing key.
+            // It must not offer production APK upgrades or report the genuine
+            // production manifest as malformed when package IDs differ.
+            String updateRaw = BuildConfig.APPLICATION_ID.endsWith(".staging")
+                    ? "{\"ok\":true,\"configured\":false}"
+                    : fetchUpdateManifest();
             try {
                 JSONObject update = new JSONObject(updateRaw);
                 update.put("serverChecked", server.optBoolean("checked", false));
@@ -1057,7 +1196,7 @@ public class MainActivity extends Activity {
             }
         }
 
-        void close() { closed = true; executor.shutdownNow(); }
+        void close() { closed = true; executor.shutdownNow(); bootstrapExecutor.shutdownNow(); }
 
         private boolean isLegacyLocalServer(String value) {
             if (value == null || value.trim().isEmpty()) return true;
@@ -1094,6 +1233,7 @@ public class MainActivity extends Activity {
                         healthyServerBase = "";
                         healthyServerPreference = "";
                         healthyServerUntilMs = 0L;
+                        retryServerProbeAtMs = 0L;
                     }
                     prefs.edit().putString("server_url", value).apply();
                 }

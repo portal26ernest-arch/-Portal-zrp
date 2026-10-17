@@ -21,13 +21,80 @@
   }
   screens.dashboard=async()=>{
     if(!S.stage3||!managementRoles.has(S.me?.role))return liveDashboard();
+    // Director/admin preview is the last override and therefore the REAL dashboard.
+    // Never wait for HTTPS before showing the actual navigation.
+    const view=S.view,epoch=S.epoch,token=S.token,company=String(S.company?.id||'');
+    const loadId=S.managementDashboardSeq=(S.managementDashboardSeq||0)+1;
+    const live=()=>S.page==='dashboard'&&S.view===view&&S.epoch===epoch
+      &&S.token===token&&String(S.company?.id||'')===company
+      &&S.managementDashboardSeq===loadId;
+    // Keep the approved management dashboard layout at first paint. The early
+    // tiles-only shortcut page was a temporary diagnostic, not an approved redesign.
+    const shortcuts=[
+      quick('clients','clients','Клиенты','Карточки и тарифы'),
+      quick('users','users','Сотрудники','Роли и доступ'),
+      quick('materials','box','Склад','Остатки и движения'),
+      quick('invoices','receipt','Счета','Дебиторка и оплаты'),
+      quick('payrollPeriods','wallet','Зарплата','Расчётные периоды'),
+      quick('documents','file','Документы','Excel и PDF'),
+      quick('reports','grid','Отчёты','Управленческая аналитика'),
+      quick('notifications','bell','Контроль','События и предупреждения')
+    ].join('');
+    const loading='Обновляется…';
+    paint(heading('PORTAL Сегодня','Живая сводка',
+        btn('Все разделы','go','data-page="sections"','secondary'))+
+      '<section class="director-hero"><div><span class="eyebrow">'+
+        esc(S.company?.name||'Компания')+'</span><h2>'+
+        esc(PortalCore.timeGreeting())+', '+esc(S.me.display_name||S.me.username)+
+        '</h2><p class="muted" data-management-loading role="status">'+
+        'Обновляем показатели, рабочее меню доступно.</p></div>'+
+        '<span class="badge">Обновляется</span></section>'+
+      '<section class="dashboard-section"><div class="section-label">'+
+        '<h2>Сегодня</h2><span class="meta">Живая сводка</span></div>'+
+        '<div class="today-grid"><div class="today-main"><span class="l">Выработка</span>'+
+        '<strong>—</strong><small>'+loading+'</small></div>'+
+        '<div class="today-kpi"><span>Заданий в работе</span><b>—</b></div>'+
+        '<div class="today-kpi"><span>Готовые партии</span><b>—</b></div>'+
+        '<div class="today-kpi"><span>Активные партии</span><b>—</b></div></div></section>'+
+      '<section class="dashboard-section attention-zone"><div class="section-label">'+
+        '<h2>Требует внимания</h2><button class="text-link" data-action="go" '+
+        'data-page="notifications">Все события</button></div>'+
+        '<div class="attention-stack"><div class="attention-ok"><span class="status-dot">'+
+        '</span><div><b>Проверяем события</b><p class="meta">'+loading+
+        '</p></div></div></div></section>'+
+      '<section class="dashboard-section"><div class="section-label">'+
+        '<h2>Финансовый радар</h2><button class="text-link" data-action="go" '+
+        'data-page="radar">Подробнее</button></div>'+
+        '<div class="money-grid"><div class="money-card"><span>Выручка</span><strong>—</strong></div>'+
+        '<div class="money-card"><span>ФОТ</span><strong>—</strong></div>'+
+        '<div class="money-card"><span>Материалы</span><strong>—</strong></div>'+
+        '<div class="money-card"><span>Прочие расходы</span><strong>—</strong></div>'+
+        '<div class="money-card emphasis"><span>Чистый результат</span><strong>—</strong>'+
+        '<small>'+loading+'</small></div></div></section>'+
+      '<div class="dashboard-two"><section class="dashboard-section compact-panel">'+
+        '<div class="section-label"><h2>Зарплата</h2><button class="text-link" '+
+        'data-action="go" data-page="payrollPeriods">Открыть</button></div>'+
+        '<div class="preview-empty">'+loading+'</div></section>'+
+        '<section class="dashboard-section compact-panel"><div class="section-label">'+
+        '<h2>Дебиторка</h2><button class="text-link" data-action="go" '+
+        'data-page="invoices">Счета</button></div>'+
+        '<div class="preview-empty">'+loading+'</div></section></div>'+
+      '<section class="dashboard-section"><div class="section-label">'+
+        '<h2>Производство</h2><button class="text-link" data-action="go" '+
+        'data-page="batches">Партии и задания</button></div>'+
+        '<div class="production-strip"><div><span>В работе</span><b>—</b></div>'+
+        '<div><span>Готово</span><b>—</b></div>'+
+        '<div><span>Активно партий</span><b>—</b></div></div></section>'+
+      '<section class="dashboard-section"><div class="section-label">'+
+        '<h2>Быстрые действия</h2><button class="text-link" data-action="go" '+
+        'data-page="sections">Все разделы</button></div>'+
+        '<div class="quick-grid">'+shortcuts+'</div></section>');
     let payrollBounds=null;
     if(allowed('payroll.all'))payrollBounds=currentPayrollBounds();
-    const [d,timers,payroll]=await Promise.all([
-      productionGet('today'),
-      allowed('work.write')||allowed('tasks.read')?productionGet('timers'):Promise.resolve([]),
-      payrollBounds?productionGet(`payroll-periods?period_start=${encodeURIComponent(payrollBounds[0])}&period_end=${encodeURIComponent(payrollBounds[1])}`).catch(()=>null):Promise.resolve(null)
-    ]);
+    let latestToday=null,timers=[],payroll=null;
+    const renderSummary=()=>{
+      if(!live()||!latestToday)return;
+      const d=latestToday;
     S.productionTasks=d.tasks||[];
     S.activeTimers=timers;
     const inWorkTasks=new Set([...S.productionTasks.filter(t=>t.status==='in_progress').map(t=>t.id),...S.activeTimers.map(t=>t.task_id)]);
@@ -79,6 +146,31 @@
       `<section class="dashboard-section"><div class="section-label"><h2>Быстрые действия</h2><button class="text-link" data-action="go" data-page="sections">Все разделы</button></div><div class="quick-grid">${quickActions}</div></section>`
     );
     tickElapsed();
+    };
+    const showUnavailable=()=>{
+      if(!live())return;
+      const status=$('content')?.querySelector('[data-management-loading]');
+      if(status)status.textContent='Показатели временно недоступны. Рабочие разделы доступны.';
+    };
+    // Read-only requests are independent. One slow or failed response cannot
+    // destroy the whole dashboard or delay first paint.
+    void productionGet('today').then(data=>{
+      if(!live())return;
+      latestToday=data;
+      renderSummary();
+    }).catch(showUnavailable);
+    if(allowed('work.write')||allowed('tasks.read'))
+      void productionGet('timers').then(rows=>{
+        if(!live())return;
+        timers=Array.isArray(rows)?rows:[];
+        if(latestToday)renderSummary();
+      }).catch(()=>{});
+    if(payrollBounds)
+      void productionGet(`payroll-periods?period_start=${encodeURIComponent(payrollBounds[0])}&period_end=${encodeURIComponent(payrollBounds[1])}`).then(data=>{
+        if(!live())return;
+        payroll=data;
+        if(latestToday)renderSummary();
+      }).catch(()=>{});
   };
 
   actions.previewFeature=button=>previewSheet(button.dataset.title||'Функция PORTAL',`<div class="preview-flow"><h3>${esc(button.dataset.title||'Будущий модуль')}</h3><p>${esc(button.dataset.text||'Функция включена в утверждённую структуру preview APK.')}</p><div class="notice">В preview-сборке можно оценить расположение, названия и сценарий переходов. Запись в production не выполняется.</div></div>`);
@@ -171,46 +263,130 @@
     return `<article class="item control-channel"><div class="row between"><div class="grow"><b>${esc(item.title||'Канал контроля')}</b><p class="meta">${esc(item.description||'')}</p></div><span class="badge ${badge}">${esc(labels[item.status]||'Статус')}</span></div><p>${esc(item.summary||'')}</p>${metrics.length?`<p class="meta">${metrics.join(' · ')}</p>`:''}${action}</article>`;
   }
   screens.notifications=async()=>{
+    const view=S.view,epoch=S.epoch,token=S.token,company=String(S.company?.id||'');
+    const live=()=>S.page==='notifications'&&S.view===view&&S.epoch===epoch
+      &&S.token===token&&String(S.company?.id||'')===company;
+    const headingAndSections=heading('Уведомления','Что требует внимания прямо сейчас',
+      '<span class="badge green">LIVE</span>')+
+      '<section class="dashboard-section"><div class="section-label">'+
+      '<h2>Текущие события</h2><span class="meta">LIVE</span></div>'+
+      '<div class="attention-stack" data-notification-events>'+
+      '<p class="meta">Проверяем текущие события…</p></div></section>'+
+      '<section class="dashboard-section"><div class="section-label">'+
+      '<h2>Каналы контроля</h2><span class="meta">LIVE</span></div>'+
+      '<div class="list" data-notification-channels>'+
+      '<p class="meta">Загружаем каналы контроля…</p></div></section>'+
+      '<section class="dashboard-section"><div class="section-label">'+
+      '<h2>WMS / TalAnt</h2><span class="meta">Preview</span></div>'+
+      previewCard('WMS / TalAnt','Ошибки синхронизации и подтверждения')+'</section>';
+    paint(headingAndSections);
     let dashboard={attention:[],control_channels:[]};
-    if(S.stage3){try{dashboard=await productionGet('today');}catch{}}
-    const live=dashboard.attention||[];
-    const channels=[...(dashboard.control_channels||[])];
-    channels.push(await portalUpdateControlChannel());
-    const desired=['material_low','payment_late','not_invoiced','payroll_period','document_error','portal_update'];
-    channels.sort((a,b)=>desired.indexOf(a.id)-desired.indexOf(b.id));
-    paint(heading('Уведомления','Что требует внимания прямо сейчас','<span class="badge green">LIVE</span>')+
-      `<section class="dashboard-section"><div class="section-label"><h2>Текущие события</h2><span class="meta">LIVE</span></div><div class="attention-stack">${attentionHtml(live)}</div></section>`+
-      `<section class="dashboard-section"><div class="section-label"><h2>Каналы контроля</h2><span class="meta">LIVE</span></div><div class="list">${channels.map(controlChannelHtml).join('')||'<p class="empty">Нет доступных каналов контроля</p>'}</div></section>`+
-      `<section class="dashboard-section"><div class="section-label"><h2>WMS / TalAnt</h2><span class="meta">Preview</span></div>${previewCard('WMS / TalAnt','Ошибки синхронизации и подтверждения')}</section>`);
+    let update=null,receivedDashboard=!S.stage3;
+    const channelsRender=()=>{
+      if(!live()||!receivedDashboard)return;
+      const channels=[...(dashboard.control_channels||[])];
+      if(update)channels.push(update);
+      const desired=['material_low','payment_late','not_invoiced','payroll_period','document_error','portal_update'];
+      channels.sort((a,b)=>desired.indexOf(a.id)-desired.indexOf(b.id));
+      const list=$('content')?.querySelector('[data-notification-channels]');
+      if(list)list.innerHTML=channels.map(controlChannelHtml).join('')||
+        '<p class="empty">Нет доступных каналов контроля</p>';
+    };
+    if(S.stage3)void productionGet('today').then(data=>{
+      if(!live())return;
+      dashboard=data;
+      receivedDashboard=true;
+      const events=$('content')?.querySelector('[data-notification-events]');
+      if(events)events.innerHTML=attentionHtml(dashboard.attention||[]);
+      channelsRender();
+    }).catch(()=>{
+      if(!live())return;
+      receivedDashboard=true;
+      const events=$('content')?.querySelector('[data-notification-events]');
+      if(events)events.innerHTML='<p class="meta">События временно недоступны. Меню работает.</p>';
+      channelsRender();
+    });
+    else{
+      const events=$('content')?.querySelector('[data-notification-events]');
+      if(events)events.innerHTML=attentionHtml([]);
+    }
+    void portalUpdateControlChannel().then(channel=>{
+      if(!live())return;
+      update=channel;
+      channelsRender();
+    }).catch(()=>{});
   };
 
   screens.clients=async()=>{
+    // Show the main client list as soon as the essential catalogue GET completes.
+    // Historical aliases are optional and should never hold menu navigation.
     await liveClients();
     if(S.stage3&&allowed('clients.read')){
       const content=$('content'),list=content?.querySelector('.list');
       if(list){
-        let history=[],aliasRows=[];
-        try{history=await productionGet('client-name-history');}catch{}
-        try{aliasRows=await productionGet('client-aliases');}catch{}
-        const aliases=new Map(),priorNames=new Map();
-        for(const row of history){const values=aliases.get(row.client_id)||[];values.push(row.old_name,row.new_name);aliases.set(row.client_id,values);const prior=priorNames.get(row.client_id)||[];prior.push(row.old_name,row.new_name);priorNames.set(row.client_id,prior);}
-        for(const row of aliasRows){const values=aliases.get(row.client_id)||[];values.push(row.alias);aliases.set(row.client_id,values);}
-        const rows=[...list.querySelectorAll('.item')].filter(row=>row.querySelector('[data-action="openClient"]'));
+        const view=S.view,epoch=S.epoch,token=S.token,company=String(S.company?.id||'');
+        const stillHere=()=>S.page==='clients'&&S.view===view&&S.epoch===epoch
+          &&S.token===token&&String(S.company?.id||'')===company&&list.isConnected;
+        const rows=[...list.querySelectorAll('.item')]
+          .filter(row=>row.querySelector('[data-action="openClient"]'));
         for(const row of rows){
-          const id=Number(row.querySelector('[data-action="openClient"]').dataset.id),client=S.clients?.find(item=>item.id===id);
-          const names=[client?.name,...(aliases.get(id)||[])].filter(Boolean);
-          row.dataset.clientSearch=names.join(' ').toLocaleLowerCase();
-          const prior=[...new Set((priorNames.get(id)||[]).filter(name=>name&&name!==client?.name))];
-          if(prior.length)row.insertAdjacentHTML('beforeend',`<p class="meta">Ранее: ${prior.map(name=>esc(name)).join(' · ')}</p>`);
+          const id=Number(row.querySelector('[data-action="openClient"]').dataset.id);
+          const client=S.clients?.find(item=>item.id===id);
+          row.dataset.clientSearch=String(client?.name||'').toLocaleLowerCase();
         }
-        const search=document.createElement('label');search.className='field';search.innerHTML='<span>Клиент или прежнее название</span><input id="clientSearch" type="search" maxlength="200" autocomplete="off">';
+        const search=document.createElement('label');
+        search.className='field';
+        search.innerHTML='<span>Поиск с учётом прежних названий</span><input id="clientSearch" type="search" maxlength="200" autocomplete="off">';
         list.before(search);
-        const empty=document.createElement('p');empty.className='empty';empty.textContent='Клиенты по этому запросу не найдены';empty.hidden=true;list.after(empty);
-        search.querySelector('input').addEventListener('input',()=>{
-          const query=search.querySelector('input').value.trim().toLocaleLowerCase();let visible=0;
-          for(const row of rows){const match=!query||row.dataset.clientSearch.includes(query);row.hidden=!match;if(match)visible++;}
+        const empty=document.createElement('p');
+        empty.className='empty';
+        empty.textContent='Клиенты по этому запросу не найдены';
+        empty.hidden=true;
+        list.after(empty);
+        const input=search.querySelector('input');
+        const filter=()=>{
+          const query=input.value.trim().toLocaleLowerCase();
+          let visible=0;
+          for(const row of rows){
+            const match=!query||row.dataset.clientSearch.includes(query);
+            row.hidden=!match;
+            if(match)visible++;
+          }
           empty.hidden=visible>0;
-        });
+        };
+        input.addEventListener('input',filter);
+        void Promise.allSettled([
+          productionGet('client-name-history'),
+          productionGet('client-aliases')
+        ]).then(results=>{
+          if(!stillHere())return;
+          const history=results[0].status==='fulfilled'&&Array.isArray(results[0].value)?results[0].value:[];
+          const aliasRows=results[1].status==='fulfilled'&&Array.isArray(results[1].value)?results[1].value:[];
+          const aliases=new Map(),priorNames=new Map();
+          for(const row of history){
+            const values=aliases.get(row.client_id)||[];
+            values.push(row.old_name,row.new_name);
+            aliases.set(row.client_id,values);
+            const prior=priorNames.get(row.client_id)||[];
+            prior.push(row.old_name,row.new_name);
+            priorNames.set(row.client_id,prior);
+          }
+          for(const row of aliasRows){
+            const values=aliases.get(row.client_id)||[];
+            values.push(row.alias);
+            aliases.set(row.client_id,values);
+          }
+          for(const row of rows){
+            const id=Number(row.querySelector('[data-action="openClient"]').dataset.id);
+            const client=S.clients?.find(item=>item.id===id);
+            const names=[client?.name,...(aliases.get(id)||[])].filter(Boolean);
+            row.dataset.clientSearch=names.join(' ').toLocaleLowerCase();
+            const prior=[...new Set((priorNames.get(id)||[]).filter(name=>name&&name!==client?.name))];
+            if(prior.length)row.insertAdjacentHTML('beforeend',
+              '<p class="meta">Ранее: '+prior.map(name=>esc(name)).join(' · ')+'</p>');
+          }
+          filter();
+        }).catch(()=>{});
       }
     }
     $('content')?.insertAdjacentHTML('beforeend',`<section class="preview-extension"><div class="section-label"><h2>Client 360°</h2>${previewBadge}</div><div class="mini-actions">

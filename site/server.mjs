@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { hasLeadStorage, persistLead } from "./lead_inbox.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(here, "public");
@@ -12,9 +13,7 @@ const rateWindow = 15 * 60 * 1000;
 const rateLimit = 20;
 const requests = new Map();
 
-const telegramReady = () => Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID);
-const maxReady = () => Boolean(process.env.MAX_BOT_TOKEN && process.env.MAX_CHAT_ID);
-const ready = () => telegramReady() || maxReady();
+const ready = () => hasLeadStorage(publicDir);
 
 function json(res, status, body) {
   res.writeHead(status, {
@@ -52,7 +51,7 @@ function validate(raw) {
     preparationLevel: raw.preparationLevel,
     contactName: clean(raw.contactName, 80),
     phone: clean(raw.phone, 25),
-    contactMethod: raw.contactMethod,
+    contactMethod: clean(raw.contactMethod, 80),
     contactHandle: clean(raw.contactHandle, 80),
     comment: clean(raw.comment, 700),
     consent: raw.consent === true,
@@ -67,49 +66,8 @@ function validate(raw) {
     bounded(lead.lengthCm, 0.1, 5_000) && bounded(lead.widthCm, 0.1, 5_000) &&
     bounded(lead.heightCm, 0.1, 5_000) && ["Да", "Нет", "Не знаю"].includes(lead.honestSign) &&
     ["Упаковка и маркировка", "Только маркировка", "Уже упакован и промаркирован"].includes(lead.preparationLevel) &&
-    ["Звонок по телефону", "Telegram", "MAX"].includes(lead.contactMethod) && lead.consent;
+    Boolean(lead.contactMethod) && lead.consent;
   return valid ? { lead } : null;
-}
-
-function formatLead(lead) {
-  return [
-    "Новая заявка с сайта PORTAL", "",
-    `Товар: ${lead.product}`,
-    `Количество: ${lead.quantity} шт.`,
-    `Средний вес 1 ед.: ${lead.weightGrams} г`,
-    `Схема: ${lead.fulfillmentScheme}`,
-    `Планируемый объём в месяц: ${lead.plannedMonthlyVolume} шт.`,
-    lead.fulfillmentScheme === "FBS" ? `Среднее количество отгрузок в день: ${lead.averageShipmentsPerDay}` : "",
-    `Размер 1 ед.: ${lead.lengthCm} × ${lead.widthCm} × ${lead.heightCm} см`,
-    `«Честный знак»: ${lead.honestSign}`, "",
-    `Подготовка товара: ${lead.preparationLevel}`,
-    `Клиент: ${lead.contactName}`,
-    `Телефон: ${lead.phone}`,
-    `Связаться: ${lead.contactMethod}`,
-    lead.contactHandle ? `Контакт в мессенджере: ${lead.contactHandle}` : "",
-    lead.comment ? `Комментарий: ${lead.comment}` : "",
-  ].filter(Boolean).join("\n").slice(0, 3900);
-}
-
-async function sendTelegram(text) {
-  const response = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: process.env.TELEGRAM_CHAT_ID, text, disable_web_page_preview: true }),
-    signal: AbortSignal.timeout(8000),
-  });
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok || !result.ok) throw new Error("telegram_delivery_failed");
-}
-
-async function sendMax(text) {
-  const response = await fetch(`https://platform-api2.max.ru/messages?chat_id=${encodeURIComponent(process.env.MAX_CHAT_ID)}`, {
-    method: "POST",
-    headers: { Authorization: process.env.MAX_BOT_TOKEN, "Content-Type": "application/json" },
-    body: JSON.stringify({ text, notify: true }),
-    signal: AbortSignal.timeout(8000),
-  });
-  if (!response.ok) throw new Error("max_delivery_failed");
 }
 
 function originAllowed(req) {
@@ -187,16 +145,14 @@ async function handleRequest(req, res) {
     if (!result) return json(res, 400, { code: "invalid" });
     if (result.spam) return json(res, 200, { ok: true });
     if (!ready()) return json(res, 503, { code: "setup_pending" });
-    const message = formatLead(result.lead);
-    const tasks = [
-      ...(telegramReady() ? [sendTelegram(message)] : []),
-      ...(maxReady() ? [sendMax(message)] : []),
-    ];
-    const results = await Promise.allSettled(tasks);
-    const delivered = results.filter((item) => item.status === "fulfilled").length;
-    if (delivered === tasks.length) return json(res, 200, { ok: true });
-    if (delivered > 0) return json(res, 502, { code: "partial_delivery" });
-    return json(res, 502, { code: "delivery_failed" });
+    // Accept a lead only after durable local storage succeeds. No external
+    // messaging integration, remote delivery or silent data loss.
+    try {
+      await persistLead(result.lead, publicDir);
+      return json(res, 200, { ok: true });
+    } catch {
+      return json(res, 503, { code: "lead_storage_unavailable" });
+    }
   }
   if (req.method !== "GET" && req.method !== "HEAD") return json(res, 405, { code: "method_not_allowed" });
   await serveStatic(req, res, url.pathname);

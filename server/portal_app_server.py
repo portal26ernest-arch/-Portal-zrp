@@ -782,7 +782,7 @@ def audit_route(path):
     parts = path.strip("/").split("/")
     known = {"api", "platform", "companies", "audit", "me", "company", "dashboard", "clients", "admin",
              "operations", "work", "mine", "payroll", "materials", "jobs", "invoices", "users", "login",
-             "v3", "invitations", "code-interpreter", "messenger-relay-ticket"}
+             "v3", "invitations", "code-interpreter"}
     if any(p not in known and not p.isdecimal() for p in parts):
         return "unknown"
     return "/" + "/".join("{id}" if p.isdecimal() else p for p in parts)
@@ -804,7 +804,7 @@ def company_module_for_route(path):
             'tasks':'jobs','batches':'batches','shipments':'batches','returns':'batches',
             'permissions':'permissions','tariffs':'tariffs','finance':'radar','expenses':'expenses',
             'analytics':'analytics','code-interpreter':'analytics','settings':'control','documents':'documents',
-            'notification-centers':'notifications','notification-read':'notifications','messenger':'messenger','messenger-relay-ticket':'messenger',
+            'notification-centers':'notifications','notification-read':'notifications',
             'document-file':'documents','document-metadata':'documents','document-history':'documents','document-upload':'documents',
             'document-archive':'documents','document-generate':'documents','document-template':'excelImport',
             'document-template-blank':'excelImport','document-template-info':'excelImport',
@@ -1149,9 +1149,9 @@ class Handler(BaseHTTPRequestHandler):
                     heartbeat_seconds=activity.configuration(repo)[0] if ready else None,
                     company=company_sync,server_time=now_text()))
             if not repo.ready(): raise ValueError('Этап 3 ещё не подключён оператором к этой компании')
-            if action in {'notification-centers','notification-read','messenger'} and not conn.execute(
+            if action in {'notification-centers','notification-read'} and not conn.execute(
                     'SELECT 1 FROM portal_production_migrations WHERE company_id=? AND version=16',(repo.company_id,)).fetchone():
-                raise ValueError('Центры уведомлений и Messenger ещё не подключены оператором к этой компании')
+                raise ValueError('Центры уведомлений ещё не подключены оператором к этой компании')
             if action=='company-access' and method=='GET':
                 service=Production(repo,self.request_user);service.need_management_role()
                 if not ({'users.manage','company.settings'}&service.permissions):raise PermissionError('Недостаточно прав для настроек компании')
@@ -1372,13 +1372,6 @@ class Handler(BaseHTTPRequestHandler):
                 result=service.query(action,query)
             else:
                 result=service.command(action,body) if method=='POST' else service.query(action,parse_qs(urlparse(self.path).query))
-            if action in {'messenger','messenger-relay-ticket'} and method=='GET' and self.request_user.get('technical_owner'):
-                # Break-glass access is recorded only in the owner control database,
-                # never in the tenant audit ledger. Store structural identifiers only.
-                with tenants.control(DB_PATH) as control:
-                    event='god_messenger_access' if action=='messenger' else 'god_messenger_relay_ticket'
-                    entity='messenger_conversations' if action=='messenger' else 'messenger_relay'
-                    tenants.audit(control,self.request_user['id'],repo.company_id,event,'success',entity_id=entity)
             # Commit before acknowledging any write.
             if method=='POST':conn.commit()
             return self.send_json(dict(ok=True,data=result))

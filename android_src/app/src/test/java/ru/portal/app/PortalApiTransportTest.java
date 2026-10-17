@@ -144,6 +144,83 @@ public class PortalApiTransportTest {
         assertEquals(List.of(InetAddress.getByName("1.1.1.1")), dns.lookup("api.vart-portal.ru"));
     }
 
+    @Test public void shortBootstrapReadsDoNotShortenPostTimeouts() throws Exception {
+        PortalApiTransport transport = new PortalApiTransport();
+        java.lang.reflect.Field direct = PortalApiTransport.class.getDeclaredField("directRequests");
+        java.lang.reflect.Field fast = PortalApiTransport.class.getDeclaredField("fastDirectGets");
+        java.lang.reflect.Field recovery = PortalApiTransport.class.getDeclaredField("recoveryRequests");
+        java.lang.reflect.Field fastRecovery = PortalApiTransport.class.getDeclaredField("fastRecoveryGets");
+        for (java.lang.reflect.Field field : List.of(direct, fast, recovery, fastRecovery)) field.setAccessible(true);
+        assertEquals(15000, ((OkHttpClient) direct.get(transport)).callTimeoutMillis());
+        assertEquals(5500, ((OkHttpClient) fast.get(transport)).callTimeoutMillis());
+        assertEquals(15000, ((OkHttpClient) recovery.get(transport)).callTimeoutMillis());
+        assertEquals(5500, ((OkHttpClient) fastRecovery.get(transport)).callTimeoutMillis());
+        assertFalse(((OkHttpClient) direct.get(transport)).retryOnConnectionFailure());
+        assertFalse(((OkHttpClient) fast.get(transport)).retryOnConnectionFailure());
+    }
+
+    @Test public void officialDnsFailsOverInsideTheSameRequestWithoutRetryingPost() throws Exception {
+        AtomicInteger fallbackCalls = new AtomicInteger();
+        Dns brokenSystem = host -> { throw new UnknownHostException("device dns unavailable"); };
+        Dns safeRecovery = host -> {
+            fallbackCalls.incrementAndGet();
+            assertEquals("api.vart-portal.ru", host);
+            return List.of(InetAddress.getByName("1.1.1.1"));
+        };
+        Dns router = PortalApiTransport.systemWithOfficialFallback(brokenSystem, safeRecovery);
+        assertEquals(List.of(InetAddress.getByName("1.1.1.1")), router.lookup("api.vart-portal.ru"));
+        assertEquals(1, fallbackCalls.get());
+        // A burst of dashboard requests reuses one official DNS result.
+        assertEquals(List.of(InetAddress.getByName("1.1.1.1")), router.lookup("api.vart-portal.ru"));
+        assertEquals(1, fallbackCalls.get());
+        assertThrows(UnknownHostException.class, () -> router.lookup("custom.example"));
+        assertThrows(UnknownHostException.class, () -> router.lookup("evil.api.vart-portal.ru"));
+        assertEquals(1, fallbackCalls.get());
+
+        Dns healthySystem = host -> List.of(InetAddress.getByName("8.8.8.8"));
+        assertEquals(List.of(InetAddress.getByName("8.8.8.8")),
+                PortalApiTransport.systemWithOfficialFallback(healthySystem, safeRecovery)
+                        .lookup("api.vart-portal.ru"));
+        assertEquals(1, fallbackCalls.get());
+    }
+
+    @Test public void slowDnsOnPrimaryDoesNotBlockReserveHostname() throws Exception {
+        java.util.concurrent.CountDownLatch primaryStarted = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch releasePrimary = new java.util.concurrent.CountDownLatch(1);
+        Dns independentSystem = host -> {
+            if ("api.vart-portal.ru".equals(host)) {
+                primaryStarted.countDown();
+                try {
+                    if (!releasePrimary.await(4, java.util.concurrent.TimeUnit.SECONDS))
+                        throw new UnknownHostException("slow DNS");
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new UnknownHostException("interrupted");
+                }
+                return List.of(InetAddress.getByName("1.1.1.1"));
+            }
+            return List.of(InetAddress.getByName("8.8.8.8"));
+        };
+        Dns noRecovery = host -> { throw new UnknownHostException("should not fallback"); };
+        Dns router = PortalApiTransport.systemWithOfficialFallback(independentSystem, noRecovery);
+        java.util.concurrent.ExecutorService pair = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            java.util.concurrent.Future<List<InetAddress>> primary =
+                    pair.submit(() -> router.lookup("api.vart-portal.ru"));
+            assertTrue(primaryStarted.await(2, java.util.concurrent.TimeUnit.SECONDS));
+            java.util.concurrent.Future<List<InetAddress>> backup =
+                    pair.submit(() -> router.lookup("reserve-api.vart-portal.ru"));
+            assertEquals(List.of(InetAddress.getByName("8.8.8.8")),
+                    backup.get(1200, java.util.concurrent.TimeUnit.MILLISECONDS));
+            releasePrimary.countDown();
+            assertEquals(List.of(InetAddress.getByName("1.1.1.1")),
+                    primary.get(2, java.util.concurrent.TimeUnit.SECONDS));
+        } finally {
+            releasePrimary.countDown();
+            pair.shutdownNow();
+        }
+    }
+
     @Test public void productionTransportKeepsDefaultHostnameVerificationAndNoAutomaticRetries() {
         OkHttpClient client = PortalApiTransport.apiClient();
         assertFalse(client.retryOnConnectionFailure());
