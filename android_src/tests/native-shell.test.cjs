@@ -64,6 +64,7 @@ assert.match(main,/isLegacyLocalServer/);
 assert.match(main,/SERVER_DISCOVERY_URL/);
 assert.match(main,/raw\.githubusercontent\.com/);
 assert.match(main,/checkUpdatesAndServer/);
+assert.match(main,/BuildConfig\.APPLICATION_ID\.endsWith\("\.staging"\)/);
 assert.match(main,/probeOfficialServer/);
 assert.match(main,/server_discovery_revision/);
 assert.match(main,/migrateOutboxOrigin/);

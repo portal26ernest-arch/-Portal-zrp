@@ -737,7 +737,12 @@ public class MainActivity extends Activity {
 
         private String checkUpdatesAndServer() {
             JSONObject server = refreshOfficialServer();
-            String updateRaw = fetchUpdateManifest();
+            // Staging uses a different applicationId and debug signing key.
+            // It must not offer production APK upgrades or report the genuine
+            // production manifest as malformed when package IDs differ.
+            String updateRaw = BuildConfig.APPLICATION_ID.endsWith(".staging")
+                    ? "{\"ok\":true,\"configured\":false}"
+                    : fetchUpdateManifest();
             try {
                 JSONObject update = new JSONObject(updateRaw);
                 update.put("serverChecked", server.optBoolean("checked", false));
